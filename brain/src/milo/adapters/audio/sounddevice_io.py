@@ -105,6 +105,7 @@ class _Stream:
         self.chunks: deque[np.ndarray] = deque()
         self.offset = 0  # samples of chunks[0] already played
         self.ended = False  # drain() was called: no more audio will be fed
+        self.tail = 0  # silent samples still to play after the last audio, while the device catches up
         self.interrupted = False
         self.done = asyncio.Event()
         self.sd_stream = None
@@ -123,6 +124,9 @@ class _Stream:
                     self.chunks.popleft()
                     self.offset = 0
             finished = self.ended and not self.chunks
+            if finished and self.tail > 0:
+                self.tail -= n - filled
+                finished = self.tail <= 0
         out[filled:] = 0
         return finished
 
@@ -140,7 +144,10 @@ class Player:
     """One OutputStream per utterance; chunks are fed while earlier ones play, so speech flows without gaps.
 
     The stream plays silence on underrun instead of stopping, because the next chunk may still be
-    synthesizing. interrupt() cuts it off when the user starts talking.
+    synthesizing. interrupt() cuts it off when the user starts talking. After the last chunk it plays the
+    device's reported output latency in silence before it stops: PortAudio counts audio as played once it
+    left its own buffers, and closing then would cut the end of the last word on a slow device, such as
+    Bluetooth headphones.
     """
 
     def __init__(self, device: str | int | None = None):
@@ -163,6 +170,7 @@ class Player:
 
         stream.sd_stream = sd.OutputStream(samplerate=sample_rate, channels=1, dtype="float32", blocksize=BLOCK,
                                            device=self.device, callback=callback, finished_callback=stream.wake)
+        stream.tail = int(float(getattr(stream.sd_stream, "latency", 0.0) or 0.0) * sample_rate)
         self._current = stream
         stream.sd_stream.start()
 

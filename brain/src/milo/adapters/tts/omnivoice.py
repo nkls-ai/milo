@@ -81,6 +81,10 @@ class OmniVoiceTTS:
         audio_path, text = self._reference(model, torch)
         log.info("cloning voice from %s", audio_path)
         prompt = model.create_voice_clone_prompt(ref_audio=str(audio_path), ref_text=text)
+        if self.device == "mps" and hasattr(prompt, "ref_audio_tokens"):
+            from ._gpu_decode import decode_on_gpu
+
+            decode_on_gpu(model, prompt.ref_audio_tokens, torch, self.device)
         model.generate(text=WARM_UP_TEXT, voice_clone_prompt=prompt, num_step=self.steps)
         self._model, self._clone_prompt = model, prompt
         log.info("tts ready")
