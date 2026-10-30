@@ -67,6 +67,10 @@ The on-screen eval runs real tasks on your real Mac with a second Milo.app: a bu
 cd brain && uv run python -m milo.eval.screen --only excel,numbers,file
 ```
 
+## Homepage
+
+`site/` is the homepage, a static page built with Astro on Bun: `cd site && bun install && bun run dev`, or `bun run build` for the files. Milo's drawing there comes from the wren rig behind one component, so a new design changes one place. See [site/README.md](site/README.md).
+
 ## Docs
 
 - [Architecture](docs/ARCHITECTURE.md): processes, ports and adapters, how to add an engine

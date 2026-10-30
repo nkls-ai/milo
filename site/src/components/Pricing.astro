@@ -1,0 +1,94 @@
+---
+import { plusPrice } from '../site';
+const rows: [string, string, string][] = [
+  ['Dictation', 'Unlimited', 'Unlimited'],
+  ['Talking to Milo', 'About 20 conversations a day', 'Unlimited'],
+  ['Memory, reminders and calendar', 'yes', 'yes'],
+  ['Work on your computer', 'A few small jobs a week', 'Unlimited, several helpers at once'],
+  ['Meeting notes', 'no', 'yes'],
+  ['Messages from your phone', 'no', 'yes'],
+  ['Memory on all your Macs', 'no', 'yes'],
+];
+const cell = (v: string) => (v === 'yes' ? '<span class="yes" role="img" aria-label="Included"></span>' : v === 'no' ? '<span class="no" role="img" aria-label="Not included"></span>' : v);
+---
+<section class="section" id="pricing" aria-labelledby="pricing-title">
+  <div class="wrap">
+    <div class="section-head">
+      <h2 id="pricing-title">Free to start.</h2>
+      <p>Dictation is free without limits, and so is talking to him most days. Plus is for when you want him doing real work.</p>
+    </div>
+
+    <div class="plans" data-plans>
+      <table class="cmp">
+        <caption class="sr-only">What Free and Milo Plus include</caption>
+        <thead>
+          <tr>
+            <td></td>
+            <th scope="col" class="plan">
+              <span class="plan-name">Free</span>
+              <span class="plan-price">€0</span>
+              <span class="plan-sub">For everyone, for good.</span>
+            </th>
+            <th scope="col" class="plan plus">
+              <span class="knit" aria-hidden="true"></span>
+              <span class="plan-name">Milo Plus</span>
+              <span class="plan-price">{plusPrice} <small>a month</small></span>
+              <span class="plan-sub">We're still settling the price.</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(([name, free, plus]) => (
+            <tr><th scope="row">{name}</th><td set:html={cell(free)} /><td class="plus" set:html={cell(plus)} /></tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr><td></td><td><a class="btn btn-quiet btn-small" href="#waitlist">Join the waitlist</a></td><td class="plus"><a class="btn btn-small" href="#waitlist">Join the waitlist</a></td></tr>
+        </tfoot>
+      </table>
+    </div>
+    <p class="note pricing-note">Free is cheap for us to run because dictation happens on your Mac and short chats use a small, fast model. Plans for families and small offices come later.</p>
+  </div>
+</section>
+
+<style>
+  .plans { margin-top: clamp(2.5rem, 5vw, 3.5rem); overflow-x: auto; }
+  .cmp { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 1.02rem; }
+  .cmp th, .cmp td { padding: 0.95rem 1rem; text-align: left; vertical-align: middle; border-bottom: 1px solid var(--rule); }
+  .cmp tbody th { font-weight: 600; width: 34%; }
+  .cmp td { color: var(--ink-2); width: 33%; }
+  .cmp thead th, .cmp thead td { border-bottom: 1.5px solid var(--rule-strong); vertical-align: top; padding-top: 1.6rem; }
+  .cmp tfoot td { border-bottom: 0; padding-top: 1.4rem; }
+  .plan { position: relative; font-weight: 400; }
+  .plan span { display: block; }
+  .plan-name { font-family: var(--font-display); font-variation-settings: 'SOFT' 100; font-size: var(--step-2); font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; }
+  .plan-price { margin-top: 0.4rem; font-size: 1.15rem; font-weight: 700; }
+  .plan-price small { font-size: 0.9rem; font-weight: 400; color: var(--ink-2); }
+  .plan-sub { margin-top: 0.15rem; font-size: 0.9rem; color: var(--ink-3); }
+  .plus { background: light-dark(#fdf4e4, #2a2236); }
+  thead .plus { border-radius: 1rem 1rem 0 0; }
+  tfoot .plus { border-radius: 0 0 1rem 1rem; padding-bottom: 1.4rem; }
+  /* a strip of Milo's scarf along the top of Plus: knitted ribs */
+  .knit {
+    position: absolute; left: 0; right: 0; top: 0; height: 0.6rem;
+    border-radius: 1rem 1rem 0 0;
+    background:
+      linear-gradient(to bottom, rgb(255 255 255 / 0.25), transparent 40%, rgb(0 0 0 / 0.12)),
+      repeating-linear-gradient(90deg, var(--scarf) 0 5px, var(--scarf-rib) 5px 6px, var(--scarf) 6px 9px, var(--scarf-lo) 9px 10px);
+  }
+  .cmp :global(.yes), .cmp :global(.no) { display: inline-block; width: 1.25rem; height: 1.25rem; vertical-align: -0.2em; }
+  .cmp :global(.yes) { border-radius: 50%; background: var(--lavender); position: relative; }
+  .cmp :global(.yes)::after { content: ''; position: absolute; left: 0.42rem; top: 0.22rem; width: 0.3rem; height: 0.6rem; border: solid var(--on-lavender); border-width: 0 2.2px 2.2px 0; transform: rotate(45deg); }
+  .cmp :global(.no) { position: relative; }
+  .cmp :global(.no)::after { content: ''; position: absolute; left: 0.25rem; right: 0.25rem; top: 50%; height: 2px; border-radius: 1px; background: var(--ink-3); opacity: 0.6; }
+  .pricing-note { margin-top: 1.5rem; max-width: 40rem; }
+  @media (max-width: 40rem) {
+    .cmp { font-size: 0.92rem; }
+    .cmp th, .cmp td { padding: 0.75rem 0.55rem; }
+    .cmp tbody th { width: 36%; }
+    .plan-name { font-size: 1.3rem; }
+    .plan-price small { display: block; }
+    .cmp tfoot { display: none; }
+    .cmp tbody tr:last-child .plus { border-radius: 0 0 1rem 1rem; border-bottom: 0; }
+  }
+</style>

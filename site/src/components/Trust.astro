@@ -1,0 +1,48 @@
+---
+const items = [
+  { icon: 'ask', title: 'He asks first.', text: "Anything that sends, deletes, buys or can't be undone waits for your yes. No answer means no." },
+  { icon: 'eye', title: 'You can watch him.', text: 'His own pointer, an outline around the window he works in, and one plain line for every step.' },
+  { icon: 'stop', title: 'You can stop him.', text: 'Press esc or touch the mouse and he stops mid-step, then tells you how far he got.' },
+  { icon: 'undo', title: 'You can undo.', text: 'He keeps copies of what he changes, so "undo that" works.' },
+  { icon: 'mac', title: 'Most of it stays on your Mac.', text: 'Dictation, his memory and your reminders live on your Mac. For harder thinking he asks a service on the internet, and sends only what that question needs.' },
+  { icon: 'look', title: 'He looks only when asked.', text: 'He reads your screen when you say "look at this", never on his own. A small eye shows while he looks.' },
+  { icon: 'lock', title: 'No passwords, no bank transfers.', text: 'He never touches password fields, money transfers or security settings.' },
+  { icon: 'page', title: "This page doesn't track you.", text: 'No cookies, no analytics, nothing loaded from anyone else. Not even the fonts.' },
+];
+const paths: Record<string, string> = {
+  ask: '<path d="M5 6.5A2.5 2.5 0 0 1 7.5 4h9A2.5 2.5 0 0 1 19 6.5v7a2.5 2.5 0 0 1-2.5 2.5H11l-4 3.5V16h0.5" /><path d="M10.2 8.6a1.9 1.9 0 1 1 2.6 1.8c-.5.2-.8.6-.8 1.1v.3"/><circle cx="12" cy="13.6" r=".2"/>',
+  eye: '<path d="M2.8 12s3.4-6 9.2-6 9.2 6 9.2 6-3.4 6-9.2 6-9.2-6-9.2-6Z"/><circle cx="12" cy="12" r="2.6"/>',
+  stop: '<rect x="5" y="5" width="14" height="14" rx="3.5"/><path d="M9.5 9.5h5v5h-5z"/>',
+  undo: '<path d="M8.5 7 4.5 11l4 4"/><path d="M4.8 11H14a5 5 0 0 1 0 10h-3"/>',
+  mac: '<rect x="3.5" y="4.5" width="17" height="11.5" rx="1.8"/><path d="M9 20h6M12 16v4"/>',
+  look: '<circle cx="11" cy="11" r="6"/><path d="m15.5 15.5 4.5 4.5"/>',
+  lock: '<rect x="5" y="10.5" width="14" height="9.5" rx="2.2"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/>',
+  page: '<path d="M7 3.5h7l4 4v13H7a1.5 1.5 0 0 1-1.5-1.5V5A1.5 1.5 0 0 1 7 3.5Z"/><path d="M13.5 3.5V8H18"/><path d="m9.3 14.2 2 2 3.6-4"/>',
+};
+---
+<section class="section trust" id="trust" aria-labelledby="trust-title">
+  <div class="wrap">
+    <div class="section-head">
+      <h2 id="trust-title">Trust is the whole job.</h2>
+      <p>Milo is for people who'd rather not think about computers at all. So the rules are simple, and you can check every one of them.</p>
+    </div>
+    <ul class="rules">
+      {items.map((it) => (
+        <li>
+          <svg viewBox="0 0 24 24" aria-hidden="true" set:html={paths[it.icon]} />
+          <h3>{it.title}</h3>
+          <p>{it.text}</p>
+        </li>
+      ))}
+    </ul>
+  </div>
+</section>
+
+<style>
+  .trust { background: var(--paper-2); }
+  .rules { list-style: none; margin: clamp(2.5rem, 5vw, 4rem) 0 0; padding: 0; display: grid; gap: 2.2rem clamp(1.5rem, 3vw, 3rem); grid-template-columns: repeat(auto-fill, minmax(min(100%, 15.5rem), 1fr)); }
+  .rules li { border-top: 1.5px solid var(--rule-strong); padding-top: 1.1rem; }
+  .rules svg { width: 1.8rem; height: 1.8rem; fill: none; stroke: var(--lavender); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  .rules h3 { margin-top: 0.9rem; font-size: 1.3rem; }
+  .rules p { margin-top: 0.45rem; color: var(--ink-2); font-size: 1.02rem; line-height: 1.5; }
+</style>

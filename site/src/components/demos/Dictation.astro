@@ -1,0 +1,89 @@
+---
+import Replay from '../Replay.astro';
+---
+<section class="section" id="dictation" aria-labelledby="dictation-title">
+  <div class="wrap feature flip">
+    <div class="section-head">
+      <h2 id="dictation-title">Talk instead of typing.</h2>
+      <p>Hold <kbd>fn</kbd> in any app and speak. Your words land where the cursor is, without the ums and ers. It works in Mail, Word, WhatsApp, anywhere you can type.</p>
+      <p>Dictation runs on your Mac, so it works without the internet and costs nothing.</p>
+    </div>
+
+    <div class="dict" data-dict>
+      <div class="window">
+        <div class="window-bar"><span class="lights"><i></i><i></i><i></i></span><span class="window-title">New Message</span></div>
+        <div class="mail">
+          <p class="mail-row"><span>To:</span> <b class="to">Anna</b></p>
+          <p class="mail-row"><span>Subject:</span> Sunday</p>
+          <p class="mail-body"><span data-typed></span><span class="caret" aria-hidden="true"></span></p>
+        </div>
+      </div>
+      <div class="dict-live">
+        <span class="key dict-fn" data-fn aria-hidden="true">fn</span>
+        <p class="words dict-words" data-words aria-hidden="true"><span class="wave"><i></i><i></i><i></i><i></i><i></i></span><span data-heard></span></p>
+      </div>
+      <p class="sr-only">An email to Anna fills in as someone speaks: "Hi Anna, are you free on Sunday? We could have lunch at the Italian place by the river. Love, Mum." The "um"s and "uh"s they said are left out.</p>
+      <Replay />
+    </div>
+  </div>
+</section>
+
+<style>
+  .dict { position: relative; }
+  .mail { padding: 0.4rem 1.4rem 1.6rem; min-height: 17rem; }
+  .mail-row { display: flex; gap: 0.5rem; padding: 0.55rem 0; border-bottom: 1px solid var(--rule); font-size: 0.98rem; }
+  .mail-row span { color: var(--ink-3); }
+  .to { font-weight: 600; background: var(--lavender-wash); color: var(--lavender-deep); padding: 0 0.45rem; border-radius: 0.3rem; }
+  .mail-body { padding-top: 1rem; font-size: 1.06rem; line-height: 1.6; white-space: pre-line; min-height: 9rem; }
+  .caret { display: inline-block; width: 2px; height: 1.15em; vertical-align: -0.2em; background: var(--lavender); margin-left: 1px; animation: caret 1s steps(1) infinite; }
+  @keyframes caret { 50% { opacity: 0; } }
+  .dict-live { display: flex; align-items: center; gap: 0.75rem; margin-top: 1rem; min-height: 2.8rem; }
+  .dict-fn { font-size: 1rem; transition: transform 90ms, box-shadow 90ms, background-color 120ms; }
+  .dict-fn.is-down { transform: translateY(1.5px); box-shadow: 0 0 0 0.5px var(--rule-strong); background: var(--lavender); color: var(--on-lavender); }
+  .dict-words { opacity: 0; transition: opacity 200ms; max-width: calc(100% - 3.5rem); }
+  .dict-words.is-on { opacity: 1; }
+  .dict-words :global(s) { opacity: 0.45; text-decoration-thickness: 1.5px; }
+</style>
+
+<script>
+  import { demo, $ } from '../../scripts/demo';
+  const root = $(document, '[data-dict]');
+  const typed = $(root, '[data-typed]');
+  const heard = $(root, '[data-heard]');
+  const words = $(root, '[data-words]');
+  const fn = $(root, '[data-fn]');
+
+  // What you say, phrase by phrase: [heard, typed]. The fillers show struck through in the pill and
+  // never reach the email.
+  const phrases: [string, string][] = [
+    ['Hi Anna, um,', 'Hi Anna,\n'],
+    ['are you free on Sunday?', 'Are you free on Sunday? '],
+    ['We could, uh, have lunch', 'We could have lunch '],
+    ['at the Italian place by the river.', 'at the Italian place by the river.\n'],
+    ['Love, Mum', 'Love, Mum'],
+  ];
+  const strike = (s: string) => s.replace(/\b(um|uh)\b,?/g, (m) => `<s>${m}</s>`);
+
+  demo(root, async (ctx) => {
+    fn.classList.add('is-down');
+    words.classList.add('is-on', 'is-live');
+    await ctx.wait(400);
+    for (const [said, text] of phrases) {
+      const ws = said.split(' ');
+      for (let i = 1; i <= ws.length; i++) {
+        heard.innerHTML = strike(ws.slice(0, i).join(' '));
+        await ctx.wait(160 + Math.random() * 80);
+      }
+      await ctx.wait(220);
+      // the phrase lands in the app at the pause after it
+      typed.textContent += text;
+      await ctx.wait(250);
+    }
+    fn.classList.remove('is-down');
+    words.classList.remove('is-live');
+    await ctx.wait(1200);
+    words.classList.remove('is-on');
+  }, {
+    reset() { typed.textContent = ''; heard.textContent = ''; },
+  });
+</script>

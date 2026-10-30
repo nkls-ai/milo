@@ -15,6 +15,8 @@ A good coworker:
 - keeps working while you're away, and you can reach him from your phone,
 - knows when to be quiet.
 
+The homepage in [site/](../site/README.md) puts this into a page: "Just tell Milo.", the wren, and a demo for each thing he does.
+
 ## Lines to try
 
 - "Your coworker on the Mac."
