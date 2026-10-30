@@ -26,6 +26,7 @@ log = logging.getLogger("milo")
 DEFAULT_HOME = "~/Milo"
 NOISY_LOGGERS = ("httpx", "httpx2", "huggingface_hub")
 CLOSE_TIMEOUT_S = 3.0
+MESSAGES_TICK_S = 30.0
 
 Warmup = tuple[Executor, Callable[[], None]] | Callable[[], Awaitable[None]]
 """A blocking warm() and the executor it must run on, or a coroutine function run on the loop."""
@@ -107,6 +108,10 @@ async def _serve(runtime: Runtime) -> None:
         tasks.append(asyncio.create_task(memory.sleep.run()))
     if runtime.barge_in is not None:
         tasks.append(asyncio.create_task(runtime.barge_in.run()))
+    if runtime.messages is not None:
+        tasks.append(asyncio.create_task(runtime.messages.run()))
+        if runtime.heartbeat is None:  # the brief and the settings guard still need their tick
+            tasks.append(asyncio.create_task(_every(MESSAGES_TICK_S, runtime.messages.tick)))
     try:
         await runtime.server.serve_forever()
     finally:
@@ -119,6 +124,12 @@ async def _serve(runtime: Runtime) -> None:
             memory.executor.shutdown(wait=False)
         await runtime.tool_server.close()
         await _close(runtime)
+
+
+async def _every(seconds: float, check: Callable[[], Awaitable[None]]) -> None:
+    while True:
+        await asyncio.sleep(seconds)
+        await check()
 
 
 async def _close(runtime: Runtime) -> None:

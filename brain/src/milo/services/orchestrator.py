@@ -95,6 +95,9 @@ class Orchestrator:
         """Called with (description, what Milo said) after each finished helper, e.g. LiveTalk.note."""
         self.on_done: list[Callable[[Helper], None]] = []
         """Hear every helper that ended, after its own `on_finish` (routines look for tasks that repeat)."""
+        self.watchers: list[Callable[[Helper, str], None]] = []
+        """Called with (helper, "") when a helper is added and when it ends, and with (helper, the news) at
+        each milestone. The owner's phone follows helpers this way (messages.py)."""
 
     # ---- what the talker and the app see
 
@@ -250,6 +253,13 @@ class Orchestrator:
         self._numbers += 1
         return self._numbers
 
+    def _watch(self, helper: Helper, news: str = "") -> None:
+        for watcher in self.watchers:
+            try:
+                watcher(helper, news)
+            except Exception:
+                log.exception("a helper watcher failed")
+
     def _add(self, helper: Helper) -> None:
         self._helpers.append(helper)
         finished = [h for h in self._helpers if not h.active]
@@ -257,6 +267,7 @@ class Orchestrator:
             self._helpers.remove(old)
         self._schedule(tell=False)
         self._changed(now=True)
+        self._watch(helper)
 
     def _schedule(self, *, tell: bool = True) -> None:
         """Start queued helpers while there is room: at most max_helpers at work, one on the screen."""
@@ -346,6 +357,7 @@ class Orchestrator:
             text = self._milestones.step(helper, step, self._clock.monotonic())
             if text is not None:
                 self.updates.milestone(helper, text, plain_step(step))
+                self._watch(helper, text)
         self._changed()
 
     def _plan(self, helper: Helper, done: int, total: int) -> None:
@@ -356,6 +368,7 @@ class Orchestrator:
             text = self._milestones.plan(helper, done, total, self._clock.monotonic())
             if text is not None:
                 self.updates.milestone(helper, text)
+                self._watch(helper, text)
         self._changed()
 
     def _done(self, helper: Helper, reply: Reply) -> None:
@@ -377,6 +390,7 @@ class Orchestrator:
         self._milestones.forget(helper.id)
         self._transcript.task_finished(helper.id, status is HelperStatus.DONE, result)
         self._changed(now=True)
+        self._watch(helper)
         finished, helper.on_finish = helper.on_finish, None
         if finished is not None:
             try:

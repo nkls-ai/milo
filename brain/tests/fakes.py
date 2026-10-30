@@ -679,3 +679,81 @@ class MemoryConfigFile:
         self.raw = raw
         self.writes.append((section, key, value))
         return config
+
+
+class FakeChannel:
+    """A chat app in memory: push() what the phone sends, read what Milo sent back from `sent`."""
+
+    name = "fake"
+    label = "Chat"
+
+    def __init__(self):
+        self.inbox: asyncio.Queue = asyncio.Queue()
+        self.sent: list[tuple[str, str]] = []
+        self.questions: list[tuple[str, str, str]] = []
+        self.files: list[tuple[str, str, str]] = []
+        self.file_data: list[bytes] = []
+        self.acks: list[tuple[str, str]] = []
+        self.typing_count = 0
+        self.starts = 0
+        self.closed = False
+        self.fail_start: list[Exception] = []
+        self.fail_send: Exception | None = None
+
+    def push(self, *items) -> None:
+        for item in items:
+            self.inbox.put_nowait(item)
+
+    def texts(self, chat: str | None = None) -> list[str]:
+        return [text for to, text in self.sent if chat is None or to == chat]
+
+    async def start(self) -> None:
+        self.starts += 1
+        if self.fail_start:
+            raise self.fail_start.pop(0)
+
+    async def receive(self) -> list:
+        batch = [await self.inbox.get()]
+        while not self.inbox.empty():
+            batch.append(self.inbox.get_nowait())
+        return batch
+
+    async def send(self, chat: str, text: str) -> None:
+        if self.fail_send is not None:
+            raise self.fail_send
+        self.sent.append((chat, text))
+
+    async def ask(self, chat: str, id: str, question: str) -> None:
+        self.questions.append((chat, id, question))
+
+    async def typing(self, chat: str) -> None:
+        self.typing_count += 1
+
+    async def send_file(self, chat: str, name: str, data: bytes, caption: str = "") -> None:
+        self.files.append((chat, name, caption))
+        self.file_data.append(data)
+
+    async def acknowledge(self, inbound, text: str = "") -> None:
+        self.acks.append((inbound.answer, text))
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+class MemoryRemoteState:
+    def __init__(self, data: dict | None = None):
+        self.data = dict(data or {})
+        self.saves = 0
+
+    def load(self) -> dict:
+        return json_copy(self.data)
+
+    def save(self, data: dict) -> None:
+        self.data = json_copy(data)
+        self.saves += 1
+
+
+def json_copy(data: dict) -> dict:
+    import json
+
+    return json.loads(json.dumps(data))

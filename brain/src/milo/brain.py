@@ -8,8 +8,9 @@ from pathlib import Path
 from .config import UiSettings
 from .core.events import (AppResponse, Command, ConfirmAnswer, ContextUpdate, EditFact, EmotionChanged, Event,
                           Facts, ForgetFact, GetFacts, GetHistory, GetSettings, HandsResult, HandsStop, ListenCancel,
-                          ListenConfirm, ListenStart, ListenStop, LookResult, Mute, RoutineAction, RoutineDraftAnswer,
-                          SetSetting, StateChanged, StopHelper, TextInput, UiConfig, WhatsThis)
+                          ListenConfirm, ListenStart, ListenStop, LookResult, Mute, RemoteForget, RemotePause,
+                          RoutineAction, RoutineDraftAnswer, SetSetting, StateChanged, StopHelper, TextInput,
+                          UiConfig, WhatsThis)
 from .core.types import ListenMode
 from .services.app_bridge import AppBridge
 from .services.approvals import Approvals
@@ -19,6 +20,7 @@ from .services.heartbeat_runner import HeartbeatRunner
 from .services.listening import Listening
 from .services.live_talk import LiveTalk
 from .services.memory import Memory
+from .services.messages import MessageService
 from .services.orchestrator import Orchestrator
 from .services.routines import Routines
 from .services.screen import checked, inside
@@ -41,11 +43,13 @@ class Brain:
                  *, approvals: Approvals | None = None, bridge: AppBridge | None = None,
                  hands: HandsService | None = None, screens: Path | None = None,
                  helpers: Orchestrator | None = None, memory: Memory | None = None,
-                 routines: Routines | None = None, settings: Settings | None = None):
+                 routines: Routines | None = None, settings: Settings | None = None,
+                 messages: MessageService | None = None):
         self._memory = memory
         self._routines = routines
         self._settings = settings
         self._hands = hands
+        self._messages = messages
         self._helpers = helpers
         self._screens = screens
         self._ui = ui
@@ -62,7 +66,8 @@ class Brain:
         """What a newly connected app needs to draw Milo as he is right now."""
         return [StateChanged(self._ui.state), EmotionChanged(self._ui.emotion), self._ui_config(),
                 *([self._settings.report()] if self._settings is not None else []),
-                *self._history(), *([self._helpers.snapshot()] if self._helpers is not None else [])]
+                *self._history(), *([self._helpers.snapshot()] if self._helpers is not None else []),
+                *([self._messages.status()] if self._messages is not None else [])]
 
     def use_ui(self, ui_settings: UiSettings) -> None:
         """Keys or look changed in the Settings window: tell the app now and on every later connect."""
@@ -126,6 +131,12 @@ class Brain:
                         self._routines.save(draft_id=id)
                     else:
                         self._routines.drop(id)
+            case RemotePause(on):
+                if self._messages is not None:
+                    self._messages.pause(on)
+            case RemoteForget():
+                if self._messages is not None:
+                    self._messages.forget()
             case AppResponse():
                 if self._bridge is not None:
                     self._bridge.resolve(command)

@@ -283,3 +283,31 @@ class BorrowNeeded(HandsError):
     def __init__(self, what: str, message: str = ""):
         super().__init__(message or f"This needs the {what}.")
         self.what = what
+
+
+class ChannelError(Exception):
+    """A chat channel can't work: no token, a token Telegram refused, a permission macOS didn't give.
+    The message is plain words for the user."""
+
+
+@dataclass(frozen=True)
+class Inbound:
+    """One thing that arrived on a chat channel (Telegram, iMessage). Everything in it is outside text until
+    the service has checked the sender; even then only `text` is the owner's own words.
+
+    `chat` and `sender` are the channel's ids as text. `forwarded`: the message was passed on from someone
+    else. `quoted`: text quoted from another chat or message. `answer`: the data of a button the user
+    pressed ("yes:<question id>"), with `ref` the channel's id for acknowledging the press.
+    `attachments` counts photos, files and voice notes, which Milo doesn't read yet.
+    """
+
+    chat: str
+    sender: str
+    text: str = ""
+    name: str = ""
+    private: bool = True
+    forwarded: bool = False
+    quoted: str = ""
+    answer: str = ""
+    ref: str = ""
+    attachments: int = 0

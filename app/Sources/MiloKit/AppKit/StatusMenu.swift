@@ -22,6 +22,11 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
     private lazy var knowledge = KnowledgeWindow(controller: controller)
     private var styleMenu: NSMenu!
     private var restyle: AnyCancellable?
+    /// Milo by message: hidden while messages are off.
+    private var remoteItems: [NSMenuItem] = []
+    private var remoteStatusItem: NSMenuItem!
+    private var remotePauseItem: NSMenuItem!
+    private var remoteForgetItem: NSMenuItem!
 
     public init(controller: MiloController, panel: OverlayPanel, window: ConversationWindow, settings: SettingsWindow,
                 setup: SetupWindow, paths: MiloPaths) {
@@ -56,6 +61,13 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
             add(styleMenu, title, #selector(pickDictationStyle(_:))).representedObject = style.rawValue
         }
         menu.addItem(withTitle: "Dictation style", action: nil, keyEquivalent: "").submenu = styleMenu
+        let remoteSeparator = NSMenuItem.separator()
+        menu.addItem(remoteSeparator)
+        remoteStatusItem = menu.addItem(withTitle: "", action: nil, keyEquivalent: "")
+        remoteStatusItem.isEnabled = false
+        remotePauseItem = add(menu, "Pause messages from your phone", #selector(toggleRemotePause))
+        remoteForgetItem = add(menu, "Disconnect phone…", #selector(forgetPhone))
+        remoteItems = [remoteSeparator, remoteStatusItem, remotePauseItem, remoteForgetItem]
         menu.addItem(.separator())
         add(menu, "Settings…", #selector(openSettings))
         add(menu, "Check permissions…", #selector(openSetup))
@@ -64,7 +76,21 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
         add(menu, "Restart brain", #selector(restartBrain))
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Milo", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.delegate = self
         statusItem.menu = menu
+        menuNeedsUpdate(menu)
+    }
+
+    /// Shows Milo by message as the brain last reported it, each time the menu opens.
+    private func updateRemoteItems() {
+        let remote = controller.model.remote
+        remoteItems.forEach { $0.isHidden = remote == nil }
+        guard let remote else { return }
+        remoteStatusItem.title = remote.summary
+        remoteStatusItem.toolTip = remote.state == .paired ? nil : remote.detail
+        remotePauseItem.state = remote.paused ? .on : .off
+        remotePauseItem.isEnabled = remote.state == .paired
+        remoteForgetItem.isHidden = remote.state != .paired
     }
 
     static func symbol(for style: CharacterStyle) -> String {
@@ -94,9 +120,10 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
         muteItem.state = controller.muted ? .on : .off
     }
 
-    /// Ticks the style the brain uses each time the submenu opens.
+    /// Each time a menu opens: ticks the dictation style the brain uses in the submenu, and shows Milo by
+    /// message as the brain last reported it in the main menu.
     public func menuNeedsUpdate(_ menu: NSMenu) {
-        guard menu === styleMenu else { return }
+        guard menu === styleMenu else { return updateRemoteItems() }
         for item in menu.items {
             item.state = item.representedObject as? String == controller.dictationStyle?.rawValue ? .on : .off
             item.isEnabled = controller.dictationStyle != nil  // no brain yet: nothing to switch
@@ -106,6 +133,22 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
     @objc private func pickDictationStyle(_ item: NSMenuItem) {
         guard let raw = item.representedObject as? String, let style = DictationStyle(rawValue: raw) else { return }
         controller.setDictationStyle(style)
+    }
+
+    @objc private func toggleRemotePause() {
+        guard let remote = controller.model.remote else { return }
+        controller.setRemotePaused(!remote.paused)
+    }
+
+    @objc private func forgetPhone() {
+        guard let remote = controller.model.remote else { return }
+        let alert = NSAlert()
+        alert.messageText = "Disconnect your phone from Milo?"
+        alert.informativeText = "Milo stops answering that \(remote.label) chat. To connect again, message Milo "
+            + "and send the new code he shows here."
+        alert.addButton(withTitle: "Disconnect")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn { controller.forgetPhone() }
     }
 
     @objc private func toggleVisible() { panel.toggleVisible() }
