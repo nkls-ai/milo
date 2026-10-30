@@ -6,6 +6,8 @@ public final class ConversationSettings: ObservableObject {
     @Published public var talkKey: String
     /// The task entry to scroll to, set when the user clicks a helper.
     @Published public var focus: String?
+    /// Text to put in the field, ready to finish and send: "Change it" on a recipe draft.
+    @Published public var prefill: String?
 
     public init(talkKey: String) {
         self.talkKey = talkKey
@@ -20,6 +22,7 @@ public struct ConversationView: View {
     let send: (_ text: String, _ speak: Bool) -> Void
 
     @AppStorage("speakTypedReplies") private var speakReplies = false
+    @AppStorage("showRoutines") private var showRoutines = false
 
     public init(transcript: TranscriptModel, model: MiloModel, settings: ConversationSettings,
                 send: @escaping (_ text: String, _ speak: Bool) -> Void) {
@@ -31,6 +34,9 @@ public struct ConversationView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
+            if !model.routines.isEmpty {
+                RoutinesPanel(routines: model.routines, open: $showRoutines, act: model.routine)
+            }
             if !model.helpers.isEmpty {
                 HelpersPanel(helpers: model.helpers, entries: transcript.entries, character: model.character,
                              open: { settings.focus = $0 }, stop: model.stopHelper)
@@ -58,10 +64,16 @@ public struct ConversationView: View {
                     }
                 }
             }
+            if let draft = model.drafts.last {
+                DraftCard(draft: draft, talkKey: settings.talkKey,
+                          save: { model.answerDraft(draft.id, save: true) },
+                          change: { settings.prefill = "Change \(draft.name): " },
+                          drop: { model.answerDraft(draft.id, save: false) })
+            }
             if let question = model.question {
                 QuestionBar(question: question, talkKey: settings.talkKey, answer: model.answer)
             }
-            InputBar(speakReplies: $speakReplies) { send($0, speakReplies) }
+            InputBar(speakReplies: $speakReplies, prefill: $settings.prefill) { send($0, speakReplies) }
         }
         .background(WindowColors.paper)
     }
@@ -289,6 +301,7 @@ struct QuestionBar: View {
 
 struct InputBar: View {
     @Binding var speakReplies: Bool
+    @Binding var prefill: String?
     let submit: (String) -> Void
     @State private var draft = ""
     @FocusState private var focused: Bool
@@ -329,6 +342,12 @@ struct InputBar: View {
         .background(WindowColors.paper)
         .overlay(alignment: .top) { Rectangle().fill(WindowColors.rule).frame(height: 1) }
         .onAppear { focused = true }
+        .onChange(of: prefill) {
+            guard let text = prefill else { return }
+            draft = text
+            focused = true
+            prefill = nil
+        }
     }
 
     private func send() {

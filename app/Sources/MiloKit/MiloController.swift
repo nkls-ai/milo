@@ -74,6 +74,8 @@ public final class MiloController {
     public func start() {
         model.onAnswer = { [weak self] question, yes in self?.brain.send(.confirmAnswer(id: question.id, yes: yes)) }
         model.onStopHelper = { [weak self] id in self?.brain.send(.stopHelper(id: id)) }
+        model.onRoutine = { [weak self] id, action in self?.brain.send(.routine(id: id, action: action)) }
+        model.onDraftAnswer = { [weak self] id, save in self?.brain.send(.routineDraftAnswer(id: id, save: save)) }
         brain.onEvent = { [weak self] in self?.received($0) }
         brain.onConnectionChange = { [weak self] in self?.connectionChanged($0) }
         // Development brains are started by hand; only launch one if nothing answers.

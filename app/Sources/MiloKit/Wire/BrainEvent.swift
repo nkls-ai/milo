@@ -52,6 +52,8 @@ public enum BrainEvent: Equatable, Sendable {
     /// The user lent Milo one real device ("mouse" or "keyboard") for an action that can't be done in the
     /// background. The app hands it back on its own a while after the last such action, or when the session ends.
     case handsBorrow(on: Bool, what: String)
+    /// The user's routines by name, and the recipe drafts waiting for a look.
+    case routines([RoutineInfo], drafts: [RoutineDraft])
     case unknown(String)
 }
 
@@ -65,6 +67,7 @@ extension BrainEvent: Decodable {
         case handsFreeMaxSeconds = "hands_free_max_s"
         case character
         case helpers
+        case routines, drafts
     }
 
     public init(from decoder: Decoder) throws {
@@ -113,6 +116,9 @@ extension BrainEvent: Decodable {
         case "hands_borrow":
             self = .handsBorrow(on: try c.decode(Bool.self, forKey: .on),
                                 what: try c.decodeIfPresent(String.self, forKey: .what) ?? "")
+        case "routines":
+            self = .routines(try c.decodeIfPresent([RoutineInfo].self, forKey: .routines) ?? [],
+                             drafts: try c.decodeIfPresent([RoutineDraft].self, forKey: .drafts) ?? [])
         default: self = .unknown(type)
         }
     }

@@ -201,7 +201,13 @@ def run_prompt(routine: Routine, values: dict[str, str], note: str = "") -> str:
         inputs = "This routine has no inputs."
     if note.strip():
         inputs += f"\nThe user added for this run: {note.strip()}"
-    return RUN_RULES.format(name=routine.name, inputs=inputs, body=routine.body.strip())
+    return RUN_RULES.format(name=plain_name(routine.name), inputs=inputs, body=routine.body.strip())
+
+
+def plain_name(name: str) -> str:
+    """A routine's name for a worker's prompt. The name isn't part of what the user approved (renaming needs no
+    new look), so only letters, digits, spaces and a little punctuation get through, and not much of it."""
+    return " ".join(re.sub(r"[^\w &',.()-]+", " ", name).split())[:60] or "routine"
 
 
 def given_inputs(routine: Routine, text: str) -> tuple[dict[str, str], str]:

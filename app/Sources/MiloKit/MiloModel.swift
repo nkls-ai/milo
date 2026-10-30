@@ -50,6 +50,14 @@ public final class MiloModel: ObservableObject {
     public var onStopHelper: ((String) -> Void)?
     /// Called when the user clicks a helper's bird: show it in the Milo window. Set by main.swift.
     public var onOpenHelper: ((String) -> Void)?
+    /// The user's routines by name, from the brain's `routines` event.
+    @Published public private(set) var routines: [RoutineInfo] = []
+    /// Recipes Milo wrote down that wait for the user's look: Save, or "Change it".
+    @Published public private(set) var drafts: [RoutineDraft] = []
+    /// Called when the user clicks Run now, Pause, Resume or Delete on a routine. Set by the controller.
+    public var onRoutine: ((String, RoutineAction) -> Void)?
+    /// Called with a draft's id and true for Save, false for throwing it away. Set by the controller.
+    public var onDraftAnswer: ((String, Bool) -> Void)?
 
     private let scheduler: Scheduler
     private var hideBubble: ScheduledTask?
@@ -98,6 +106,9 @@ public final class MiloModel: ObservableObject {
             scheduleBubbleHide()
         case let .helpers(list):
             if list != helpers { helpers = list }
+        case let .routines(list, waiting):
+            if list != routines { routines = list }
+            if waiting != drafts { drafts = waiting }
         case .dictation, .uiConfig, .history, .entry, .replyDelta, .activity, .lookRequest, .handsRequest,
              .handsSession, .flyTo, .appRequest, .handsBorrow, .unknown:
             break
@@ -115,6 +126,17 @@ public final class MiloModel: ObservableObject {
     /// The user clicked Stop on the helper `id`.
     public func stopHelper(_ id: String) {
         onStopHelper?(id)
+    }
+
+    /// The user clicked a button on the routine `id`.
+    public func routine(_ id: String, _ action: RoutineAction) {
+        onRoutine?(id, action)
+    }
+
+    /// The user saved a draft (true) or threw it away (false). It goes at once; the brain confirms it.
+    public func answerDraft(_ id: String, save: Bool) {
+        drafts.removeAll { $0.id == id }
+        onDraftAnswer?(id, save)
     }
 
     /// The user clicked a helper's bird or row.

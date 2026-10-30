@@ -29,6 +29,10 @@ public enum BrainCommand: Equatable, Sendable {
     case appResponse(id: String, outcome: AppOutcome)
     /// The user clicked Stop on the helper `id`.
     case stopHelper(id: String)
+    /// A button in the Routines section: run, pause, resume or delete the routine `id`.
+    case routine(id: String, action: RoutineAction)
+    /// Save on the recipe draft `id` (true), or throw it away (false).
+    case routineDraftAnswer(id: String, save: Bool)
 }
 
 /// What the app did with an `app_request`: a JSON result, or a plain-language error for the user.
@@ -39,7 +43,7 @@ public enum AppOutcome: Equatable, Sendable {
 
 extension BrainCommand: Encodable {
     private enum Key: String, CodingKey {
-        case type, mode, text, app, on, tentative, speak, id, capture, ok, result, error, reason, yes
+        case type, mode, text, app, on, tentative, speak, id, capture, ok, result, error, reason, yes, action, save
         case idleSeconds = "idle_s"
     }
 
@@ -103,6 +107,14 @@ extension BrainCommand: Encodable {
         case let .stopHelper(id):
             try c.encode("stop_helper", forKey: .type)
             try c.encode(id, forKey: .id)
+        case let .routine(id, action):
+            try c.encode("routine", forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(action, forKey: .action)
+        case let .routineDraftAnswer(id, save):
+            try c.encode("routine_draft_answer", forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(save, forKey: .save)
         }
     }
 }
