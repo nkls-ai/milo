@@ -184,7 +184,7 @@ def build(home: Path) -> Runtime:
                                           outside=lambda: mem.turns.outside,
                                           elsewhere=lambda id: routines is not None and routines.is_run(id))
     transcript = Transcript(ui, conversation_store, clock, rules=rules, recap_tokens=config.chat.recap_tokens,
-                            outside=lambda: mem is not None and mem.turns.outside,
+                            outside=lambda: live_talk.carries_outside or (mem is not None and mem.turns.outside),
                             asking=lambda: approvals.pending, exists=lambda p: Path(p).expanduser().is_file(),
                             on_finished=episode_stubs.append if episode_stubs is not None else None)
     conversations = ConversationBrowser(transcript, conversation_store, ui, clock,

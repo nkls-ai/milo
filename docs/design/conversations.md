@@ -135,7 +135,7 @@ Milo: Just the dentist at four.
 </earlier_conversation>
 ```
 
-`recap()` keeps the newest lines that fit `[chat] recap_tokens` (600, under memory's 800 for a turn), says how many older lines were left out, and escapes everything like a task result. A conversation that carried outside text (a task result, the screen) gives an untrusted recap, which taints the conversation as a task result does (ADR 10). Talking to Milo with the key after picking one up goes on in it too, since it is now the current conversation.
+`recap()` keeps the newest lines that fit `[chat] recap_tokens` (600, under memory's 800 for a turn), says how many older lines were left out, and escapes everything like a task result. Only Milo's replies mark a conversation as carrying outside text: LiveTalk says when its model conversation has seen any (`carries_outside`), whether memory is on or not. A conversation that carried outside text (a task result, the screen, untrusted memory), and every meeting or routine run, gives an untrusted recap, which taints the conversation as a task result does (ADR 10). Talking to Milo with the key after picking one up goes on in it too, since it is now the current conversation.
 
 ## Search
 

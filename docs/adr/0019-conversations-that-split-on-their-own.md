@@ -12,7 +12,7 @@ The Milo window showed everything in one scroll from `state/transcript.jsonl`: c
 - **One file per conversation, an index as a cache.** `state/conversations/YYYY-MM/<id>.jsonl` holds a conversation's entries and its title lines; `index.jsonl` holds the headers and is rebuilt from the files when needed. Opening a conversation reads one small file. The alternative, keeping `transcript.jsonl` and storing byte offsets, breaks on tasks that finish after the next conversation started, and makes every open a seek into a file that grows for years.
 - **Titles from the reply Milo writes anyway.** A word heuristic names a conversation at once; Milo's next reply carries a `<title>` tag that replaces it, at about ten output tokens and no extra call. A user's rename wins.
 - **Tasks are pages.** The chat shows a card; the task's steps, result and files live on its own page.
-- **Picking up an old conversation sends a recap,** at most `[chat] recap_tokens` (600), escaped like a task result, and untrusted when the conversation carried outside text.
+- **Picking up an old conversation sends a recap,** at most `[chat] recap_tokens` (600), escaped like a task result, and untrusted when the conversation carried outside text, and always for meeting notes and routine runs.
 - **The old transcript is migrated once,** deterministically, and kept as `transcript.before-conversations.jsonl`.
 
 ## Consequences
