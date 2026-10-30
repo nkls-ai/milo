@@ -31,7 +31,8 @@ class Brain:
     def greeting(self) -> list[Event]:
         """What a newly connected app needs to draw Milo as he is right now."""
         return [StateChanged(self._ui.state), EmotionChanged(self._ui.emotion),
-                UiConfig(self._ui_settings.dictate_key, self._ui_settings.talk_key),
+                UiConfig(self._ui_settings.dictate_key, self._ui_settings.talk_key,
+                         self._ui_settings.hands_free_max_s),
                 *self._history()]
 
     def _history(self) -> list[Event]:
@@ -39,10 +40,10 @@ class Brain:
 
     async def handle(self, command: Command) -> None:
         match command:
-            case ListenStart(mode):
-                self._listening.start(mode)
+            case ListenStart(mode, tentative):
+                self._listening.start(mode, tentative)
             case ListenConfirm():
-                pass  # Listening shows a recording at once for now, so a tentative start needs no confirm.
+                self._listening.confirm()
             case ListenStop():
                 await self._listening.stop()
             case ListenCancel():

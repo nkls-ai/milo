@@ -48,7 +48,7 @@ def check_listen_start(s: Stack, msg: dict) -> None:
     run(s, parse_command(msg))
     assert s.mic.active and s.mic.starts == 1
     expected = MiloState.DICTATING if msg["mode"] == "dictate" else MiloState.LISTENING
-    assert s.ui.state is expected
+    assert s.ui.state is (MiloState.IDLE if msg.get("tentative") else expected)
 
 
 def check_listen_stop(s: Stack, msg: dict) -> None:

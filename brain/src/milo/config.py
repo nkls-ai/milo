@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .core.registry import ConfigError, options_from
+from .core.types import LiveMode
 
 log = logging.getLogger("milo.config")
 
@@ -44,12 +45,20 @@ class TtsSettings:
 @dataclass(frozen=True)
 class DictationSettings:
     keep_history: bool = True
+    stream: str = "preview"
+    """While speaking: "off" (transcribe on release), "preview" (show the words live) or "type" (paste at pauses)."""
+
+    def __post_init__(self):
+        if self.stream not in {m.value for m in LiveMode}:
+            raise ConfigError(f"[dictation] stream must be one of {', '.join(m.value for m in LiveMode)}")
 
 
 @dataclass(frozen=True)
 class UiSettings:
     dictate_key: str = "fn"
     talk_key: str = "right_option"
+    hands_free_max_s: float = 300.0
+    """A recording locked on by a double tap stops by itself after this long."""
 
     def __post_init__(self):
         for name in ("dictate_key", "talk_key"):
@@ -58,6 +67,8 @@ class UiSettings:
         if self.dictate_key == self.talk_key:
             # The app ignores a ui_config that puts both modes on one key, so fail here instead.
             raise ConfigError(f"[ui] dictate_key and talk_key can't be the same key ({self.talk_key!r})")
+        if self.hands_free_max_s <= 0:
+            raise ConfigError("[ui] hands_free_max_s must be more than 0")
 
 
 @dataclass(frozen=True)
