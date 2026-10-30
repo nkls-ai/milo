@@ -15,6 +15,7 @@ from typing import Protocol, runtime_checkable
 import numpy as np
 
 from .conversations import ConversationInfo
+from .dictionary import Entries
 from .events import Event
 from .meetings import Chunk, MeetingInfo, MeetingNotes, TimedWord, Track, TranscriptLine, Turn
 from .memory import ConsolidationReport, Document, Episode, Fact, Hit, IndexItem, Recall, TurnContext
@@ -86,6 +87,17 @@ class Transcriber(Protocol):
     def interrupt(self) -> None:
         """End the pass running now as soon as possible, with Interrupted. Safe from any thread; does
         nothing if no pass runs or the engine can't stop one."""
+        ...
+
+
+@runtime_checkable
+class Vocabulary(Protocol):
+    """A transcriber that can be told which words to spell right (Whisper's prompt, Scribe's keyterms). Optional:
+    compose checks for it, like PlaybackTap."""
+
+    def use_vocabulary(self, words: Sequence[str]) -> None:
+        """From the next pass or session on, bias spelling towards these words, besides the ones config.toml
+        names. Any thread; the engine caps how many it takes."""
         ...
 
 
@@ -380,6 +392,24 @@ class ProfileMemory(Protocol):
 class TextCleaner(Protocol):
     def clean(self, text: str) -> str:
         """Turn a raw transcript into text ready to paste."""
+        ...
+
+
+@runtime_checkable
+class Dictionary(Protocol):
+    """dictionary.md: words dictation should get right, and the fixes learned from the user's corrections (ADR 21)."""
+
+    def entries(self) -> Entries:
+        """What the file says now. Cheap when it hasn't changed."""
+        ...
+
+    def changed(self) -> bool:
+        """The file changed since entries() last read it."""
+        ...
+
+    def learn(self, heard: str, meant: str) -> str:
+        """The user fixed `heard` to `meant` once. Returns "new", "again", "replaced", "undone", "kept", "full"
+        or "invalid" (see MarkdownDictionary.learn)."""
         ...
 
 

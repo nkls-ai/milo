@@ -67,6 +67,8 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
             add(styleMenu, title, #selector(pickDictationStyle(_:))).representedObject = style.rawValue
         }
         menu.addItem(withTitle: "Dictation style", action: nil, keyEquivalent: "").submenu = styleMenu
+        add(menu, "Dictation words…", #selector(openDictionary)).toolTip =
+            "The words Milo learned from your fixes. Change or delete any line."
         let remoteSeparator = NSMenuItem.separator()
         menu.addItem(remoteSeparator)
         remoteStatusItem = menu.addItem(withTitle: "", action: nil, keyEquivalent: "")
@@ -176,6 +178,16 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
     @objc private func toggleNotes() { controller.meetings?.toggle() }
     @objc private func resetPosition() { panel.placeBottomRight() }
     @objc private func openHome() { NSWorkspace.shared.open(paths.home) }
+    @objc private func openDictionary() { Self.openText(paths.dictionary) }
+
+    /// A plain text file in the user's editor for it, or in TextEdit when no app takes that kind of file.
+    public static func openText(_ url: URL) {
+        if NSWorkspace.shared.urlForApplication(toOpen: url) != nil {
+            NSWorkspace.shared.open(url)
+        } else if let textEdit = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.TextEdit") {
+            NSWorkspace.shared.open([url], withApplicationAt: textEdit, configuration: NSWorkspace.OpenConfiguration())
+        }
+    }
     @objc private func openLog() { NSWorkspace.shared.open(paths.brainLog) }
     @objc private func restartBrain() { controller.restartBrain() }
 }

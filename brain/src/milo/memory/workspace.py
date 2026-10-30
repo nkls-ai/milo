@@ -35,6 +35,11 @@ class Workspace:
         return self.home / "reminders.md"
 
     @property
+    def dictionary_path(self) -> Path:
+        """Words dictation should get right, and the fixes learned from the user's corrections (ADR 21)."""
+        return self.home / "dictionary.md"
+
+    @property
     def memory_dir(self) -> Path:
         return self.home / "memory"
 

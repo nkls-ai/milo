@@ -115,6 +115,7 @@
     {"type": "call_ended", "app": "Zoom"},
     {"type": "meeting_chunk", "id": "2026-10-30-1400-weekly-sync", "track": "them", "index": 3, "path": "/Users/you/Milo/meetings/2026-10-30-1400-weekly-sync/audio/them-0003.wav", "start": 60.0, "seconds": 30.0},
     {"type": "meeting_recording", "id": "2026-10-30-1400-weekly-sync", "on": true, "tracks": ["me"], "error": "I can only hear you, not the others. Turn on System Audio Recording for Milo in System Settings › Privacy & Security."},
-    {"type": "meeting_toggle", "on": false}
+    {"type": "meeting_toggle", "on": false},
+    {"type": "dictation_fixed", "fixes": [{"heard": "Cloud Code", "meant": "Claude Code"}, {"heard": "Nicholas", "meant": "Niklas"}]}
   ]
 }

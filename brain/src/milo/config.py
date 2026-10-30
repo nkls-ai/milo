@@ -77,6 +77,9 @@ class DictationSettings:
     keep_history: bool = True
     stream: str = "preview"
     """While speaking: "off" (transcribe on release), "preview" (show the words live) or "type" (paste at pauses)."""
+    learn: bool = True
+    """Learn from the user's fixes: when they change a word Milo pasted, he spells it their way next time (ADR 21).
+    The app reads the pasted text in the field for up to 45 s; the fixes go to dictionary.md."""
 
     def __post_init__(self):
         if self.stream not in {m.value for m in LiveMode}:

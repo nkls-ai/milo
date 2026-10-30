@@ -79,6 +79,8 @@ class Listening:
     away while the last words are still being transcribed. Results go out in the order the recordings were
     made, and only the newest release puts Milo back to rest.
 
+    `before` runs when the mic opens, before anything is transcribed.
+
     `hearing` streams talk recordings (and dictation, if allowed) to a cloud transcriber while they are made.
     Its guesses are the live words and its text wins, so the local model stays idle (and paged out); if it
     fails, the whole recording is transcribed here on release.
@@ -87,7 +89,7 @@ class Listening:
     def __init__(self, mic: AudioInput, transcriber: Transcriber, executor: Executor, ui: UiState,
                  dictation: DictationService, live_talk: LiveTalk, context: UserContext,
                  live: LiveMode = LiveMode.OFF, hearing: CloudHearing | None = None, *,
-                 yield_stt: Callable[[], None] = lambda: None):
+                 yield_stt: Callable[[], None] = lambda: None, before: Callable[[], None] = lambda: None):
         self._mic = mic
         self._transcriber = transcriber
         self._executor = executor
@@ -97,6 +99,7 @@ class Listening:
         self._context = context
         self._live_mode = live
         self._yield_stt = yield_stt
+        self._before = before
         self._mode: ListenMode | None = None
         self._shown = False
         self._live: LiveTranscript | None = None
@@ -135,6 +138,10 @@ class Listening:
         self._shown = False
         self._order = self._last = _InOrder(self._last)
         self._yield_stt()  # a meeting pass on the STT thread gives way, so nothing queues ahead of the user
+        try:
+            self._before()  # e.g. words the user just added to dictionary.md reach the transcriber
+        except Exception:
+            log.exception("could not prepare the recording")
         if not self._goes_to_cloud(mode):
             self._wake()
         if not tentative:

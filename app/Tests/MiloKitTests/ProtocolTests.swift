@@ -230,6 +230,8 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .meetingRecording(id: "2026-10-30-1400-weekly-sync", on: true, tracks: ["me"],
                               error: "I can only hear you, not the others. Turn on System Audio Recording for Milo in System Settings › Privacy & Security."),
             .meetingToggle(false),
+            .dictationFixed([DictationFix(heard: "Cloud Code", meant: "Claude Code"),
+                             DictationFix(heard: "Nicholas", meant: "Niklas")]),
         ]
         let encoder = JSONEncoder()
         let encoded = try commands.map { command in

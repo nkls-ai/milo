@@ -30,6 +30,28 @@ public protocol TextInserter: AnyObject {
     func copy(_ text: String)
 }
 
+/// The text field that has the keyboard focus in another app, as Accessibility reads it.
+public struct FocusedText: Equatable, Sendable {
+    /// The same number for the same field while it exists; another field gets another.
+    public var field: Int
+    public var value: String
+    /// Where the caret is (the selection's end), in UTF-16 units like Accessibility counts.
+    public var caret: Int
+
+    public init(field: Int, value: String, caret: Int) {
+        self.field = field
+        self.value = value
+        self.caret = caret
+    }
+}
+
+/// Reads the focused text field, to see what the user does to the words Milo pasted (ADR 21).
+public protocol FocusedTextReader: AnyObject {
+    /// nil when no plain text field is focused, or Milo mustn't read it: a password field, a password app,
+    /// Milo himself, a field whose value isn't readable or is too long. `done` runs on the main queue.
+    func read(_ done: @escaping (FocusedText?) -> Void)
+}
+
 /// Keyboard events from every app. Callbacks arrive on the main queue.
 public protocol KeyEventSource: AnyObject {
     var onEvent: ((KeyEvent) -> Void)? { get set }

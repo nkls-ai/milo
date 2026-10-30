@@ -8,11 +8,15 @@ public struct SettingsView: View {
     @Environment(\.miloTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let restart: () -> Void
+    /// Opens dictionary.md, the words Milo learned from your fixes. nil: no button.
+    let showWords: (() -> Void)?
 
-    public init(settings: SettingsModel, model: MiloModel, restart: @escaping () -> Void) {
+    public init(settings: SettingsModel, model: MiloModel, restart: @escaping () -> Void,
+                showWords: (() -> Void)? = nil) {
         self.settings = settings
         self.model = model
         self.restart = restart
+        self.showWords = showWords
     }
 
     public var body: some View {
@@ -63,6 +67,7 @@ public struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         CardHeading(icon: "mic", title: "Dictation", detail: "When your words appear.")
                         choices(stream)
+                        if let learn = report["dictation", "learn"] { learnRow(learn) }
                     }
                 }
             }
@@ -90,6 +95,34 @@ public struct SettingsView: View {
                 }
             }
         }
+    }
+
+    /// `[dictation] learn`, and the button that shows what was learned.
+    private func learnRow(_ learn: Setting) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Learn from your fixes")
+                        .font(.system(size: 13))
+                        .foregroundStyle(theme.ink)
+                    Text("Fix a word he pasted, and he spells it your way next time.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(theme.ink.opacity(0.65))
+                }
+                Spacer(minLength: 12)
+                Toggle("Learn from your fixes", isOn: Binding(
+                    get: { learn.value.bool ?? true },
+                    set: { settings.change(learn.section, learn.key, to: .bool($0)) }))
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+            }
+            if let showWords {
+                Button("Show the words", action: showWords)
+                    .buttonStyle(.link)
+                    .font(.system(size: 12))
+            }
+        }
+        .padding(.top, 4)
     }
 
     private func choices(_ setting: Setting) -> some View {

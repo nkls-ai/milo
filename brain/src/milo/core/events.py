@@ -669,6 +669,15 @@ class MeetingRecording(Command):
 
 
 @dataclass(frozen=True)
+class DictationFixed(Command):
+    """The user changed words Milo had pasted: each pair is (heard, meant), a few words each (ADR 21). Only these
+    pairs come from the app, never the field's text."""
+
+    type: ClassVar[str] = "dictation_fixed"
+    fixes: tuple[tuple[str, str], ...]
+
+
+@dataclass(frozen=True)
 class MeetingToggle(Command):
     """The user asked from the menu bar to start (on) or stop taking meeting notes."""
 
@@ -789,6 +798,11 @@ def parse_command(raw: object) -> Command:
                                         str(raw.get("error") or ""))
             case "meeting_toggle":
                 return MeetingToggle(raw["on"] is True)
+            case "dictation_fixed":
+                fixes = raw["fixes"]
+                if not isinstance(fixes, list) or not all(isinstance(f, dict) for f in fixes):
+                    raise ProtocolError("fixes must be a list of {heard, meant}")
+                return DictationFixed(tuple((str(f["heard"]), str(f["meant"])) for f in fixes))
     except (KeyError, TypeError, ValueError) as e:
         raise ProtocolError(f"bad {kind} message: {e}") from None
     raise ProtocolError(f"unknown message type {kind!r}")

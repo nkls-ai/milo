@@ -6,7 +6,8 @@ import logging
 from pathlib import Path
 
 from .config import UiSettings
-from .core.events import (AppResponse, CallEnded, CallStarted, Command, ConfirmAnswer, ContextUpdate, EditFact,
+from .core.events import (AppResponse, CallEnded, CallStarted, Command, ConfirmAnswer, ContextUpdate, DictationFixed,
+                          EditFact,
                           EmotionChanged, Event, Facts, ForgetFact, GetConversations, GetFacts, GetHistory,
                           GetSettings, GetUsage, HandsResult, HandsStop, ListenCancel, ListenConfirm, ListenStart,
                           ListenStop,
@@ -18,6 +19,7 @@ from .core.types import ListenMode
 from .services.app_bridge import AppBridge
 from .services.approvals import Approvals
 from .services.context import UserContext
+from .services.corrections import Corrections
 from .services.conversations import ConversationBrowser
 from .services.hands import HandsService
 from .services.heartbeat_runner import HeartbeatRunner
@@ -51,9 +53,11 @@ class Brain:
                  helpers: Orchestrator | None = None, memory: Memory | None = None,
                  routines: Routines | None = None, settings: Settings | None = None,
                  messages: MessageService | None = None, meetings: MeetingService | None = None,
-                 conversations: ConversationBrowser | None = None, usage: UsageService | None = None):
+                 conversations: ConversationBrowser | None = None, usage: UsageService | None = None,
+                 corrections: Corrections | None = None):
         self._conversations = conversations
         self._usage = usage
+        self._corrections = corrections
         self._meetings = meetings
         self._memory = memory
         self._routines = routines
@@ -183,6 +187,9 @@ class Brain:
             case CallStarted() | CallEnded() | MeetingChunk() | MeetingRecording() | MeetingToggle():
                 if self._meetings is not None:
                     self._meetings.handle(command)
+            case DictationFixed(fixes):
+                if self._corrections is not None:
+                    self._corrections.fixed(fixes)
             case GetFacts() | ForgetFact() | EditFact():
                 self._facts(command)
             case GetSettings():

@@ -11,7 +11,7 @@ Events that only draw (state, bubble, levels) go to every connected app. Request
 
 Only one brain runs per workspace. It takes an `flock` on `~/Milo/run/brain.lock` before it loads anything and holds it until the process ends, and a second brain exits at once. The app starts a brain only while nobody holds that lock: after a restart it waits for the old brain to let go, and it leaves a brain started by hand alone. It stops its brain with SIGTERM, since `uv run` passes that on and swallows SIGINT. Two brains would each load Whisper and OmniVoice, which on 16 GB fills swap and makes every Whisper pass several times slower.
 
-`~/Milo/` is the workspace. It holds `config.toml`, Milo's persona for the chat model (`persona.md`), the agent's instructions (`AGENTS.md`, `CLAUDE.md`), `memory/`, `reminders.md`, `state/` and `logs/`. The harness runs in `work/`, the one folder of the workspace its sandbox may write. It can read the rest, but Milo's control files (config, persona, instructions, reminders, routines, memory, secrets) change only through the Settings window, Milo's tags and tools that ask the user ([ADR 20](adr/0020-helpers-never-write-milos-control-files.md)).
+`~/Milo/` is the workspace. It holds `config.toml`, Milo's persona for the chat model (`persona.md`), the agent's instructions (`AGENTS.md`, `CLAUDE.md`), `memory/`, `reminders.md`, `dictionary.md`, `state/` and `logs/`. The harness runs in `work/`, the one folder of the workspace its sandbox may write. It can read the rest, but Milo's control files (config, persona, instructions, reminders, the dictation dictionary, routines, memory, secrets) change only through the Settings window, Milo's tags and tools that ask the user ([ADR 20](adr/0020-helpers-never-write-milos-control-files.md)).
 
 ## Brain layout
 
@@ -19,7 +19,8 @@ Only one brain runs per workspace. It takes an `flock` on `~/Milo/run/brain.lock
 brain/src/milo/
   core/           types, ports (Protocols), wire events, registries, clock, hands (the milo-mac tools and
                   their schemas), wording (plain titles and questions for app actions), logtext (what the log
-                  may say), routines (the recipe format and plain-word schedules). Depends on nothing.
+                  may say), routines (the recipe format and plain-word schedules), dictionary (the dictation dictionary's
+                  format, when a learned fix applies, the replacements). Depends on nothing.
   adapters/       concrete engines, each registering itself by name
     harness/      codex, claude (agent harnesses), claude_live (the streaming chat model)
     stt/          mlx_whisper
@@ -35,7 +36,7 @@ brain/src/milo/
     embed/        mlx_e5 (multilingual-e5-small in MLX), hash (hashed words, no model; tests and CI)
   connect/        the MCP tool server the worker loads (python -m milo.connect)
   eval/           the 30-task eval (python -m milo.eval) and the on-screen eval (python -m milo.eval.screen)
-  memory/         Workspace paths and bootstrap, profile.md, reminders.md, usage ledger, dictation history,
+  memory/         Workspace paths and bootstrap, profile.md, reminders.md, dictionary.md, usage ledger, dictation history,
                   transcript (the old single-file log), conversations (one file per conversation and the
                   index, the migration from transcript.jsonl), routines (the recipe folder and its state),
                   remote (state/messages.json: the paired phone), and
@@ -44,7 +45,8 @@ brain/src/milo/
                   consolidate (the night), recall_eval, meetings (FileMeetingStore,
                   JsonVoiceBook)
   proactive/      heartbeat engine, daily LLM budget, rules (one class per rule, registered by name)
-  services/       use cases built only on ports: listening (push-to-talk, barge-in), dictation,
+  services/       use cases built only on ports: listening (push-to-talk, barge-in), dictation, corrections
+                  (learning from the user's fixes to pasted dictation, ADR 21),
                   live_transcript (pause segmenter, phrases committed while recording, live words),
                   live_talk (user turns on the chat model), reply_stream (tags out of the reply stream),
                   chunker + speaker + speech_audio (streaming TTS), echo + barge_in (talking over Milo),
@@ -90,7 +92,7 @@ Beyond `milo.core.ports`, these entry points are fixed:
 | Function / class | Owner | Contract |
 |---|---|---|
 | `milo.adapters.load_builtin() -> None` | adapters | Imports every built-in adapter module so it registers. Idempotent. Heavy imports (torch, mlx) stay inside methods, never at module import. |
-| `milo.memory.workspace.Workspace(home)` | memory | `.ensure()` copies the template without overwriting, and creates dirs. Path properties: `config_path`, `reminders_path`, `profile_path`, `persona_path`, `state_dir`, `log_dir`, `socket_path`, `lock_path`, `usage_path`, `dictation_history_path`, `transcript_path`, `heartbeat_state_path`, `hands_socket_path`, `screens_dir`, `tools_socket_path`, for memory `episodes_dir`, `facts_path`, `journal_dir`, `memory_index_path`, `profile_snapshot_path`, `sleep_state_path`, and for routines `routines_dir`, `routine_runs_path`, `routine_state_path`, `routine_drafts_dir`. |
+| `milo.memory.workspace.Workspace(home)` | memory | `.ensure()` copies the template without overwriting, and creates dirs. Path properties: `config_path`, `reminders_path`, `profile_path`, `persona_path`, `state_dir`, `log_dir`, `socket_path`, `lock_path`, `usage_path`, `dictation_history_path`, `dictionary_path`, `transcript_path`, `heartbeat_state_path`, `hands_socket_path`, `screens_dir`, `tools_socket_path`, for memory `episodes_dir`, `facts_path`, `journal_dir`, `memory_index_path`, `profile_snapshot_path`, `sleep_state_path`, and for routines `routines_dir`, `routine_runs_path`, `routine_state_path`, `routine_drafts_dir`. |
 | `milo.memory.routines.MarkdownRoutineBook(folder, runs, drafts)` | memory | `RoutineBook` over `routines/*.md`. Re-parses a file only when its mtime or size changes. `update(slug, fields)` rewrites front matter lines in place; `delete` moves the file to `routines/deleted/`. |
 | `milo.memory.reminders.MarkdownReminders(path)` | memory | `ReminderBook`. Re-parses only when mtime changes. `add(due, text)` appends a line. Shared by the heartbeat and LiveTalk. |
 | `milo.memory.profile.MarkdownProfile(path)` | memory | `ProfileMemory` over `memory/profile.md`. Used only with `[memory] enabled = false`. |
@@ -128,6 +130,8 @@ The key going down first queues `Transcriber.wake()`: a short pass over a second
 All passes run one at a time on the STT thread. A quick pass encodes the audio plus 1 s of silence, but at least 10 s, instead of a padded 30 s window, so it costs roughly its own length (0.3 s for a short phrase on an idle M3 against 1.1 s). With less than 10 s the decoder loses track of where speech ends and repeats itself; a quick decode that loops, runs past 8 tokens a second or that Whisper itself doubts goes through the full window instead. Quick passes on single phrases missed a few more words than full windows (on 48 test phrases 2.7% against 1.7%), but on whole test dictations, phrase by phrase, they made fewer errors than one full pass over the recording (0.4% against 1.6%). `stream = "off"` runs no live passes and transcribes the whole recording on release with full windows.
 
 **Measured** with `scripts/e2e-dictation.sh` (macOS voices replayed in real time into a real brain, on an M3 with 16 GB while a browser and several agents ran: load average 20 to 25, the models paged out between dictations). Release to paste, `preview` against `off`: 2 s dictations 0.41 to 1.41 s (2.8 to 4.7 s), 15 s 0.25 to 0.75 s (3.1 to 4.7 s), 60 s 0.86 and 1.29 s (14.5 to 15.9 s). The first live words came 0.4 to 1.6 s after speech began, the listening state 80 ms after key-down. Not one word of 488 was lost (word error 0.4%); `off` lost 6 (1.6%). What is left of the release is one quick pass, 0.4 s for a short phrase on a quiet Mac and up to 1.4 s on this loaded one. Before these changes (main at 5a5b284) the same run pasted after 0.80 to 2.31 s.
+
+**Learning from fixes** ([ADR 21](adr/0021-dictation-learns-from-your-fixes.md)). After a paste the app's `PasteWatcher` (`app/Sources/MiloKit/Dictation/`) reads the focused field through `AXFocusedText` 0.3 s later and then every 0.5 s, for up to 45 s or until the focus moves, the span is gone or Milo pastes elsewhere. It finds the pasted words between 24-character anchors (`PastedSpan`), and at the end `CorrectionDiff` keeps only small fixes: 1 to 3 words for 1 to 3, spelled alike, not a capital at a sentence start, not a change between two real words or two weekdays. Only those pairs go to the brain (`dictation_fixed`); password fields, password apps and fields over 100,000 characters are never read, and nothing is read while `[dictation] learn` is off. The brain's `Corrections` counts them in `~/Milo/dictionary.md` (`MarkdownDictionary`), says "Learned: …" in the bubble the first time unless Milo is busy, and hands every learned word to the transcribers through the `Vocabulary` port (Whisper's prompt after `[stt.mlx_whisper] vocabulary`, Scribe's keyterms). `DictationFixes` wraps the dictation cleaner and replaces heard words with meant ones before the paste: always for a line the user wrote, after one sighting for a name, after two otherwise. `Listening` calls `Corrections.refresh` when a key goes down, so a hand edit of the file reaches Whisper with one `stat()`. Settings › Dictation has the switch and "Show the words"; the menu bar has "Dictation words…".
 
 The menu bar item's "Dictation style" changes `[dictation] stream` the way the Settings window does (`set_setting`, see Settings below): the brain saves it and uses it from the next recording. The menu ticks the value from the brain's last `settings`, which the brain also sends on connect.
 
@@ -266,7 +270,7 @@ The Usage page in the Milo window (⌘2, under Today in the sidebar) shows token
 The Settings window changes a few keys of `~/Milo/config.toml` through the brain; the app stores nothing.
 
 - **Protocol.** The app sends `get_settings` when the window opens and `set_setting {section, key, value}` for each change, from the window or the menu's "Dictation style". The brain sends `settings` on connect and answers both with `settings {settings, restart, error}`: one row per setting with `value`, its `options` and their plain `labels` (both empty for a switch), and `live`. `restart` is true while a saved change waits for one; `error` says in plain words why the last change wasn't saved.
-- **What can change.** `settings.SETTINGS` lists them: `[ui] character`, `[chat] updates`, `[dictation] stream`, `[ui] dictate_key`, `talk_key`, `whats_this_key` and `[ui] voice`. Anything else is refused.
+- **What can change.** `settings.SETTINGS` lists them: `[ui] character`, `[chat] updates`, `[dictation] stream`, `[dictation] learn`, `[ui] dictate_key`, `talk_key`, `whats_this_key` and `[ui] voice`. Anything else is refused.
 - **Saving.** `config_file.TomlConfigFile`, the brain's only writer of config.toml, edits the file with tomlkit, so comments, order and blank lines stay, and a comment at the end of the changed line keeps its column. It loads the edited text with `Config` first and writes nothing if it fails (a clash of keys, a wrong type, an already broken file); the write goes to a temporary file that replaces config.toml.
 - **Applying.** `compose.py` hands `Settings` one function per key that can change live: the look and the keys re-send `ui_config` (and later connects send the new one), `voice` sets `Speaker.silent` (replies still show piece by piece at speaking pace, without audio), `stream` sets `Listening.live_mode` for the next recording, `[chat] updates` goes to `LiveSettings` at once (the helpers' updates; it would otherwise notice the changed file within 2 s). Every setting in the window applies live today; a key without a function would wait for a restart, and the window would then show a Restart Milo button, which restarts the brain.
 

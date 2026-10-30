@@ -39,7 +39,8 @@ let controller = MiloController(
                                       promptForAccessibility: false),
     screen: screen,
     meetings: MeetingController(model: model, brain: brain, recorder: MacMeetingRecorder(brainLock: paths.brainLock),
-                                signals: MacCallSignals(), scheduler: scheduler))
+                                signals: MacCallSignals(), scheduler: scheduler),
+    pasteWatcher: PasteWatcher(reader: AXFocusedText(), words: SpellCheckWords(), scheduler: scheduler))
 
 // Windows and the status item are created once the app has finished launching.
 var panel: OverlayPanel?
@@ -56,7 +57,7 @@ let lifecycle = AppLifecycle(
         workingFrame = WorkingFrame(model: model)
         workingOutline = WorkingOutline(model: model) { screen.stopPressed() }
         let window = ConversationWindow(controller: controller)
-        let settingsWindow = SettingsWindow(controller: controller)
+        let settingsWindow = SettingsWindow(controller: controller, dictionary: paths.dictionary)
         window.onSettings = { settingsWindow.open() }
         overlay.onClick = { window.toggle() }
         model.onOpenHelper = { window.show(helper: $0) }

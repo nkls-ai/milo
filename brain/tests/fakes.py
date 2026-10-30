@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 from datetime import date, datetime, timedelta
+from pathlib import Path
 
 import numpy as np
 
@@ -408,6 +409,42 @@ class MemoryProfile:
     def remember(self, fact: str) -> None:
         if fact not in self.facts:
             self.facts.append(fact)
+
+
+class MemoryDictionary:
+    """Dictionary over a Markdown string, with the real format and learning rules."""
+
+    def __init__(self, markdown: str = ""):
+        from milo.memory.dictionary import MarkdownDictionary
+
+        self.markdown = markdown
+        self._file = MarkdownDictionary(Path("/nonexistent/dictionary.md"))
+        self._file._read = lambda: self.markdown
+        self._file._write = self._wrote
+        self._file._stat = lambda: (hash(self.markdown), len(self.markdown))
+        self.learned: list[tuple[str, str, str]] = []
+
+    def _wrote(self, text: str) -> None:
+        self.markdown = text
+
+    def entries(self):
+        return self._file.entries()
+
+    def changed(self) -> bool:
+        return self._file.changed()
+
+    def learn(self, heard: str, meant: str) -> str:
+        outcome = self._file.learn(heard, meant)
+        self.learned.append((heard, meant, outcome))
+        return outcome
+
+
+class ListVocabulary:
+    def __init__(self):
+        self.words: list[list[str]] = []
+
+    def use_vocabulary(self, words) -> None:
+        self.words.append(list(words))
 
 
 class UpperCleaner:

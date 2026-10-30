@@ -14,7 +14,7 @@ from .brain import Brain
 from .config import Config, brief_time
 from .core.clock import SystemClock
 from .core.conversations import SplitRules
-from .core.ports import Harness, LiveModel, PlaybackTap, TimedTranscriber, Transcriber, Voice
+from .core.ports import Harness, LiveModel, PlaybackTap, TimedTranscriber, Transcriber, Vocabulary, Voice
 from .core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, CHANNELS, DIARIZERS, EMBEDDERS, HARNESSES, LIVE_MODELS,
                             STREAMING_TRANSCRIBERS, TEXT_CLEANERS, TRANSCRIBERS, VOICES, AdapterContext, ConfigError,
                             Registry)
@@ -30,6 +30,7 @@ from .services.cloud_hearing import CloudHearing
 from .services.context import UserContext
 from .services.conversations import ConversationBrowser
 from .services.conversation import Conversation
+from .services.corrections import Corrections, DictationFixes
 from .services.dictation import DictationService
 from .services.fallback_voice import NOTICE as VOICE_NOTICE
 from .services.fallback_voice import FallbackVoice, VoiceNotice
@@ -181,7 +182,8 @@ def _engines(p: Parts) -> None:
 
 
 def _stores(p: Parts) -> None:
-    """The files in the workspace the services keep: usage, dictations, profile, reminders."""
+    """The files in the workspace the services keep: usage, dictations, the dictionary, profile, reminders."""
+    from .memory.dictionary import MarkdownDictionary
     from .memory.history import JsonlDictationHistory
     from .memory.ledger import JsonlUsageLedger
     from .memory.profile import MarkdownProfile
@@ -191,6 +193,7 @@ def _stores(p: Parts) -> None:
     p.ledger = JsonlUsageLedger(workspace.usage_path, p.clock)
     p.history = JsonlDictationHistory(workspace.dictation_history_path, p.clock) \
         if p.config.dictation.keep_history else None
+    p.dictionary = MarkdownDictionary(workspace.dictionary_path)
     p.profile = MarkdownProfile(workspace.profile_path)
     p.reminders = MarkdownReminders(workspace.reminders_path)
 
@@ -223,7 +226,9 @@ def _presence(p: Parts) -> None:
                                   busy=attention.using_voice)
                       for text in (VOICE_NOTICE, HEARING_NOTICE))
     p.voice.on_switch = p.notices[0]
-    p.hearing = _cloud_hearing(config, p.ctx, p.notices[1])
+    p.hearing_engine = _cloud_engine(config, p.ctx)
+    p.hearing = CloudHearing(p.hearing_engine, dictation=config.stt.cloud_dictation, on_switch=p.notices[1]) \
+        if p.hearing_engine is not None else None
     p.backchannel = Backchannel(speaker, enabled=config.chat.backchannels)
     rules = SplitRules(idle_s=config.chat.conversation_idle_reset_s)
     store = JsonlConversationStore(workspace.conversations_dir)
@@ -347,9 +352,16 @@ def _talk(p: Parts) -> None:
     p.helpers.on_result = live_talk.note
     p.updates.speak = live_talk.speak_update
     background_stt = p.background_stt
-    p.listening = Listening(p.mic, p.transcriber, p.stt_executor, p.ui, DictationService(p.cleaner, p.history, p.ui),
+    # The dictionary's words go to every engine that hears dictation; its fixes apply before each paste (ADR 21).
+    p.corrections = corrections = Corrections(
+        p.dictionary, p.ui, [e for e in (p.transcriber, p.hearing_engine) if isinstance(e, Vocabulary)],
+        busy=p.attention.occupied, enabled=config.dictation.learn)
+    corrections.push()
+    dictation = DictationService(DictationFixes(p.cleaner, p.dictionary), p.history, p.ui)
+    p.listening = Listening(p.mic, p.transcriber, p.stt_executor, p.ui, dictation,
                             live_talk, p.context, LiveMode(config.dictation.stream), hearing=p.hearing,
-                            yield_stt=background_stt.yield_now if background_stt is not None else lambda: None)
+                            yield_stt=background_stt.yield_now if background_stt is not None else lambda: None,
+                            before=corrections.refresh)
     p.barge_in = None
     if config.chat.voice_barge_in:
         if isinstance(p.output, PlaybackTap):
@@ -419,7 +431,7 @@ def _brain(p: Parts) -> None:
     from .memory.usage_log import JsonlUsageHistory
     from .services.usage import UsageService
 
-    listening, speaker, live_settings = p.listening, p.speaker, p.live_settings
+    listening, speaker, live_settings, corrections = p.listening, p.speaker, p.live_settings, p.corrections
 
     def use_ui(changed: Config) -> None:
         p.brain.use_ui(changed.ui)
@@ -430,12 +442,15 @@ def _brain(p: Parts) -> None:
     def use_stream(changed: Config) -> None:
         listening.live_mode = LiveMode(changed.dictation.stream)
 
+    def use_learn(changed: Config) -> None:
+        corrections.enabled = changed.dictation.learn
+
     def use_updates(changed: Config) -> None:
         live_settings.use(changed.chat.updates, changed.harness.max_helpers)
 
     live = {("ui", "dictate_key"): use_ui, ("ui", "talk_key"): use_ui,
             ("ui", "whats_this_key"): use_ui, ("ui", "voice"): use_voice, ("dictation", "stream"): use_stream,
-            ("chat", "updates"): use_updates}
+            ("dictation", "learn"): use_learn, ("chat", "updates"): use_updates}
     settings = Settings(TomlConfigFile(p.workspace.config_path), p.config, p.ui, live)
     usage = UsageService(JsonlUsageHistory(p.workspace.usage_path, p.workspace.dictation_history_path),
                          CliAccounts(p.config, p.workspace.home), p.ui, p.clock)
@@ -443,7 +458,7 @@ def _brain(p: Parts) -> None:
                     approvals=p.approvals, bridge=p.bridge, hands=p.hands, screens=p.workspace.screens_dir,
                     helpers=p.helpers, memory=p.mem.memory if p.mem is not None else None, routines=p.routines,
                     settings=settings, messages=p.messages, meetings=p.meetings,
-                    conversations=p.conversations, usage=usage)
+                    conversations=p.conversations, usage=usage, corrections=corrections)
 
 
 BUILD_STEPS = (_workspace, _engines, _stores, _presence, _helpers, _meetings, _talk, _messages, _tool_socket,
@@ -522,7 +537,7 @@ def _persona(path: Path):
     return read
 
 
-def _cloud_hearing(config: Config, ctx: AdapterContext, notice) -> CloudHearing | None:
+def _cloud_engine(config: Config, ctx: AdapterContext):
     """[stt] talk: the cloud transcriber that listens along while the user talks to Milo. None: all local."""
     name = config.stt.talk
     if not name:
@@ -532,8 +547,7 @@ def _cloud_hearing(config: Config, ctx: AdapterContext, notice) -> CloudHearing 
     options = config.section("stt").get(name, {})
     if not isinstance(options, dict):
         raise ConfigError(f"[stt.{name}] must be a table")
-    engine = STREAMING_TRANSCRIBERS.create(name, options, ctx)
-    return CloudHearing(engine, dictation=config.stt.cloud_dictation, on_switch=notice)
+    return STREAMING_TRANSCRIBERS.create(name, options, ctx)
 
 
 def _fallback_voice(config: Config, ctx: AdapterContext):
