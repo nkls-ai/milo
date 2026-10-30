@@ -358,6 +358,8 @@ async def converse(reader, writer, text: str, *, cleanup: tuple[str, ...] | None
 # During cleanup the runner says yes only to these, in the case's own apps; everything else is a no.
 _CLEANUP_SCRIPT_BAD = re.compile(r"\b(send|forward|share|reply|redirect|do shell script|keystroke|key code|"
                                  r"save in|make new|set content|password|keychain)\b", re.IGNORECASE)
+_CLEANUP_QUESTION_BAD = re.compile(r"\b(send|forward|share|redirect|trash|empty|password|keychain)\b",
+                                   re.IGNORECASE)
 _CLEANUP_SCRIPT_GOOD = re.compile(r"\b(close\b.*\bsaving no|quit|delete)\b", re.IGNORECASE)
 
 
@@ -368,8 +370,12 @@ def _cleanup_answer(apps: tuple[str, ...], question: str, run: Run) -> bool:
         return False
     if re.fullmatch(rf"May I use ({named}) for this\? You'll see each step\.", question):
         return True  # the careful gate; every step after it is checked on its own
-    if re.match(r"(Close|Quit|Delete) ", question) and not _CLEANUP_SCRIPT_BAD.search(question):
-        return True  # the chat model starting the cleanup task; again every step is checked on its own
+    # The chat model starting the cleanup task; again every step inside is checked on its own.
+    short = "|".join(re.escape(a.split()[-1]) for a in apps)
+    if not _CLEANUP_QUESTION_BAD.search(question) and (
+            re.fullmatch(rf"(Close|Quit) the [^?]*\b({named}|{short})\b[^?]* without saving( it)?\?", question)
+            or ("Mail" in apps and re.fullmatch(r"Delete the (reply |test )?draft[^?]*\?", question))):
+        return True
     if re.fullmatch(rf"I'm about to click “(Delete|Don['’]t Save)” in ({named})\. Go ahead\?", question):
         return True
     if not re.fullmatch(rf"Run a script in ({named})\? It's in my window\.", question):
