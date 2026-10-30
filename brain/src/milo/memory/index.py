@@ -1,7 +1,9 @@
 """The memory search index: state/memory.sqlite. A cache of the logs; delete it and it is rebuilt.
 
-Full-text search with SQLite FTS5 and vector search (sqlite-vec, or NumPy if that extension can't load),
-merged by reciprocal rank fusion. Blocking and not thread-safe: the brain uses it from its memory thread.
+Full-text search with SQLite FTS5 and vector search, merged by reciprocal rank fusion. Vectors are searched
+with NumPy over a matrix held in memory (28 MB for a year of a busy Milo), or with the sqlite-vec extension,
+which keeps them on disk but scans 5x slower (33 ms against 7 ms over 6,600 items, measured on the M3).
+Blocking and not thread-safe: the brain uses it from its memory thread.
 """
 
 from __future__ import annotations
@@ -57,6 +59,11 @@ def terms(text: str) -> list[str]:
     """The words of `text` worth searching for: no stopwords, no single letters, each once."""
     return list(dict.fromkeys(w for w in _WORD.findall(text.lower())
                               if len(w) > 1 and w not in STOPWORDS and w not in TIME_WORDS))
+
+
+def _stem(word: str) -> str:
+    """A crude stem for a prefix search: "allergies" finds "allergic", "Geburtstag" finds "Geburtstage"."""
+    return word[:max(5, len(word) - 3)] if len(word) >= 7 else word
 
 
 class SqliteMemoryIndex:
@@ -254,18 +261,12 @@ class SqliteMemoryIndex:
     def _load_vectors(self, db: sqlite3.Connection) -> str:
         if self._want_vectors == "numpy":
             return "numpy"
-        try:
-            import sqlite_vec
+        import sqlite_vec
 
-            db.enable_load_extension(True)
-            sqlite_vec.load(db)
-            db.enable_load_extension(False)
-            return "sqlite-vec"
-        except Exception as e:  # no extension support in this Python, or no wheel
-            if self._want_vectors == "sqlite-vec":
-                raise
-            log.info("sqlite-vec unavailable (%s); searching vectors with NumPy", e)
-            return "numpy"
+        db.enable_load_extension(True)
+        sqlite_vec.load(db)
+        db.enable_load_extension(False)
+        return "sqlite-vec"
 
     def _put(self, db: sqlite3.Connection, item: IndexItem, vector: np.ndarray) -> None:
         old = db.execute("SELECT n FROM items WHERE id=?", (item.id,)).fetchone()
@@ -318,7 +319,7 @@ class SqliteMemoryIndex:
         words = terms(query)
         if not words:
             return []
-        match = " OR ".join(f'"{w}"*' if len(w) >= 4 else f'"{w}"' for w in words)
+        match = " OR ".join(f'"{_stem(w)}"*' if len(w) >= 4 else f'"{w}"' for w in words)
         sql = ("SELECT items.n FROM items_fts JOIN items ON items.n = items_fts.rowid "
                "WHERE items_fts MATCH ?" + _filters(kinds, since, until) + " ORDER BY bm25(items_fts) LIMIT ?")
         return [n for (n,) in db.execute(sql, (match, *_filter_args(kinds, since, until), CANDIDATES))]

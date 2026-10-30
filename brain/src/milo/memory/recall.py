@@ -28,9 +28,14 @@ _CAPITALIZED = re.compile(r"\b[A-ZÄÖÜ][\wäöüß-]+")
 
 @dataclass(frozen=True)
 class RecallTuning:
-    min_similarity: float = 0.82
-    """A vector match counts on its own only above this cosine; below, it needs a matching word too. Depends
-    on the embedder: e5 puts unrelated text near 0.75, hashed words near 0."""
+    min_similarity: float = 0.78
+    """A vector match without a matching word counts only above this cosine. Depends on the embedder: e5 puts
+    unrelated text near 0.75-0.85, hashed words near 0."""
+    keep_ratio: float = 0.6
+    """...and only if it is this close to the best match, as a share of the way from min_similarity up to it.
+    An absolute line can't tell apart e5's matches from its noise; the gap to the best match can."""
+    vector_only: int = 3
+    """Most matches without a matching word in one recall."""
     candidates: int = 30
     window_episodes: int = 8
     """Most episodes a time phrase pulls in on its own."""
@@ -57,13 +62,17 @@ class HybridRecaller:
         if span is not None:
             hits += [h for h in self._index.search(turn, kinds=("episode",), since=span[0], until=span[1],
                                                    limit=t.window_episodes)]
-        for hit in hits:
-            item = self._thing(hit, current)
-            if item is None or item.id in context.exclude or (not context.include_untrusted and not _trusted(item)):
-                continue
+        found = [(hit, item) for hit in hits if (item := self._thing(hit, current)) is not None
+                 and item.id not in context.exclude and (context.include_untrusted or _trusted(item))]
+        best = max((hit.similarity for hit, _ in found), default=0.0)
+        line_at = t.min_similarity + t.keep_ratio * max(0.0, best - t.min_similarity)
+        vector_only = 0
+        for hit, item in found:
             inside = span is not None and isinstance(item, Episode) and span[0] <= item.at < span[1]
-            if not inside and hit.text_rank is None and hit.similarity < t.min_similarity:
-                continue
+            if not inside and hit.text_rank is None:
+                if hit.similarity < line_at or vector_only >= t.vector_only:
+                    continue
+                vector_only += 1
             score = hit.score * self._boost(item, context, named, inside)
             if item.id not in scored or scored[item.id][0] < score:
                 scored[item.id] = (score, item)

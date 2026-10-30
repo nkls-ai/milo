@@ -7,12 +7,13 @@ from datetime import datetime, timedelta
 import pytest
 
 from milo.adapters.embed.hashing import HashEmbedder
-from milo.core.memory import Episode, Fact, IndexItem, TurnContext, estimate_tokens, new_id
+from milo.core.memory import Episode, Fact, Hit, IndexItem, TurnContext, estimate_tokens, new_id
 from milo.memory.episodes import JsonlEpisodeLog
 from milo.memory.facts import JsonlFactStore
 from milo.memory.index import SqliteMemoryIndex, terms
 from milo.memory.recall import HybridRecaller, RecallTuning, render
 from milo.memory.when import window
+from tests.fakes import MemoryFactStore
 
 NOW = datetime(2026, 10, 30, 18, 0)  # a Friday
 HASH_TUNING = RecallTuning(min_similarity=0.3)
@@ -210,3 +211,23 @@ def test_the_current_app_and_named_people_move_episodes_up(tmp_path):
     r, _ = recaller(tmp_path, episodes_=[other, excel])
     got = r.recall("the budget sheet", TurnContext(NOW, app="Microsoft Excel"), 800)
     assert got.episodes[0] == excel
+
+
+class Hits:
+    """A MemoryIndex that answers every search with the same hits."""
+
+    def __init__(self, *hits):
+        self.hits = list(hits)
+
+    def search(self, query, *, kinds=(), since=None, until=None, limit=20):
+        return self.hits[:limit]
+
+
+def test_a_vector_match_alone_must_be_close_to_the_best_one():
+    near, close, far = ep("The flight to Lisbon is booked."), ep("Packed for the trip."), ep("Spelled necessary.")
+    items = [IndexItem.of_episode(e) for e in (near, close, far)]
+    index = Hits(Hit(items[0], 0.03, None, 0, 0.86), Hit(items[1], 0.02, None, 1, 0.84),
+                 Hit(items[2], 0.01, None, 2, 0.80))
+    r = HybridRecaller(index, MemoryFactStore(), RecallTuning(min_similarity=0.78))
+    got = r.recall("When do I fly?", TurnContext(NOW), 800)
+    assert got.episodes == (near, close), "0.80 is far below the best match, even though it clears the floor"
