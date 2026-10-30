@@ -43,8 +43,11 @@ class FakeHarness:
         self.steps = list(steps)
         """Reported to on_step on every call, before the reply."""
 
-    async def reply(self, prompt: str, session_id: str | None, *, on_step=None) -> Reply:
+    async def reply(self, prompt: str, session_id: str | None, *, on_step=None, on_session=None,
+                    on_plan=None) -> Reply:
         self.calls.append((prompt, session_id))
+        if on_session is not None:
+            on_session(session_id or f"s{len(self.calls)}")
         for step in self.steps if on_step is not None else ():
             on_step(step)
         if self.delay_s:
@@ -55,6 +58,76 @@ class FakeHarness:
         if isinstance(item, str):
             return Reply(Emotion.HAPPY, item, Usage(100, 50, 10), session_id or f"s{len(self.calls)}")
         return item
+
+
+class WorkerScript:
+    """What one scripted worker turn does, in order: report steps, plan progress, wait, then answer.
+
+    Entries: a Step (reported to on_step), ("plan", done, total), ("sleep", seconds), an asyncio.Event (wait
+    for it), and last a Reply, a str (said happily) or a HarnessError (raised). `session` is the id it names.
+    """
+
+    def __init__(self, *actions, session: str = ""):
+        self.actions = actions
+        self.session = session
+        self.started = asyncio.Event()
+        self.cancelled = False
+        self.prompt = ""
+        self.session_id: str | None = None
+
+
+class ScriptedHarness:
+    """A worker harness that plays one WorkerScript per call, in parallel, like separate worker processes.
+
+    A call without a script left answers "ok" at once. Cancelling a call marks its script cancelled, the way
+    the real adapters end the CLI.
+    """
+
+    def __init__(self, *scripts: WorkerScript, name: str = "scripted"):
+        self.name = name
+        self.scripts = deque(scripts)
+        self.played: list[WorkerScript] = []
+        self.running = 0
+        self.most_at_once = 0
+
+    def add(self, *scripts: WorkerScript) -> None:
+        self.scripts.extend(scripts)
+
+    async def reply(self, prompt: str, session_id: str | None, *, on_step=None, on_session=None,
+                    on_plan=None) -> Reply:
+        script = self.scripts.popleft() if self.scripts else WorkerScript("ok")
+        script.prompt, script.session_id = prompt, session_id
+        self.played.append(script)
+        self.running += 1
+        self.most_at_once = max(self.most_at_once, self.running)
+        script.started.set()
+        session = session_id or script.session or f"{self.name}-{len(self.played)}"
+        try:
+            if on_session is not None:
+                on_session(session)
+            for action in script.actions:
+                if isinstance(action, Step):
+                    if on_step is not None:
+                        on_step(action)
+                elif isinstance(action, tuple) and action[0] == "plan":
+                    if on_plan is not None:
+                        on_plan(action[1], action[2])
+                elif isinstance(action, tuple) and action[0] == "sleep":
+                    await asyncio.sleep(action[1])
+                elif isinstance(action, asyncio.Event):
+                    await action.wait()
+                elif isinstance(action, HarnessError):
+                    raise action
+                elif isinstance(action, str):
+                    return Reply(Emotion.HAPPY, action, Usage(100, 50, 10), session)
+                elif isinstance(action, Reply):
+                    return action
+            return Reply(Emotion.HAPPY, "ok", Usage(100, 50, 10), session)
+        except asyncio.CancelledError:
+            script.cancelled = True
+            raise
+        finally:
+            self.running -= 1
 
 
 class FakeTranscriber:
@@ -331,7 +404,8 @@ class FakeEyes:
 
 
 class FakeHands:
-    """AppHands. `targets[tool]` answers describe; `results[tool]` is a dict or a HandsError to raise.
+    """AppHands. `targets[tool]` answers describe; `results[tool]` is a dict or a HandsError to raise, or a list
+    of those, one per call.
 
     `gate` (an asyncio.Event) holds every non-describe action until set or cancel()."""
 
@@ -353,6 +427,8 @@ class FakeHands:
             if self._cancelled.is_set():
                 raise HandsError("stopped")
         result = self.results.get(tool, {"text": f"{tool} done"})
+        if isinstance(result, list):
+            result = result.pop(0)
         if isinstance(result, HandsError):
             raise result
         return result
@@ -376,3 +452,111 @@ class FakeConfirm:
     async def confirm(self, summary: str) -> bool:
         self.asked.append(summary)
         return self.answers.popleft() if self.answers else False
+
+
+class MemoryEpisodeLog:
+    """EpisodeLog in a list. Same rules as the file: a newer line with the same id wins, forget hides."""
+
+    def __init__(self):
+        self.lines: list = []
+        self.forgotten: set[str] = set()
+
+    def append(self, episode) -> None:
+        self.lines.append(episode)
+
+    def between(self, start, end) -> list:
+        latest = {e.id: e for e in self.lines}
+        return sorted((e for e in latest.values() if start <= e.at < end and e.id not in self.forgotten),
+                      key=lambda e: (e.at, e.id))
+
+    def forget(self, id: str, reason: str) -> None:
+        if not any(e.id == id for e in self.lines):
+            raise KeyError(id)
+        self.forgotten.add(id)
+
+
+class MemoryFactStore:
+    """FactStore in a dict."""
+
+    def __init__(self, *facts):
+        self.facts: dict = {}
+        self.log: list[tuple[str, str, str]] = []
+        for fact in facts:
+            self.add(fact)
+
+    def current(self) -> list:
+        replaced = {f.replaces for f in self.facts.values() if f.replaces and not f.retired}
+        return [f for f in self.facts.values() if not f.retired and f.id not in replaced]
+
+    def add(self, fact, *, by: str = "") -> None:
+        self.facts[fact.id] = fact
+        self.log.append(("add", fact.id, by))
+
+    def retire(self, id: str, reason: str, *, by: str = "") -> None:
+        from dataclasses import replace
+        self.facts[id] = replace(self.facts[id], retired=True)
+        self.log.append(("retire", id, by))
+
+    def restore(self, id: str, reason: str, *, by: str = "") -> None:
+        from dataclasses import replace
+        self.facts[id] = replace(self.facts[id], retired=False)
+        self.log.append(("restore", id, by))
+
+    def get(self, id: str):
+        return self.facts.get(id)
+
+    def forgotten(self) -> list:
+        ids = [id for op, id, by in reversed(self.log) if op == "retire" and by in ("you", "worker")]
+        return [self.facts[id] for id in dict.fromkeys(ids) if self.facts[id].retired]
+
+
+class FakeMemoryIndex:
+    """MemoryIndex over a dict: words shared with the query make a hit. refresh() follows the fake logs."""
+
+    def __init__(self, facts=None, episodes=None):
+        self.items: dict = {}
+        self.facts = facts
+        self.episodes = episodes
+        self.searches: list[str] = []
+
+    def upsert(self, items) -> None:
+        for item in items:
+            self.items[item.id] = item
+
+    def remove(self, ids) -> None:
+        for id in ids:
+            self.items.pop(id, None)
+
+    def search(self, query, *, kinds=(), since=None, until=None, limit=20) -> list:
+        from milo.core.memory import Hit
+        from milo.memory.index import terms
+
+        self.searches.append(query)
+        words = set(terms(query))
+        found = []
+        for item in self.items.values():
+            if (kinds and item.kind not in kinds) or (since and item.at < since) or (until and item.at >= until):
+                continue
+            shared = len(words & set(terms(item.text)))
+            if shared or since is not None:
+                found.append((shared, item))
+        found.sort(key=lambda x: -x[0])
+        return [Hit(item, 1 / (60 + rank), rank if shared else None, None, 0.0)
+                for rank, (shared, item) in enumerate(found[:limit])]
+
+    def rebuild(self) -> None:
+        self.items.clear()
+        self.refresh()
+
+    def refresh(self, limit=None) -> int:
+        from datetime import datetime
+
+        from milo.core.memory import IndexItem
+
+        want = {}
+        if self.facts is not None:
+            want |= {f.id: IndexItem.of_fact(f) for f in self.facts.current()}
+        if self.episodes is not None:
+            want |= {e.id: IndexItem.of_episode(e) for e in self.episodes.between(datetime.min, datetime.max)}
+        self.items = want
+        return 0  # all at once, so it is up to date after one call

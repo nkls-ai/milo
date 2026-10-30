@@ -2,7 +2,16 @@ import SwiftUI
 
 struct CharacterView: View {
     @ObservedObject var model: MiloModel
-    @StateObject private var life = CharacterLifeDriver()
+    @StateObject private var life: CharacterLifeDriver
+    /// A still figure (a helper's small bird): no blinking, no cursor following, no float. It redraws
+    /// only when the model changes.
+    let still: Bool
+
+    init(model: MiloModel, still: Bool = false) {
+        self.model = model
+        self.still = still
+        _life = StateObject(wrappedValue: CharacterLifeDriver(onScreen: !still))
+    }
 
     private var asleep: Bool { model.drowsy && model.state == .idle && model.bubble == nil }
 
@@ -10,6 +19,7 @@ struct CharacterView: View {
         figure
             .background(LifeAnchor(driver: life))
             .onAppear {
+                guard !still else { return }
                 life.start()
                 life.update(state: model.state, asleep: asleep)
             }

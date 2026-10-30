@@ -1,9 +1,11 @@
 """Which computer-use actions may run on their own, which wait for the user's yes, and which never run.
 
 Pure: it reads the tool, its arguments and what the app said the action would touch (`target`, from the
-describe step: app, title, role, secure). It errs towards asking. A button that mentions sending,
-deleting, paying and the like asks first, and so does anything that could run code: every AppleScript,
-typing into a terminal, and any change in System Settings.
+describe step: app, title, role, secure). It errs towards asking where it matters and stays quiet for what
+can be undone: opening an app, reading, and making a new document with sheet_write or write_document never
+ask. A button that mentions sending, deleting, paying and the like asks first, and so does anything that
+could run code: every free-form AppleScript, typing into a terminal, and any change in System Settings.
+Replacing filled cells asks.
 Password fields, the keychain and security settings are off limits. A word list can be talked around by a
 determined agent; it is a brake, not a sandbox, so everything the worker does also shows in the Milo
 window and stops when the user touches the mouse.
@@ -35,12 +37,13 @@ _RISKY_WORDS = (
     "send", "send now", "delete", "remove", "erase", "buy", "buy now", "purchase", "pay", "checkout", "check out",
     "order", "place order", "submit", "transfer", "withdraw", "empty trash", "empty bin", "discard", "overwrite",
     "replace", "uninstall", "unsubscribe", "publish", "post", "confirm", "sell", "cancel subscription",
-    "close account", "delete account",
+    "close account", "delete account", "share", "trash",
     # German, since Milo's users speak it too.
     "senden", "absenden", "abschicken", "löschen", "entfernen", "kaufen", "jetzt kaufen", "bezahlen", "zahlen",
     "bestellen", "kostenpflichtig bestellen", "überweisen", "papierkorb leeren", "verwerfen", "ersetzen",
-    "kündigen", "veröffentlichen", "bestätigen",
+    "kündigen", "veröffentlichen", "bestätigen", "teilen",
 )
+
 _RISKY = re.compile(r"(?<!\w)(" + "|".join(re.escape(w) for w in sorted(_RISKY_WORDS, key=len, reverse=True))
                     + r")(?!\w)", re.IGNORECASE)
 _SECRET = re.compile(r"(?<!\w)(password|passwort|kennwort|passcode|keychain|schlüsselbund)(?!\w)", re.IGNORECASE)
@@ -123,6 +126,10 @@ def classify(tool: str, args: dict, target: dict) -> Verdict:
         if combo in _PRESS_KEYS:
             return _words(title)  # return on a focused "Send" button sends
         return OK
+    if tool == "sheet_write":
+        if target.get("new") or target.get("made") or int(target.get("filled") or 0) == 0:
+            return OK  # a new document, one Milo made in this task, or empty cells
+        return Verdict(Risk.ASK, "overwrite")
     if tool == "run_applescript":
         # A word list can't tell what a script does (strings can be built, apps named in variables), so
         # every script waits for a yes. Scripts about passwords never run.

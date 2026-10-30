@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import dataclass
 from datetime import datetime
 
 from milo.core.logtext import private
@@ -9,9 +10,15 @@ from milo.core.types import Emotion
 
 log = logging.getLogger("milo.reply")
 
-TAGS = ("remember", "reminder", "task", "look")
+TAGS = ("remember", "reminder", "task", "look", "steer", "stop")
 _SELF_CLOSING = ("<look/>", "<look />")
 _MARKERS = tuple(f"<{name}>" for name in TAGS) + tuple(f"</{name}>" for name in TAGS) + _SELF_CLOSING
+# Tags that may carry attributes: <task title="..." screen="yes">, <steer helper="2">, <stop helper="all"/>.
+_OPENER = re.compile(r"<(task|steer|stop)((?:\s+[a-z_]+\s*=\s*(?:\"[^\"<>]*\"|'[^'<>]*'|[^\s<>/\"']+))*)\s*(/?)>",
+                     re.IGNORECASE)
+_OPENING = re.compile(r"<(task|steer|stop)\s[^<>]*$", re.IGNORECASE)
+_ATTR = re.compile(r"([a-z_]+)\s*=\s*(?:\"([^\"]*)\"|'([^']*)'|([^\s>/]+))", re.IGNORECASE)
+_MAX_OPENER = 300
 _LONGEST_MARKER = max(map(len, _MARKERS))
 # "[happy]" is short; a longer bracket is real text, not an emotion tag.
 _MAX_BRACKET = 16
@@ -20,11 +27,21 @@ _NOISE = re.compile(r"[*#`]")
 _REMINDER = re.compile(r"^(\d{4}-\d{2}-\d{2})[ T](\d{1,2}:\d{2})\s+(.+)$", re.S)
 
 
+@dataclass(frozen=True)
+class TaskRequest:
+    """A <task> tag: the work, a short title for the small bird, and whether it needs the screen (None: unsaid)."""
+
+    description: str
+    title: str = ""
+    screen: bool | None = None
+
+
 class ReplyParser:
     """Turns the live model's streamed deltas into speakable text plus the side effects it asked for.
 
     The model opens each reply with an emotion tag like `[happy]` and may embed `<remember>fact</remember>`,
-    `<reminder>YYYY-MM-DD HH:MM text</reminder>`, `<task>description</task>` and `<look/>` (or
+    `<reminder>YYYY-MM-DD HH:MM text</reminder>`, `<task title="..." screen="yes">description</task>`,
+    `<steer helper="2">change</steer>`, `<stop helper="2"/>` (or "all") and `<look/>` (or
     `<look>what for</look>`) to see the screen. feed() returns only text
     that is safe to speak: a tag is never spoken, even when it arrives split across deltas, because text
     that could still become one is held back until it can't.
@@ -35,7 +52,11 @@ class ReplyParser:
         """None until the opening tag (or the lack of one) is known."""
         self.remembers: list[str] = []
         self.reminders: list[tuple[datetime, str]] = []
-        self.tasks: list[str] = []
+        self.tasks: list[TaskRequest] = []
+        self.steers: list[tuple[str, str]] = []
+        """(which helper, what changed) for each <steer> tag."""
+        self.stops: list[str] = []
+        """Which helper each <stop> tag means: a number, "all", or "" for the only one."""
         self.look: str | None = None
         """Set when the model asked to see the screen: what it wants to look at, often ""."""
         self.spoken = ""
@@ -43,6 +64,7 @@ class ReplyParser:
         self._buf = ""
         self._tag: str | None = None
         self._tag_text = ""
+        self._attrs: dict[str, str] = {}
 
     def feed(self, delta: str) -> str:
         self._buf += delta
@@ -124,6 +146,19 @@ class ReplyParser:
             return text, False
         text, rest = self._buf[:cut], self._buf[cut:]
         if rest[0] == "<":
+            opener = _OPENER.match(rest, 0, _MAX_OPENER)
+            if opener is not None:
+                name, attrs = opener.group(1).lower(), _attributes(opener.group(2))
+                self._buf = rest[opener.end():]
+                if opener.group(3):
+                    self._attrs = attrs
+                    self._collect(name, "")
+                else:
+                    self._tag, self._attrs = name, attrs
+                return text, True
+            if not final and len(rest) < _MAX_OPENER and _OPENING.match(rest):
+                self._buf = rest  # an opening tag with attributes, not closed yet
+                return text, False
             lower = rest[:_LONGEST_MARKER].lower()
             marker = next((m for m in _MARKERS if lower.startswith(m)), None)
             if marker in _SELF_CLOSING:
@@ -132,7 +167,7 @@ class ReplyParser:
                 return text, True
             if marker is not None:
                 if not marker.startswith("</"):
-                    self._tag = marker[1:-1]
+                    self._tag, self._attrs = marker[1:-1], {}
                 self._buf = rest[len(marker):]  # a stray closing tag is dropped
                 return text, True
             if not final and any(m.startswith(lower) for m in _MARKERS):
@@ -156,21 +191,41 @@ class ReplyParser:
 
     def _collect(self, tag: str, content: str) -> None:
         content = " ".join(content.split())
+        attrs, self._attrs = self._attrs, {}
         if tag == "look":
             self.look = self.look or content
+            return
+        if tag == "stop":
+            self.stops.append(attrs.get("helper") or content)
             return
         if not content:
             return
         if tag == "remember":
             self.remembers.append(content)
         elif tag == "task":
-            self.tasks.append(content)
+            self.tasks.append(TaskRequest(content, " ".join(attrs.get("title", "").split()),
+                                          _yes_no(attrs.get("screen"))))
+        elif tag == "steer":
+            self.steers.append((attrs.get("helper", ""), content))
         else:
             reminder = parse_reminder(content)
             if reminder is None:
                 log.warning("ignoring malformed reminder tag: %s", private(content))
             else:
                 self.reminders.append(reminder)
+
+
+def _attributes(text: str) -> dict[str, str]:
+    return {m.group(1).lower(): next(g for g in m.groups()[1:] if g is not None) for m in _ATTR.finditer(text or "")}
+
+
+def _yes_no(value: str | None) -> bool | None:
+    value = (value or "").strip().lower()
+    if value in ("yes", "true", "1"):
+        return True
+    if value in ("no", "false", "0"):
+        return False
+    return None
 
 
 def parse_reminder(content: str) -> tuple[datetime, str] | None:

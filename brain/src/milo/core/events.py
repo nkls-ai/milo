@@ -217,6 +217,43 @@ class AppRequest(Event):
 
 
 @dataclass(frozen=True)
+class Helpers(Event):
+    """The helpers working for Milo, oldest first: each {id, title, status, step, progress?}.
+
+    status is queued, working, needs_you, done, failed or stopped; `step` says what it does now in plain
+    words; `progress` (0..1) is there only while the worker keeps a to-do list. `id` is the transcript entry
+    of its task. Sent whenever one changes; a finished helper stays in the list for a few seconds.
+    """
+
+    type: ClassVar[str] = "helpers"
+    helpers: list[dict]
+
+
+@dataclass(frozen=True)
+class HandsBorrow(Event):
+    """The user lent Milo the real mouse and keyboard for actions that can't be done in the background.
+
+    The app shows the frame around the screen and stops on any touch while it holds them, and hands them back on
+    its own a while after the last such action or when the session ends.
+    """
+
+    type: ClassVar[str] = "hands_borrow"
+    on: bool
+    what: str = ""
+
+
+@dataclass(frozen=True)
+class Facts(Event):
+    """What Milo knows, for the "What Milo knows" screen: every current fact as {id, text, topic, since, pinned}.
+
+    Sent on `get_facts` and whenever a fact is added, edited or forgotten.
+    """
+
+    type: ClassVar[str] = "facts"
+    facts: list[dict]
+
+
+@dataclass(frozen=True)
 class DictationStream(Event):
     """The current [dictation] stream ("off", "preview" or "type"), on connect and after a change."""
 
@@ -349,6 +386,37 @@ class AppResponse(Command):
 
 
 @dataclass(frozen=True)
+class StopHelper(Command):
+    """The user clicked Stop on the helper `id` (an id from `helpers`)."""
+
+    type: ClassVar[str] = "stop_helper"
+    id: str
+
+
+class GetFacts(Command):
+    """The "What Milo knows" screen opened: send `facts`."""
+
+    type: ClassVar[str] = "get_facts"
+
+
+@dataclass(frozen=True)
+class ForgetFact(Command):
+    """The user pressed Forget on fact `id`."""
+
+    type: ClassVar[str] = "forget_fact"
+    id: str
+
+
+@dataclass(frozen=True)
+class EditFact(Command):
+    """The user rewrote fact `id` as `text`."""
+
+    type: ClassVar[str] = "edit_fact"
+    id: str
+    text: str
+
+
+@dataclass(frozen=True)
 class SetDictationStream(Command):
     """The user picked a dictation style in the menu. The brain uses it from the next recording and saves it."""
 
@@ -400,8 +468,26 @@ def parse_command(raw: object) -> Command:
                 return ConfirmAnswer(str(raw["id"]), raw["yes"])
             case "app_response":
                 return AppResponse(str(raw["id"]), raw["ok"] is True, raw.get("result"), str(raw.get("error") or ""))
+            case "stop_helper":
+                id = str(raw["id"]).strip()
+                if not id:
+                    raise ProtocolError("id must not be empty")
+                return StopHelper(id)
+            case "get_facts":
+                return GetFacts()
+            case "forget_fact":
+                return ForgetFact(_required(raw, "id"))
+            case "edit_fact":
+                return EditFact(_required(raw, "id"), _required(raw, "text"))
             case "set_dictation_stream":
                 return SetDictationStream(LiveMode(raw["stream"]))
     except (KeyError, TypeError, ValueError) as e:
         raise ProtocolError(f"bad {kind} message: {e}") from None
     raise ProtocolError(f"unknown message type {kind!r}")
+
+
+def _required(raw: dict, key: str) -> str:
+    value = " ".join(str(raw[key]).split())
+    if not value:
+        raise ProtocolError(f"{key} must not be empty")
+    return value

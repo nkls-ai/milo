@@ -16,6 +16,7 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
     private let statusItem: NSStatusItem
     private let hintItem: NSMenuItem
     private var muteItem: NSMenuItem!
+    private lazy var knowledge = KnowledgeWindow(controller: controller)
     private var styleMenu: NSMenu!
 
     public init(controller: MiloController, panel: OverlayPanel, window: ConversationWindow, paths: MiloPaths) {
@@ -34,6 +35,7 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         add(menu, "Open conversation", #selector(toggleWindow))
         add(menu, "What's this?", #selector(whatsThis))
+        add(menu, "What Milo knows…", #selector(showKnowledge))
         muteItem = add(menu, "Mute proactive nudges", #selector(toggleMute))
         add(menu, "Show / hide Milo", #selector(toggleVisible))
         add(menu, "Move Milo back to the corner", #selector(resetPosition))
@@ -87,6 +89,7 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
     @objc private func toggleVisible() { panel.toggleVisible() }
     @objc private func toggleWindow() { window.toggle() }
     @objc private func whatsThis() { controller.screen?.whatsThis() }
+    @objc private func showKnowledge() { knowledge.show() }
     @objc private func resetPosition() { panel.placeBottomRight() }
     @objc private func openHome() { NSWorkspace.shared.open(paths.home) }
     @objc private func openLog() { NSWorkspace.shared.open(paths.brainLog) }

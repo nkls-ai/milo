@@ -47,6 +47,13 @@ public enum BrainEvent: Equatable, Sendable {
     case confirmDone(id: String, answer: String)
     /// Work only the app may do (EventKit). Answered with `BrainCommand.appResponse` and the same id.
     case appRequest(id: String, op: String, args: JSONValue)
+    /// The helpers working for Milo, oldest first; finished ones stay a few seconds.
+    case helpers([HelperInfo])
+    /// The user lent Milo one real device ("mouse" or "keyboard") for an action that can't be done in the
+    /// background. The app hands it back on its own a while after the last such action, or when the session ends.
+    case handsBorrow(on: Bool, what: String)
+    /// Everything Milo knows about the user, for the "What Milo knows" window; sent after get_facts and each change.
+    case facts([MemoryFact])
     /// The dictation style in use, on connect and after a change.
     case dictationStream(DictationStyle)
     case unknown(String)
@@ -54,14 +61,15 @@ public enum BrainEvent: Equatable, Sendable {
 
 extension BrainEvent: Decodable {
     private enum Key: String, CodingKey {
-        case type, state, emotion, text, value, entries, entry, id, step, mode, on, tool, args, point, question, answer, op
-        case stream
+        case type, state, emotion, text, value, entries, entry, id, step, mode, on, tool, args, point, question, answer, op, what
+        case facts, stream
         case taskID = "task_id"
         case whatsThisKey = "whats_this_key"
         case dictateKey = "dictate_key"
         case talkKey = "talk_key"
         case handsFreeMaxSeconds = "hands_free_max_s"
         case character
+        case helpers
     }
 
     public init(from decoder: Decoder) throws {
@@ -106,6 +114,11 @@ extension BrainEvent: Decodable {
         case "app_request":
             self = .appRequest(id: try c.decode(String.self, forKey: .id), op: try c.decode(String.self, forKey: .op),
                                args: try c.decodeIfPresent(JSONValue.self, forKey: .args) ?? .object([:]))
+        case "helpers": self = .helpers(try c.decode([HelperInfo].self, forKey: .helpers))
+        case "hands_borrow":
+            self = .handsBorrow(on: try c.decode(Bool.self, forKey: .on),
+                                what: try c.decodeIfPresent(String.self, forKey: .what) ?? "")
+        case "facts": self = .facts(try c.decode([MemoryFact].self, forKey: .facts))
         case "dictation_stream":
             // A style this app doesn't know yet: ignore the message rather than show a wrong checkmark.
             self = DictationStyle(rawValue: try c.decode(String.self, forKey: .stream)).map { .dictationStream($0) }

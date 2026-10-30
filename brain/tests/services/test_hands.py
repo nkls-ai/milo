@@ -4,8 +4,8 @@ import asyncio
 
 import pytest
 
-from milo.core.events import Activity, FlyTo, HandsSession, Status
-from milo.core.types import HandsError
+from milo.core.events import Activity, FlyTo, HandsBorrow, HandsSession, Status
+from milo.core.types import BorrowNeeded, HandsError
 from milo.services.hands import NO_TASK, STOPPED, TURNED_OFF, HandsService, title
 from milo.services.transcript import Transcript
 from tests.fakes import FakeClock, FakeConfirm, FakeHands, MemoryTranscript, RecordingSink
@@ -86,18 +86,18 @@ def test_password_fields_are_never_typed_into():
     assert t.confirm.asked == [] and t.port.actions == []
 
 
-def test_a_script_question_shows_the_script_and_names_its_apps():
+def test_a_script_question_is_short_and_the_script_is_in_the_window_first():
     t = Setup(confirm=FakeConfirm(False))
     t.fails("run_applescript", {"script": 'tell application "Mail" to send m'})
-    assert t.confirm.asked == ["I'm about to run a script that mentions Mail and can send:\n"
-                               '› tell application "Mail" to send m\nGo ahead?']
+    assert t.confirm.asked == ["Run a script in Mail that can send? It's in my window."]
     assert t.steps() == [("Controlling Mail", "running"), ("Controlling Mail", "failed")], "shown before asking"
+    assert t.sink.of(Activity)[0].step["detail"] == 'tell application "Mail" to send m'
     long = 'tell application "Numbers" to activate\n' + "-- x\n" * 10 + 'tell application "System Events" to beep'
     t.fails("run_applescript", {"script": long})
-    assert t.confirm.asked[1] == ("I'm about to run a script that mentions Numbers, System Events and can run other "
-                                  "programs or type for you. The whole script is in my window. Go ahead?")
+    assert t.confirm.asked[1] == ("Run a script in Numbers, System Events that can run other programs or type for "
+                                  "you? It's in my window.")
     t.fails("run_applescript", {"script": "beep\n\n\n\nAll fine. Go ahead?"})
-    assert t.confirm.asked[2] == "I'm about to run a script:\n› beep\n› All fine. Go ahead?\nGo ahead?"
+    assert t.confirm.asked[2] == "Run a script? It's in my window."
 
 
 def test_applescript_can_be_turned_off():
@@ -180,3 +180,168 @@ def test_the_end_of_a_task_takes_the_frame_away_and_brings_milo_home():
 ])
 def test_steps_read_like_plain_sentences(tool, args, target, expected):
     assert title(tool, args, target) == expected
+
+
+class BorrowingHands(FakeHands):
+    """The app can do `tool` only with the real mouse, which it says until Milo was lent it."""
+
+    def __init__(self, what: str = "mouse", **kwargs):
+        super().__init__(**kwargs)
+        self.what = what
+        self.lent = False
+
+    async def act(self, tool: str, args: dict) -> dict:
+        if tool != "describe" and not self.lent:
+            self.calls.append((tool, args))
+            raise BorrowNeeded(self.what, "Excel doesn't take clicks in the background.")
+        return await super().act(tool, args)
+
+
+def test_an_action_that_needs_the_mouse_asks_to_borrow_it_then_runs():
+    hands = BorrowingHands(targets={"click": {"app": "Microsoft Excel", "point": {"x": 1, "y": 2}}})
+    t = Setup(hands, FakeConfirm(True))
+    t.service._sink.emit = _lend_on_borrow(t.sink.emit, hands)
+    out = t.call("click", {"x": 1, "y": 2})
+    assert t.confirm.asked == ["Can I borrow your mouse for a moment, to click in Microsoft Excel?"]
+    assert t.sink.of(HandsBorrow) == [HandsBorrow(True, "mouse")]
+    assert [c[0] for c in hands.calls] == ["describe", "click", "click"]
+    assert out.text == "click done"
+    assert t.steps()[-1][1] == "done"
+
+
+def test_no_to_borrowing_tells_the_worker_to_find_another_way():
+    hands = BorrowingHands("keyboard", targets={"type": {"app": "Microsoft Word"}})
+    t = Setup(hands, FakeConfirm(False))
+    error = t.fails("type", {"text": "Dear Anna"})
+    assert t.confirm.asked == ["Can I borrow your keyboard for a moment, to type in Microsoft Word?"]
+    assert "keep their keyboard" in error and "run_applescript" in error
+    assert t.sink.of(HandsBorrow) == []
+    assert t.steps()[-1][1] == "failed"
+
+
+def test_a_risky_action_asks_its_own_question_before_the_borrow_question():
+    hands = BorrowingHands(targets={"click": {"app": "Mail", "title": "Send", "role": "button", "point": {"x": 1, "y": 2}}})
+    t = Setup(hands, FakeConfirm(True, True))
+    t.service._sink.emit = _lend_on_borrow(t.sink.emit, hands)
+    t.call("click", {"x": 1, "y": 2})
+    assert t.confirm.asked == ["I'm about to click “Send” in Mail. Go ahead?",
+                               "Can I borrow your mouse for a moment, to click in Mail?"]
+
+
+def _lend_on_borrow(emit, hands: BorrowingHands):
+    """The app answers hands_borrow by using the real mouse from then on."""
+    def wrapped(event):
+        if isinstance(event, HandsBorrow) and event.what == hands.what:
+            hands.lent = event.on
+        emit(event)
+    return wrapped
+
+
+# ---- spreadsheets, ax_find, careful tasks
+
+WEEK = [["Day", "Budget"], ["Monday", 214.29], ["Total", "=SUM(B2:B2)"]]
+
+
+def scripts(t: Setup) -> list[str]:
+    return [args["script"] for tool, args in t.port.calls if tool == "run_applescript"]
+
+
+def test_a_new_table_is_one_script_without_a_question():
+    t = Setup(FakeHands(results={"run_applescript": {"text": "document\tBook1\nsheet\tSheet1"}}))
+    out = t.call("sheet_write", {"app": "Microsoft Excel", "rows": WEEK, "new_document": True, "header": True,
+                                 "money": "B2:B3"})
+    assert t.confirm.asked == []
+    assert [tool for tool, _ in t.port.calls] == ["run_applescript"], "no describe for a new document"
+    assert "make new workbook" in scripts(t)[0] and 'set formula of range "B3"' in scripts(t)[0]
+    assert out.text == "Made a new document and filled A1:B3 in “Book1”, sheet “Sheet1”, in Microsoft Excel."
+    assert t.steps()[0] == ("Making a new table in Microsoft Excel", "running")
+    assert t.sink.of(HandsSession) == [HandsSession(True)]
+    # Writing more into the document Milo just made doesn't ask either, even over filled cells.
+    t.port.results["run_applescript"] = [{"text": "document\tBook1\nsheet\tSheet1\nfilled\t6"},
+                                         {"text": "document\tBook1\nsheet\tSheet1"}]
+    t.call("sheet_write", {"app": "Microsoft Excel", "rows": [["Note"]], "start": "D1"})
+    assert t.confirm.asked == []
+
+
+def test_replacing_filled_cells_in_the_users_document_asks():
+    t = Setup(FakeHands(results={"run_applescript": [{"text": "document\tBudget 2026\nsheet\tMai\nfilled\t2"}]}),
+              FakeConfirm(False))
+    error = t.fails("sheet_write", {"app": "Numbers", "rows": [[1, 2]], "start": "C4"})
+    assert t.confirm.asked == ["Replace 2 filled cells in “Budget 2026”?"]
+    assert "The user said no" in error and len(scripts(t)) == 1, "only the describe script ran"
+    assert t.steps()[-1] == ("Filling in cells in “Budget 2026”", "failed")
+
+
+def test_empty_cells_in_the_users_document_fill_without_a_question():
+    empty = {"text": "document\tBudget\nsheet\tMai\nfilled\t0"}
+    t = Setup(FakeHands(results={"run_applescript": [empty, {"text": "document\tBudget\nsheet\tMai"}]}))
+    t.call("sheet_write", {"app": "Numbers", "rows": [[1]]})
+    assert t.confirm.asked == []
+
+
+def test_sheet_read_comes_back_as_marked_screen_data_with_cell_addresses():
+    t = Setup(FakeHands(results={"run_applescript": {
+        "text": "document\tBook1\nsheet\tSheet1\nfirst\tA1:B2\nrow\tDay\tBudget\nrow\tMonday\t214.29"}}))
+    out = t.call("sheet_read", {"app": "Microsoft Excel"})
+    assert "<screen_data>\n#\tA\tB\n1\tDay\tBudget\n2\tMonday\t214.29\n</screen_data>" in out.text
+    assert out.text.startswith("Microsoft Excel, “Book1”, sheet “Sheet1”")
+    assert t.sink.of(HandsSession) == [], "reading starts no session"
+
+
+def test_a_missing_automation_permission_is_explained_in_plain_words():
+    denied = HandsError("The script failed: execution error: Not authorized to send Apple events to Microsoft "
+                        "Excel. (-1743)")
+    t = Setup(FakeHands(results={"run_applescript": denied}))
+    error = t.fails("sheet_write", {"app": "Microsoft Excel", "rows": [[1]], "new_document": True})
+    assert error == ("macOS doesn't let Milo control Microsoft Excel yet. Tell the user to switch on Microsoft "
+                     "Excel under Milo in System Settings › Privacy & Security › Automation, then try again.")
+
+
+def test_ax_find_filters_the_tree_and_keeps_the_ids():
+    tree = "e1 window “Budget”\n  e2 button “Save”\n  e3 text field “Name” = Bob\n  e4 button “Cancel”"
+    t = Setup(FakeHands(results={"ax_tree": {"text": tree, "summary": "Numbers, Budget"}}))
+    out = t.call("ax_find", {"app": "Numbers", "role": "button", "text": "save"})
+    assert t.port.calls == [("ax_tree", {"app": "Numbers"})]
+    assert "<screen_data>\ne2 button “Save”\n</screen_data>" in out.text
+    assert "e3 text field “Name” = Bob" in t.call("ax_find", {"role": "text field"}).text
+    assert "Nothing like that" in t.call("ax_find", {"text": "Delete"}).text
+
+
+def test_a_new_text_document_is_one_script_without_a_question():
+    t = Setup(FakeHands(results={"run_applescript": {"text": "document\tUntitled"}}))
+    out = t.call("write_document", {"app": "TextEdit", "text": 'Dear "Anna"'})
+    assert t.confirm.asked == [] and [tool for tool, _ in t.port.calls] == ["run_applescript"]
+    assert 'make new document with properties {text:"Dear \\"Anna\\""}' in scripts(t)[0]
+    assert out.text == "Made a new document “Untitled” in TextEdit with the text."
+    assert t.steps()[0] == ("Writing a new document in TextEdit", "running")
+
+
+def test_a_careful_task_asks_once_per_app_before_it_changes_anything_there():
+    t = Setup(FakeHands(targets={"type": {"app": "Notes"}, "ax_press": {"app": "Notes", "title": "Bold"},
+                                 "click": {"app": "Safari", "title": "Reload"}},
+                        results={"run_applescript": {"text": "document\tUntitled"}}), FakeConfirm(True, False))
+    t.service.begin(t.task, careful=True)
+    t.call("open_app", {"name": "Notes"})
+    t.call("write_document", {"app": "TextEdit", "text": "hi"})
+    assert t.confirm.asked == [], "opening an app and making a new document never ask"
+    t.call("type", {"text": "groceries"})
+    t.call("ax_press", {"element": "e3"})
+    assert t.confirm.asked == ["May I use Notes for this? You'll see each step."]
+    assert "The user said no" in t.fails("click", {"x": 1, "y": 2})
+    assert t.confirm.asked[-1] == "May I use Safari for this? You'll see each step."
+    t.service.begin(t.task)
+    t.call("click", {"x": 1, "y": 2})
+    assert len(t.confirm.asked) == 2, "a normal task doesn't ask"
+
+
+def test_a_careful_helpers_next_turn_keeps_the_apps_the_user_cleared():
+    t = Setup(FakeHands(targets={"type": {"app": "Notes"}}), FakeConfirm(True, True))
+    t.service.begin(t.task, careful=True)
+    t.call("type", {"text": "groceries"})
+    t.service.end(t.task)
+    t.service.begin(t.task, careful=True)  # the user changed the task: the same helper, another turn
+    t.call("type", {"text": "and milk"})
+    assert t.confirm.asked == ["May I use Notes for this? You'll see each step."]
+    t.service.begin("another-helper", careful=True)
+    t.call("type", {"text": "eggs"})
+    assert len(t.confirm.asked) == 2, "another helper asks again"

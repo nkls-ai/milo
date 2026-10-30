@@ -229,6 +229,12 @@ class FakeFiles:
     def read(self, path: str, max_chars: int = 20000) -> dict:
         return _files.read(_files.checked(path, self.scope), max_chars)
 
+    def list(self, folder: str, name: str = "", limit: int = 20) -> list[dict]:
+        return _files.listing(folder, self.scope, name, limit)
+
+    def move(self, paths: list[str], folder: str) -> dict:
+        return _files.move(paths, folder, self.scope)
+
     def _all(self) -> list[Path]:
         if not self.scope.is_dir():
             return []

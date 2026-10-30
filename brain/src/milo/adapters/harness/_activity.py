@@ -11,13 +11,14 @@ from __future__ import annotations
 import json
 import re
 import shlex
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 from milo.core import wording
 from milo.core.hands import SERVER_NAME
-from milo.core.ports import StepCallback
+from milo.core.ports import PlanCallback, SessionCallback, StepCallback
 from milo.core.types import Step, StepStatus
 
 MAX_TITLE = 64
@@ -30,7 +31,8 @@ _SEGMENT = re.compile(r"\s*(?:&&|\|\||;|\|)\s*")
 _TELL_APP = re.compile(r'tell application "([^"]+)"')
 _READERS = ("cat", "head", "tail", "less", "more", "bat", "nl", "wc", "file", "stat", "xxd", "strings")
 _RUNNERS = ("python", "python3", "node", "uv", "ruby", "perl", "swift", "bun", "deno", "npx")
-_SKIPPED_CLAUDE_TOOLS = ("TodoWrite", "ToolSearch", "EnterPlanMode", "ExitPlanMode")
+# StructuredOutput is how `--json-schema` hands back the reply, not something the agent did.
+_SKIPPED_CLAUDE_TOOLS = ("TodoWrite", "ToolSearch", "EnterPlanMode", "ExitPlanMode", "StructuredOutput")
 # Tools Milo's own Mac MCP server will offer (Phase 2), so computer use reads well from day one.
 _KNOWN_TOOLS = {
     "screenshot": "Looking at the screen",
@@ -359,3 +361,74 @@ def _result_text(content: object) -> str:
     if isinstance(content, list):
         return "\n".join(str(c.get("text", "")) for c in content if isinstance(c, dict))
     return str(content or "")
+
+
+# ---- session and plan, for the orchestrator
+
+
+class RunWatch:
+    """Feed it either CLI's JSON lines; it reports the session id once and the agent's to-do progress.
+
+    Codex names its thread in `thread.started` and keeps a `todo_list` item; Claude Code puts `session_id`
+    on every event and writes its list with the TodoWrite tool.
+    """
+
+    def __init__(self, on_session: SessionCallback | None = None, on_plan: PlanCallback | None = None):
+        self._on_session = on_session
+        self._on_plan = on_plan
+        self._session: str | None = None
+        self._plan: tuple[int, int] | None = None
+
+    def line(self, line: str) -> None:
+        line = line.strip()
+        if not line.startswith("{"):
+            return
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            return
+        if not isinstance(event, dict):
+            return
+        session = event.get("thread_id") if event.get("type") == "thread.started" else event.get("session_id")
+        if isinstance(session, str) and session and self._session is None:
+            self._session = session
+            if self._on_session is not None:
+                self._on_session(session)
+        plan = _plan(event)
+        if plan is not None and plan != self._plan and plan[1] > 0:
+            self._plan = plan
+            if self._on_plan is not None:
+                self._on_plan(*plan)
+
+
+def _plan(event: dict) -> tuple[int, int] | None:
+    """(done, total) of a to-do list in this event, or None if it has none."""
+    item = event.get("item")
+    if isinstance(item, dict) and item.get("type") == "todo_list" and isinstance(item.get("items"), list):
+        items = [i for i in item["items"] if isinstance(i, dict)]
+        return sum(1 for i in items if i.get("completed")), len(items)
+    if event.get("type") != "assistant":
+        return None
+    content = (event.get("message") or {}).get("content")
+    for block in content if isinstance(content, list) else []:
+        if isinstance(block, dict) and block.get("type") == "tool_use" and block.get("name") == "TodoWrite":
+            todos = (block.get("input") or {}).get("todos")
+            if isinstance(todos, list):
+                todos = [t for t in todos if isinstance(t, dict)]
+                return sum(1 for t in todos if t.get("status") == "completed"), len(todos)
+    return None
+
+
+def lines(*handlers) -> Callable[[str], None] | None:
+    """One on_line callback for every handler that isn't None; None if there are none."""
+    live = [h for h in handlers if h is not None]
+    if not live:
+        return None
+    if len(live) == 1:
+        return live[0]
+
+    def feed(line: str) -> None:
+        for handler in live:
+            handler(line)
+
+    return feed

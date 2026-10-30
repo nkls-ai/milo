@@ -6,13 +6,16 @@ milo.core.registry and are picked by name from config.toml in milo.compose.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Callable, Collection, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
+import numpy as np
+
 from .events import Event
+from .memory import ConsolidationReport, Document, Episode, Fact, Hit, IndexItem, Recall, TurnContext
 from .types import Audio, Nudge, Reminder, Reply, ScreenCapture, Signals, Step, Usage
 
 LevelCallback = Callable[[float], None]
@@ -20,6 +23,12 @@ LevelCallback = Callable[[float], None]
 
 StepCallback = Callable[[Step], None]
 """Receives each step of a harness turn as it starts and again when it ends. Called on the event loop."""
+
+SessionCallback = Callable[[str], None]
+"""Receives the session id of a harness turn as soon as the CLI names it, long before the reply."""
+
+PlanCallback = Callable[[int, int], None]
+"""Receives (done, total) whenever the worker's own to-do list changes."""
 
 
 @runtime_checkable
@@ -34,10 +43,13 @@ class Harness(Protocol):
 
     name: str
 
-    async def reply(self, prompt: str, session_id: str | None, *, on_step: StepCallback | None = None) -> Reply:
+    async def reply(self, prompt: str, session_id: str | None, *, on_step: StepCallback | None = None,
+                    on_session: SessionCallback | None = None, on_plan: PlanCallback | None = None) -> Reply:
         """Answer `prompt`, continuing `session_id` if given. Raises HarnessError.
 
-        `on_step` hears about the commands, file edits and tool calls while the agent works.
+        `on_step` hears about the commands, file edits and tool calls while the agent works, `on_session`
+        the session id once the CLI has one (so a stopped turn can be resumed), and `on_plan` how far the
+        agent is through its to-do list. Cancelling the call ends the CLI.
         """
         ...
 
@@ -122,6 +134,17 @@ class AudioOutput(Protocol):
 
     def interrupt(self) -> None:
         """Stop now and drop queued audio. A pending drain() returns False."""
+        ...
+
+
+@runtime_checkable
+class PlaybackTap(Protocol):
+    """What an AudioOutput has actually played, with timestamps, so a listener can tell Milo's own voice in the
+    microphone from the user's (barge-in). Optional: outputs that can't say leave voice barge-in off."""
+
+    def played(self, since: float) -> tuple[int, list[tuple[float, Audio]]]:
+        """(sample rate, blocks) played from `since` on: each block is the time its first sample reached the
+        speaker, on the clock of AudioInput.started_at, and its samples."""
         ...
 
 
@@ -361,6 +384,14 @@ class Files(Protocol):
         """The text of a file (txt, md, csv, pdf, docx, rtf, xlsx, ...): path, text, truncated."""
         ...
 
+    def list(self, folder: str, name: str = "", limit: int = 20) -> list[dict]:
+        """The files right inside `folder` whose name contains `name`, newest first."""
+        ...
+
+    def move(self, paths: list[str], folder: str) -> dict:
+        """Move files into `folder` (made if missing), never replacing one: moved (path, name, ...), folder."""
+        ...
+
 
 @dataclass(frozen=True)
 class Connections:
@@ -372,3 +403,109 @@ class Connections:
     notes: Notes | None = None
     shortcuts: Shortcuts | None = None
     files: Files | None = None
+
+
+# ---- memory: episodes, facts and the user's things (docs/design/memory.md)
+#
+# Files are the truth and the index is a cache: EpisodeLog and FactStore append JSON lines, MemoryIndex can be
+# deleted and rebuilt from them. Everything here blocks; the brain calls it on its memory thread.
+
+
+@runtime_checkable
+class EpisodeLog(Protocol):
+    def append(self, episode: Episode) -> None:
+        """Add an episode, or a newer version of one with the same id (a summary replacing a stub)."""
+        ...
+
+    def between(self, start: datetime, end: datetime) -> list[Episode]:
+        """Episodes with start <= at < end, oldest first, latest version of each, forgotten ones left out."""
+        ...
+
+    def forget(self, id: str, reason: str) -> None:
+        """Leave the episode out from now on. The old lines stay, so it can be brought back."""
+        ...
+
+
+@runtime_checkable
+class FactStore(Protocol):
+    def current(self) -> list[Fact]:
+        """Facts that are neither retired nor replaced."""
+        ...
+
+    def add(self, fact: Fact) -> None: ...
+
+    def retire(self, id: str, reason: str) -> None: ...
+
+    def restore(self, id: str, reason: str) -> None:
+        """Undo a retire."""
+        ...
+
+    def get(self, id: str) -> Fact | None:
+        """Any fact ever added, current or not, with `retired` as it is now."""
+        ...
+
+    def forgotten(self) -> list[Fact]:
+        """Facts the user had Milo forget (themselves, or through the worker after a yes), still retired, newest
+        first. The night must not learn them again from the day's episodes."""
+        ...
+
+
+@runtime_checkable
+class Embedder(Protocol):
+    """Turns text into vectors for search. Local, runs on its own single-thread executor like STT and TTS."""
+
+    dimensions: int
+    key: str
+    """Names the vector space (engine and model). The index re-embeds everything when it changes."""
+    relevant_margin: float
+    """How far above unrelated text (Hit.margin) a match must be to count without a shared word. Each model
+    spreads differently."""
+
+    def warm(self) -> None: ...
+
+    def embed(self, texts: Sequence[str], *, query: bool = False) -> np.ndarray:
+        """One unit-length float32 row per text. `query`: the text is a search, not something to be found."""
+        ...
+
+
+@runtime_checkable
+class MemoryIndex(Protocol):
+    """Search over facts, episodes and knowledge. A cache: rebuild() recreates it from the logs."""
+
+    def upsert(self, items: Sequence[IndexItem]) -> None: ...
+
+    def remove(self, ids: Collection[str]) -> None: ...
+
+    def search(self, query: str, *, kinds: Collection[str] = (), since: datetime | None = None,
+               until: datetime | None = None, limit: int = 20) -> list[Hit]:
+        """Best first. Text and vector matches fused, so something comes back even for a vague query."""
+        ...
+
+    def rebuild(self) -> None: ...
+
+    def refresh(self, limit: int | None = None) -> int:
+        """Catch up with the logs, at most `limit` items at a time. Returns how many changed; 0: up to date."""
+        ...
+
+
+@runtime_checkable
+class Recaller(Protocol):
+    """Picks what memory a turn needs, within a token budget. No LLM call."""
+
+    def recall(self, turn: str, context: TurnContext, budget_tokens: int) -> Recall: ...
+
+
+@runtime_checkable
+class Consolidator(Protocol):
+    """The nightly "sleep": turns the day's raw records into episodes and facts."""
+
+    async def consolidate(self, day: date) -> ConsolidationReport: ...
+
+
+@runtime_checkable
+class KnowledgeSource(Protocol):
+    """One place the user's things live: a folder, Notes, Mail, meeting notes."""
+
+    name: str
+
+    def changed_since(self, since: datetime) -> Iterable[Document]: ...

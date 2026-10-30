@@ -231,6 +231,24 @@ def test_close_unlinks_the_socket_and_disconnects_clients(sock_path):
     asyncio.run(run())
 
 
+def test_stopping_serve_forever_does_not_wait_for_connected_clients(sock_path):
+    """The app stops the brain with SIGTERM while still connected; the brain must not wait for it to hang up."""
+    async def run():
+        server = UnixSocketServer(sock_path, lambda c: asyncio.sleep(0), lambda: list(GREETING))
+        serving = asyncio.create_task(server.serve_forever())
+        while not sock_path.exists():
+            await asyncio.sleep(0.01)
+        client = await Client.connect(sock_path)
+        await client.read_greeting()
+        serving.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(serving, TIMEOUT_S)
+        assert not sock_path.exists()
+        assert await asyncio.wait_for(client.reader.read(), TIMEOUT_S) == b""
+
+    asyncio.run(run())
+
+
 def test_peer_uid_is_our_own_uid():
     a, b = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
     try:

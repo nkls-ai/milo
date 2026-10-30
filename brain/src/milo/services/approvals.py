@@ -105,20 +105,26 @@ class Approvals:
     def pending(self) -> bool:
         return self._pending is not None
 
-    async def approve(self, kind: str, summary: str) -> Decision:
-        """Apply the level for `kind`, asking `summary` if it is ask_first."""
+    def asks(self, kind: str, *, careful: bool = False) -> bool:
+        """Whether approve() asks the user about `kind`: when it is ask_first, or a change for a careful
+        helper (one asked for in a conversation that read outside text, like the screen)."""
+        level = self.policy.level(kind)
+        return level is ActionLevel.ASK_FIRST or (careful and level is ActionLevel.CHANGE)
+
+    async def approve(self, kind: str, summary: str, *, careful: bool = False) -> Decision:
+        """Apply the level for `kind`, asking `summary` if asks() says so."""
         level = self.policy.level(kind)
         if level is ActionLevel.NEVER:
             log.info("refused a %s action", kind)
             return Decision(False, level, "refused")
-        if level is not ActionLevel.ASK_FIRST:
+        if not self.asks(kind, careful=careful):
             return Decision(True, level, "auto")
         answer = await self._ask(summary)
         return Decision(answer == "yes", level, answer)
 
-    async def confirm(self, summary: str) -> bool:
-        """Confirmer: always ask."""
-        return await self._ask(summary) == "yes"
+    async def confirm(self, summary: str, *, detail: str = "") -> bool:
+        """Confirmer: always ask. `detail` shows under the question in the Milo window, e.g. the whole task."""
+        return await self._ask(summary, detail) == "yes"
 
     def answer(self, id: str, yes: bool, *, via: str = "button") -> bool:
         """Answer the waiting question `id`. False if it isn't the one waiting (already answered, timed out)."""
@@ -143,7 +149,7 @@ class Approvals:
         shown = self._ui.bubble.strip()
         return bool(shown) and question.startswith(shown)
 
-    async def _ask(self, question: str) -> str:
+    async def _ask(self, question: str, detail: str = "") -> str:
         """Returns "yes", "no" or "timeout"."""
         async with self._one_at_a_time:
             id = uuid.uuid4().hex[:12]
@@ -151,7 +157,7 @@ class Approvals:
             self._pending = (id, question, future)
             log.info("asking before an action: %s", private(question))
             self._ui.emit(Confirm(id, question))
-            self._transcript.say(question, Emotion.THINKING)
+            self._transcript.say(f"{question}\n\n{detail}" if detail else question, Emotion.THINKING)
             self._speaker.say(question, Emotion.THINKING, speak=self._speak and not self._quiet())
             answer = "no"
             try:

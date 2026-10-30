@@ -1,6 +1,6 @@
 # Milo: what he could become
 
-Written 2026-10-30. This is the brainstorm behind [ROADMAP.md](ROADMAP.md): what is possible, what is worth it, and in which order. Nothing here is built yet.
+Written 2026-10-30. This is the brainstorm behind [ROADMAP.md](ROADMAP.md): what is possible, what is worth it, and in which order. [BRAND.md](BRAND.md) has the positioning and pricing. Designs for the next round: [memory](design/memory.md) and [meeting notes](design/meetings.md).
 
 ## The shift
 
@@ -54,7 +54,7 @@ Grouped by who they help. Some are small, some are big; the ROADMAP section at t
 - **Remember anything.** "Remember that Anna's birthday is March 3", "remember I parked on level 4". It goes into memory and comes back when relevant.
 - **Find by meaning.** "Where's the PDF from the insurance about the car?" A local search index over your documents, mail and notes that understands what you mean, not just file names.
 - **Follow-ups.** "Remind me if Tom hasn't answered by Friday." Milo watches the mailbox locally and only speaks up if the answer doesn't come.
-- **Meeting notes.** Transcribe a call locally (with a clear "recording" indicator and consent), then summarize it, list the to-dos, and put them in reminders.
+- **Meeting notes.** Milo notices a call and offers to take notes. Your voice and the call's audio are recorded as two tracks, saved to disk in 30-second chunks so a crash loses nothing, transcribed with speakers told apart, then summarized with decisions and to-dos. A clear recording dot and consent throughout. See [design/meetings.md](design/meetings.md).
 - **A morning brief.** Today's appointments, who's having a birthday, what's still open from yesterday, the weather. Built from local rules, so it costs nothing.
 
 ### Doing things
@@ -96,6 +96,8 @@ What should follow you around: memory, routines, reminders, conversation history
 **Phase one: just your Apple devices, no server.** Put `~/Milo` in iCloud Drive. Memory is plain Markdown, so syncing it is simple, and Apple handles the encryption.
 
 **Phase two: a Milo account.** Needed anyway for the hosted product, and for anything beyond Apple. End-to-end encrypted sync of the same files and a history log.
+
+**Milo by message first.** Before a phone app, let people message Milo in WhatsApp, Telegram or iMessage: "send me the slides from today's meeting" from the train, and Milo on the Mac finds and sends them. Every chat app becomes the remote, with no app to build.
 
 **The phone app.** Milo in your pocket, and a remote control for your computer:
 

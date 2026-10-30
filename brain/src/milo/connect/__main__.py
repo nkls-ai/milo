@@ -19,6 +19,7 @@ def main() -> None:
     from milo.memory.workspace import Workspace
 
     from milo.transport.tool_client import BrainClient
+    from .memory_tools import RemoteMemory
     from .server import Toolbox, mcp_server
 
     home = Path(os.environ.get("MILO_HOME", "~/Milo")).expanduser()
@@ -37,7 +38,8 @@ def main() -> None:
     off = {f.name: None for f in dataclasses.fields(connections)
            if not switches.enabled or not getattr(switches, f.name)}
     connections = dataclasses.replace(connections, **off)
-    toolbox = Toolbox(connections, BrainClient(workspace.tools_socket_path))
+    brain = BrainClient(workspace.tools_socket_path)
+    toolbox = Toolbox(connections, brain, RemoteMemory(brain) if config.memory.enabled else None)
     logging.getLogger("milo.connect").info("serving %d tools (%s)", len(toolbox.tools), name)
     mcp_server(toolbox).serve(sys.stdin, sys.stdout)
 

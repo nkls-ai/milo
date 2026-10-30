@@ -15,8 +15,21 @@ public final class MacHands: HandsExecutor {
     private var lastShot: ScreenShots.Shot?
     /// The app that had the keyboard focus when type or key was checked; the action refuses if it moved.
     private var checkedFocus: pid_t?
+    /// The exact element that had focus when type or key was checked; typing refuses if focus moved off it.
+    private var checkedElement: AXUIElement?
     private var script: Process?
     private let lock = NSLock()
+    private var lent: Set<String> = []
+
+    /// The devices the user lent ("mouse", "keyboard"); set on the main queue, read on the hands queue. An
+    /// action falls back to the real pointer or keyboard only for a device that was actually lent, so a yes to
+    /// borrowing the mouse never quietly lets Milo type with the real keyboard.
+    public var borrowed: Set<String> {
+        get { lock.lock(); defer { lock.unlock() }; return lent }
+        set { lock.lock(); lent = newValue; lock.unlock() }
+    }
+
+    private func lent(_ need: Delivery.Need) -> Bool { borrowed.contains(need.rawValue) }
 
     public convenience init(screensFolder: URL) {
         self.init(shots: ScreenShots(folder: screensFolder), apps: FrontApps())
@@ -108,7 +121,8 @@ public final class MacHands: HandsExecutor {
         case "type", "key":
             element = AX.focused()
             checkedFocus = element.map(AX.pid)
-            point = element.flatMap(AX.frame).map { CGPoint(x: $0.midX, y: $0.midY) }
+            checkedElement = element
+            point = element.flatMap(Self.caret) ?? element.flatMap(AX.frame).map { CGPoint(x: $0.midX, y: $0.midY) }
         case "open_app":
             let name = args["name"]?.string ?? ""
             let running = Self.running(name)
@@ -124,6 +138,11 @@ public final class MacHands: HandsExecutor {
             info["title"] = .string(AX.label(element))
             info["role"] = .string(AX.roleName(element))
             info["secure"] = .bool(AX.isSecure(element))
+            // The window it sits in, for the outline and for Pip to perch on.
+            if let window = Self.window(of: element), let frame = AX.frame(window) {
+                info["window"] = HandsTarget.json(frame)
+                info["pid"] = .number(Double(AX.pid(element)))
+            }
         } else {
             info["app"] = .string(front?.localizedName ?? "")
             info["bundle"] = .string(front?.bundleIdentifier ?? "")
@@ -286,6 +305,42 @@ public final class MacHands: HandsExecutor {
         if AX.owners(at: point).contains(where: AX.isSecret) { throw HandsFailure(AX.secretRefused) }
         let right = args["button"]?.string == "right"
         let clicks = args["double"]?.bool == true ? 2 : 1
+        let element = AX.element(at: point)
+        let pressable = element.flatMap(Self.pressable)
+        var traits = Delivery.Traits()
+        traits.pressable = pressable != nil
+        traits.textual = element.map { AX.textRoles.contains(AX.role($0)) && AX.role($0) != "AXStaticText" } ?? false
+        traits.menu = element.map { Self.actions($0).contains(kAXShowMenuAction) } ?? false
+        let steps = Delivery.plan(.click(right: right, count: clicks), traits: traits, family: family(of: element),
+                                  borrowed: lent(.mouse))
+        for step in steps {
+            switch step {
+            case .axPress:
+                if let pressable, AXUIElementPerformAction(pressable, kAXPressAction as CFString) == .success {
+                    return Self.done("Clicked “\(AX.label(pressable))” in the background.", route: "ax")
+                }
+            case .axFocus:
+                if let element, Self.focus(element, at: point) {
+                    return Self.done("Clicked into the field in the background.", route: "ax")
+                }
+            case .axShowMenu:
+                if let element, AXUIElementPerformAction(element, kAXShowMenuAction as CFString) == .success {
+                    return Self.done("Opened the menu in the background.", route: "ax")
+                }
+            case .real:
+                realClick(at: point, right: right, clicks: clicks)
+                return Self.done(clicks == 2 ? "Double-clicked." : "Clicked.", route: "real")
+            case .axInsert, .axScrollBar:
+                break
+            }
+        }
+        throw HandsFailure("This click needs the real mouse.", borrow: Delivery.need(for: .click(right: right, count: clicks)).rawValue)
+    }
+
+    /// The user's pointer, lent: it clicks and then goes back to where the user left it.
+    private func realClick(at point: CGPoint, right: Bool, clicks: Int) {
+        let rest = Self.pointerLocation()
+        defer { CGWarpMouseCursorPosition(rest) }
         let (down, up): (CGEventType, CGEventType) = right ? (.rightMouseDown, .rightMouseUp) : (.leftMouseDown, .leftMouseUp)
         post(CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left))
         for n in 1...clicks {
@@ -296,14 +351,18 @@ public final class MacHands: HandsExecutor {
                 post(event)
             }
         }
-        return ["text": .string(clicks == 2 ? "Double-clicked." : "Clicked.")]
     }
 
-    /// The keyboard goes where it was checked to go, and never into a password field or a password app.
-    private func checkFocus(allowSecure: Bool = false) throws {
+    /// The keyboard goes to the exact element that had focus when the action was checked (`describe`), never a
+    /// different one that stole focus since, and never a password field or a password app. Returns that element.
+    @discardableResult
+    private func checkFocus(allowSecure: Bool = false) throws -> AXUIElement? {
         let focused = AX.focused()
         if let checked = checkedFocus, focused.map(AX.pid) != checked {
             throw HandsFailure("The keyboard focus moved to another app since I checked. Look again first.")
+        }
+        if let checked = checkedElement, let focused, !CFEqual(checked, focused) {
+            throw HandsFailure("The keyboard focus moved to another field since I checked. Look again first.")
         }
         if let focused, AX.isSecret(NSRunningApplication(processIdentifier: AX.pid(focused))) {
             throw HandsFailure(AX.secretRefused)
@@ -311,10 +370,29 @@ public final class MacHands: HandsExecutor {
         if !allowSecure, let focused, AX.isSecure(focused) {
             throw HandsFailure("Milo never types into password fields.")
         }
+        return focused
     }
 
     private func type(_ text: String) throws -> [String: JSONValue] {
-        try checkFocus()
+        // The same element throughout: checked for focus and secrecy, then written to.
+        let focused = try checkFocus()
+        var traits = Delivery.Traits()
+        traits.insertable = focused.map { Self.settable($0, kAXSelectedTextAttribute) } ?? false
+        for step in Delivery.plan(.type, traits: traits, family: family(of: focused), borrowed: lent(.keyboard)) {
+            switch step {
+            case .axInsert:
+                if let focused, Self.insert(text, into: focused) { return Self.done("Typed in the background.", route: "ax") }
+            case .real:
+                realType(text)
+                return Self.done("Typed.", route: "real")
+            default:
+                break
+            }
+        }
+        throw HandsFailure("Typing here needs the real keyboard.", borrow: Delivery.need(for: .type).rawValue)
+    }
+
+    private func realType(_ text: String) {
         let units = Array(text.utf16)
         for start in stride(from: 0, to: units.count, by: 16) {
             let chunk = Array(units[start..<min(start + 16, units.count)])
@@ -325,7 +403,6 @@ public final class MacHands: HandsExecutor {
             }
             usleep(8000)
         }
-        return ["text": "Typed."]
     }
 
     private func key(_ combo: String) throws -> [String: JSONValue] {
@@ -335,6 +412,9 @@ public final class MacHands: HandsExecutor {
         // In a password field only moving on is allowed: tab, shift+tab, escape.
         let movesOn = [48, 53].contains(parsed.keyCode) && parsed.modifiers.subtracting(.shift).isEmpty
         try checkFocus(allowSecure: movesOn)
+        guard lent(.keyboard) else {
+            throw HandsFailure("Pressing keys needs the real keyboard.", borrow: Delivery.need(for: .key).rawValue)
+        }
         var flags: CGEventFlags = []
         if parsed.modifiers.contains(.command) { flags.insert(.maskCommand) }
         if parsed.modifiers.contains(.shift) { flags.insert(.maskShift) }
@@ -345,17 +425,156 @@ public final class MacHands: HandsExecutor {
             event?.flags = flags
             post(event)
         }
-        return ["text": .string("Pressed \(parsed.displayName).")]
+        return Self.done("Pressed \(parsed.displayName).", route: "real")
     }
 
     private func scroll(_ args: [String: JSONValue]) throws -> [String: JSONValue] {
-        if args["x"] != nil || args["y"] != nil {
-            post(CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: try screenPoint(args),
-                         mouseButton: .left))
+        let point = args["x"] != nil || args["y"] != nil ? try screenPoint(args) : nil
+        let lines = (dx: args["dx"]?.number ?? 0, dy: args["dy"]?.number ?? 0)
+        let area = AX.element(at: point ?? Self.pointerLocation()).flatMap(Self.scrollArea)
+        var traits = Delivery.Traits()
+        traits.scrollBar = area != nil
+        for step in Delivery.plan(.scroll, traits: traits, family: .cocoa, borrowed: lent(.mouse)) {
+            switch step {
+            case .axScrollBar:
+                if let area, Self.scroll(area, lines: lines) { return Self.done("Scrolled in the background.", route: "ax") }
+            case .real:
+                let rest = Self.pointerLocation()
+                defer { CGWarpMouseCursorPosition(rest) }
+                if let point {
+                    post(CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left))
+                }
+                let dy = Int32(-lines.dy), dx = Int32(-lines.dx)
+                post(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: dy, wheel2: dx, wheel3: 0))
+                return Self.done("Scrolled.", route: "real")
+            default:
+                break
+            }
         }
-        let dy = Int32(-(args["dy"]?.number ?? 0)), dx = Int32(-(args["dx"]?.number ?? 0))
-        post(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: dy, wheel2: dx, wheel3: 0))
-        return ["text": "Scrolled."]
+        throw HandsFailure("Scrolling here needs the real mouse.", borrow: Delivery.need(for: .scroll).rawValue)
+    }
+
+    // MARK: Background, through Accessibility
+
+    private static func done(_ text: String, route: String) -> [String: JSONValue] {
+        ["text": .string(text), "route": .string(route)]
+    }
+
+    private func family(of element: AXUIElement?) -> Delivery.Family {
+        let app = element.map { NSRunningApplication(processIdentifier: AX.pid($0)) } ?? nil
+        let frameworks = app?.bundleURL?.appendingPathComponent("Contents/Frameworks")
+        let embeds = ["Electron Framework.framework", "Chromium Embedded Framework.framework"].contains { name in
+            frameworks.map { FileManager.default.fileExists(atPath: $0.appendingPathComponent(name).path) } ?? false
+        }
+        return Delivery.family(bundleID: app?.bundleIdentifier, embedsChromium: embeds)
+    }
+
+    private static func actions(_ element: AXUIElement) -> [String] {
+        var names: CFArray?
+        AXUIElementCopyActionNames(element, &names)
+        return names as? [String] ?? []
+    }
+
+    private static func settable(_ element: AXUIElement, _ attribute: String) -> Bool {
+        var yes: DarwinBoolean = false
+        return AXUIElementIsAttributeSettable(element, attribute as CFString, &yes) == .success && yes.boolValue
+    }
+
+    /// The element or one of its two nearest ancestors that presses: a click on a button's label presses it.
+    private static func pressable(_ element: AXUIElement) -> AXUIElement? {
+        var node: AXUIElement? = element
+        for _ in 0..<3 {
+            guard let current = node else { return nil }
+            if AX.actionable.contains(AX.role(current)) && actions(current).contains(kAXPressAction) { return current }
+            node = AX.attribute(current, kAXParentAttribute)
+        }
+        return nil
+    }
+
+    /// Focuses a text element and puts the caret under `point`, read back to check.
+    private static func focus(_ element: AXUIElement, at point: CGPoint) -> Bool {
+        guard !AX.isSecure(element),
+              AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success
+        else { return false }
+        var spot = point
+        var value: CFTypeRef?
+        if let position = AXValueCreate(.cgPoint, &spot),
+           AXUIElementCopyParameterizedAttributeValue(element, kAXRangeForPositionParameterizedAttribute as CFString,
+                                                      position, &value) == .success,
+           let value, CFGetTypeID(value) == AXValueGetTypeID() {
+            var range = CFRange()
+            AXValueGetValue(value as! AXValue, .cfRange, &range)
+            var caret = CFRange(location: range.location, length: 0)
+            if let caretValue = AXValueCreate(.cfRange, &caret) {
+                AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, caretValue)
+            }
+        }
+        return (AX.attribute(element, kAXFocusedAttribute) as Bool?) ?? true
+    }
+
+    /// Inserts text at the caret and waits briefly to read it back: some apps say yes and do nothing.
+    private static func insert(_ text: String, into element: AXUIElement) -> Bool {
+        let before: String? = AX.attribute(element, kAXValueAttribute)
+        guard AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, text as CFString) == .success
+        else { return false }
+        for _ in 0..<10 {
+            let after: String? = AX.attribute(element, kAXValueAttribute)
+            if let after, after != before, after.contains(text) { return true }
+            usleep(50000)
+        }
+        return false
+    }
+
+    /// The scroll area around an element, if it has a scroll bar Milo can set.
+    private static func scrollArea(_ element: AXUIElement) -> AXUIElement? {
+        var node: AXUIElement? = element
+        for _ in 0..<8 {
+            guard let current = node else { return nil }
+            if AX.role(current) == kAXScrollAreaRole as String {
+                let bars = [kAXVerticalScrollBarAttribute, kAXHorizontalScrollBarAttribute]
+                    .compactMap { AX.attribute(current, $0) as AXUIElement? }
+                return bars.contains { settable($0, kAXValueAttribute) } ? current : nil
+            }
+            node = AX.attribute(current, kAXParentAttribute)
+        }
+        return nil
+    }
+
+    /// Moves the scroll bars by about `lines` lines of 16 points each, read back to check.
+    private static func scroll(_ area: AXUIElement, lines: (dx: Double, dy: Double)) -> Bool {
+        guard let visible = AX.frame(area) else { return false }
+        let content = AX.children(area).compactMap(AX.frame).max { $0.width * $0.height < $1.width * $1.height }
+        var moved = false
+        for (attribute, delta, length, shown) in [
+            (kAXVerticalScrollBarAttribute, lines.dy, content?.height ?? 0, visible.height),
+            (kAXHorizontalScrollBarAttribute, lines.dx, content?.width ?? 0, visible.width),
+        ] where delta != 0 {
+            guard let bar: AXUIElement = AX.attribute(area, attribute),
+                  let now = (AX.attribute(bar, kAXValueAttribute) as NSNumber?)?.doubleValue else { continue }
+            let range = max(length - shown, shown)
+            let next = min(1, max(0, now + delta * 16 / range))
+            AXUIElementSetAttributeValue(bar, kAXValueAttribute as CFString, NSNumber(value: next))
+            let after = (AX.attribute(bar, kAXValueAttribute) as NSNumber?)?.doubleValue
+            moved = moved || (after.map { abs($0 - now) > 0.0001 } ?? false)
+        }
+        return moved
+    }
+
+    /// The caret of a text element in global points, for Milo's cursor to show where he types.
+    private static func caret(_ element: AXUIElement) -> CGPoint? {
+        guard let range: AXValue = AX.attribute(element, kAXSelectedTextRangeAttribute) else { return nil }
+        var bounds: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(element, kAXBoundsForRangeParameterizedAttribute as CFString,
+                                                         range, &bounds) == .success,
+              let bounds, CFGetTypeID(bounds) == AXValueGetTypeID() else { return nil }
+        var rect = CGRect.zero
+        AXValueGetValue(bounds as! AXValue, .cgRect, &rect)
+        return rect.isEmpty && rect.origin == .zero ? nil : CGPoint(x: rect.minX, y: rect.midY)
+    }
+
+    private static func window(of element: AXUIElement) -> AXUIElement? {
+        if AX.role(element) == kAXWindowRole as String { return element }
+        return AX.attribute(element, kAXWindowAttribute)
     }
 
     // MARK: Helpers

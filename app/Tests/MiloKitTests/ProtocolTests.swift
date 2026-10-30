@@ -68,6 +68,20 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .appRequest(id: "a41f", op: "calendar.add_event", args: .object([
                 "title": .string("Doctor"), "start": .string("2026-11-05T15:00:00"), "end": .string("2026-11-05T16:00:00"),
             ])),
+            .helpers([
+                HelperInfo(id: "c0ffee12ab34", title: "Budget table in Excel", status: .working,
+                           step: "Typing “Monday” in Excel", progress: 0.4),
+                HelperInfo(id: "d00d12ab3456", title: "Flights to Lisbon", status: .queued, step: "Waiting for a free helper"),
+                HelperInfo(id: "e1e1e1e1e1e1", title: "Sort downloads", status: .needsYou, step: "Waiting for your answer"),
+                HelperInfo(id: "f2f2f2f2f2f2", title: "Dentist email", status: .done),
+            ]),
+            .handsBorrow(on: true, what: "mouse"),
+            .facts([
+                MemoryFact(id: "01JBF6Z3Q8M2X4K7N9P0R5T6VW", text: "The user's name is Niklas.", topic: "basics",
+                           since: "2026-10-30T09:12:00", pinned: true),
+                MemoryFact(id: "01JBF7A1B2C3D4E5F6G7H8J9KM", text: "Anna is the user's sister. Her birthday is March 3.",
+                           topic: "people", since: "2026-10-30T18:05:41"),
+            ]),
             .dictationStream(.preview),
         ])
     }
@@ -99,6 +113,11 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             ]))),
             .appResponse(id: "a42f", outcome: .failure(
                 "Milo isn't allowed to use your calendar. Turn it on in System Settings › Privacy & Security › Calendars.")),
+            .stopHelper(id: "c0ffee12ab34"),
+            .handsResult(id: "hands-7", ok: false, result: ["borrow": "mouse"],
+                         error: "Excel doesn't take clicks in the background."),
+            .getFacts, .forgetFact(id: "01JBF7A1B2C3D4E5F6G7H8J9KM"),
+            .editFact(id: "01JBF7A1B2C3D4E5F6G7H8J9KM", text: "Anna is the user's sister. Her birthday is March 4."),
             .setDictationStream(.type),
         ]
         let encoder = JSONEncoder()
@@ -147,6 +166,12 @@ private func entries(_ key: String) throws -> [[String: Any]] {
         let event = try JSONDecoder().decode(BrainEvent.self, from: Data(json.utf8))
         #expect(event == .handsRequest(id: "h", tool: "key",
                                        args: ["combo": "cmd+s", "n": .array([1, true, .null])]))
+    }
+
+    @Test func aHelperWithAnUnknownStatusShowsAsWorkingAndProgressStaysInRange() throws {
+        let json = #"{"type":"helpers","helpers":[{"id":"h","title":"X","status":"dreaming","step":"","progress":3}]}"#
+        #expect(try JSONDecoder().decode(BrainEvent.self, from: Data(json.utf8))
+                == .helpers([HelperInfo(id: "h", title: "X", status: .working, progress: 1)]))
     }
 
     @Test func missingTypeThrows() {

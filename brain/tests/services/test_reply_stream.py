@@ -3,7 +3,7 @@ from datetime import datetime
 import pytest
 
 from milo.core.types import Emotion
-from milo.services.reply_stream import ReplyParser, parse_reminder
+from milo.services.reply_stream import ReplyParser, TaskRequest, parse_reminder
 
 
 def stream(*deltas: str) -> tuple[ReplyParser, list[str]]:
@@ -80,7 +80,7 @@ def test_tags_arriving_character_by_character():
     text = "[thinking] On it. <task>Find the cheapest flight to Lisbon</task>"
     parser, out = stream(*text)
     assert "".join(out) == "On it. "
-    assert parser.tasks == ["Find the cheapest flight to Lisbon"]
+    assert parser.tasks == [TaskRequest("Find the cheapest flight to Lisbon")]
     assert parser.emotion is Emotion.THINKING
 
 
@@ -100,13 +100,13 @@ def test_several_tags_and_case_insensitive_names():
                          "<task>  sort\n the  downloads </task>")
     assert "".join(out) == "Done. "
     assert parser.remembers == ["Has a cat", "Has a cat"], "dedup is the profile's job"
-    assert parser.tasks == ["sort the downloads"]
+    assert parser.tasks == [TaskRequest("sort the downloads")]
 
 
 def test_unclosed_tag_at_the_end_still_counts():
     parser, out = stream("[happy] Sure. <task>water the plants")
     assert "".join(out) == "Sure. "
-    assert parser.tasks == ["water the plants"]
+    assert parser.tasks == [TaskRequest("water the plants")]
 
 
 def test_stray_closing_tag_and_mid_reply_emotion_tags_are_dropped():
@@ -146,3 +146,29 @@ def test_spoken_accumulates_everything_released():
 ])
 def test_parse_reminder(content, expected):
     assert parse_reminder(content) == expected
+
+
+def test_task_tags_carry_a_title_and_whether_they_need_the_screen():
+    parser, out = stream('[happy] On it. <task title="Budget table', ' in Excel" screen="yes">Make a budget ',
+                         'table in Excel for November</task> <task screen=no>Find flights</task>')
+    assert "".join(out).strip() == "On it."
+    assert parser.tasks == [TaskRequest("Make a budget table in Excel for November", "Budget table in Excel", True),
+                            TaskRequest("Find flights", "", False)]
+
+
+def test_steer_and_stop_tags_name_a_helper():
+    parser, out = stream("[neutral] Okay, I'll tell it. ", '<steer helper="2">Make it 2000 ', "instead</steer>",
+                         ' Stopping the other one. <stop helper="1"/><stop helper="all" /><stop/>')
+    assert "".join(out).split() == "Okay, I'll tell it. Stopping the other one.".split()
+    assert parser.steers == [("2", "Make it 2000 instead")]
+    assert parser.stops == ["1", "all", ""]
+
+
+def test_an_attribute_tag_split_mid_name_is_never_spoken():
+    parser, out = stream("[neutral] Sure. <ta", "sk ti", 'tle="X">do x</task>')
+    assert "".join(out).strip() == "Sure." and parser.tasks == [TaskRequest("do x", "X")]
+
+
+def test_a_lone_angle_bracket_with_words_is_still_spoken():
+    parser, out = stream("[neutral] 3 <stopwatch> 4 and a <taskbar thing")
+    assert "".join(out) == "3 <stopwatch> 4 and a <taskbar thing" and parser.stops == []

@@ -1,4 +1,9 @@
-"""Claude Code adapter: one `claude -p` process per turn, read as stream-json so tool use shows while it works."""
+"""Claude Code adapter: one `claude -p` process per turn, read as stream-json so tool use shows while it works.
+
+The worker gets Milo's tools and instructions only: no user settings (so none of the user's plugins, hooks or
+permission rules), no skills or slash commands, no auto-memory, only the MCP servers Milo passes and a fixed set
+of built-in tools. Its instructions are the workspace's CLAUDE.md, which imports AGENTS.md.
+"""
 
 from __future__ import annotations
 
@@ -9,13 +14,20 @@ from pathlib import Path
 from typing import Any
 
 from milo.core.hands import mac_server
-from milo.core.ports import StepCallback
+from milo.core.ports import PlanCallback, SessionCallback, StepCallback
 from milo.core.registry import HARNESSES, AdapterContext, options_from
 from milo.core.types import REPLY_SCHEMA, HarnessError, Reply, ToolServer, Usage
 
-from ._activity import ClaudeActivity
+from ._activity import ClaudeActivity, RunWatch, lines
 from ._binary import find_binary
 from ._process import last_line, run
+
+
+# Built-in tools the worker may use: files in its workspace (memory), a shell and the web. No sub-agents,
+# workflows, schedules or worktrees.
+BUILTIN_TOOLS = ("Bash", "Read", "Edit", "Write", "Glob", "Grep", "WebSearch", "WebFetch")
+# Project settings stay (the workspace's own .claude/settings.json, if the user made one); user settings don't.
+SETTINGS = json.dumps({"autoMemoryEnabled": False})
 
 
 @dataclass(frozen=True)
@@ -52,26 +64,30 @@ class ClaudeHarness:
 
     def command(self, prompt: str, session_id: str | None) -> list[str]:
         cmd = [self.binary, "-p", "--output-format", "stream-json", "--verbose",
-               "--json-schema", json.dumps(REPLY_SCHEMA), "--permission-mode", self.permission_mode]
+               "--json-schema", json.dumps(REPLY_SCHEMA), "--permission-mode", self.permission_mode,
+               "--setting-sources", "project,local", "--settings", SETTINGS, "--disable-slash-commands",
+               "--tools", ",".join(t for t in BUILTIN_TOOLS if t not in self.disallowed_tools)]
         if session_id:
             cmd += ["--resume", session_id]
         if self.model:
             cmd += ["--model", self.model]
+        # Strict: the worker gets Milo's MCP servers only, not whatever else Claude Code has configured.
+        cmd += ["--strict-mcp-config"]
         if self.servers:
             # -p can't ask for permission, so Milo's tools are allowed up front: the brain checks each call and
-            # asks the user when it matters. Strict: the worker gets Milo's tools only, not whatever else
-            # Claude Code has configured.
+            # asks the user when it matters.
             config = str(self.mcp_config) if self.mcp_config is not None else json.dumps(mcp_servers(self.servers))
-            cmd += ["--mcp-config", config, "--strict-mcp-config",
-                    "--allowedTools", *(f"mcp__{s.name}" for s in self.servers)]
+            cmd += ["--mcp-config", config, "--allowedTools", *(f"mcp__{s.name}" for s in self.servers)]
         if self.disallowed_tools:
             cmd += ["--disallowedTools", *self.disallowed_tools]
         return cmd + ["--", prompt]
 
-    async def reply(self, prompt: str, session_id: str | None, *, on_step: StepCallback | None = None) -> Reply:
-        on_line = ClaudeActivity(on_step, self.workdir).line if on_step is not None else None
+    async def reply(self, prompt: str, session_id: str | None, *, on_step: StepCallback | None = None,
+                    on_session: SessionCallback | None = None, on_plan: PlanCallback | None = None) -> Reply:
+        on_line = lines(ClaudeActivity(on_step, self.workdir).line if on_step is not None else None,
+                        RunWatch(on_session, on_plan).line if on_session or on_plan else None)
         code, out, err = await run(self.command(prompt, session_id), cwd=self.workdir, timeout_s=self.timeout_s,
-                                   on_line=on_line)
+                                   on_line=on_line, done=is_result)
         return parse_result(result_line(out), code, err, session_id)
 
 
@@ -79,6 +95,11 @@ def mcp_servers(servers: tuple[ToolServer, ...]) -> dict:
     """The --mcp-config file for Claude Code."""
     return {"mcpServers": {s.name: {"type": "stdio", "command": s.command[0], "args": list(s.command[1:]),
                                     **({"env": dict(s.env)} if s.env else {})} for s in servers}}
+
+
+def is_result(line: str) -> bool:
+    """The `{"type":"result",...}` line, which ends a `claude -p` turn."""
+    return '"type":"result"' in line[:40] and line.lstrip().startswith("{")
 
 
 def result_line(out: str) -> str:

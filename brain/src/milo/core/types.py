@@ -274,3 +274,12 @@ class ScreenCapture:
 
 class HandsError(Exception):
     """A computer-use action could not run. The message is told to the worker agent as the tool's error."""
+
+
+class BorrowNeeded(HandsError):
+    """The action can't be done in the background: the app needs the user's real mouse or keyboard, which it
+    only uses once the user agreed to lend them. Nothing happened yet."""
+
+    def __init__(self, what: str, message: str = ""):
+        super().__init__(message or f"This needs the {what}.")
+        self.what = what

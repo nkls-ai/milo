@@ -9,6 +9,11 @@ reply streams back token by token. Protocol (measured against claude 2.x):
 - out: `stream_event` lines carrying `content_block_delta`/`text_delta`, then one `result` per turn
        (`error_during_execution` after an interrupt). The process survives an interrupt.
 
+start() also sends a short priming message and reads its reply in the background. The first message to a
+fresh process is slow (the CLI finishes starting up, and the system prompt isn't in the prompt cache yet):
+measured 2 to 3 s to the first token against about 1 s for later ones. The user's first turn then doesn't
+pay for it. The priming exchange stays in the conversation; it says nobody has spoken yet.
+
 A reader task routes stdout into a queue. A turn that ends early (interrupt, or the consumer stops
 iterating) leaves its `result` owed; the next turn reads up to it first, so turns never see each
 other's lines.
@@ -38,6 +43,8 @@ STDOUT_LIMIT = 16 * 1024 * 1024  # one JSON line can carry a whole message
 CLOSE_TIMEOUT_S = 3.0
 DRAIN_TIMEOUT_S = 15.0  # how long to wait for an abandoned turn's result before restarting
 
+PRIME_TEXT = "(Nobody has said anything yet. This only opens the line. Reply with just [neutral].)"
+
 _EOF = object()  # the process closed stdout
 _WAKE = object()  # interrupt() wants the running turn to notice at once
 
@@ -47,6 +54,7 @@ class ClaudeLiveOptions:
     binary: str = ""
     model: str = "claude-sonnet-5-5"
     effort: str = "low"
+    prime: bool = True  # send a priming message when a conversation starts, so the first turn is fast
 
 
 class _Session:
@@ -122,11 +130,14 @@ class _Turn:
 class ClaudeLiveModel:
     name = "claude_live"
 
-    def __init__(self, binary: str, workdir: Path, *, model: str = "claude-sonnet-5-5", effort: str = "low"):
+    def __init__(self, binary: str, workdir: Path, *, model: str = "claude-sonnet-5-5", effort: str = "low",
+                 prime: bool = True):
         self.binary = binary
         self.workdir = workdir
         self.model = model
         self.effort = effort
+        self.prime = prime
+        self._priming: asyncio.Task | None = None
         self.last_usage = Usage()
         self._system_prompt = ""
         self._session: _Session | None = None
@@ -148,6 +159,19 @@ class ClaudeLiveModel:
         await self.close()
         self._system_prompt = system_prompt
         self._session = await self._spawn()
+        if self.prime:
+            self._priming = asyncio.create_task(self._prime())
+
+    async def _prime(self) -> None:
+        started = asyncio.get_running_loop().time()
+        try:
+            async for _ in self.turn(PRIME_TEXT):
+                pass
+        except HarnessError as e:
+            log.warning("claude_live: priming failed: %s", e)
+            return
+        log.info("claude_live primed in %.2fs, %d in (%d cached)", asyncio.get_running_loop().time() - started,
+                 self.last_usage.input_tokens, self.last_usage.cached_input_tokens)
 
     async def turn(self, text: str, images: Sequence[Path] = ()) -> AsyncIterator[str]:
         async with self._lock:
@@ -197,6 +221,10 @@ class ClaudeLiveModel:
                 await turn.session.proc.stdin.drain()
 
     async def close(self) -> None:
+        priming, self._priming = self._priming, None
+        if priming is not None and not priming.done():
+            priming.cancel()
+            await asyncio.gather(priming, return_exceptions=True)
         session, self._session = self._session, None
         if session is not None:
             await session.close()
@@ -285,4 +313,5 @@ def _claude_live(options: Mapping[str, Any], ctx: AdapterContext) -> ClaudeLiveM
         ctx.state_dir / "live",
         model=o.model,
         effort=o.effort,
+        prime=o.prime,
     )

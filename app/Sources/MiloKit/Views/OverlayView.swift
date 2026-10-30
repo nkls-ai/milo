@@ -14,10 +14,15 @@ public struct OverlayView: View {
             // A question to the user shows in the bubble, with Yes and No.
             BubbleView(model: model)
             LiveTranscriptView(model: model)
-            CharacterView(model: model)
-                .frame(width: 132, height: 132)
-                .overlay(alignment: .topLeading) { LookingBadge(model: model) }
-                .padding(.trailing, 8)
+            HStack(alignment: .bottom, spacing: 0) {
+                // Left of the square DraggableHostingView keeps for Milo, so a click on a bird is the bird's.
+                HelperFlock(model: model)
+                    .padding(.trailing, 20)
+                CharacterView(model: model)
+                    .frame(width: 132, height: 132)
+                    .overlay(alignment: .topLeading) { LookingBadge(model: model) }
+                    .padding(.trailing, 8)
+            }
         }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)

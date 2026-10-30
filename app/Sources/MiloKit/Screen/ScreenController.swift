@@ -6,39 +6,69 @@ public struct ScreenPorts {
     public var hands: HandsExecutor
     public var input: UserInputSource
     public var hotkey: HotkeySource
+    public var cursor: CursorDisplay
+    public var windows: WindowWatcher
 
-    public init(reader: ScreenReader, hands: HandsExecutor, input: UserInputSource, hotkey: HotkeySource) {
+    public init(reader: ScreenReader, hands: HandsExecutor, input: UserInputSource, hotkey: HotkeySource,
+                cursor: CursorDisplay = NoCursor(), windows: WindowWatcher = NoWindowWatcher()) {
         self.reader = reader
         self.hands = hands
         self.input = input
         self.hotkey = hotkey
+        self.cursor = cursor
+        self.windows = windows
     }
 }
 
 /// Looking at the screen, "What's this?" and the worker's actions on screen.
 ///
-/// While the worker acts (hands_session on), real mouse or keyboard input stops it at once: the app tells
-/// the brain (hands_stop), cancels what is running and refuses actions until the brain ends the session.
+/// The worker acts in the background: his own cursor glides to each spot before the action runs, the window he
+/// works in gets an outline (`MiloModel.workingWindow`) that follows it, and Pip perches on its corner. The
+/// user keeps their mouse and keyboard, and only esc (or the Stop button on the outline) stops him.
+///
+/// When an action needs the real mouse or keyboard, the brain asks the user to lend them (`hands_borrow`).
+/// While they are lent, the frame around the screen shows and any real input stops the worker at once, as
+/// before: the app tells the brain (hands_stop), cancels what is running and refuses actions until the brain
+/// ends the session. They go back to the user `lendFor` seconds after the last action.
+///
 /// Input is ignored while a question waits (`confirm` until `confirm_done`), since answering it means using
 /// the mouse or the talk key. The question itself is MiloModel's, answered with `confirm_answer`.
 public final class ScreenController {
+    /// Tools that act on screen and get Milo's cursor.
+    static let pointed: Set<String> = ["click", "type", "key", "scroll", "ax_press", "ax_set_value"]
+    /// How long the real mouse and keyboard stay lent after the last action.
+    public static let lendFor: TimeInterval = 15
+    /// The longest an action waits for Milo's cursor to arrive.
+    static let glideWait: TimeInterval = 1.2
+
     private let model: MiloModel
     private let brain: BrainClient
     private let ports: ScreenPorts
     private let now: () -> TimeInterval
     private let toAppKit: (ScreenPoint) -> CGPoint
-    private var detector = TakeoverDetector()
+    private let scheduler: Scheduler
+    private var detector = TakeoverDetector(mode: .background)
     private var stoppedLocally = false
+    /// Where Milo's cursor is headed (AppKit coordinates) and the actions waiting for it to get there.
+    private var aim: CGPoint?
+    private var gliding = false
+    private var waiting: [() -> Void] = []
+    private var glideTimeout: ScheduledTask?
+    /// The devices the user lent ("mouse", "keyboard"), each with its own give-back timer.
+    private var lent: Set<String> = []
+    private var lapses: [String: ScheduledTask] = [:]
+    private var watchedPid: Int32?
 
     /// `now` is on the input events' clock. `toAppKit` turns a top-left-origin point into AppKit's.
     public init(model: MiloModel, brain: BrainClient, ports: ScreenPorts,
                 now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
-                toAppKit: @escaping (ScreenPoint) -> CGPoint) {
+                toAppKit: @escaping (ScreenPoint) -> CGPoint, scheduler: Scheduler = MainQueueScheduler()) {
         self.model = model
         self.brain = brain
         self.ports = ports
         self.now = now
         self.toAppKit = toAppKit
+        self.scheduler = scheduler
     }
 
     public func start() {
@@ -62,6 +92,12 @@ public final class ScreenController {
         }
     }
 
+    /// The user pressed Stop on the outline of the window Milo works in.
+    public func stopPressed() {
+        guard model.handsActive else { return }
+        stop(.escape)
+    }
+
     /// Handles the screen events; false for anything else. Questions only pause the takeover check and
     /// return false, so the model still shows them.
     public func apply(_ event: BrainEvent) -> Bool {
@@ -74,8 +110,11 @@ public final class ScreenController {
             perform(id: id, tool: tool, args: args)
         case let .handsSession(on):
             session(on)
+        case let .handsBorrow(on, what):
+            if model.handsActive { lend(what, on) }
         case let .flyTo(point):
-            model.flyTarget = point.map(toAppKit)
+            // While a window is known Pip stays perched on it; Milo's cursor shows the spot.
+            if point == nil || model.workingWindow == nil { model.flyTarget = point.map(toAppKit) }
         case .confirm:
             detector.disarm()
             return false
@@ -94,38 +133,158 @@ public final class ScreenController {
             brain.send(.handsResult(id: id, ok: false, result: [:], error: "stopped"))
             return
         }
-        detector.miloActs(at: now())
-        ports.hands.perform(tool, args: args) { [weak self] result in
+        let run = { [weak self] in
             guard let self else { return }
+            if stoppedLocally && tool != "describe" {
+                return brain.send(.handsResult(id: id, ok: false, result: [:], error: "stopped"))
+            }
+            if let device = Self.device(for: tool) { lapses[device]?.cancel() }
             detector.miloActs(at: now())
-            switch result {
-            case let .success(value): brain.send(.handsResult(id: id, ok: true, result: value))
-            case let .failure(failure): brain.send(.handsResult(id: id, ok: false, result: [:], error: failure.message))
+            ports.hands.perform(tool, args: args) { [weak self] result in
+                self?.finished(id: id, tool: tool, args: args, result: result)
             }
         }
+        // An action waits for Milo's cursor to reach its spot, so the user sees where it lands first.
+        if Self.pointed.contains(tool) && gliding { waiting.append(run) } else { run() }
+    }
+
+    private func finished(id: String, tool: String, args: [String: JSONValue],
+                          result: Result<[String: JSONValue], HandsFailure>) {
+        detector.miloActs(at: now())
+        // Each lent device's give-back clock restarts after an action that used it.
+        if let device = Self.device(for: tool), lent.contains(device) { startLapse(device) }
+        switch result {
+        case let .success(value):
+            if tool == "describe" { aim(at: HandsTarget(describe: value), tool: args["tool"]?.string ?? "") }
+            if model.handsActive, let aim { cue(tool, at: aim) }
+            brain.send(.handsResult(id: id, ok: true, result: value))
+        case let .failure(failure):
+            let result: [String: JSONValue] = failure.borrow.map { ["borrow": .string($0)] } ?? [:]
+            brain.send(.handsResult(id: id, ok: false, result: result, error: failure.message))
+        }
+    }
+
+    /// The window and spot `describe` found: outline the window, perch Pip on it, glide the cursor there.
+    private func aim(at target: HandsTarget, tool: String) {
+        guard Self.pointed.contains(tool) else { return }
+        if let window = target.window {
+            show(window: window)
+            if let pid = target.pid, pid != watchedPid || model.workingWindow != appKit(window) {
+                watchedPid = pid
+                ports.windows.watch(pid: pid, frame: window) { [weak self] frame in
+                    guard let self, model.handsActive else { return }
+                    if let frame { show(window: frame) } else { model.workingWindow = nil; watchedPid = nil }
+                }
+            }
+        }
+        guard let point = target.point else { return }
+        let spot = toAppKit(ScreenPoint(x: point.x, y: point.y))
+        aim = spot
+        gliding = true
+        glideTimeout?.cancel()
+        glideTimeout = scheduler.after(Self.glideWait) { [weak self] in self?.arrived() }
+        ports.cursor.glide(to: spot) { [weak self] in self?.arrived() }
+    }
+
+    private func arrived() {
+        glideTimeout?.cancel()
+        glideTimeout = nil
+        gliding = false
+        let ready = waiting
+        waiting.removeAll()
+        ready.forEach { $0() }
+    }
+
+    private func cue(_ tool: String, at point: CGPoint) {
+        switch tool {
+        case "click", "ax_press": ports.cursor.click(at: point)
+        case "type", "ax_set_value", "key": ports.cursor.typing(at: point)
+        default: break
+        }
+    }
+
+    private func show(window frame: CGRect) {
+        let rect = appKit(frame)
+        if model.workingWindow != rect { model.workingWindow = rect }
+        if model.flyTarget != nil { model.flyTarget = nil }
+    }
+
+    /// A top-left-origin rectangle in AppKit's space: its bottom-left corner moves, the size stays.
+    private func appKit(_ frame: CGRect) -> CGRect {
+        let origin = toAppKit(ScreenPoint(x: frame.minX, y: frame.maxY))
+        return CGRect(origin: origin, size: frame.size)
     }
 
     private func session(_ on: Bool) {
         stoppedLocally = false
         model.handsActive = on
         if on {
+            detector.mode = lent.isEmpty ? .background : .borrowed
             if model.question == nil { detector.arm() }
             ports.input.start()
         } else {
             detector.disarm()
             ports.input.stop()
-            model.flyTarget = nil
+            clearScreen()
         }
+    }
+
+    /// Which device an action uses, so only that one's give-back clock restarts.
+    static func device(for tool: String) -> String? {
+        switch tool {
+        case "click", "scroll": Delivery.Need.mouse.rawValue
+        case "type", "key": Delivery.Need.keyboard.rawValue
+        default: nil
+        }
+    }
+
+    /// Lend one device ("mouse" or "keyboard") or give it back. Only the device the user agreed to is lent,
+    /// so a yes for the mouse can't let Milo type with the real keyboard, and each is handed back on its own.
+    private func lend(_ what: String, _ on: Bool) {
+        guard what == Delivery.Need.mouse.rawValue || what == Delivery.Need.keyboard.rawValue else { return }
+        lapses[what]?.cancel()
+        lapses[what] = nil
+        if on { lent.insert(what); startLapse(what) } else { lent.remove(what) }
+        apply(lent: lent)
+    }
+
+    private func startLapse(_ what: String) {
+        lapses[what]?.cancel()
+        lapses[what] = scheduler.after(Self.lendFor) { [weak self] in self?.lend(what, false) }
+    }
+
+    private func apply(lent devices: Set<String>) {
+        ports.hands.borrowed = devices
+        model.handsBorrowed = !devices.isEmpty
+        detector.mode = devices.isEmpty ? .background : .borrowed
     }
 
     private func handle(_ input: UserInput) {
         guard let reason = detector.handle(input) else { return }
+        stop(reason)
+    }
+
+    private func stop(_ reason: TakeoverDetector.Reason) {
         detector.disarm()
         stoppedLocally = true
         ports.hands.cancel()
         ports.input.stop()
         model.handsActive = false
-        model.flyTarget = nil
+        clearScreen()
         brain.send(.handsStop(reason: reason.rawValue))
+    }
+
+    private func clearScreen() {
+        lapses.values.forEach { $0.cancel() }
+        lapses.removeAll()
+        lent.removeAll()
+        apply(lent: lent)
+        model.flyTarget = nil
+        model.workingWindow = nil
+        watchedPid = nil
+        ports.windows.stop()
+        ports.cursor.rest()
+        aim = nil
+        arrived()
     }
 }

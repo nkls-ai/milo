@@ -8,12 +8,15 @@ import pytest
 
 from milo.brain import Brain
 from milo.config import UiSettings
-from milo.core.events import (Bubble, Dictation, DictationStream, EmotionChanged, HandsSession, Heard, Level,
+from milo.core.events import (Bubble, Dictation, DictationStream, EmotionChanged, Facts, HandsSession, Heard, Level,
                               ListenStart, ListenStop, Looking, Mute, Partial, SetDictationStream, StateChanged, Status,
                               TextInput, UiConfig, parse_command)
+from milo.core.memory import Fact
 from milo.core.types import Emotion, HandsError, ListenMode, LiveMode, MiloState, Nudge, ScreenCapture
 from milo.services.app_bridge import AppEyes, AppHands
 from tests.fakes import FakeEyes, FakeHands, FakeLiveModel, FakeTranscriber
+from milo.services.helpers import HelperStatus
+from tests.fakes import ScriptedHarness, WorkerScript
 from tests.services.stack import Stack, settle
 
 FIXTURE = json.loads((Path(__file__).parents[2] / "protocol" / "messages.json").read_text())
@@ -166,6 +169,63 @@ def check_app_response(s: Stack, msg: dict) -> None:
     assert asyncio.run(go()) == (msg["result"] if msg["ok"] else msg["error"])
 
 
+def check_stop_helper(s: Stack, msg: dict) -> None:
+    gate = asyncio.Event()
+    s.harness = ScriptedHarness(WorkerScript(gate, "never"))
+    s.runner._harness = s.harness
+
+    async def go():
+        helper = s.tasks.submit("count to a million")
+        await settle()
+        s.tasks._supervisors[msg["id"]] = s.tasks._supervisors.pop(helper.id)  # the fixture's id
+        helper.id = msg["id"]
+        await s.brain.handle(parse_command(msg))
+        await s.tasks.idle()
+        return helper
+
+    helper = asyncio.run(go())
+    assert helper.status is HelperStatus.STOPPED and s.harness.played[0].cancelled
+
+
+def memory_stack() -> Stack:
+    s = Stack(with_memory=True)
+    for text, topic in (("The user's name is Niklas.", "basics"),
+                        ("Anna is the user's sister. Her birthday is March 3.", "people")):
+        s.facts.add(Fact(FACT_IDS[topic], text, topic, s.clock.now(), "chat"))
+    return s
+
+
+FACT_IDS = {"basics": "01JBF6Z3Q8M2X4K7N9P0R5T6VW", "people": "01JBF7A1B2C3D4E5F6G7H8J9KM"}
+
+
+def check_get_facts(s: Stack, msg: dict) -> None:
+    s = memory_stack()
+    run(s, parse_command(msg))
+    [event] = s.sink.of(Facts)
+    assert [(f["topic"], f["pinned"]) for f in event.facts] == [("basics", True), ("people", False)]
+    plain = Stack()  # memory switched off: an empty list
+    run(plain, parse_command(msg))
+    assert plain.sink.of(Facts) == [Facts([])]
+
+
+def check_forget_fact(s: Stack, msg: dict) -> None:
+    s = memory_stack()
+    run(s, parse_command(msg))
+    assert [f.topic for f in s.facts.current()] == ["basics"]
+    assert s.facts.log[-1] == ("retire", msg["id"], "you")
+    assert [f["topic"] for f in s.sink.of(Facts)[-1].facts] == ["basics"]
+    run(s, parse_command(msg))  # gone already: the app just gets the list again
+    assert len(s.sink.of(Facts)) == 2
+
+
+def check_edit_fact(s: Stack, msg: dict) -> None:
+    s = memory_stack()
+    run(s, parse_command(msg))
+    [anna] = [f for f in s.facts.current() if f.topic == "people"]
+    assert anna.text == msg["text"] and anna.replaces == msg["id"] and anna.source == "you"
+    assert s.sink.of(Facts)[-1].facts[-1]["text"] == msg["text"]
+
+
 def check_set_dictation_stream(s: Stack, msg: dict) -> None:
     saved: list[str] = []
     brain = Brain(s.ui, s.listening, s.live_talk, s.context, None, UiSettings(), save_stream=saved.append)
@@ -175,6 +235,10 @@ def check_set_dictation_stream(s: Stack, msg: dict) -> None:
 
 
 CHECKS = {
+    "stop_helper": check_stop_helper,
+    "get_facts": check_get_facts,
+    "forget_fact": check_forget_fact,
+    "edit_fact": check_edit_fact,
     "set_dictation_stream": check_set_dictation_stream,
     "look_result": check_look_result,
     "whats_this": check_whats_this,

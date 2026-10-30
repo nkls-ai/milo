@@ -65,3 +65,26 @@ import Testing
         #expect(d.handle(UserInput(.mouseMoved(x: 300, y: 300), at: 5)) == nil)
     }
 }
+
+@Suite struct TakeoverModeTests {
+    @Test func inTheBackgroundOnlyEscStops() {
+        var d = TakeoverDetector(mode: .background)
+        d.arm()
+        for input in [UserInput(.key, at: 1), UserInput(.mouseDown, at: 1), UserInput(.scroll, at: 1),
+                      UserInput(.mouseMoved(x: 0, y: 0), at: 1), UserInput(.mouseMoved(x: 500, y: 500), at: 2)] {
+            #expect(d.handle(input) == nil, "the user's own work never stops Milo in the background")
+        }
+        #expect(d.handle(UserInput(.escape, at: 3)) == .escape)
+    }
+
+    @Test func borrowingBringsBackTheStrictRules() {
+        var d = TakeoverDetector(mode: .background)
+        d.arm()
+        _ = d.handle(UserInput(.mouseMoved(x: 0, y: 0), at: 1))
+        d.mode = .borrowed
+        #expect(d.handle(UserInput(.mouseMoved(x: 300, y: 0), at: 2)) == nil, "the switch is not a move")
+        #expect(d.handle(UserInput(.mouseMoved(x: 320, y: 0), at: 3)) == .user)
+        d.mode = .background
+        #expect(d.handle(UserInput(.key, at: 4)) == nil)
+    }
+}

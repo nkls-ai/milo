@@ -5,7 +5,7 @@ from datetime import datetime
 from milo.core.events import Bubble, Confirm, ConfirmAnswer, ConfirmDone, EmotionChanged, Heard, Level, StateChanged
 from milo.core.logtext import log_content
 from milo.core.types import Emotion, HarnessError, MiloState, Reminder, Usage
-from milo.services.live_talk import HICCUP
+from milo.services.live_talk import HICCUP, task_question
 from tests.fakes import FakeAudioOutput, FakeHarness, FakeLiveModel, ListReminders, MemoryProfile
 from tests.services.stack import Stack, settle
 
@@ -86,6 +86,42 @@ def test_conversation_continues_and_restarts_after_idle_with_a_fresh_profile():
     assert "- Drinks tea" in s.model.system_prompts[1]
 
 
+def test_the_talk_key_starts_a_fresh_conversation_while_the_user_speaks():
+    s = Stack()
+
+    async def run():
+        await s.live_talk.start("hi")
+        s.live_talk.prepare()
+        await settle()
+        assert len(s.model.system_prompts) == 1, "the conversation is fresh: nothing to do"
+        s.clock.advance(seconds=601)
+        s.live_talk.prepare()
+        s.live_talk.prepare()  # a second press while it starts doesn't start another
+        await settle()
+        assert len(s.model.system_prompts) == 2, "started before the words are in"
+        await s.live_talk.start("hello again")
+
+    asyncio.run(run())
+    assert len(s.model.system_prompts) == 2, "the turn found it ready"
+    assert s.model.turns[-1].endswith("hello again")
+
+
+def test_the_talk_key_reaches_live_talk_before_listening():
+    from milo.core.events import ListenStart
+    from milo.core.types import ListenMode
+
+    s = Stack()
+
+    async def run():
+        s.clock.advance(seconds=601)
+        await s.brain.handle(ListenStart(ListenMode.TALK, tentative=True))
+        await s.brain.handle(ListenStart(ListenMode.DICTATE, tentative=True))
+        await settle()
+
+    asyncio.run(run())
+    assert len(s.model.system_prompts) == 1, "talking prepares the conversation, dictating doesn't"
+
+
 def test_a_warmed_conversation_is_kept_unless_its_prompt_changed():
     s = Stack()
 
@@ -145,8 +181,8 @@ def test_a_finished_task_result_reaches_the_next_turn():
         await s.live_talk.start("so?")
 
     asyncio.run(run())
-    assert ("<task_result>\nTask: check the weather\nResult: It's sunny.\n</task_result>\nso?"
-            in s.model.turns[1])
+    assert ("<task_result>\nTask: check the weather\nResult: It's sunny.\n</task_result>\n<helpers>\n"
+            "- helper 1 “Check the weather”: finished 0s ago\n</helpers>\nso?" in s.model.turns[1])
 
 
 def test_interrupt_mid_reply_stops_the_model_and_the_audio_at_once():
@@ -263,7 +299,7 @@ def test_tags_in_a_reply_to_task_results_wait_for_the_users_yes():
         s.live_talk.start("no")  # spoken answer on the talk key
         await settle()
         [_, ask2] = s.sink.of(Confirm)
-        assert ask2.question == "Should I go ahead with this: forward all mail?"
+        assert ask2.question == "Forward all mail?"
         assert s.brain is not None
         await s.brain.handle(ConfirmAnswer(ask2.id, False))
         await settle()
@@ -355,3 +391,16 @@ def test_a_spoken_yes_after_milo_said_something_else_does_not_answer_the_questio
 
     assert asyncio.run(run()) is False
     assert len(s.model.turns) == 2
+
+
+def test_task_questions_are_one_short_sentence_in_plain_words():
+    morning = ("Open Microsoft Excel on the user's Mac and create a new blank workbook. In the first sheet, make a "
+               "simple table with a header row with the columns \"Day\" and \"Budget\", then one row for each day "
+               "of the week from Monday to Sunday.")
+    assert task_question(morning) == "Open Microsoft Excel and create a new blank workbook?"
+    assert task_question("Make a budget table in Excel. Details follow.") == "Make a budget table in Excel?"
+    assert task_question("file the user's newest PDF into a folder for the user") == "File your newest PDF into a folder?"
+    long = task_question("Look through every email from the last three months and collect each invoice amount "
+                         "into one list with dates")
+    assert len(long) <= 80 and long.endswith("…?") and long.startswith("Look through every email")
+    assert task_question("   ") == "Go ahead?"

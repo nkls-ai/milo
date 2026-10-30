@@ -90,13 +90,23 @@ async def _serve(runtime: Runtime) -> None:
     if runtime.hands_server is not None:
         await runtime.hands_server.start()
     log.info("brain up (chat=%s, harness=%s)", runtime.live_model.name, runtime.harness.name)
-    warming = asyncio.create_task(_warm_all({
+    engines: dict[str, Warmup] = {
         "stt": (runtime.stt_executor, runtime.transcriber.warm),
         "tts": (runtime.tts_executor, runtime.voice.warm),
+        # Queued behind the voice on the one TTS thread: the "Hm." clips for slow replies, in his voice.
+        **({"backchannels": (runtime.tts_executor, runtime.backchannel.warm)} if runtime.backchannel else {}),
         # Starts the chat model's process with the system prompt now, saving 1-2 s on the first turn.
         "chat": runtime.live_talk.warm,
-    }))
+    }
+    memory = runtime.memory
+    if memory is not None:
+        engines["memory"] = memory.memory.warm  # the embedder on its own thread, then the index catches up
+    warming = asyncio.create_task(_warm_all(engines))
     tasks = [warming] + ([asyncio.create_task(runtime.heartbeat.run())] if runtime.heartbeat else [])
+    if memory is not None and memory.sleep is not None:
+        tasks.append(asyncio.create_task(memory.sleep.run()))
+    if runtime.barge_in is not None:
+        tasks.append(asyncio.create_task(runtime.barge_in.run()))
     try:
         await runtime.server.serve_forever()
     finally:
@@ -104,11 +114,20 @@ async def _serve(runtime: Runtime) -> None:
             task.cancel()
         runtime.stt_executor.shutdown(wait=False, cancel_futures=True)
         runtime.tts_executor.shutdown(wait=False, cancel_futures=True)
+        if memory is not None:
+            memory.memory.close()  # queued behind whatever the memory thread is doing
+            memory.executor.shutdown(wait=False)
         await runtime.tool_server.close()
         await _close(runtime)
 
 
 async def _close(runtime: Runtime) -> None:
+    if runtime.helpers is not None:
+        try:
+            # Workers run in their own process groups, so they would outlive the brain.
+            await asyncio.wait_for(runtime.helpers.close(), CLOSE_TIMEOUT_S)
+        except Exception:
+            log.exception("stopping the helpers failed")
     if runtime.hands_server is not None:
         await runtime.hands_server.close()
     try:

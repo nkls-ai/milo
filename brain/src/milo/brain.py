@@ -7,10 +7,11 @@ from collections.abc import Callable
 from pathlib import Path
 
 from .config import UiSettings
-from .core.types import LiveMode
-from .core.events import (AppResponse, Command, ConfirmAnswer, ContextUpdate, DictationStream, EmotionChanged, Event,
-                          GetHistory, HandsResult, HandsStop, ListenCancel, ListenConfirm, ListenStart, ListenStop,
-                          LookResult, Mute, SetDictationStream, StateChanged, Status, TextInput, UiConfig, WhatsThis)
+from .core.events import (AppResponse, Command, ConfirmAnswer, ContextUpdate, DictationStream, EditFact,
+                          EmotionChanged, Event, Facts, ForgetFact, GetFacts, GetHistory, HandsResult, HandsStop,
+                          ListenCancel, ListenConfirm, ListenStart, ListenStop, LookResult, Mute, SetDictationStream,
+                          StateChanged, Status, StopHelper, TextInput, UiConfig, WhatsThis)
+from .core.types import ListenMode, LiveMode
 from .services.app_bridge import AppBridge
 from .services.approvals import Approvals
 from .services.context import UserContext
@@ -18,6 +19,8 @@ from .services.hands import HandsService
 from .services.heartbeat_runner import HeartbeatRunner
 from .services.listening import Listening
 from .services.live_talk import LiveTalk
+from .services.memory import Memory
+from .services.orchestrator import Orchestrator
 from .services.screen import checked, inside
 from .services.transcript import Transcript
 from .services.ui_state import UiState
@@ -36,9 +39,12 @@ class Brain:
                  heartbeat: HeartbeatRunner | None, ui_settings: UiSettings, transcript: Transcript | None = None,
                  *, approvals: Approvals | None = None, bridge: AppBridge | None = None,
                  hands: HandsService | None = None, screens: Path | None = None,
+                 helpers: Orchestrator | None = None, memory: Memory | None = None,
                  save_stream: Callable[[str], None] | None = None):
+        self._memory = memory
         self._save_stream = save_stream
         self._hands = hands
+        self._helpers = helpers
         self._screens = screens
         self._ui = ui
         self._approvals = approvals
@@ -57,7 +63,7 @@ class Brain:
                          self._ui_settings.hands_free_max_s, self._ui_settings.whats_this_key,
                          self._ui_settings.character),
                 DictationStream(self._listening.live_mode.value),
-                *self._history()]
+                *self._history(), *([self._helpers.snapshot()] if self._helpers is not None else [])]
 
     def _history(self) -> list[Event]:
         return [self._transcript.history()] if self._transcript is not None else []
@@ -65,6 +71,8 @@ class Brain:
     async def handle(self, command: Command) -> None:
         match command:
             case ListenStart(mode, tentative):
+                if mode is ListenMode.TALK:
+                    self._live_talk.prepare()  # a fresh conversation starts while the user speaks
                 self._listening.start(mode, tentative)
             case ListenConfirm():
                 self._listening.confirm()
@@ -97,13 +105,33 @@ class Brain:
             case ConfirmAnswer(id, yes):
                 if self._approvals is not None and not self._approvals.answer(id, yes):
                     log.info("an answer came for a question that is over")
+            case StopHelper(id):
+                if self._helpers is not None and not self._helpers.stop(id):
+                    log.info("Stop came for a helper that isn't working")
             case AppResponse():
                 if self._bridge is not None:
                     self._bridge.resolve(command)
+            case GetFacts() | ForgetFact() | EditFact():
+                self._facts(command)
             case SetDictationStream(stream):
                 self._set_stream(stream.value)
             case _:
                 log.warning("no handler for %s", command.type)
+
+    def _facts(self, command: Command) -> None:
+        """The "What Milo knows" screen: list, forget, edit. The user's own clicks, so nobody asks again."""
+        if self._memory is None:
+            self._ui.emit(Facts([]))
+            return
+        match command:
+            case ForgetFact(id):
+                if self._memory.forget(id, "the user forgot it in What Milo knows") is None:
+                    self._ui.emit(self._memory.facts_event())
+            case EditFact(id, text):
+                if self._memory.edit_fact(id, text) is None:
+                    self._ui.emit(self._memory.facts_event())
+            case _:
+                self._ui.emit(self._memory.facts_event())
 
     def _set_stream(self, stream: str) -> None:
         self._listening.live_mode = LiveMode(stream)

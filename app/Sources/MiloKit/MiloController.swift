@@ -32,6 +32,8 @@ public final class MiloController {
     public let model: MiloModel
     /// The conversation the Milo window shows.
     public let transcript = TranscriptModel()
+    /// What the "What Milo knows" window shows.
+    public let knowledge = KnowledgeModel()
     /// Looking at the screen and the worker's actions on it; nil without those ports.
     public let screen: ScreenController?
     public private(set) var muted = false
@@ -75,6 +77,7 @@ public final class MiloController {
 
     public func start() {
         model.onAnswer = { [weak self] question, yes in self?.brain.send(.confirmAnswer(id: question.id, yes: yes)) }
+        model.onStopHelper = { [weak self] id in self?.brain.send(.stopHelper(id: id)) }
         brain.onEvent = { [weak self] in self?.received($0) }
         brain.onConnectionChange = { [weak self] in self?.connectionChanged($0) }
         // Development brains are started by hand; only launch one if nothing answers.
@@ -141,6 +144,8 @@ public final class MiloController {
             onBindingsChange?(next)
         case .history, .entry, .replyDelta, .activity:
             transcript.apply(event)
+        case .facts:
+            knowledge.apply(event)
         case let .dictationStream(style):
             dictationStyle = style
         case let .appRequest(id, op, args):
@@ -168,13 +173,29 @@ public final class MiloController {
         brain.send(.getHistory)
     }
 
+    /// The "What Milo knows" window opened. Reads the brain's fact list; no model call.
+    public func requestFacts() {
+        brain.send(.getFacts)
+    }
+
+    public func forgetFact(id: String) {
+        brain.send(.forgetFact(id: id))
+    }
+
+    public func editFact(id: String, text: String) {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        brain.send(.editFact(id: id, text: text))
+    }
+
     private func connectionChanged(_ up: Bool) {
         model.connected = up
         guard up else {
             // A brain that died mid-answer never sends idle; don't leave Milo speaking or listening.
-            // A new brain sends its own state on connect.
+            // A new brain sends its own state on connect. Its helpers died with it.
             pushToTalkChanged(pushToTalk.reset(), at: nil)
             model.apply(.state(.idle))
+            model.apply(.helpers([]))
             dictationStyle = nil  // the next brain says which it uses
             return
         }

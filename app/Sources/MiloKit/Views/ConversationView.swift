@@ -4,6 +4,8 @@ import SwiftUI
 /// What the Milo window needs besides the transcript: the talk key's name for the empty state.
 public final class ConversationSettings: ObservableObject {
     @Published public var talkKey: String
+    /// The task entry to scroll to, set when the user clicks a helper.
+    @Published public var focus: String?
 
     public init(talkKey: String) {
         self.talkKey = talkKey
@@ -29,6 +31,10 @@ public struct ConversationView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
+            if !model.helpers.isEmpty {
+                HelpersPanel(helpers: model.helpers, entries: transcript.entries, character: model.character,
+                             open: { settings.focus = $0 }, stop: model.stopHelper)
+            }
             if transcript.entries.isEmpty && model.state == .idle {
                 EmptyConversation(talkKey: settings.talkKey)
             } else {
@@ -40,8 +46,16 @@ public struct ConversationView: View {
                             .padding(.bottom, 10)
                         Color.clear.frame(height: 1).id(Self.bottom)
                     }
-                    .onAppear { proxy.scrollTo(Self.bottom, anchor: .bottom) }
-                    .onChange(of: scrollKey) { proxy.scrollTo(Self.bottom, anchor: .bottom) }
+                    .onAppear { proxy.scrollTo(settings.focus ?? Self.bottom, anchor: settings.focus == nil ? .bottom : .top) }
+                    .onChange(of: scrollKey) { if settings.focus == nil { proxy.scrollTo(Self.bottom, anchor: .bottom) } }
+                    .onChange(of: settings.focus) {
+                        guard let focus = settings.focus else { return }
+                        withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(focus, anchor: .top) }
+                        // Following new lines again after a moment, so the next turn still scrolls into view.
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                            if settings.focus == focus { settings.focus = nil }
+                        }
+                    }
                 }
             }
             if let question = model.question {
@@ -75,6 +89,7 @@ struct TranscriptList: View {
                 }
                 EntryRow(entry: entry, showTime: Self.showsTime(entry, after: previous))
                     .padding(.top, Self.gap(entry, after: previous))
+                    .id(entry.id)
             }
             if let pending = PendingRow.text(for: state, last: entries.last) {
                 PendingRow(text: pending, state: state)

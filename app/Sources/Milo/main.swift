@@ -18,7 +18,8 @@ let screen = ScreenController(
     model: model, brain: brain,
     ports: ScreenPorts(reader: SystemScreenReader(screensFolder: paths.screens),
                        hands: MacHands(screensFolder: paths.screens),
-                       input: NSEventInputMonitor(), hotkey: CarbonHotkey()),
+                       input: NSEventInputMonitor(), hotkey: CarbonHotkey(),
+                       cursor: CursorOverlay(), windows: MacWindowWatcher()),
     toAppKit: OverlayPanel.appKitPoint)
 let controller = MiloController(
     model: model,
@@ -39,6 +40,7 @@ var panel: OverlayPanel?
 var menu: StatusMenu?
 var conversation: ConversationWindow?
 var workingFrame: WorkingFrame?
+var workingOutline: WorkingOutline?
 
 let lifecycle = AppLifecycle(
     onLaunch: {
@@ -46,8 +48,10 @@ let lifecycle = AppLifecycle(
         overlay.placeBottomRight()
         overlay.orderFrontRegardless()
         workingFrame = WorkingFrame(model: model)
+        workingOutline = WorkingOutline(model: model) { screen.stopPressed() }
         let window = ConversationWindow(controller: controller)
         overlay.onClick = { window.toggle() }
+        model.onOpenHelper = { window.show(helper: $0) }
         let statusMenu = StatusMenu(controller: controller, panel: overlay, window: window, paths: paths)
         controller.onBindingsChange = { statusMenu.show($0); window.show($0) }
         conversation = window
