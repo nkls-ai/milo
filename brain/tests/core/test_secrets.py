@@ -70,3 +70,18 @@ def test_both_elevenlabs_engines_go_through_the_same_checks(secrets):
         ElevenLabsVoice(link).warm()
     session = ScribeRealtime(link).session()
     assert session._error is not None and "plain file" in session._error
+
+
+def test_the_file_is_checked_and_read_through_one_handle(secrets, monkeypatch):
+    # Checks on the path and a second open for the read would let a link be swapped in between.
+    key = secrets / "key"
+    key.write_text("sk-123")
+    fifo = secrets / "fifo"
+    os.mkfifo(fifo)
+    with pytest.raises(SecretError, match="plain file"):
+        read_secret(fifo, "The key")  # refused at once, not left waiting for a writer
+    opened = []
+    real_open = os.open
+    monkeypatch.setattr(os, "open", lambda p, flags, *a: opened.append(flags) or real_open(p, flags, *a))
+    assert read_secret(key, "The key") == "sk-123"
+    assert len(opened) == 1 and opened[0] & os.O_NOFOLLOW
