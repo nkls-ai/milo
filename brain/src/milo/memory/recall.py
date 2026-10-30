@@ -28,12 +28,11 @@ _CAPITALIZED = re.compile(r"\b[A-ZÄÖÜ][\wäöüß-]+")
 
 @dataclass(frozen=True)
 class RecallTuning:
-    min_similarity: float = 0.78
-    """A vector match without a matching word counts only above this cosine. Depends on the embedder: e5 puts
-    unrelated text near 0.75-0.85, hashed words near 0."""
+    min_margin: float = 0.04
+    """A vector match without a matching word counts only this far above unrelated text (Hit.margin). Depends on
+    the embedder."""
     keep_ratio: float = 0.6
-    """...and only if it is this close to the best match, as a share of the way from min_similarity up to it.
-    An absolute line can't tell apart e5's matches from its noise; the gap to the best match can."""
+    """...and only if it is this close to the best match, as a share of the way from min_margin up to it."""
     vector_only: int = 3
     """Most matches without a matching word in one recall."""
     candidates: int = 30
@@ -64,13 +63,13 @@ class HybridRecaller:
                                                    limit=t.window_episodes)]
         found = [(hit, item) for hit in hits if (item := self._thing(hit, current)) is not None
                  and item.id not in context.exclude and (context.include_untrusted or _trusted(item))]
-        best = max((hit.similarity for hit, _ in found), default=0.0)
-        line_at = t.min_similarity + t.keep_ratio * max(0.0, best - t.min_similarity)
+        best = max((hit.margin for hit, _ in found), default=0.0)
+        line_at = t.min_margin + t.keep_ratio * max(0.0, best - t.min_margin)
         vector_only = 0
         for hit, item in found:
             inside = span is not None and isinstance(item, Episode) and span[0] <= item.at < span[1]
             if not inside and hit.text_rank is None:
-                if hit.similarity < line_at or vector_only >= t.vector_only:
+                if hit.margin < line_at or vector_only >= t.vector_only:
                     continue
                 vector_only += 1
             score = hit.score * self._boost(item, context, named, inside)

@@ -6,7 +6,7 @@ from __future__ import annotations
 import statistics
 
 from milo.adapters.embed.hashing import HashEmbedder
-from milo.memory.recall_eval import run
+from milo.memory.recall_eval import HELD_OUT, run
 
 
 def test_recall_finds_most_answers_within_the_budget():
@@ -14,6 +14,8 @@ def test_recall_finds_most_answers_within_the_budget():
     assert score.hit_rate >= 0.8, score.misses
     assert max(score.tokens) <= 800
     assert statistics.mean(score.tokens) < 200, "most turns carry little"
+    held_out = run(HashEmbedder(), budget=800, questions=HELD_OUT)
+    assert held_out.hit_rate >= 0.75, held_out.misses
 
 
 def test_recall_stays_fast_over_thousands_of_items():

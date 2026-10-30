@@ -135,6 +135,22 @@ QUESTIONS = (
     Question("Thanks, that's all.", ()),
 )
 
+HELD_OUT = (
+    Question("Wohin fliege ich im November?", ("lisbon",)),
+    Question("Wo wohnt Anna jetzt?", ("anna_berlin",), never=("anna_hamburg",)),
+    Question("Was mache ich beruflich?", ("work",)),
+    Question("Which restaurant did I reserve?", ("dinner",)),
+    Question("What's my partner called?", ("lena",)),
+    Question("Wie heißt mein Fitnessstudio?", ("gym",)),
+    Question("Wann muss das Auto in die Werkstatt?", ("car",)),
+    Question("Worauf haben wir uns mit Jonas geeinigt?", ("jonas_meeting",)),
+    Question("Did I complain about the heating?", ("landlord",)),
+    Question("Wie geht's dir?", ()),
+    Question("Good morning!", ()),
+    Question("Mach mal lauter.", ()),
+)
+"""Written after the tuning (the bilingual words, the margins), so they test it instead of fitting it."""
+
 SMALL_TALK = [
     ("How's the weather today?", "Sunny and 14 degrees."), ("What time is it in Tokyo?", "It's 2 in the morning."),
     ("Play some jazz.", "I can't play music yet."), ("How do you spell necessary?", "N-E-C-E-S-S-A-R-Y."),
@@ -208,7 +224,7 @@ def _spread(millis: list[float]) -> str:
 
 
 def run(embedder: Embedder, *, budget: int = 800, scale: int = 1, folder: Path | None = None,
-        vectors: str = "numpy") -> Score:
+        vectors: str = "numpy", questions: tuple[Question, ...] = QUESTIONS) -> Score:
     with tempfile.TemporaryDirectory(prefix="milo-recall-eval-") as tmp:
         root = folder or Path(tmp)
         world = build_world(scale)
@@ -222,11 +238,11 @@ def run(embedder: Embedder, *, budget: int = 800, scale: int = 1, folder: Path |
             episodes.append(episode)
         index = SqliteMemoryIndex(root / "memory.sqlite", embedder, facts, episodes, vectors=vectors)
         index.refresh()
-        recaller = HybridRecaller(index, facts, RecallTuning(min_similarity=embedder.relevant_similarity))
+        recaller = HybridRecaller(index, facts, RecallTuning(min_margin=embedder.relevant_margin))
         ids = {key: thing.id for key, thing in [*world.facts.items(), *world.episodes.items()]}
         score = Score(items=index.count())
         recaller.recall("warm up", TurnContext(NOW), budget)
-        for q in QUESTIONS:
+        for q in questions:
             started = time.perf_counter()
             index._query_vector(q.text)  # timed apart: the recall below finds it cached
             score.embed_millis.append((time.perf_counter() - started) * 1000)
@@ -261,10 +277,11 @@ def main(argv: list[str] | None = None) -> int:
     tmp = Path(tempfile.gettempdir())
     embedder = EMBEDDERS.create(opts.embedder, {}, AdapterContext(tmp, tmp, SystemClock()))
     embedder.warm()
-    score = run(embedder, budget=opts.budget, scale=opts.scale, vectors=opts.vectors)
-    print(f"{opts.embedder}: {score.report()}")
-    for miss in score.misses:
-        print(f"  missed: {miss}")
+    for name, questions in (("tuned on", QUESTIONS), ("held out", HELD_OUT)):
+        score = run(embedder, budget=opts.budget, scale=opts.scale, vectors=opts.vectors, questions=questions)
+        print(f"{opts.embedder}, {len(questions)} questions {name}: {score.report()}")
+        for miss in score.misses:
+            print(f"  missed: {miss}")
     return 0
 
 

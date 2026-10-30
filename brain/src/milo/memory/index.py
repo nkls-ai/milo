@@ -24,6 +24,7 @@ import numpy as np
 from milo.core.memory import Episode, Fact, Hit, IndexItem
 from milo.core.ports import Embedder
 
+from .bilingual import translations
 from .when import TIME_WORDS
 
 log = logging.getLogger(__name__)
@@ -66,6 +67,22 @@ def _stem(word: str) -> str:
     return word[:max(5, len(word) - 3)] if len(word) >= 7 else word
 
 
+ANCHORS = (
+    "The user said: “What's the weather like?” Milo answered: “Sunny, 18 degrees.”",
+    "The user said: “Wie spät ist es?” Milo answered: “Kurz nach drei.”",
+    "Task: tidy up the Downloads folder. Result: done.",
+    "Task: Finde die Rechnung im Ordner Dokumente. Result: erledigt.",
+    "The user likes jazz.", "Der Nutzer fährt gern Fahrrad.", "The user's car is blue.",
+    "Mia is the user's neighbour.", "Die Besprechung wurde auf Dienstag verschoben.",
+    "The user said: “Tell me something funny.” Milo answered: “Why did the chicken cross the road?”",
+    "Looked at Safari: a news page.", "The user prefers short answers.", "Der Nutzer arbeitet von zu Hause.",
+    "The user said: “Thanks!” Milo answered: “Anytime.”", "Booked a table for two on Friday.",
+    "The user said: “Spiel Musik.” Milo answered: “Das kann ich noch nicht.”",
+)
+"""Sentences of the kinds memory holds, about nothing in particular: the yardstick for Hit.background."""
+ANCHORS_COUNTED = 4
+
+
 class SqliteMemoryIndex:
     """MemoryIndex. `facts` and `episodes` are the logs it caches; refresh() catches up with them cheaply."""
 
@@ -83,6 +100,7 @@ class SqliteMemoryIndex:
         """"sqlite-vec" or "numpy", once open."""
         self._matrix: _Matrix | None = None
         self._last_query: tuple[str, np.ndarray] | None = None
+        self._anchors: np.ndarray | None = None
 
     # ---- MemoryIndex
 
@@ -127,12 +145,14 @@ class SqliteMemoryIndex:
         rows = {row[0]: row for row in _chunked_select(db, f"SELECT {_ITEM_COLUMNS} FROM items WHERE n IN", best)}
         text_rank = {n: r for r, n in enumerate(text)}
         vector_rank = {n: (r, s) for r, (n, s) in enumerate(vector.items())}
+        background = self._background(query) if vector else 0.0
         hits = []
         for n in best:
             if n not in rows:
                 continue
             vr = vector_rank.get(n)
-            hits.append(Hit(_item(rows[n]), scores[n], text_rank.get(n), vr[0] if vr else None, vr[1] if vr else 0.0))
+            hits.append(Hit(_item(rows[n]), scores[n], text_rank.get(n), vr[0] if vr else None, vr[1] if vr else 0.0,
+                            background))
         return hits
 
     def rebuild(self) -> None:
@@ -319,6 +339,7 @@ class SqliteMemoryIndex:
         words = terms(query)
         if not words:
             return []
+        words = list(dict.fromkeys([*words, *(t for w in words for t in translations(w))]))
         match = " OR ".join(f'"{_stem(w)}"*' if len(w) >= 4 else f'"{w}"' for w in words)
         sql = ("SELECT items.n FROM items_fts JOIN items ON items.n = items_fts.rowid "
                "WHERE items_fts MATCH ?" + _filters(kinds, since, until) + " ORDER BY bm25(items_fts) LIMIT ?")
@@ -370,6 +391,14 @@ class SqliteMemoryIndex:
         if self._last_query is None or self._last_query[0] != query:
             self._last_query = (query, self.embedder.embed([query], query=True)[0].astype(np.float32))
         return self._last_query[1]
+
+    def _background(self, query: str) -> float:
+        """How similar the query is to text that has nothing to do with it: the mean of its best few matches among
+        ANCHORS. A short "Erzähl mir einen Witz." sits at 0.83 against everything, a question about Anna at 0.74."""
+        if self._anchors is None:
+            self._anchors = self.embedder.embed(ANCHORS).astype(np.float32)
+        sims = np.sort(self._anchors @ self._query_vector(query))
+        return float(sims[-ANCHORS_COUNTED:].mean())
 
     def _numpy(self, db: sqlite3.Connection) -> _Matrix:
         if self._matrix is None or self._matrix.stale:

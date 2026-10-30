@@ -26,8 +26,8 @@ class HashOptions:
 
 class HashEmbedder:
     name = "hash"
-    relevant_similarity = 0.3
-    """Text sharing a word or two lands above this; unrelated text near 0."""
+    relevant_margin = 0.25
+    """Text sharing a word or two lands this far above unrelated text, which sits near 0."""
 
     def __init__(self, dimensions: int = 384):
         self.dimensions = dimensions

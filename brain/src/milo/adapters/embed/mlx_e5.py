@@ -42,9 +42,9 @@ class MlxE5:
 
     name = "mlx_e5"
     dimensions = 384
-    relevant_similarity = 0.78
-    """e5 puts unrelated sentences at 0.75-0.85 and related ones at 0.8-0.9 (measured on the recall eval), so
-    this is only a floor: the recaller also wants a match close to the best one."""
+    relevant_margin = 0.04
+    """e5 puts everything at 0.7-0.85, so cosine alone says little; a related memory stands 0.04-0.12 above the
+    question's background, small talk's best match 0.00-0.04 (measured on the recall eval)."""
 
     def __init__(self, model: str = MlxE5Options.model, *, revision: str = "main", device: str = "gpu",
                  quantize_table: bool = True, path: Path | None = None):

@@ -191,7 +191,7 @@ def _memory(config: Config, workspace, ctx: AdapterContext, clock, ui: UiState, 
     episodes = JsonlEpisodeLog(workspace.episodes_dir, clock)
     migrate(workspace.profile_path, facts, clock)
     index = SqliteMemoryIndex(workspace.memory_index_path, embedder, facts, episodes)
-    recaller = HybridRecaller(index, facts, RecallTuning(min_similarity=embedder.relevant_similarity))
+    recaller = HybridRecaller(index, facts, RecallTuning(min_margin=embedder.relevant_margin))
     executor = ThreadPoolExecutor(1, thread_name_prefix="memory")
     profile = FactProfile(facts, workspace.profile_path, workspace.profile_snapshot_path, clock, pinned_only=True)
     memory = Memory(MemoryParts(facts, episodes, index, recaller, embedder, render), executor, ui, clock,

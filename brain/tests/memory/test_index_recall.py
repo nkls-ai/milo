@@ -16,7 +16,7 @@ from milo.memory.when import window
 from tests.fakes import MemoryFactStore
 
 NOW = datetime(2026, 10, 30, 18, 0)  # a Friday
-HASH_TUNING = RecallTuning(min_similarity=0.3)
+HASH_TUNING = RecallTuning(min_margin=HashEmbedder.relevant_margin)
 
 
 @pytest.fixture(params=["sqlite-vec", "numpy"])
@@ -226,8 +226,22 @@ class Hits:
 def test_a_vector_match_alone_must_be_close_to_the_best_one():
     near, close, far = ep("The flight to Lisbon is booked."), ep("Packed for the trip."), ep("Spelled necessary.")
     items = [IndexItem.of_episode(e) for e in (near, close, far)]
-    index = Hits(Hit(items[0], 0.03, None, 0, 0.86), Hit(items[1], 0.02, None, 1, 0.84),
-                 Hit(items[2], 0.01, None, 2, 0.80))
-    r = HybridRecaller(index, MemoryFactStore(), RecallTuning(min_similarity=0.78))
+    index = Hits(Hit(items[0], 0.03, None, 0, 0.86, 0.74), Hit(items[1], 0.02, None, 1, 0.84, 0.74),
+                 Hit(items[2], 0.01, None, 2, 0.79, 0.74))
+    r = HybridRecaller(index, MemoryFactStore(), RecallTuning(min_margin=0.04))
     got = r.recall("When do I fly?", TurnContext(NOW), 800)
-    assert got.episodes == (near, close), "0.80 is far below the best match, even though it clears the floor"
+    assert got.episodes == (near, close), "0.05 above the background clears the floor but is far below the best"
+    small_talk = Hits(Hit(items[2], 0.01, None, 0, 0.84, 0.83))
+    assert HybridRecaller(small_talk, MemoryFactStore(), RecallTuning(min_margin=0.04)).recall(
+        "Tell me a joke.", TurnContext(NOW), 800).episodes == (), "high cosine, but no higher than for anything"
+
+
+def test_a_question_in_german_finds_a_fact_in_english_by_its_words(tmp_path):
+    from milo.memory.bilingual import translations
+
+    assert translations("schwester") == ["sister"] and translations("sister") == ["schwester"]
+    assert set(translations("zahnarzttermin")) == {"dentist", "appointment"}
+    assert translations("hello") == []
+    anna = fact("Anna is the user's sister; her birthday is March 3.")
+    r, _ = recaller(tmp_path, anna, fact("Jonas likes systems books."))
+    assert r.recall("Wann hat meine Schwester Geburtstag?", TurnContext(NOW), 800).facts == (anna,)

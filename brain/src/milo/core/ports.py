@@ -415,8 +415,9 @@ class Embedder(Protocol):
     dimensions: int
     key: str
     """Names the vector space (engine and model). The index re-embeds everything when it changes."""
-    relevant_similarity: float
-    """Cosine above which a match counts on its own, without a shared word. Each model spreads differently."""
+    relevant_margin: float
+    """How far above unrelated text (Hit.margin) a match must be to count without a shared word. Each model
+    spreads differently."""
 
     def warm(self) -> None: ...
 

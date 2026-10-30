@@ -177,6 +177,13 @@ class Hit:
     vector_rank: int | None = None
     similarity: float = 0.0
     """Cosine similarity to the query, 0 if the vector search didn't find it."""
+    background: float = 0.0
+    """The query's similarity to unrelated text. `similarity - background` is how related the item is: cosine
+    values alone run high for some questions and low for others."""
+
+    @property
+    def margin(self) -> float:
+        return self.similarity - self.background if self.vector_rank is not None else 0.0
 
 
 @dataclass(frozen=True)
