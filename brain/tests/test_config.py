@@ -101,6 +101,7 @@ def test_settings_values_come_from_the_file():
     assert config.tts.fallback == ""
     assert config.dictation.keep_history is False
     assert config.ui == UiSettings("right_command", "right_control")
+    assert Config.parse(MINIMAL + '[ui]\ncharacter = "classic"\n').ui.character == "classic"
     assert config.heartbeat.enabled is False
     assert config.section("heartbeat")["tick_s"] == 5
 
@@ -121,6 +122,7 @@ def test_an_unknown_section_names_it():
     ("[heartbeat]\nenabled = \"no\"\n", "enabled"),
     ("[ui]\ndictate_key = \"caps_lock\"\n", "dictate_key"),
     ("[ui]\ndictate_key = \"right_option\"\n", "same key"),
+    ("[ui]\ncharacter = \"robot\"\n", "character"),
 ])
 def test_bad_values_are_errors(extra, key):
     with pytest.raises(ConfigError, match=key):

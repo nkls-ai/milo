@@ -107,3 +107,4 @@ grace_hours = 12
 dictate_key = "fn"                # fn | right_option | right_command | right_control
 talk_key = "right_option"
 hands_free_max_s = 300            # double-tap a key for hands-free; it stops by itself after this
+character = "pip"                 # pip (the bird) | classic (the purple robot)

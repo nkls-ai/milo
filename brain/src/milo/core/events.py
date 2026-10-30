@@ -92,13 +92,14 @@ class Partial(Event):
 class UiConfig(Event):
     """Sent once per connection. Key names: "fn", "right_option", "right_command", "right_control".
 
-    hands_free_max_s caps a recording locked on by a double tap.
+    hands_free_max_s caps a recording locked on by a double tap. character is "pip" or "classic".
     """
 
     type: ClassVar[str] = "ui_config"
     dictate_key: str
     talk_key: str
     hands_free_max_s: float = 300.0
+    character: str = "pip"
 
 
 @dataclass(frozen=True)

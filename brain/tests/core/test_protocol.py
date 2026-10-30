@@ -20,7 +20,7 @@ OUTBOUND = {
     "level": lambda m: ev.Level(m["value"]),
     "dictation": lambda m: ev.Dictation(m["text"]),
     "status": lambda m: ev.Status(m["text"]),
-    "ui_config": lambda m: ev.UiConfig(m["dictate_key"], m["talk_key"], m["hands_free_max_s"]),
+    "ui_config": lambda m: ev.UiConfig(m["dictate_key"], m["talk_key"], m["hands_free_max_s"], m["character"]),
     "partial": lambda m: ev.Partial(m["text"]),
     "history": lambda m: ev.History(m["entries"]),
     "entry": lambda m: ev.EntryChanged(m["entry"]),

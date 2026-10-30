@@ -16,6 +16,7 @@ from .core.types import LiveMode
 log = logging.getLogger("milo.config")
 
 KEY_NAMES = ("fn", "right_option", "right_command", "right_control")
+CHARACTERS = ("pip", "classic")
 PLUGGABLE = ("chat", "harness", "stt", "tts", "audio", "dictation")
 SECTIONS = (*PLUGGABLE, "ui", "heartbeat")
 
@@ -59,6 +60,8 @@ class UiSettings:
     talk_key: str = "right_option"
     hands_free_max_s: float = 300.0
     """A recording locked on by a double tap stops by itself after this long."""
+    character: str = "pip"
+    """How Milo looks: "pip" (the bird) or "classic" (the purple robot)."""
 
     def __post_init__(self):
         for name in ("dictate_key", "talk_key"):
@@ -69,6 +72,8 @@ class UiSettings:
             raise ConfigError(f"[ui] dictate_key and talk_key can't be the same key ({self.talk_key!r})")
         if self.hands_free_max_s <= 0:
             raise ConfigError("[ui] hands_free_max_s must be more than 0")
+        if self.character not in CHARACTERS:
+            raise ConfigError(f"[ui] character must be one of {', '.join(CHARACTERS)}")
 
 
 @dataclass(frozen=True)

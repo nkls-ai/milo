@@ -14,6 +14,14 @@ public final class MiloModel: ObservableObject {
     @Published public var partial: String?
     /// The mode a double tap locked on (hands-free), set by the controller.
     @Published public var handsFree: ListenMode?
+    /// How Milo looks, from the brain's `ui_config`.
+    @Published public var character: CharacterStyle = .pip
+    /// A point on screen Milo should fly to and point at; nil sends him home to his corner.
+    /// Global screen coordinates with the origin at the top-left of the main display and y down,
+    /// the same as CGEvent locations and screenshots.
+    @Published public var flyTarget: CGPoint?
+    /// Where he is on the way, set by the overlay panel that moves him.
+    @Published public internal(set) var flight: Flight = .perched
 
     private let scheduler: Scheduler
     private var hideBubble: ScheduledTask?

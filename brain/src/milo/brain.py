@@ -32,7 +32,7 @@ class Brain:
         """What a newly connected app needs to draw Milo as he is right now."""
         return [StateChanged(self._ui.state), EmotionChanged(self._ui.emotion),
                 UiConfig(self._ui_settings.dictate_key, self._ui_settings.talk_key,
-                         self._ui_settings.hands_free_max_s),
+                         self._ui_settings.hands_free_max_s, self._ui_settings.character),
                 *self._history()]
 
     def _history(self) -> list[Event]:
