@@ -140,7 +140,7 @@ def test_heartbeat_disabled_builds_no_runner(build):
     ("harness", "claude, codex"),
     ("stt", "mlx_whisper, none"),
     ("tts", "none, omnivoice, say"),
-    ("audio", "none, sounddevice"),
+    ("audio", "none, sounddevice, wav"),
     ("dictation", "fillers, plain"),
 ])
 def test_a_bogus_use_name_lists_the_available_ones(build, section, available):
