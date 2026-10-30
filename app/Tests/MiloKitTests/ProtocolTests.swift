@@ -37,7 +37,8 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .dictation("Sounds good, ship it."),
             .status("Mic unavailable: no input device"),
             .partial("Sounds good, sh"),
-            .uiConfig(dictateKey: "fn", talkKey: "right_option", handsFreeMaxSeconds: 300, whatsThisKey: "ctrl+option+m"),
+            .uiConfig(dictateKey: "fn", talkKey: "right_option", handsFreeMaxSeconds: 300, whatsThisKey: "ctrl+option+m",
+                      character: .pip),
             .history([
                 TranscriptEntry(id: "5f2a9c1e04b7", date: try day("2026-10-30T09:12:03"), kind: .user,
                                 text: "rename the photos from Friday", via: .voice),
@@ -111,6 +112,12 @@ private func entries(_ key: String) throws -> [[String: Any]] {
         let decoder = JSONDecoder()
         #expect(try decoder.decode(BrainEvent.self, from: Data(#"{"type":"state","state":"dancing"}"#.utf8)) == .state(.idle))
         #expect(try decoder.decode(BrainEvent.self, from: Data(#"{"type":"emotion","emotion":"smug"}"#.utf8)) == .emotion(.neutral))
+    }
+
+    @Test func uiConfigWithAnUnknownCharacterDecodesAsNone() throws {
+        let json = #"{"type":"ui_config","dictate_key":"fn","talk_key":"right_option","character":"dragon"}"#
+        #expect(try JSONDecoder().decode(BrainEvent.self, from: Data(json.utf8))
+                == .uiConfig(dictateKey: "fn", talkKey: "right_option", character: nil))
     }
 
     @Test func uiConfigWithoutHandsFreeCapKeepsTheDefault() throws {

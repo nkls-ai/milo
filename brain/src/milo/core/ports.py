@@ -51,6 +51,11 @@ class Transcriber(Protocol):
         """16 kHz mono audio to text. Returns "" for silence or noise. Blocking."""
         ...
 
+    def preview(self, audio: Audio) -> str:
+        """Like transcribe(), but fast and rougher: live words while the user still speaks. Never pasted.
+        An engine without a fast mode returns transcribe(audio)."""
+        ...
+
 
 @runtime_checkable
 class Voice(Protocol):

@@ -36,6 +36,7 @@ use = "mlx_whisper"
 
 [stt.mlx_whisper]
 model = "mlx-community/whisper-large-v3-turbo"
+preview_model = "mlx-community/whisper-base-mlx"  # live words while you speak (~0.15 s a pass); "" uses model
 language = ""                     # empty: auto-detect. "de" or "en" to pin it.
 vocabulary = "Milo, Codex, Claude" # names Whisper should spell right
 
@@ -67,6 +68,9 @@ output_device = ""
 [dictation]
 use = "fillers"                   # fillers | plain
 keep_history = true               # log dictations to dictation-history.jsonl
+# While you speak: "off" transcribes on release. "preview" shows the words next to Milo and pastes one
+# final pass on release. "type" pastes each phrase at the pause after it (earlier phrases stay as typed).
+stream = "preview"
 
 [dictation.fillers]
 languages = ["en", "de"]
@@ -102,6 +106,8 @@ grace_hours = 12
 [ui]
 dictate_key = "fn"                # fn | right_option | right_command | right_control
 talk_key = "right_option"
+hands_free_max_s = 300            # double-tap a key for hands-free; it stops by itself after this
+character = "pip"                 # pip (the bird) | classic (the purple robot)
 # Ask Milo about the selection, or the front window if nothing is selected. "" turns it off.
 whats_this_key = "ctrl+option+m"
 

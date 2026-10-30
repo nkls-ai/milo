@@ -64,6 +64,11 @@ class Workspace:
         return self.state_dir / "screens"
 
     @property
+    def lock_path(self) -> Path:
+        """Held by the running brain for its whole life, so a second one can't load the models too."""
+        return self.home / "run" / "brain.lock"
+
+    @property
     def usage_path(self) -> Path:
         return self.state_dir / "usage.jsonl"
 

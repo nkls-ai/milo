@@ -1,6 +1,8 @@
 import Foundation
 
-/// Starts the Python brain with `uv run`.
+/// Starts the Python brain with `uv run`, never a second one: the brain holds `lockURL` for its whole life,
+/// and while some process holds it this waits (a brain that is shutting down) or leaves it be (one started
+/// by hand). Two brains would each load the models, and on 16 GB the pair fills swap.
 public final class UVBrainLauncher: BrainLauncher {
     public struct Configuration: Sendable {
         public var brainDir: URL
@@ -14,13 +16,18 @@ public final class UVBrainLauncher: BrainLauncher {
         public var command: String
         /// Prepended to PATH, since an app launched from Finder gets a bare PATH.
         public var extraPath: [String]
+        /// How often to look at the lock again while another brain holds it.
         public var restartDelay: TimeInterval
+        /// The brain's single-instance lock, `<workspace>/run/brain.lock`. nil: don't check.
+        public var lockURL: URL?
+        /// How long to wait for a brain holding the lock to go away before deciding it is staying.
+        public var lockWait: TimeInterval
 
-        public init(brainDir: URL, logURL: URL,
+        public init(brainDir: URL, logURL: URL, lockURL: URL? = nil,
                     uvCandidates: [String] = Configuration.defaultUVCandidates,
                     extras: [String] = ["omnivoice"], command: String = "milo",
                     extraPath: [String] = ["/opt/homebrew/bin", "/usr/local/bin", "\(NSHomeDirectory())/.local/bin"],
-                    restartDelay: TimeInterval = 1) {
+                    restartDelay: TimeInterval = 1, lockWait: TimeInterval = 30) {
             self.brainDir = brainDir
             self.logURL = logURL
             self.uvCandidates = uvCandidates
@@ -28,6 +35,8 @@ public final class UVBrainLauncher: BrainLauncher {
             self.command = command
             self.extraPath = extraPath
             self.restartDelay = restartDelay
+            self.lockURL = lockURL
+            self.lockWait = lockWait
         }
 
         public static let defaultUVCandidates = [
@@ -43,6 +52,7 @@ public final class UVBrainLauncher: BrainLauncher {
     public let configuration: Configuration
     private let scheduler: Scheduler
     private var process: Process?
+    private var waiting: ScheduledTask?
 
     public init(configuration: Configuration, scheduler: Scheduler) {
         self.configuration = configuration
@@ -67,6 +77,28 @@ public final class UVBrainLauncher: BrainLauncher {
     }
 
     public func start() {
+        waiting?.cancel()
+        waiting = nil
+        start(triesLeft: Int((configuration.lockWait / configuration.restartDelay).rounded(.up)))
+    }
+
+    private func start(triesLeft: Int) {
+        if let p = process, p.isRunning { return }
+        if let lock = configuration.lockURL, Self.isLocked(lock) {
+            guard triesLeft > 0 else {
+                NSLog("Milo: another brain holds \(lock.path); not starting one")
+                return
+            }
+            waiting = scheduler.after(configuration.restartDelay) { [weak self] in
+                self?.waiting = nil
+                self?.start(triesLeft: triesLeft - 1)
+            }
+            return
+        }
+        launch()
+    }
+
+    private func launch() {
         let fm = FileManager.default
         guard let uv = configuration.uvCandidates.first(where: fm.isExecutableFile(atPath:)) else {
             NSLog("Milo: could not find uv; install it or start the brain manually with `uv run milo`")
@@ -95,13 +127,27 @@ public final class UVBrainLauncher: BrainLauncher {
     }
 
     public func stop() {
+        waiting?.cancel()
+        waiting = nil
         guard let p = process, p.isRunning else { return }
-        p.interrupt()
+        // SIGTERM: uv passes it on to the brain, SIGINT it swallows.
+        p.terminate()
         process = nil
     }
 
+    /// The new brain starts once the old one has let go of the lock.
     public func restart() {
         stop()
-        scheduler.after(configuration.restartDelay) { [weak self] in self?.start() }
+        start()
+    }
+
+    /// True while a process holds the brain's lock: a brain is running or starting.
+    public static func isLocked(_ url: URL) -> Bool {
+        let fd = open(url.path, O_RDONLY)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        guard flock(fd, LOCK_EX | LOCK_NB) == 0 else { return errno == EWOULDBLOCK }
+        flock(fd, LOCK_UN)
+        return false
     }
 }

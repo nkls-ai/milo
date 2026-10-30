@@ -11,7 +11,12 @@ public final class OverlayPanel: NSPanel {
         set { host.onClick = newValue }
     }
 
+    /// Milo's centre in the panel, from its bottom-left corner: OverlayView pins his 132 pt frame 20 pt from
+    /// the right and 12 pt from the bottom, and Pip's body sits 6 pt below the middle of that frame.
+    static let characterCenter = CGPoint(x: size.width - 86, y: 72)
+
     private let host: DraggableHostingView<OverlayView>
+    private var flight: FlightDriver?
 
     public init(model: MiloModel, answer: @escaping (Bool) -> Void = { _ in }) {
         host = DraggableHostingView(rootView: OverlayView(model: model, answer: answer))
@@ -25,6 +30,7 @@ public final class OverlayPanel: NSPanel {
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         host.frame = NSRect(origin: .zero, size: Self.size)
         contentView = host
+        flight = FlightDriver(panel: self, model: model, center: Self.characterCenter)
     }
 
     public override var canBecomeKey: Bool { true }
@@ -37,6 +43,12 @@ public final class OverlayPanel: NSPanel {
 
     public func toggleVisible() {
         if isVisible { orderOut(nil) } else { orderFrontRegardless() }
+    }
+
+    /// A top-left-origin point (Accessibility, CGEvent, screenshots) in AppKit's bottom-left-origin space,
+    /// the space of `MiloModel.flyTarget`.
+    public static func appKitPoint(_ point: ScreenPoint) -> CGPoint {
+        FlightPlan.appKit(CGPoint(x: point.x, y: point.y), primaryHeight: NSScreen.screens.first?.frame.height ?? 0)
     }
 }
 

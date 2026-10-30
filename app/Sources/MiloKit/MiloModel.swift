@@ -18,9 +18,13 @@ public final class MiloModel: ObservableObject {
     @Published public var looking = false
     /// The worker agent is acting on screen: the "Milo is working" frame shows.
     @Published public var handsActive = false
-    /// Where Milo acts right now, in AppKit global screen coordinates (points, origin bottom-left of the
-    /// main display). nil: he is home in his corner.
+    /// How Milo looks, from the brain's `ui_config`.
+    @Published public var character: CharacterStyle = .pip
+    /// A point on screen Milo should fly to and point at, in AppKit global screen coordinates (points,
+    /// origin bottom-left of the main display). nil sends him home to his corner.
     @Published public var flyTarget: CGPoint?
+    /// Where he is on the way, set by the overlay panel that moves him.
+    @Published public internal(set) var flight: Flight = .perched
     /// A yes-or-no question waiting in the bubble.
     @Published public var question: Question?
 

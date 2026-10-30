@@ -7,8 +7,7 @@ struct CharacterView: View {
     private var asleep: Bool { model.drowsy && model.state == .idle && model.bubble == nil }
 
     var body: some View {
-        CharacterFigure(state: model.state, emotion: model.emotion, asleep: asleep, level: model.level,
-                        connected: model.connected, pose: life.pose, floating: life.onScreen)
+        figure
             .background(LifeAnchor(driver: life))
             .onAppear {
                 life.start()
@@ -17,6 +16,17 @@ struct CharacterView: View {
             .onDisappear { life.stop() }
             .onChange(of: model.state) { life.update(state: model.state, asleep: asleep) }
             .onChange(of: asleep) { life.update(state: model.state, asleep: asleep) }
+    }
+
+    @ViewBuilder private var figure: some View {
+        switch model.character {
+        case .pip:
+            PipFigure(state: model.state, emotion: model.emotion, asleep: asleep, level: model.level,
+                      connected: model.connected, pose: life.pose, flight: model.flight, floating: life.onScreen)
+        case .classic:
+            CharacterFigure(state: model.state, emotion: model.emotion, asleep: asleep, level: model.level,
+                            connected: model.connected, pose: life.pose, floating: life.onScreen)
+        }
     }
 }
 
@@ -129,6 +139,7 @@ struct Antenna: View {
 struct Extras: View {
     var emotion: Emotion
     var time: Double
+    var sleepColor = Palette.idle
 
     var body: some View {
         ZStack {
@@ -136,7 +147,7 @@ struct Extras: View {
             case .sleepy:
                 let rise = (time / 2.4).truncatingRemainder(dividingBy: 1)
                 Text("z").font(.system(size: 15, weight: .bold, design: .rounded))
-                    .foregroundStyle(Palette.idle)
+                    .foregroundStyle(sleepColor)
                     .offset(x: 52 + rise * 6, y: -48 - rise * 12)
                     .opacity(1 - rise)
             case .confused:

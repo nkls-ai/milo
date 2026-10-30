@@ -25,16 +25,27 @@ def test_factory_maps_options(ctx):
     stt = TRANSCRIBERS.create("mlx_whisper", {"model": "m", "language": "", "vocabulary": "Milo, Codex"}, ctx)
     assert isinstance(stt, MlxWhisper)
     assert (stt.model, stt.language, stt.prompt) == ("m", None, "Milo, Codex")
+    assert stt.preview_model == "mlx-community/whisper-base-mlx"
+    assert TRANSCRIBERS.create("mlx_whisper", {"model": "m", "preview_model": ""}, ctx).preview_model == "m"
     assert TRANSCRIBERS.create("mlx_whisper", {"language": "de"}, ctx).language == "de"
 
 
 def test_transcribe_skips_silence_and_hallucinations(monkeypatch):
     outputs = iter(["Thank you.", "Ship it"])
     calls = []
-    monkeypatch.setattr(MlxWhisper, "_run", lambda self, audio: calls.append(len(audio)) or next(outputs))
+    monkeypatch.setattr(MlxWhisper, "_run", lambda self, audio, model: calls.append(len(audio)) or next(outputs))
     stt = MlxWhisper("m")
     speech = (np.random.default_rng(2).standard_normal(16000) * 0.05).astype(np.float32)
     assert stt.transcribe(np.zeros(16000, dtype=np.float32)) == ""
     assert calls == []  # silence never reaches Whisper
     assert stt.transcribe(speech) == ""
     assert stt.transcribe(speech) == "Ship it"
+
+
+def test_preview_uses_the_preview_model(monkeypatch):
+    models = []
+    monkeypatch.setattr(MlxWhisper, "_run", lambda self, audio, model: models.append(model) or "hi")
+    stt = MlxWhisper("big", preview_model="small")
+    speech = (np.random.default_rng(3).standard_normal(16000) * 0.05).astype(np.float32)
+    assert (stt.transcribe(speech), stt.preview(speech)) == ("hi", "hi")
+    assert models == ["big", "small"]

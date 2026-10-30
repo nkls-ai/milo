@@ -61,6 +61,7 @@ class FakeTranscriber:
     def __init__(self, *texts: str):
         self.texts = deque(texts)
         self.calls: list[Audio] = []
+        self.previews: list[Audio] = []
         self.warmed = False
 
     def warm(self) -> None:
@@ -69,6 +70,10 @@ class FakeTranscriber:
     def transcribe(self, audio: Audio) -> str:
         self.calls.append(audio)
         return self.texts.popleft() if self.texts else ""
+
+    def preview(self, audio: Audio) -> str:
+        self.previews.append(audio)
+        return ""
 
 
 class FakeVoice:

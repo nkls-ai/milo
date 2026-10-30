@@ -8,6 +8,14 @@ public enum Emotion: String, CaseIterable, Sendable {
     case neutral, happy, excited, thinking, concerned, sad, sleepy, confused
 }
 
+/// How Milo looks (`[ui] character`). Raw values are the wire strings.
+public enum CharacterStyle: String, CaseIterable, Sendable {
+    /// The small lavender bird.
+    case pip
+    /// The purple robot with the antenna.
+    case classic
+}
+
 /// Why the user is holding a push-to-talk key.
 public enum ListenMode: String, CaseIterable, Sendable, Encodable {
     /// Speech becomes text pasted into the focused app.

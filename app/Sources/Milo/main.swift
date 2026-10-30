@@ -19,12 +19,13 @@ let screen = ScreenController(
     ports: ScreenPorts(reader: SystemScreenReader(screensFolder: paths.screens),
                        hands: MacHands(screensFolder: paths.screens),
                        input: NSEventInputMonitor(), hotkey: CarbonHotkey()),
-    toAppKit: FlyFallback.appKitPoint)
+    toAppKit: OverlayPanel.appKitPoint)
 let controller = MiloController(
     model: model,
     brain: brain,
     launcher: UVBrainLauncher(
-        configuration: .init(brainDir: brainDir, logURL: paths.brainStdoutLog), scheduler: scheduler),
+        configuration: .init(brainDir: brainDir, logURL: paths.brainStdoutLog, lockURL: paths.brainLock),
+        scheduler: scheduler),
     inserter: PasteboardInserter(scheduler: scheduler),
     keys: NSEventKeySource(),
     context: WorkspaceContextProvider(),
@@ -37,7 +38,6 @@ var panel: OverlayPanel?
 var menu: StatusMenu?
 var conversation: ConversationWindow?
 var workingFrame: WorkingFrame?
-var flyFallback: FlyFallback?
 
 let lifecycle = AppLifecycle(
     onLaunch: {
@@ -45,8 +45,6 @@ let lifecycle = AppLifecycle(
         overlay.placeBottomRight()
         overlay.orderFrontRegardless()
         workingFrame = WorkingFrame(model: model)
-        // Stands in until the character flies on his own; remove this line when it does.
-        flyFallback = FlyFallback(model: model, panel: overlay)
         let window = ConversationWindow(controller: controller)
         overlay.onClick = { window.toggle() }
         let statusMenu = StatusMenu(controller: controller, panel: overlay, window: window, paths: paths)

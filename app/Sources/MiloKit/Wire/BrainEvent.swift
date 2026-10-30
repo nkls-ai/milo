@@ -20,7 +20,9 @@ public enum BrainEvent: Equatable, Sendable {
     /// Push-to-talk key names: "fn", "right_option", "right_command", "right_control".
     /// `handsFreeMaxSeconds` caps a recording locked on by a double tap; nil keeps the app's default.
     /// `whatsThisKey` is the "What's this?" shortcut, e.g. "ctrl+option+m"; "" turns it off, nil keeps it.
-    case uiConfig(dictateKey: String, talkKey: String, handsFreeMaxSeconds: Double? = nil, whatsThisKey: String? = nil)
+    /// `character` is nil when missing or unknown, which keeps the current look.
+    case uiConfig(dictateKey: String, talkKey: String, handsFreeMaxSeconds: Double? = nil, whatsThisKey: String? = nil,
+                  character: CharacterStyle? = nil)
     /// The recent conversation for the Milo window, oldest first.
     case history([TranscriptEntry])
     /// A transcript entry was added or changed; replaces the one with the same id.
@@ -54,6 +56,7 @@ extension BrainEvent: Decodable {
         case dictateKey = "dictate_key"
         case talkKey = "talk_key"
         case handsFreeMaxSeconds = "hands_free_max_s"
+        case character
     }
 
     public init(from decoder: Decoder) throws {
@@ -73,7 +76,9 @@ extension BrainEvent: Decodable {
             self = .uiConfig(dictateKey: try c.decode(String.self, forKey: .dictateKey),
                              talkKey: try c.decode(String.self, forKey: .talkKey),
                              handsFreeMaxSeconds: try c.decodeIfPresent(Double.self, forKey: .handsFreeMaxSeconds),
-                             whatsThisKey: try c.decodeIfPresent(String.self, forKey: .whatsThisKey))
+                             whatsThisKey: try c.decodeIfPresent(String.self, forKey: .whatsThisKey),
+                             character: try c.decodeIfPresent(String.self, forKey: .character)
+                                .flatMap(CharacterStyle.init(rawValue:)))
         case "history": self = .history(try c.decode([TranscriptEntry].self, forKey: .entries))
         case "entry": self = .entry(try c.decode(TranscriptEntry.self, forKey: .entry))
         case "reply_delta": self = .replyDelta(id: try c.decode(String.self, forKey: .id), text: try text())

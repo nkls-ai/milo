@@ -14,6 +14,7 @@ from .core.clock import SystemClock
 from .core.ports import Harness, LiveModel, Transcriber, Voice
 from .core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, HARNESSES, LIVE_MODELS, TEXT_CLEANERS, TRANSCRIBERS,
                             VOICES, AdapterContext, ConfigError, Registry)
+from .core.types import LiveMode
 from .services.app_bridge import AppBridge, AppEyes, AppHands, BubbleConfirm
 from .services.context import UserContext
 from .services.conversation import Conversation
@@ -110,7 +111,7 @@ def build(home: Path) -> Runtime:
                          confirm=confirm)
     tasks.on_result = live_talk.note
     listening = Listening(mic, transcriber, stt_executor, ui, DictationService(cleaner, history, ui),
-                          live_talk, context)
+                          live_talk, context, LiveMode(config.dictation.stream))
 
     heartbeat = None
     if config.heartbeat.enabled:

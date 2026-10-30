@@ -7,6 +7,8 @@ Milo is two processes on one Mac:
 
 They talk over a Unix socket at `~/Milo/run/brain.sock` (mode 0600) using JSON objects, one per line. Every message is listed in [`protocol/messages.json`](../protocol/messages.json) and defined in `brain/src/milo/core/events.py`. Both test suites decode that file, so the two sides can't drift apart silently.
 
+Only one brain runs per workspace. It takes an `flock` on `~/Milo/run/brain.lock` before it loads anything and holds it until the process ends, and a second brain exits at once. The app starts a brain only while nobody holds that lock: after a restart it waits for the old brain to let go, and it leaves a brain started by hand alone. It stops its brain with SIGTERM, since `uv run` passes that on and swallows SIGINT. Two brains would each load Whisper and OmniVoice, which on 16 GB fills swap and makes every Whisper pass several times slower.
+
 `~/Milo/` is the workspace. It holds `config.toml`, Milo's persona for the chat model (`persona.md`), the agent's instructions (`AGENTS.md`, `CLAUDE.md`), `memory/`, `reminders.md`, `state/` and `logs/`. The harness runs with this folder as its working directory, so the agent reads and edits its own memory with ordinary file tools.
 
 ## Brain layout
@@ -56,7 +58,7 @@ Beyond `milo.core.ports`, these entry points are fixed:
 | Function / class | Owner | Contract |
 |---|---|---|
 | `milo.adapters.load_builtin() -> None` | adapters | Imports every built-in adapter module so it registers. Idempotent. Heavy imports (torch, mlx) stay inside methods, never at module import. |
-| `milo.memory.workspace.Workspace(home)` | memory | `.ensure()` copies the template without overwriting, and creates dirs. Path properties: `config_path`, `reminders_path`, `profile_path`, `persona_path`, `state_dir`, `log_dir`, `socket_path`, `usage_path`, `dictation_history_path`, `transcript_path`, `heartbeat_state_path`, `hands_socket_path`, `screens_dir`. |
+| `milo.memory.workspace.Workspace(home)` | memory | `.ensure()` copies the template without overwriting, and creates dirs. Path properties: `config_path`, `reminders_path`, `profile_path`, `persona_path`, `state_dir`, `log_dir`, `socket_path`, `lock_path`, `usage_path`, `dictation_history_path`, `transcript_path`, `heartbeat_state_path`, `hands_socket_path`, `screens_dir`. |
 | `milo.memory.reminders.MarkdownReminders(path)` | memory | `ReminderBook`. Re-parses only when mtime changes. `add(due, text)` appends a line. Shared by the heartbeat and LiveTalk. |
 | `milo.memory.profile.MarkdownProfile(path)` | memory | `ProfileMemory` over `memory/profile.md`. |
 | `milo.memory.ledger.JsonlUsageLedger(path, clock)` | memory | `UsageLedger`. Appends one JSON line per harness call. |
@@ -83,7 +85,7 @@ See [ADR 6](adr/0006-looking-at-the-screen.md) and [ADR 7](adr/0007-computer-use
 
 - **Looking.** The chat model writes `<look/>` when it needs to see the screen. LiveTalk asks through the `ScreenEyes` port (`AppEyes` sends `look_request`), the app answers `look_result` with the front window's text and a screenshot path, and LiveTalk sends both to the model as a second message with an image block. `looking` turns the eye badge next to Milo on and off. "What's this?" (the shortcut or the menu item) sends `whats_this` with a capture, and the brain starts a turn with it. Screen text sits between `<screen_data>` markers (`services/screen.py`), and a conversation that has seen it asks before handing off a task.
 - **Computer use.** Workers get the milo-mac tools (`core/hands.py`) through `AdapterContext.mac_tools`, which compose.py fills when `[hands] enabled`. Codex and Claude start `python -m milo.mcp_server`, which sends each call to `~/Milo/run/hands.sock`. `HandsService` validates it, asks the app to describe the target, classifies it with `services/risk.py`, asks through the `ConfirmGate` port when needed, logs a step, and then has the app run it (`hands_request`, `hands_result`). It only answers while `TaskRunner` runs a task.
-- **On screen.** `hands_session` shows the "Milo is working" frame (`AppKit/WorkingFrame`). `fly_to` sets `MiloModel.flyTarget` in AppKit coordinates; until the character can fly, `AppKit/FlyFallback` draws a ring there. `confirm_request` puts a Yes and No question in the bubble (`MiloModel.question`).
+- **On screen.** `hands_session` shows the "Milo is working" frame (`AppKit/WorkingFrame`). `fly_to` sets `MiloModel.flyTarget` in AppKit coordinates, and `AppKit/FlightDriver` flies Pip there to point at it. `confirm_request` puts a Yes and No question in the bubble (`MiloModel.question`).
 - **Stopping.** `Screen/ScreenController` watches real input during a session through `UserInputSource`. `TakeoverDetector` is pure: it gets timestamps and tells real input from Milo's own events. On a stop the app sends `hands_stop` and the brain fails every later call in that task.
 
 ## The Milo window
@@ -109,9 +111,14 @@ app/
                      The Milo window: TranscriptModel, Views/ConversationView + ActivityView,
                      AppKit/ConversationWindow. Screen/: ScreenController and TakeoverDetector.
                      Hotkeys/KeyCombo. Adapters/: Accessibility, SystemScreenReader, ScreenShots,
-                     MacHands, NSEventInputMonitor, CarbonHotkey
+                     MacHands, NSEventInputMonitor, CarbonHotkey. The character: Views/PipFigure (the bird, default) or
+                     Views/CharacterView's CharacterFigure (the robot, [ui] character = "classic"), both
+                     posed by CharacterLife. Flight.swift + AppKit/FlightDriver fly the overlay panel to
+                     MiloModel.flyTarget (AppKit global screen coordinates) and back
   Sources/Milo/      main.swift: builds concrete adapters, hands them to MiloController
   Tests/MiloKitTests Swift Testing; decodes protocol/messages.json, drives the controller with fakes.
                      MILO_RENDER_DIR=/tmp/milo-render swift test --filter ConversationRender renders the
-                     window offscreen into PNGs
+                     window offscreen into PNGs. MILO_RENDER_DIR=... --filter PipRender renders Pip's key
+                     frames; MILO_PROBE_DIR=... --filter OverlayProbe puts the overlay on screen, measures
+                     its CPU and flies Pip to a point and back
 ```

@@ -93,7 +93,7 @@ class UiConfig(Event):
     """Sent once per connection. Key names: "fn", "right_option", "right_command", "right_control".
 
     hands_free_max_s caps a recording locked on by a double tap. whats_this_key is a combo such as
-    "ctrl+option+m" for the "What's this?" shortcut; "" turns it off.
+    "ctrl+option+m" for the "What's this?" shortcut; "" turns it off. character is "pip" or "classic".
     """
 
     type: ClassVar[str] = "ui_config"
@@ -101,6 +101,7 @@ class UiConfig(Event):
     talk_key: str
     hands_free_max_s: float = 300.0
     whats_this_key: str = ""
+    character: str = "pip"
 
 
 @dataclass(frozen=True)

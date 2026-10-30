@@ -12,10 +12,12 @@ from pathlib import Path
 from typing import Any
 
 from .core.registry import ConfigError, options_from
+from .core.types import LiveMode
 
 log = logging.getLogger("milo.config")
 
 KEY_NAMES = ("fn", "right_option", "right_command", "right_control")
+CHARACTERS = ("pip", "classic")
 PLUGGABLE = ("chat", "harness", "stt", "tts", "audio", "dictation")
 SECTIONS = (*PLUGGABLE, "ui", "heartbeat", "hands")
 _COMBO = re.compile(r"^((ctrl|control|option|alt|shift|cmd|command)\+)+[a-z0-9]+$|^f([1-9]|1[0-9])$")
@@ -46,6 +48,12 @@ class TtsSettings:
 @dataclass(frozen=True)
 class DictationSettings:
     keep_history: bool = True
+    stream: str = "preview"
+    """While speaking: "off" (transcribe on release), "preview" (show the words live) or "type" (paste at pauses)."""
+
+    def __post_init__(self):
+        if self.stream not in {m.value for m in LiveMode}:
+            raise ConfigError(f"[dictation] stream must be one of {', '.join(m.value for m in LiveMode)}")
 
 
 @dataclass(frozen=True)
@@ -54,6 +62,10 @@ class UiSettings:
     talk_key: str = "right_option"
     whats_this_key: str = "ctrl+option+m"
     """A shortcut with at least one modifier (or an F key), held by nobody else. "" turns it off."""
+    hands_free_max_s: float = 300.0
+    """A recording locked on by a double tap stops by itself after this long."""
+    character: str = "pip"
+    """How Milo looks: "pip" (the bird) or "classic" (the purple robot)."""
 
     def __post_init__(self):
         if self.whats_this_key and not _COMBO.match(str(self.whats_this_key).lower().replace(" ", "")):
@@ -64,6 +76,10 @@ class UiSettings:
         if self.dictate_key == self.talk_key:
             # The app ignores a ui_config that puts both modes on one key, so fail here instead.
             raise ConfigError(f"[ui] dictate_key and talk_key can't be the same key ({self.talk_key!r})")
+        if self.hands_free_max_s <= 0:
+            raise ConfigError("[ui] hands_free_max_s must be more than 0")
+        if self.character not in CHARACTERS:
+            raise ConfigError(f"[ui] character must be one of {', '.join(CHARACTERS)}")
 
 
 @dataclass(frozen=True)
