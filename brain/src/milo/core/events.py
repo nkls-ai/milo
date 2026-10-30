@@ -285,6 +285,27 @@ class SettingsReport(Event):
 
 
 @dataclass(frozen=True)
+class UsageReport(Event):
+    """What the Usage page shows, after `get_usage`. `span` days ending `today` (both YYYY-MM-DD); `since` is the
+    first day anything was recorded, or "" before that.
+
+    `daily`: every day of the span, oldest first, each {day, calls, input_tokens, cached_input_tokens,
+    output_tokens, dictations, words}; input_tokens includes the cached ones. `sources`: tokens per kind of work
+    over the span, {source, calls, tokens}, most first ("chat", "task", "memory", "proactive"). `apps`: where
+    dictations went, {app, dictations, words}, most words first, at most 6. `accounts`: {service, uses, state,
+    plan, who, detail}, see milo.core.usage.Account. No dictated text is sent."""
+
+    type: ClassVar[str] = "usage"
+    span: int
+    today: str
+    since: str
+    daily: list[dict]
+    sources: list[dict]
+    apps: list[dict]
+    accounts: list[dict]
+
+
+@dataclass(frozen=True)
 class Remote(Event):
     """Milo by message, for the menu. `channel` is the chat app's name ("telegram"), `label` what the user calls
     it. state: "starting", "unpaired" (no phone yet; `detail` says how to connect), "paired" (`detail`: the
@@ -571,6 +592,14 @@ class GetSettings(Command):
 
 
 @dataclass(frozen=True)
+class GetUsage(Command):
+    """The Usage page opened or changed its range: send `usage` for the last `span` days (1 to 366)."""
+
+    type: ClassVar[str] = "get_usage"
+    span: int = 30
+
+
+@dataclass(frozen=True)
 class SetSetting(Command):
     """Change one setting in config.toml, e.g. section "ui", key "voice", value false."""
 
@@ -729,6 +758,11 @@ def parse_command(raw: object) -> Command:
                 return RoutineDraftAnswer(str(raw["id"]), raw["save"])
             case "get_settings":
                 return GetSettings()
+            case "get_usage":
+                span = raw.get("span", 30)
+                if isinstance(span, bool) or not isinstance(span, int) or not 1 <= span <= 366:
+                    raise ProtocolError("span must be a whole number of days from 1 to 366")
+                return GetUsage(span)
             case "set_setting":
                 value = raw["value"]
                 if not isinstance(value, str | bool | int | float):

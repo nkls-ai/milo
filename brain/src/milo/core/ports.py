@@ -19,6 +19,7 @@ from .events import Event
 from .meetings import Chunk, MeetingInfo, MeetingNotes, TimedWord, Track, TranscriptLine, Turn
 from .memory import ConsolidationReport, Document, Episode, Fact, Hit, IndexItem, Recall, TurnContext
 from .routines import Routine
+from .usage import Account, Call, Dictated
 from .types import Audio, Inbound, Nudge, Reminder, Reply, ScreenCapture, Signals, Step, Usage
 
 LevelCallback = Callable[[float], None]
@@ -414,6 +415,26 @@ class ReminderBook(ReminderSource, Protocol):
 @runtime_checkable
 class UsageLedger(Protocol):
     def record(self, source: str, harness: str, usage: Usage) -> None: ...
+
+
+@runtime_checkable
+class UsageHistory(Protocol):
+    """Reads back the usage ledger and the dictation history for the Usage page."""
+
+    def calls(self, since: date) -> list[Call]: ...
+
+    def dictations(self, since: date) -> list[Dictated]: ...
+
+    def first_day(self) -> date | None:
+        """The day of the oldest record in either file, or None before the first one."""
+        ...
+
+
+@runtime_checkable
+class AccountProbe(Protocol):
+    def accounts(self) -> list[Account]:
+        """Each service Milo is set up to use and who it's signed in as. Blocking: runs CLIs and asks APIs."""
+        ...
 
 
 @runtime_checkable

@@ -458,6 +458,21 @@ class MemoryLedger:
         self.entries.append((source, harness, usage))
 
 
+class MemoryUsageHistory:
+    def __init__(self, calls=(), dictations=()):
+        self.call_list = list(calls)
+        self.dictation_list = list(dictations)
+
+    def calls(self, since):
+        return [c for c in self.call_list if c.at.date() >= since]
+
+    def dictations(self, since):
+        return [d for d in self.dictation_list if d.at.date() >= since]
+
+    def first_day(self):
+        return min((r.at.date() for r in [*self.call_list, *self.dictation_list]), default=None)
+
+
 class MemoryHistory:
     def __init__(self):
         self.entries: list[tuple[str, str | None]] = []

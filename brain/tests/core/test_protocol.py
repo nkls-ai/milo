@@ -46,6 +46,8 @@ OUTBOUND = {
     "conversation": lambda m: ev.ConversationOpened(m["id"], m["info"], m["entries"]),
     "search_results": lambda m: ev.SearchResults(m["query"], m["results"]),
     "reminders": lambda m: ev.RemindersList(m["reminders"]),
+    "usage": lambda m: ev.UsageReport(m["span"], m["today"], m["since"], m["daily"], m["sources"], m["apps"],
+                                      m["accounts"]),
 }
 
 
@@ -123,6 +125,7 @@ def test_bad_commands_raise_protocol_error(raw):
     (fakes.ScriptedEngine(), ports.ProactiveEngine),
     (fakes.FakeLiveModel(), ports.LiveModel), (fakes.MemoryProfile(), ports.ProfileMemory),
     (fakes.ListReminders(), ports.ReminderBook), (fakes.FakeConfirm(), ports.Confirmer),
+    (fakes.MemoryUsageHistory(), ports.UsageHistory),
 ])
 def test_fakes_satisfy_their_ports(fake, port):
     assert isinstance(fake, port)
@@ -195,3 +198,11 @@ def test_fixture_headers_and_entries_decode_into_the_brains_types():
     (history,) = [m for m in FIXTURE["brain_to_app"] if m["type"] == "history"]
     for entry in history["entries"]:
         assert TranscriptEntry.from_dict(entry).to_dict() == entry
+
+
+def test_usage_command_takes_a_span_of_whole_days():
+    assert ev.parse_command({"type": "get_usage"}) == ev.GetUsage(30)
+    assert ev.parse_command({"type": "get_usage", "span": 7}) == ev.GetUsage(7)
+    for span in (0, 367, 7.5, True, "30"):
+        with pytest.raises(ev.ProtocolError):
+            ev.parse_command({"type": "get_usage", "span": span})

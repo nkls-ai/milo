@@ -372,7 +372,45 @@ def check_conversations(s: Stack, msg: dict) -> None:
     assert s.model.turns == [] and s.harness.calls == [], "the list costs no model call"
 
 
+class FixedAccounts:
+    def __init__(self, *accounts):
+        self.list = list(accounts)
+        self.checks = 0
+
+    def accounts(self):
+        self.checks += 1
+        return self.list
+
+
+def check_get_usage(s: Stack, msg: dict) -> None:
+    from milo.core.events import UsageReport
+    from milo.core.usage import Account, Call, Dictated
+    from milo.core.types import Usage
+    from milo.services.usage import UsageService
+    from tests.fakes import MemoryUsageHistory
+
+    now = s.clock.now()
+    history = MemoryUsageHistory([Call(now, "chat", "claude_live", Usage(1000, 800, 20))],
+                                 [Dictated(now, "Mail", 5)])
+    probe = FixedAccounts(Account("Claude", ("Talking",), plan="Max"))
+    usage = UsageService(history, probe, s.ui, s.clock)
+    brain = Brain(s.ui, s.listening, s.live_talk, s.context, s.heartbeat, UiSettings(), usage=usage)
+
+    async def go():
+        await brain.handle(parse_command(msg))
+        await usage.idle()
+
+    asyncio.run(go())
+    first, second = s.sink.of(UsageReport)
+    assert first.span == msg["span"] == len(first.daily) and first.accounts == []
+    assert first.daily[-1] | {"day": ""} == {"day": "", "calls": 1, "input_tokens": 1000, "cached_input_tokens": 800,
+                                             "output_tokens": 20, "dictations": 1, "words": 5}
+    assert [a["service"] for a in second.accounts] == ["Claude"] and probe.checks == 1
+    assert s.model.turns == [] and s.harness.calls == [], "the page costs no model call"
+
+
 CHECKS = {
+    "get_usage": check_get_usage,
     "get_conversations": check_conversations,
     "open_conversation": check_conversations,
     "search_conversations": check_conversations,

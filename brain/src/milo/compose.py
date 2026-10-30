@@ -414,7 +414,10 @@ def _heartbeat(p: Parts) -> None:
 
 def _brain(p: Parts) -> None:
     """Settings that apply while Milo runs, and the Brain that routes the app's commands to all of the above."""
+    from .adapters.accounts import CliAccounts
     from .config_file import TomlConfigFile
+    from .memory.usage_log import JsonlUsageHistory
+    from .services.usage import UsageService
 
     listening, speaker, live_settings = p.listening, p.speaker, p.live_settings
 
@@ -434,11 +437,13 @@ def _brain(p: Parts) -> None:
             ("ui", "whats_this_key"): use_ui, ("ui", "voice"): use_voice, ("dictation", "stream"): use_stream,
             ("chat", "updates"): use_updates}
     settings = Settings(TomlConfigFile(p.workspace.config_path), p.config, p.ui, live)
+    usage = UsageService(JsonlUsageHistory(p.workspace.usage_path, p.workspace.dictation_history_path),
+                         CliAccounts(p.config, p.workspace.home), p.ui, p.clock)
     p.brain = Brain(p.ui, listening, p.live_talk, p.context, p.heartbeat, p.config.ui, p.transcript,
                     approvals=p.approvals, bridge=p.bridge, hands=p.hands, screens=p.workspace.screens_dir,
                     helpers=p.helpers, memory=p.mem.memory if p.mem is not None else None, routines=p.routines,
                     settings=settings, messages=p.messages, meetings=p.meetings,
-                    conversations=p.conversations)
+                    conversations=p.conversations, usage=usage)
 
 
 BUILD_STEPS = (_workspace, _engines, _stores, _presence, _helpers, _meetings, _talk, _messages, _tool_socket,
