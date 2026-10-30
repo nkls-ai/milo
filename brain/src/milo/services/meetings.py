@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections import Counter
 from collections.abc import Awaitable, Callable
 from concurrent.futures import Executor
 from dataclasses import dataclass, field
@@ -28,9 +29,9 @@ from milo.core.types import STT_SAMPLE_RATE, Emotion
 from .approvals import Approvals
 from .background_stt import BackgroundStt
 from .meeting_speakers import SpeakerTracker
-from .meeting_text import (OTHERS, SUMMARY_RULES, clean, inert, energy_spans, find_cut, meeting_block,
-                           merged, minutes_asked, naming, parse_notes, render_notes, render_transcript, spans_of,
-                           speaker_of, summary_prompt, words_to_lines)
+from .meeting_text import (OTHERS, SUMMARY_RULES, clean, energy_spans, find_cut, inert, meeting_block, merged,
+                           minutes_asked, naming, parse_notes, render_notes, render_transcript, shifted, spans_of,
+                           speaker_of, summary_prompt, uncovered, without_repeats, words_to_lines)
 from .speaker import Speaker
 from .transcript import Transcript, unrecorded
 from .ui_state import UiState
@@ -53,6 +54,23 @@ NAME_FROM_VOICES_S = 8.0
 SUMMARY_TIMEOUT_S = 180.0
 PRIVATE_POLL_S = 0.25
 STT_TRIES = 2
+
+LANGUAGE_AFTER_S = 2.0
+"""A speaker's language is told from this much of their speech."""
+GLUE_S = 0.4
+
+
+def _glue(audio, spans) -> tuple[np.ndarray, list[tuple[float, float, float]]]:
+    """The spans' audio one after the other with short pauses between, and where each piece went."""
+    parts, pieces, pos = [], [], 0.0
+    pause = np.zeros(int(GLUE_S * STT_SAMPLE_RATE), dtype=np.float32)
+    for a, b in spans:
+        piece = audio[int(a * STT_SAMPLE_RATE):int(b * STT_SAMPLE_RATE)]
+        pieces.append((a, b, pos))
+        parts += [piece, pause]
+        pos += (len(piece) + len(pause)) / STT_SAMPLE_RATE
+    return (np.concatenate(parts) if parts else np.zeros(0, dtype=np.float32)), pieces
+
 
 Calendar = Callable[[datetime, datetime], Awaitable[list[dict]]]
 AddReminder = Callable[[str, str], Awaitable[object]]
@@ -369,13 +387,14 @@ class MeetingService:
         cut = seconds if final or seconds < WINDOW_S - 0.05 else find_cut(audio, CUT_FROM_S, WINDOW_S)
         audio = audio[:int(round(cut * STT_SAMPLE_RATE))]
         started = self._clock.monotonic()
-        words = await self._words(audio)
+        words = await self._fill_gaps(audio, await self._words(audio))
         diarize = self._diarize(audio, spans_of(words)) if track is Track.THEM and words else None
         turns = await diarize if diarize is not None else []
         if track is Track.THEM:
             mapping = m.tracker.assign(turns) if turns else {}
             speaker = speaker_of(turns, mapping, THEM)
             if turns:
+                words = await self._languages(m, audio, words, turns, mapping)
                 m.state["speakers"] = m.tracker.to_state()
                 self._name_from_voices(m)
                 self._save(m)
@@ -388,13 +407,61 @@ class MeetingService:
                  len(lines), self._clock.monotonic() - started)
         self._render(m)
 
-    async def _words(self, audio):
+    async def _words(self, audio, language: str | None = None):
         for attempt in range(STT_TRIES):
             try:
-                return await self._stt.run(self._timed.words, audio)
+                return await self._stt.run(self._timed.words, audio, language)
             except Exception:
                 log.exception("meeting transcription failed (try %d)", attempt + 1)
         return []
+
+    async def _fill_gaps(self, audio, words):
+        """Whisper sometimes skips a sentence inside a segment. Speech no word covers gets one more pass, all
+        such stretches glued together."""
+        gaps = [(max(0.0, a - 0.2), b + 0.2) for a, b in uncovered(audio, words)]
+        if not gaps:
+            return words
+        glued, pieces = _glue(audio, gaps)
+        found = await self._words(glued)
+        if found:
+            log.info("filled %d gap(s) Whisper skipped, %.1fs", len(gaps), sum(b - a for a, b in gaps))
+        return without_repeats([*words, *shifted(found, pieces, 1000)])
+
+    async def _languages(self, m: _Meeting, audio, words, turns, mapping):
+        """Whisper hears a pass in one language, so in a call where Anna speaks German and Sam English one of them
+        comes out translated. Each speaker's language is found once; the stretches of speakers who speak another
+        language than the pass's are transcribed again in theirs, one more pass per language."""
+        heard = Counter(w.language for w in words if w.language).most_common(1)
+        if not heard:
+            return words
+        languages = m.state.setdefault("languages", {})
+        by_speaker: dict[str, list[tuple[float, float]]] = {}
+        for turn in turns:
+            by_speaker.setdefault(mapping[turn.local], []).append((turn.start, turn.end))
+        for speaker, spans in by_speaker.items():
+            if speaker in languages or sum(b - a for a, b in spans) < LANGUAGE_AFTER_S:
+                continue
+            glued, _ = _glue(audio, spans)
+            try:
+                languages[speaker] = await self._stt.run(self._timed.spoken_language, glued)
+            except Exception:
+                log.exception("telling a speaker's language failed")
+                languages[speaker] = heard[0][0]
+        others: dict[str, list[tuple[float, float]]] = {}
+        for speaker, spans in by_speaker.items():
+            language = languages.get(speaker)
+            if language and language != heard[0][0]:
+                others.setdefault(language, []).extend(spans)
+        for n, (language, spans) in enumerate(others.items()):
+            spans.sort()
+            glued, pieces = _glue(audio, spans)
+            again = await self._words(glued, language)
+            if not again:
+                continue
+            inside = lambda w: any(a <= (w.start + w.end) / 2 <= b for a, b in spans)  # noqa: E731
+            words = without_repeats([*shifted(again, pieces, 2000 + 1000 * n), *(w for w in words if not inside(w))])
+            log.info("meeting %s: %d stretch(es) again in %s", m.id, len(spans), language)
+        return words
 
     def _diarize(self, audio, spans) -> asyncio.Future | None:
         if self._diarizer is None or self._diarize_executor is None or self._diarizer_broken or not spans:

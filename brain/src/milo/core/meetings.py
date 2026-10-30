@@ -30,6 +30,8 @@ class TimedWord:
     end: float
     text: str
     segment: int = 0
+    language: str = ""
+    """What Whisper heard it as, like "de". Whisper picks one language per pass."""
 
 
 @dataclass(frozen=True)

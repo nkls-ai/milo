@@ -80,6 +80,54 @@ def energy_spans(audio: Audio, *, frame_s: float = 0.05, floor: float = 0.01,
     return spans
 
 
+WORD_MAX_S = 1.2
+"""Whisper stretches a word over speech it skipped; a word counts as covering at most this long."""
+
+
+def uncovered(audio: Audio, words: Sequence[TimedWord], *, min_s: float = 1.0) -> list[tuple[float, float]]:
+    """Stretches of speech no word covers: where Whisper skipped a sentence, which it sometimes does."""
+    loud = np.sqrt(np.mean(np.square(audio))) if len(audio) else 0.0
+    covered = [(w.start - 0.3, min(w.end, w.start + WORD_MAX_S) + 0.3) for w in words]
+    gaps = []
+    for start, end in energy_spans(audio, floor=max(0.005, float(loud) * 0.3)):
+        pos = start
+        for a, b in sorted(covered):
+            if b <= pos or a >= end:
+                continue
+            if a - pos >= min_s:
+                gaps.append((pos, a))
+            pos = max(pos, b)
+        if end - pos >= min_s:
+            gaps.append((pos, end))
+    return gaps
+
+
+def shifted(words: Sequence[TimedWord], pieces: Sequence[tuple[float, float, float]],
+            segment_base: int) -> list[TimedWord]:
+    """Words from audio glued together from `pieces` (original start, original end, where the piece starts in the
+    glued audio), moved back to the original times."""
+    out = []
+    for word in words:
+        mid = (word.start + word.end) / 2
+        piece = max((p for p in pieces if p[2] <= mid), key=lambda p: p[2], default=pieces[0])
+        delta = piece[0] - piece[2]
+        start = min(max(word.start + delta, piece[0]), piece[1])
+        end = min(max(word.end + delta, start), piece[1])
+        out.append(TimedWord(start, end, word.text, segment_base + word.segment, word.language))
+    return out
+
+
+def without_repeats(words: Sequence[TimedWord], within_s: float = 0.8) -> list[TimedWord]:
+    """Words in time order, each once: a second pass over the same speech brings the same words back."""
+    kept: list[TimedWord] = []
+    for word in sorted(words, key=lambda w: w.start):
+        key = _norm(word.text)
+        if key and any(_norm(k.text) == key and abs(k.start - word.start) < within_s for k in kept[-8:]):
+            continue
+        kept.append(word)
+    return kept
+
+
 def words_to_lines(words: Sequence[TimedWord], offset: float, track: Track,
                    speaker_at: Callable[[TimedWord], str]) -> list[TranscriptLine]:
     """Group words into lines: a new line when the speaker changes or after a pause. `offset` moves the words'

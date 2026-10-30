@@ -392,8 +392,13 @@ class Connections:
 class TimedTranscriber(Protocol):
     """Speech to words with times, for meeting transcripts. Runs on the STT thread, below dictation."""
 
-    def words(self, audio: Audio) -> list[TimedWord]:
-        """16 kHz mono audio to the words in it, seconds from its start. [] for silence or noise. Blocking."""
+    def words(self, audio: Audio, language: str | None = None) -> list[TimedWord]:
+        """16 kHz mono audio to the words in it, seconds from its start. [] for silence or noise. Blocking.
+        `language` ("de") skips detecting it."""
+        ...
+
+    def spoken_language(self, audio: Audio) -> str:
+        """The language spoken in the audio, like "en". Blocking."""
         ...
 
 

@@ -75,13 +75,14 @@ class MlxWhisper:
     def preview(self, audio: Audio) -> str:
         return self._transcribe(self.preview_model, audio)
 
-    def words(self, audio: Audio) -> list[TimedWord]:
+    def words(self, audio: Audio, language: str | None = None) -> list[TimedWord]:
         """TimedTranscriber for meeting notes: the final model with word times. Skips silence and the segments
         Whisper makes up over noise."""
         if is_silent(audio):
             return []
-        result = self._whisper(self.model).result(audio, self.language, self.prompt, word_timestamps=True,
-                                                  hallucination_silence_threshold=2.0)
+        result = self._whisper(self.model).result(audio, self.language or language, self.prompt,
+                                                  word_timestamps=True)
+        spoken = str(result.get("language") or self.language or language or "")
         words = []
         for n, segment in enumerate(result.get("segments") or []):
             text = str(segment.get("text", "")).strip()
@@ -89,9 +90,16 @@ class MlxWhisper:
                 continue
             if segment.get("no_speech_prob", 0) > 0.6 and segment.get("avg_logprob", 0) < -1.0:
                 continue
-            words += [TimedWord(float(w["start"]), float(w["end"]), str(w["word"]), n)
+            words += [TimedWord(float(w["start"]), float(w["end"]), str(w["word"]), n, spoken)
                       for w in segment.get("words") or [] if str(w.get("word", "")).strip()]
         return words
+
+    def spoken_language(self, audio: Audio) -> str:
+        if self.language:
+            return self.language
+        whisper = self._whisper(self.model)
+        whisper.load()
+        return whisper._detect(audio.astype(np.float32))
 
     def _transcribe(self, model: str, audio: Audio) -> str:
         if is_silent(audio):
@@ -122,21 +130,24 @@ class _Whisper:
         self.repo = repo
         self._model = None
 
-    def run(self, audio: Audio, language: str | None, prompt: str | None) -> str:
-        return str(self.result(audio, language, prompt).get("text", "")).strip()
-
-    def result(self, audio: Audio, language: str | None, prompt: str | None, **options) -> dict:
-        """mlx_whisper.transcribe's whole result: text, and segments with their words when asked."""
-        import mlx.core as mx
-        import mlx_whisper
-        from mlx_whisper.transcribe import ModelHolder
-
+    def load(self) -> None:
         if self._model is None:
+            import mlx.core as mx
             from mlx_whisper.load_models import load_model
 
             mx.set_cache_limit(CACHE_LIMIT)
             self._model = load_model(self.repo, dtype=mx.float16)
             self._model.encoder = _LastEncoding(self._model.encoder)
+
+    def run(self, audio: Audio, language: str | None, prompt: str | None) -> str:
+        return str(self.result(audio, language, prompt).get("text", "")).strip()
+
+    def result(self, audio: Audio, language: str | None, prompt: str | None, **options) -> dict:
+        """mlx_whisper.transcribe's whole result: text, and segments with their words when asked."""
+        import mlx_whisper
+        from mlx_whisper.transcribe import ModelHolder
+
+        self.load()
         # mlx_whisper keeps one model in a class attribute and reloads it whenever the repo changes.
         ModelHolder.model, ModelHolder.model_path = self._model, self.repo
         audio = audio.astype(np.float32)
