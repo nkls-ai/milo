@@ -1,6 +1,6 @@
 # 7. Computer use: a milo-mac MCP server, checked in the brain, run in the app
 
-Date: 2026-10-30. Status: accepted. Builds on [ADR 2](0002-agent-clis-as-the-llm-harness.md).
+Date: 2026-10-30. Status: accepted. Builds on [ADR 2](0002-agent-clis-as-the-llm-harness.md). The tools and the questions changed in [ADR 14](0014-scripts-milo-writes-and-short-questions.md): `sheet_write`, `sheet_read`, `write_document` and `ax_find` come first, and making something new never asks.
 
 ## Context
 

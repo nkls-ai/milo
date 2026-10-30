@@ -361,6 +361,14 @@ class Files(Protocol):
         """The text of a file (txt, md, csv, pdf, docx, rtf, xlsx, ...): path, text, truncated."""
         ...
 
+    def list(self, folder: str, name: str = "", limit: int = 20) -> list[dict]:
+        """The files right inside `folder` whose name contains `name`, newest first."""
+        ...
+
+    def move(self, paths: list[str], folder: str) -> dict:
+        """Move files into `folder` (made if missing), never replacing one: moved (path, name, ...), folder."""
+        ...
+
 
 @dataclass(frozen=True)
 class Connections:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -122,7 +123,7 @@ def build(home: Path) -> Runtime:
     helpers: Orchestrator  # built below; the questions only reach it once a helper runs
     if config.hands.enabled:
         hands = HandsService(AppHands(bridge), HelperQuestions(approvals, lambda: helpers, screen=True), ui,
-                             transcript=transcript, applescript=config.hands.applescript)
+                             transcript=transcript, applescript=config.hands.applescript, locale=_mac_locale())
         hands_server = HandsSocketServer(hands_socket, hands.call)
     switches = config.connections
     enabled = [name for name in ("calendar", "reminders") if switches.enabled and getattr(switches, name)]
@@ -166,6 +167,16 @@ def _live_settings(text: str) -> tuple[str, int]:
     """The settings LiveSettings re-reads from a changed config.toml. Raises ConfigError on bad values."""
     config = Config.parse(text)
     return config.chat.updates, config.harness.max_helpers
+
+
+def _mac_locale() -> str:
+    """The Mac's region setting, like "en_US@rg=dezzzz", for money formats. "" if it can't be read."""
+    try:
+        done = subprocess.run(["/usr/bin/defaults", "read", "-g", "AppleLocale"], capture_output=True, text=True,
+                              timeout=5, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return done.stdout.strip()
 
 
 def _persona(path: Path):

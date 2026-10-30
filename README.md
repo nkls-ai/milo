@@ -15,7 +15,7 @@ A small assistant that lives in the bottom-right corner of your Mac. Hold a key 
 - **Memory.** `~/Milo/memory/` is plain Markdown that Milo reads and edits himself. Open it and fix anything he got wrong.
 - **Milo looks when you ask.** "Look at my screen, what do you think?" Milo reads the window in front and takes a picture of it, then answers. An eye shows next to him while he looks. He never looks on his own.
 - **What's this?** Select something and press `⌃⌥M` (or pick "What's this?" in the menu bar item). Milo explains the selection, or the whole window if nothing is selected. Change the shortcut with `[ui] whats_this_key`.
-- **Milo uses the Mac for you.** "Put these numbers into the Excel sheet", "find the email from Anna and file it". The worker gets tools to read windows, press buttons, type and click. He works in the background wherever he can — pressing buttons, filling in fields and scrolling without touching your mouse or keyboard — so you can keep working on the side. His own lavender pointer shows you where he's working, the window he's in gets a soft outline that says "Milo is working here", and Pip perches on its corner. Press `esc` or the Stop button to stop him. When something can only be done the old way (typing into an Excel cell, clicking a web page), he asks "Can I borrow your mouse for a moment?" first, uses it, and puts your pointer back — and while he's borrowing it, any touch stops him. Each action shows up as a step in the Milo window. Before he sends, deletes, buys or runs a script, he asks in the bubble. No answer within a minute counts as no. He never touches password fields or password apps.
+- **Milo uses the Mac for you.** "Put these numbers into the Excel sheet", "find the email from Anna and file it". The worker gets tools to read windows, press buttons, type and click. He works in the background wherever he can — pressing buttons, filling in fields and scrolling without touching your mouse or keyboard — so you can keep working on the side. His own lavender pointer shows you where he's working, the window he's in gets a soft outline that says "Milo is working here", and Pip perches on its corner. Press `esc` or the Stop button to stop him. When something can only be done the old way (typing into an Excel cell, clicking a web page), he asks "Can I borrow your mouse for a moment?" first, uses it, and puts your pointer back — and while he's borrowing it, any touch stops him. A new table in Excel or Numbers, or a new text document in TextEdit or Pages, is one step that needs no question. Each action shows up as a step in the Milo window. Before he sends, deletes, buys, runs a script or replaces filled cells, he asks in the bubble, in one short sentence. No answer within a minute counts as no. He never touches password fields or password apps.
 - **Reminders and nudges cost no tokens.** Say "remind me at 9 to call the dentist" and Milo writes a line to `~/Milo/reminders.md`. The local heartbeat fires it later without calling the LLM. Morning greetings, break nudges and "welcome back" are local rules too. Cap: `llm_calls_per_day = 0`.
 
 ## Run it
@@ -36,7 +36,7 @@ The first start downloads the Whisper (1.6 GB plus 150 MB for live words) and Om
 
 The first time Milo uses your calendar or reminders, macOS asks whether Milo may; the first time he uses Mail or Notes, it asks whether Milo may control them. Say OK once each. You can change it later in System Settings › Privacy & Security.
 
-Settings live in `~/Milo/config.toml`: harness, voice, keys, heartbeat rules. Restart the brain from the menu bar item after editing. Milo never overwrites `~/Milo/AGENTS.md` or `~/Milo/config.toml`, so a workspace from before gets the advice for the user's apps and for using the Mac only if you copy the "The user's apps" and "Using the Mac" sections from `brain/src/milo/workspace_template/AGENTS.md`. The tools carry the most important rules themselves. `[hands] enabled = false` takes the Mac tools away from the worker, and `applescript = false` turns off scripts only. Jobs on the screen take a while, so give the harness more time: `[harness.codex] timeout_s = 600`. Questions before a risky step wait `[approvals] timeout_s`; an old `[hands] confirm_timeout_s` is ignored with a warning in the log.
+Settings live in `~/Milo/config.toml`: harness, voice, keys, heartbeat rules. Restart the brain from the menu bar item after editing. Milo never overwrites `~/Milo/AGENTS.md` or `~/Milo/config.toml`, so a workspace from before gets the advice for the user's apps and for using the Mac only if you copy the "The user's apps" and "Using the Mac" sections from `brain/src/milo/workspace_template/AGENTS.md`. The tools carry the most important rules themselves. The worker runs with Milo's tools only: Codex gets a home of its own in `~/Milo/.codex` (sharing only your login), and Claude Code skips your user settings, skills and MCP servers, so your own setup doesn't reach it. `[hands] enabled = false` takes the Mac tools away from the worker, and `applescript = false` turns off scripts only. Jobs on the screen take a while, so give the harness more time: `[harness.codex] timeout_s = 600`. Questions before a risky step wait `[approvals] timeout_s`; an old `[hands] confirm_timeout_s` is ignored with a warning in the log.
 
 For brain development, run it in a terminal (the app connects to it instead of starting its own):
 
@@ -55,6 +55,12 @@ The 30-task eval runs Milo on a made-up calendar, inbox, notes and files with a 
 
 ```sh
 cd brain && uv run python -m milo.eval
+```
+
+The on-screen eval runs real tasks on your real Mac with a second Milo.app: a budget table in Excel and in Numbers, filing the newest PDF from a test Downloads folder, and a Mail reply draft that it deletes again. It prints a score and the time of every step, and closes what it opened without saving. Run it only while you're not using the Mac:
+
+```sh
+cd brain && uv run python -m milo.eval.screen --only excel,numbers,file
 ```
 
 ## Docs

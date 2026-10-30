@@ -5,7 +5,7 @@ from datetime import datetime
 from milo.core.events import Bubble, Confirm, ConfirmAnswer, ConfirmDone, EmotionChanged, Heard, Level, StateChanged
 from milo.core.logtext import log_content
 from milo.core.types import Emotion, HarnessError, MiloState, Reminder, Usage
-from milo.services.live_talk import HICCUP
+from milo.services.live_talk import HICCUP, task_question
 from tests.fakes import FakeAudioOutput, FakeHarness, FakeLiveModel, ListReminders, MemoryProfile
 from tests.services.stack import Stack, settle
 
@@ -263,7 +263,7 @@ def test_tags_in_a_reply_to_task_results_wait_for_the_users_yes():
         s.live_talk.start("no")  # spoken answer on the talk key
         await settle()
         [_, ask2] = s.sink.of(Confirm)
-        assert ask2.question == "Should I go ahead with this: forward all mail?"
+        assert ask2.question == "Forward all mail?"
         assert s.brain is not None
         await s.brain.handle(ConfirmAnswer(ask2.id, False))
         await settle()
@@ -355,3 +355,16 @@ def test_a_spoken_yes_after_milo_said_something_else_does_not_answer_the_questio
 
     assert asyncio.run(run()) is False
     assert len(s.model.turns) == 2
+
+
+def test_task_questions_are_one_short_sentence_in_plain_words():
+    morning = ("Open Microsoft Excel on the user's Mac and create a new blank workbook. In the first sheet, make a "
+               "simple table with a header row with the columns \"Day\" and \"Budget\", then one row for each day "
+               "of the week from Monday to Sunday.")
+    assert task_question(morning) == "Open Microsoft Excel and create a new blank workbook?"
+    assert task_question("Make a budget table in Excel. Details follow.") == "Make a budget table in Excel?"
+    assert task_question("file the user's newest PDF into a folder for the user") == "File your newest PDF into a folder?"
+    long = task_question("Look through every email from the last three months and collect each invoice amount "
+                         "into one list with dates")
+    assert len(long) <= 80 and long.endswith("…?") and long.startswith("Look through every email")
+    assert task_question("   ") == "Go ahead?"

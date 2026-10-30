@@ -20,7 +20,7 @@ from collections.abc import Callable
 from milo.core.events import Helpers
 from milo.core.logtext import private
 from milo.core.ports import Clock, EventSink
-from milo.core.types import ActionLevel, Decision, Emotion, HarnessError, Reply, Step
+from milo.core.types import Decision, Emotion, HarnessError, Reply, Step
 
 from . import helpers as board_text
 from .helpers import Helper, HelperStatus, plain_step, short_title
@@ -128,19 +128,22 @@ class Orchestrator:
 
     # ---- what the talker (and the Stop button) can do
 
-    def submit(self, description: str, *, title: str = "", screen: bool | None = None) -> Helper:
-        """Hand off a task. Returns at once with the new helper, queued or already working."""
+    def submit(self, description: str, *, title: str = "", screen: bool | None = None,
+               careful: bool = False) -> Helper:
+        """Hand off a task. Returns at once with the new helper, queued or already working. `careful`: the
+        conversation that asked for it read the screen, so its tools ask before changes too."""
         screen = (needs_screen(description) if screen is None else screen) and self._runner.has_screen
         self._numbers += 1
         helper = Helper(self._transcript.task_started(description), self._numbers, short_title(description, title),
-                        description, screen, self._clock.monotonic())
-        log.info("helper %d %s, %s", helper.number, "on the screen" if screen else "in the background",
-                 private(description))
+                        description, screen, self._clock.monotonic(), careful=careful)
+        log.info("helper %d %s%s, %s", helper.number, "on the screen" if screen else "in the background",
+                 " (careful)" if careful else "", private(description))
         self._add(helper)
         return helper
 
-    def steer(self, ref: str, change: str) -> Helper | None:
+    def steer(self, ref: str, change: str, *, careful: bool = False) -> Helper | None:
         """Tell a helper the user changed the task. A finished one continues its session as a new helper.
+        A `careful` change makes the helper careful from its next turn on.
 
         Returns the helper that will act on it, or None if `ref` names no helper.
         """
@@ -150,6 +153,8 @@ class Orchestrator:
             log.info("no helper %r to steer", ref)
             return None
         log.info("steering helper %d, %s", helper.number, private(change))
+        careful = careful or helper.careful
+        helper.careful = careful
         if helper.status is HelperStatus.QUEUED:
             helper.amendments.append(change)
             self._changed(now=True)
@@ -164,7 +169,8 @@ class Orchestrator:
             return helper
         follow = Helper(self._transcript.task_started(f"{helper.description}\n\nChange: {change}"),
                         self._next_number(), helper.title, helper.description, helper.screen, self._clock.monotonic(),
-                        session_id=helper.session_id, amendments=[*helper.amendments, change], follow_up=change)
+                        session_id=helper.session_id, amendments=[*helper.amendments, change], follow_up=change,
+                        careful=careful)
         self._add(follow)
         return follow
 
@@ -212,6 +218,13 @@ class Orchestrator:
         helper.status = HelperStatus.NEEDS_YOU
         self._changed(now=True)
         return helper
+
+    def careful(self, *, screen: bool) -> bool:
+        """Whether a question from the helpers' tools is for a careful helper: the screen helper for Mac
+        actions, else the helper at work. When it can't tell which of several helpers asks, any careful one
+        counts, so a careful helper never acts unasked."""
+        working = [h for h in self._helpers if h.status in (HelperStatus.WORKING, HelperStatus.NEEDS_YOU)]
+        return any(h.careful for h in working if h.screen or not screen)
 
     def answered(self, helper: Helper | None) -> None:
         if helper is None:
@@ -414,19 +427,21 @@ class HelperQuestions:
         self._orchestrator = orchestrator
         self._screen = screen
 
-    async def confirm(self, summary: str) -> bool:
+    async def confirm(self, summary: str, *, detail: str = "") -> bool:
         helper = self._orchestrator().asking(screen=self._screen)
         try:
-            return await self._approvals.confirm(summary)
+            return await self._approvals.confirm(summary, detail=detail)
         finally:
             self._orchestrator().answered(helper)
 
     async def approve(self, kind: str, summary: str) -> Decision:
-        if self._approvals.policy.level(kind) is not ActionLevel.ASK_FIRST:
-            return await self._approvals.approve(kind, summary)
+        """Approvals.approve, careful when the helper that asks is (see Orchestrator.careful)."""
+        careful = self._orchestrator().careful(screen=self._screen)
+        if not self._approvals.asks(kind, careful=careful):
+            return await self._approvals.approve(kind, summary, careful=careful)
         helper = self._orchestrator().asking(screen=self._screen)
         try:
-            return await self._approvals.approve(kind, summary)
+            return await self._approvals.approve(kind, summary, careful=careful)
         finally:
             self._orchestrator().answered(helper)
 

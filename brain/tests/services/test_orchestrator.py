@@ -3,7 +3,7 @@ what the talker and the app see. Workers are ScriptedHarness scripts standing in
 
 import asyncio
 
-from milo.core.events import Bubble, EmotionChanged, Helpers
+from milo.core.events import Bubble, Confirm, EmotionChanged, Helpers
 from milo.core.types import Emotion, HarnessError, ListenMode, MiloState, Reply, Step, StepStatus, Usage
 from milo.services.helpers import HelperStatus, is_installed_app, plain_step
 from milo.services.live_talk import untrusted
@@ -410,6 +410,74 @@ def test_a_question_from_the_screen_helper_marks_it_as_needing_the_user():
 
     asyncio.run(run())
     assert statuses(s, 1) == ["working", "needs_you", "working", "done"]
+
+
+# ---- careful helpers (asked for in a conversation that read the screen)
+
+
+def test_a_careful_screen_helper_holds_the_mac_tools_careful_and_the_next_one_does_not():
+    gates = asyncio.Event(), asyncio.Event()
+    s = Stack(harness=ScriptedHarness(WorkerScript(gates[0], "Done."), WorkerScript(gates[1], "Done.")),
+              background=ScriptedHarness())
+
+    async def run():
+        careful = s.tasks.submit("fill in the budget in Excel", screen=True, careful=True)
+        plain = s.tasks.submit("fill in the budget in Numbers", screen=True)
+        await settle()
+        assert s.hands._task_id == careful.id and s.hands._careful
+        gates[0].set()
+        await settle()
+        assert s.hands._task_id == plain.id and not s.hands._careful
+        gates[1].set()
+        await s.tasks.idle()
+
+    asyncio.run(run())
+
+
+def test_connection_tools_ask_before_changes_only_for_a_careful_helper():
+    gates = asyncio.Event(), asyncio.Event()
+    s = Stack(harness=ScriptedHarness(WorkerScript(gates[0], "Done."), WorkerScript(gates[1], "Done.")),
+              confirm_timeout_s=0.05)
+    questions = HelperQuestions(s.approvals, lambda: s.tasks, screen=False)
+    asked = lambda: [c.question for c in s.sink.of(Confirm)]  # noqa: E731
+
+    async def run():
+        plain = s.tasks.submit("add the dentist to my calendar")
+        await settle()
+        assert (await questions.approve("change", "Add the dentist?")).answer == "auto"
+        careful = s.tasks.submit("add the meeting from the screen to my calendar", careful=True)
+        await settle()
+        # Two helpers at work and the tool can't say which one asks: the careful one could, so it asks.
+        assert (await questions.approve("change", "Add the meeting?")).answer == "timeout"
+        assert asked() == ["Add the meeting?"]
+        gates[0].set()
+        await settle()
+        assert plain.status is HelperStatus.DONE
+        assert (await questions.approve("change", "Add a note?")).answer == "timeout"
+        assert (await questions.approve("read", "Read it?")).answer == "auto"
+        gates[1].set()
+        await s.tasks.idle()
+        assert careful.status is HelperStatus.DONE
+        assert (await questions.approve("change", "Add it?")).answer == "auto", "careful ends with the helper"
+
+    asyncio.run(run())
+    assert asked() == ["Add the meeting?", "Add a note?"]
+
+
+def test_a_careful_change_makes_the_helper_careful_and_its_follow_up_stays_careful():
+    s = Stack(harness=ScriptedHarness(WorkerScript("Done.", session="t1"), WorkerScript("Changed.")))
+
+    async def run():
+        first = s.tasks.submit("make the table")
+        await s.tasks.idle()
+        follow = s.tasks.steer(str(first.number), "make it 2000", careful=True)
+        await s.tasks.idle()
+        again = s.tasks.steer(str(follow.number), "and bold")
+        await s.tasks.idle()
+        return first, follow, again
+
+    first, follow, again = asyncio.run(run())
+    assert first.careful and follow.careful and again.careful
 
 
 # ---- the talker's tags

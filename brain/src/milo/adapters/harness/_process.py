@@ -7,7 +7,7 @@ import logging
 import os
 import signal
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from milo.core.types import HarnessError
@@ -27,12 +27,14 @@ _lingering: set[asyncio.Task] = set()
 
 async def run(cmd: list[str], *, cwd: Path, timeout_s: float,
               on_line: Callable[[str], None] | None = None,
-              done: Callable[[str], bool] | None = None) -> tuple[int, str, str]:
+              done: Callable[[str], bool] | None = None,
+              env: Mapping[str, str] | None = None) -> tuple[int, str, str]:
     """Return (exit code, stdout, stderr). Raises HarnessError on timeout or if the binary won't start.
 
     `on_line` gets each stdout line as it arrives. An exception in it is logged, never raised. `done` tells
     the line that carries the answer: then run() returns at once (exit code 0, stderr so far) and leaves the
-    CLI to finish on its own, so nobody waits for it to shut down.
+    CLI to finish on its own, so nobody waits for it to shut down. `env` replaces the environment; None
+    inherits it.
 
     The CLI runs in its own process group. A timeout, or cancelling the call, ends it and every process it
     started, including those in groups of their own (codex starts each shell command that way).
@@ -40,7 +42,7 @@ async def run(cmd: list[str], *, cwd: Path, timeout_s: float,
     try:
         # stdin must be closed: `codex exec` waits for piped stdin otherwise and hangs.
         proc = await asyncio.create_subprocess_exec(
-            *cmd, cwd=cwd, stdin=asyncio.subprocess.DEVNULL, limit=STDOUT_LIMIT,
+            *cmd, cwd=cwd, env=env, stdin=asyncio.subprocess.DEVNULL, limit=STDOUT_LIMIT,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, start_new_session=True,
         )
     except OSError as e:

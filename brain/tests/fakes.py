@@ -401,7 +401,8 @@ class FakeEyes:
 
 
 class FakeHands:
-    """AppHands. `targets[tool]` answers describe; `results[tool]` is a dict or a HandsError to raise.
+    """AppHands. `targets[tool]` answers describe; `results[tool]` is a dict or a HandsError to raise, or a list
+    of those, one per call.
 
     `gate` (an asyncio.Event) holds every non-describe action until set or cancel()."""
 
@@ -423,6 +424,8 @@ class FakeHands:
             if self._cancelled.is_set():
                 raise HandsError("stopped")
         result = self.results.get(tool, {"text": f"{tool} done"})
+        if isinstance(result, list):
+            result = result.pop(0)
         if isinstance(result, HandsError):
             raise result
         return result

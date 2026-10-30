@@ -72,6 +72,9 @@ class Helper:
     finished_at: float | None = None
     questions: int = 0
     """Questions to the user it is waiting on."""
+    careful: bool = False
+    """Asked for in a conversation that read outside text (the screen): its tools ask before changes too.
+    See ADR 0014."""
 
     @property
     def active(self) -> bool:

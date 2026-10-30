@@ -83,7 +83,21 @@ def title(tool: str, args: dict) -> str | None:
         case "files_read":
             name = Path(str(args.get("path") or "")).name
             return f"Reading {name}" if name else "Reading a file"
+        case "files_list":
+            return f"Looking in {_folder(args.get('folder'))}"
+        case "files_move":
+            paths = args.get("paths") if isinstance(args.get("paths"), list) else []
+            what = _quoted(Path(str(paths[0])).name, 40) if len(paths) == 1 else f"{len(paths)} files"
+            return f"Putting {what} into {_folder(args.get('folder'))}"
     return None
+
+
+def _folder(path: object) -> str:
+    """"~/Downloads" -> "your Downloads folder", "/x/Invoices" -> "the folder “Invoices”"."""
+    name = Path(str(path or "")).name
+    if str(path or "").rstrip("/") in ("~/Downloads", "~/Desktop", "~/Documents"):
+        return f"your {name} folder"
+    return f"the folder {_quoted(name, 40)}" if name else "a folder"
 
 
 KINDS = {"calendar": "app", "reminders": "app", "mail": "app", "notes": "app", "shortcuts": "app",
@@ -94,7 +108,7 @@ def kind(tool: str) -> str:
     """The activity icon for one of Milo's tools."""
     if tool.startswith(("files_read", "mail_read", "notes_read")):
         return "read"
-    if tool.endswith(("_add_event", "_add", "_complete", "_draft", "_create", "_append")):
+    if tool.endswith(("_add_event", "_add", "_complete", "_draft", "_create", "_append", "_move")):
         return "edit"
     return KINDS.get(tool.split("_")[0], "tool")
 
@@ -131,6 +145,10 @@ def question(tool: str, args: dict) -> str:
             return f"Make a new note called {_quoted(args.get('title'), 50)}?"
         case "notes_append":
             return "Add this to your note?"
+        case "files_move":
+            paths = args.get("paths") if isinstance(args.get("paths"), list) else []
+            what = _quoted(Path(str(paths[0])).name, 40) if len(paths) == 1 else f"{len(paths)} files"
+            return f"Move {what} into {_folder(args.get('folder'))}?"
         case "shortcuts_run":
             given = f" with {_quoted(args['input'], 80)}" if args.get("input") else ""
             return f"I'm about to run your shortcut {_quoted(args.get('name'), 50)}{given}. Go ahead?"

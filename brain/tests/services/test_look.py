@@ -156,7 +156,7 @@ def test_a_task_from_a_screen_turn_needs_the_users_yes():
     s = Stack(eyes=FakeEyes(EXCEL), model=FakeLiveModel(
         ["[thinking] Let me look. <look/>"], ["[happy] I'll fill it in. <task>Fill column C in Budget.xlsx</task>"]))
     asked = answering(s, False, "look at this and fill it in")
-    assert asked == ["Should I go ahead with this: Fill column C in Budget.xlsx?"]
+    assert asked == ["Fill column C in Budget.xlsx?"]
     assert s.harness.calls == []
     s2 = Stack(eyes=FakeEyes(EXCEL), model=FakeLiveModel(
         ["[thinking] <look/>"], ["[happy] On it. <task>Fill column C</task>"]))
@@ -164,9 +164,37 @@ def test_a_task_from_a_screen_turn_needs_the_users_yes():
     assert len(s2.harness.calls) == 1
 
 
-def test_after_a_look_every_task_in_that_conversation_needs_a_yes():
+def test_a_task_the_user_asks_for_after_a_look_just_starts():
+    # The morning of 2026-10-30: Milo had looked at System Settings, then "open Excel and make a table" asked
+    # about the whole task description and timed out. The worker's tools ask before anything risky.
     s = Stack(eyes=FakeEyes(EXCEL), model=FakeLiveModel(
-        ["[thinking] <look/>"], ["[neutral] It's a budget."], ["[happy] On it. <task>Email the budget</task>"]))
-    assert answering(s, False, "look at this", "now email it to Anna") == [
-        "Should I go ahead with this: Email the budget?"]
-    assert s.harness.calls == []
+        ["[thinking] <look/>"], ["[neutral] It's a budget."],
+        ["[happy] On it. <task>Open Excel and make a budget table. One row per weekday.</task>"]))
+    careful = []
+    s.harness.reply = _recording(s.harness.reply, lambda: careful.append(s.tasks.careful(screen=False)))
+    assert answering(s, False, "look at this", "open Excel and make a table for the week") == []
+    assert len(s.harness.calls) == 1
+    assert careful == [True], "it runs careful: changes ask, opening apps and new documents don't"
+    assert s.tasks.helpers[0].careful and not s.tasks.careful(screen=False), "only while the helper works"
+
+
+def _recording(reply, note):
+    async def wrapped(*args, **kwargs):
+        note()
+        return await reply(*args, **kwargs)
+    return wrapped
+
+
+def test_a_task_question_shows_the_whole_task_under_it_in_the_window():
+    s = Stack(eyes=FakeEyes(EXCEL), model=FakeLiveModel(
+        ["[thinking] <look/>"], ["[happy] On it. <task>Fill column C. Use the totals from row 9.</task>"]))
+    details = []
+    confirm = s.approvals.confirm
+
+    async def recording(question, *, detail=""):
+        details.append(detail)
+        return await confirm(question, detail=detail)
+
+    s.approvals.confirm = recording
+    assert answering(s, True, "fill this in") == ["Fill column C?"]
+    assert details == ["Fill column C. Use the totals from row 9."]

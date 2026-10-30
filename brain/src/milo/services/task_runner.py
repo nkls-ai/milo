@@ -51,7 +51,9 @@ class TaskRunner:
 
     Helpers on the screen run on `harness`, which has the milo-mac tools, and hold `hands` for the turn.
     All others run on `background`, the same CLI without the Mac tools, so they can't reach for the one
-    screen. Without `background` (the Mac tools are switched off) every helper runs on `harness`.
+    screen. Without `background` (the Mac tools are switched off) every helper runs on `harness`. A careful
+    helper (one asked for in a conversation that read the screen) makes `hands` ask before changes it would
+    otherwise just make; its connection tools ask through HelperQuestions, which reads the same flag.
     """
 
     def __init__(self, harness: Harness, ledger: UsageLedger, clock: Clock, context: UserContext, *,
@@ -78,7 +80,7 @@ class TaskRunner:
         holds_hands = helper.screen and self._hands is not None
         started = self._clock.monotonic()
         if holds_hands:
-            self._hands.begin(helper.id)
+            self._hands.begin(helper.id, careful=helper.careful)
         try:
             reply = await harness.reply(stamp(prompt, self._clock.now(), self._context.app), session_id,
                                         on_step=on_step, on_session=on_session, on_plan=on_plan)
@@ -86,8 +88,8 @@ class TaskRunner:
             if holds_hands:
                 self._hands.end(helper.id)
         u = reply.usage
-        log.info("helper %d %s turn %.1fs, %d in (%d cached), %d out, said %s", helper.number, harness.name,
-                 self._clock.monotonic() - started, u.input_tokens, u.cached_input_tokens, u.output_tokens,
-                 private(reply.say))
+        log.info("helper %d %s turn%s %.1fs, %d in (%d cached), %d out, said %s", helper.number, harness.name,
+                 " (careful)" if helper.careful else "", self._clock.monotonic() - started, u.input_tokens,
+                 u.cached_input_tokens, u.output_tokens, private(reply.say))
         self._ledger.record("task", harness.name, u)
         return reply

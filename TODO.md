@@ -18,9 +18,11 @@
 
 - Milo window: show heartbeat nudges and reminders in the transcript too (only turns and tasks are recorded now).
 - Helpers: a warm Claude worker process (like the chat model's) to save its start-up on every task. Codex can't be warmed, `codex exec` reads the whole prompt first.
-- Helpers: say which helper an app-connection question comes from (the tool socket doesn't know now), so the right bird shows "needs you" with several at work.
+- Helpers: say which helper an app-connection question comes from (the tool socket doesn't know now), so the right bird shows "needs you" with several at work, and a careful helper's "ask before changes" applies to it alone (now any careful helper at work makes the others' changes ask too).
 - Helpers: try a screen helper with the real milo-mac tools next to two background helpers, and `chatty` updates with the real voice.
-- Computer use: try it on real apps (Excel, Mail, Safari) and tune the tool descriptions, the risk words and the takeover slop.
+- Computer use: the on-screen eval's Mail case is unchecked. The eval starts the brain from the terminal, which has no Automation permission for Mail; let Milo.app start it (`MILO_BRAIN_DIR`) or allow the terminal, then run `--only mail`. Run the eval again now that helpers run in parallel and Milo works in the background.
+- Computer use: log which input stopped a session (key, click, scroll or pointer, and where), so a stop the user didn't mean can be told from a real one. The "stopped by user" cases seen in the on-screen eval came before background delivery, where only `esc` or the Stop button stops Milo; borrowed mode still stops on any touch.
+- Computer use: templates like `sheet_write` for Keynote and Safari, and `sheet_write` into a table other than the first.
 - Computer use: a stop key that works while a question waits (input is ignored then, so the user can click Yes or No, or say yes on the talk key).
 - Computer use: tune the tool descriptions and the risk words against more real apps (Mail, Safari, Keynote).
 - Computer use: background typing into Chromium needs the borrow (Chromium ignores AXSelectedText). Worth a look at whether a per-process key route can be made reliable without private APIs.

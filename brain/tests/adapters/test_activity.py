@@ -134,6 +134,7 @@ def test_claude_tools_get_plain_titles(name, args, kind, title):
 
 def test_claude_bookkeeping_tools_are_not_shown():
     assert feed(ClaudeActivity, claude_line("TodoWrite", {"todos": []})) == []
+    assert feed(ClaudeActivity, claude_line("StructuredOutput", {"emotion": "happy", "say": "Done."})) == []
 
 
 def test_milo_mac_calls_are_left_to_the_brain():

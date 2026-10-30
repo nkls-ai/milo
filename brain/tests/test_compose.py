@@ -130,6 +130,18 @@ def test_hands_disabled_gives_the_worker_no_mac_tools(build):
     assert runtime.hands_server is None and runtime.harness.mac_tools == ()
 
 
+def test_screen_and_background_workers_both_run_with_milos_tools_only(build):
+    runtime, home = build(cheap(**{"harness.use": "codex"}))
+    screen, background = runtime.harness, runtime.helpers._runner._background
+    assert isinstance(background, CodexHarness) and background is not screen
+    assert screen.home == background.home == home / ".codex", "both in Milo's own Codex home"
+    assert screen.mac_tools and background.mac_tools == ()
+    runtime, home = build(cheap(**{"harness.use": "claude"}))
+    for worker in (runtime.harness, runtime.helpers._runner._background):
+        cmd = worker.command("hi", None)
+        assert cmd[cmd.index("--setting-sources") + 1] == "project,local" and "--strict-mcp-config" in cmd
+
+
 def test_heartbeat_disabled_builds_no_runner(build):
     runtime, _ = build(cheap(**{"heartbeat.enabled": False}))
     assert runtime.heartbeat is None
