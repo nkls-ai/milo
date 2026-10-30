@@ -75,3 +75,7 @@ work when idle) and ~3% while gliding at 60 fps.
 - No private WindowServer APIs: one less thing to break on a macOS update.
 - `MacHands` reads each background action back (value changed, caret moved, scroll bar moved). A route that
   silently did nothing fails cleanly to the next one, or to the borrow, rather than reporting a false success.
+
+## Update 2026-10-31: show the window by default
+
+The user wants to see what Milo does, so the window he works in now comes to the front once when he starts in an app (`[hands] show_window`, on by default, a switch in Settings). It is raised once per app per session, not before every action, so a user who clicks away to keep working isn't pulled back. Delivery is unchanged: actions still go through Accessibility first and borrow the mouse or keyboard only with a yes. With the window in front, the user's own typing can land in it; the focus check before every `type` and `key` still refuses when the focused field changed since `describe`.

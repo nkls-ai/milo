@@ -119,6 +119,9 @@ class HandsSettings:
     enabled: bool = True
     """Give the worker agent the milo-mac tools: read windows, press buttons, type, click."""
     applescript: bool = True
+    show_window: bool = True
+    """Bring the window Milo works in to the front when he starts in it, so the user sees what he does. Off: he
+    works behind the user's windows (the outline still shows where)."""
 
 
 @dataclass(frozen=True)

@@ -139,6 +139,8 @@ public protocol WindowWatcher: AnyObject {
     /// once it closes. Replaces the window watched before.
     func watch(pid: Int32, frame: CGRect, changed: @escaping (CGRect?) -> Void)
     func stop()
+    /// Bring that window of `pid` to the front, so the user sees Milo work in it.
+    func bringForward(pid: Int32, frame: CGRect)
 }
 
 /// For a screen without Milo's cursor (tests, or before the overlay exists).
@@ -154,6 +156,7 @@ public final class NoWindowWatcher: WindowWatcher {
     public init() {}
     public func watch(pid: Int32, frame: CGRect, changed: @escaping (CGRect?) -> Void) {}
     public func stop() {}
+    public func bringForward(pid: Int32, frame: CGRect) {}
 }
 
 /// Mouse and keyboard input from every app while the worker acts. Callbacks on the main queue.

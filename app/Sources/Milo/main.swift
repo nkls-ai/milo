@@ -42,6 +42,9 @@ let controller = MiloController(
                                 signals: MacCallSignals(), scheduler: scheduler),
     pasteWatcher: PasteWatcher(reader: AXFocusedText(), words: SpellCheckWords(), scheduler: scheduler))
 
+// `[hands] show_window` from the brain's settings; on until the brain says otherwise.
+screen.showWindow = { controller.settingsModel.value("hands", "show_window")?.bool ?? true }
+
 // Windows and the status item are created once the app has finished launching.
 var panel: OverlayPanel?
 var menu: StatusMenu?

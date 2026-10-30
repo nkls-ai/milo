@@ -205,6 +205,38 @@ private final class Rig {
         #expect(r.cursor.calls == ["glide 600,600", "click 600,600"])
     }
 
+    @Test func theWindowComesForwardOnceWhenMiloStartsInItAndAgainForTheNextApp() {
+        let r = Rig()
+        r.startSession()
+        r.describesAButton()
+        r.brain.emit(.handsRequest(id: "h1", tool: "describe", args: ["tool": "click", "x": 1, "y": 2]))
+        r.brain.emit(.handsRequest(id: "h2", tool: "describe", args: ["tool": "type", "text": "hi"]))
+        r.brain.emit(.handsRequest(id: "h3", tool: "describe", args: ["tool": "scroll"]))
+        #expect(r.windows.broughtForward == [42], "once, so a click away to keep working isn't undone")
+
+        r.hands.results["describe"] = .success([
+            "app": "Excel", "point": .object(["x": 10, "y": 10]), "pid": 7,
+            "window": .object(["x": 0, "y": 0, "width": 500, "height": 400]),
+        ])
+        r.brain.emit(.handsRequest(id: "h4", tool: "describe", args: ["tool": "click", "x": 1, "y": 2]))
+        #expect(r.windows.broughtForward == [42, 7])
+
+        r.brain.emit(.handsSession(false))
+        r.brain.emit(.handsSession(true))
+        r.brain.emit(.handsRequest(id: "h5", tool: "describe", args: ["tool": "click", "x": 1, "y": 2]))
+        #expect(r.windows.broughtForward == [42, 7, 7], "a new session starts fresh")
+    }
+
+    @Test func withShowWindowOffMiloStaysBehindTheUsersWindows() {
+        let r = Rig()
+        r.screen.showWindow = { false }
+        r.startSession()
+        r.describesAButton()
+        r.brain.emit(.handsRequest(id: "h1", tool: "describe", args: ["tool": "click", "x": 1, "y": 2]))
+        #expect(r.windows.broughtForward.isEmpty)
+        #expect(r.windows.watched.map(\.pid) == [42], "the outline still shows where he works")
+    }
+
     @Test func aCursorThatNeverArrivesDoesntHoldTheActionForever() {
         let r = Rig()
         r.startSession()

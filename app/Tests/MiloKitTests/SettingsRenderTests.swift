@@ -29,6 +29,7 @@ struct SettingsRenderTests {
                 options: ["ctrl+option+m", "ctrl+option+w", "ctrl+shift+m", ""],
                 labels: ["Control-Option-M", "Control-Option-W", "Control-Shift-M", "Off"]),
         Setting(section: "ui", key: "voice", value: true),
+        Setting(section: "hands", key: "show_window", value: true),
     ])
 
     @Test func renderTheWindow() throws {

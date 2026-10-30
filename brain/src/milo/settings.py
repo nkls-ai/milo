@@ -41,6 +41,7 @@ SETTINGS = (
     Setting("ui", "whats_this_key", ("ctrl+option+m", "ctrl+option+w", "ctrl+shift+m", ""),
             ("Control-Option-M", "Control-Option-W", "Control-Shift-M", "Off")),
     Setting("ui", "voice"),
+    Setting("hands", "show_window"),
 )
 
 assert all(len(s.options) == len(s.labels) for s in SETTINGS)
