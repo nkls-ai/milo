@@ -5,15 +5,18 @@ public final class StatusMenu: NSObject {
     private let controller: MiloController
     private let panel: OverlayPanel
     private let window: ConversationWindow
+    private let settings: SettingsWindow
     private let paths: MiloPaths
     private let statusItem: NSStatusItem
     private let hintItem: NSMenuItem
     private var muteItem: NSMenuItem!
 
-    public init(controller: MiloController, panel: OverlayPanel, window: ConversationWindow, paths: MiloPaths) {
+    public init(controller: MiloController, panel: OverlayPanel, window: ConversationWindow, settings: SettingsWindow,
+                paths: MiloPaths) {
         self.controller = controller
         self.panel = panel
         self.window = window
+        self.settings = settings
         self.paths = paths
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         hintItem = NSMenuItem(title: controller.bindings.hint, action: nil, keyEquivalent: "")
@@ -30,6 +33,7 @@ public final class StatusMenu: NSObject {
         add(menu, "Show / hide Milo", #selector(toggleVisible))
         add(menu, "Move Milo back to the corner", #selector(resetPosition))
         menu.addItem(.separator())
+        add(menu, "Settings…", #selector(openSettings))
         add(menu, "Open Milo folder", #selector(openHome))
         add(menu, "Open brain log", #selector(openLog))
         add(menu, "Restart brain", #selector(restartBrain))
@@ -57,6 +61,7 @@ public final class StatusMenu: NSObject {
 
     @objc private func toggleVisible() { panel.toggleVisible() }
     @objc private func toggleWindow() { window.toggle() }
+    @objc private func openSettings() { settings.open() }
     @objc private func whatsThis() { controller.screen?.whatsThis() }
     @objc private func resetPosition() { panel.placeBottomRight() }
     @objc private func openHome() { NSWorkspace.shared.open(paths.home) }

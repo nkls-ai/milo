@@ -27,6 +27,10 @@ public enum BrainCommand: Equatable, Sendable {
     case confirmAnswer(id: String, yes: Bool)
     /// The answer to `app_request` `id`.
     case appResponse(id: String, outcome: AppOutcome)
+    /// The Settings window opened: send the settings.
+    case getSettings
+    /// Change one setting, e.g. section "ui", key "character", value "dragon".
+    case setSetting(section: String, key: String, value: JSONValue)
 }
 
 /// What the app did with an `app_request`: a JSON result, or a plain-language error for the user.
@@ -37,7 +41,7 @@ public enum AppOutcome: Equatable, Sendable {
 
 extension BrainCommand: Encodable {
     private enum Key: String, CodingKey {
-        case type, mode, text, app, on, tentative, speak, id, capture, ok, result, error, reason, yes
+        case type, mode, text, app, on, tentative, speak, id, capture, ok, result, error, reason, yes, section, key, value
         case idleSeconds = "idle_s"
     }
 
@@ -98,6 +102,13 @@ extension BrainCommand: Encodable {
                 try c.encode(false, forKey: .ok)
                 try c.encode(message, forKey: .error)
             }
+        case .getSettings:
+            try c.encode("get_settings", forKey: .type)
+        case let .setSetting(section, key, value):
+            try c.encode("set_setting", forKey: .type)
+            try c.encode(section, forKey: .section)
+            try c.encode(key, forKey: .key)
+            try c.encode(value, forKey: .value)
         }
     }
 }

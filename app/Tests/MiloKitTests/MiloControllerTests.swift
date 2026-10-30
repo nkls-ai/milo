@@ -114,6 +114,42 @@ private final class Harness {
         #expect(h.brain.sent == [.mute(false)])
     }
 
+    // MARK: Settings
+
+    private static let look = Setting(section: "ui", key: "character", value: "pip",
+                                      options: ["pip", "dragon"], labels: ["Pip", "Dragon"])
+
+    @Test func settingsComeFromTheBrainAndChangesGoBack() {
+        let h = Harness()
+        h.brain.connect()
+        h.brain.clearSent()
+        h.controller.settingsModel.refresh()
+        #expect(h.brain.sent == [.getSettings])
+        h.brain.emit(.settings(SettingsReport(settings: [Self.look])))
+        #expect(h.controller.settingsModel.value("ui", "character") == "pip")
+
+        h.controller.settingsModel.change("ui", "character", to: "dragon")
+        #expect(h.controller.settingsModel.value("ui", "character") == "dragon", "shown before the brain answers")
+        h.controller.settingsModel.change("ui", "character", to: "dragon")
+        h.controller.settingsModel.change("ui", "nothing", to: "x")
+        #expect(h.brain.sent == [.getSettings, .setSetting(section: "ui", key: "character", value: "dragon")])
+
+        h.brain.emit(.settings(SettingsReport(settings: [], error: "Milo couldn't use that.")))
+        #expect(h.controller.settingsModel.report?.error == "Milo couldn't use that.")
+        #expect(h.controller.settingsModel.value("ui", "character") == "dragon", "an error alone keeps the values")
+    }
+
+    @Test func aRestartedBrainIsAskedForItsSettingsOnceTheWindowHasThem() {
+        let h = Harness()
+        h.brain.connect()
+        #expect(!h.brain.sent.contains(.getSettings))
+        h.brain.emit(.settings(SettingsReport(settings: [Self.look], restart: true)))
+        h.brain.connect(false)
+        h.brain.clearSent()
+        h.brain.connect()
+        #expect(h.brain.sent.last == .getSettings)
+    }
+
     @Test func losingTheBrainMidAnswerReturnsMiloToIdle() {
         let h = Harness()
         h.brain.connect()

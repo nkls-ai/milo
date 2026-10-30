@@ -68,6 +68,15 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .appRequest(id: "a41f", op: "calendar.add_event", args: .object([
                 "title": .string("Doctor"), "start": .string("2026-11-05T15:00:00"), "end": .string("2026-11-05T16:00:00"),
             ])),
+            .settings(SettingsReport(settings: [
+                Setting(section: "ui", key: "character", value: "dragon",
+                        options: ["pip", "classic", "dragon", "kit", "glow"],
+                        labels: ["Pip", "Robot", "Dragon", "Kit", "Glow"]),
+                Setting(section: "ui", key: "voice", value: true),
+                Setting(section: "chat", key: "updates", value: "bubble", options: ["quiet", "bubble", "chatty"],
+                        labels: ["Only the answer", "Short notes in his bubble", "Tells you each step"], live: false),
+            ], restart: true)),
+            .settings(SettingsReport(settings: [], error: "The dictate key and the talk key need to be different keys.")),
         ])
     }
 
@@ -98,6 +107,9 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             ]))),
             .appResponse(id: "a42f", outcome: .failure(
                 "Milo isn't allowed to use your calendar. Turn it on in System Settings › Privacy & Security › Calendars.")),
+            .getSettings,
+            .setSetting(section: "ui", key: "character", value: "dragon"),
+            .setSetting(section: "ui", key: "voice", value: false),
         ]
         let encoder = JSONEncoder()
         let encoded = try commands.map { command in

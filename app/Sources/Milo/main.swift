@@ -47,8 +47,11 @@ let lifecycle = AppLifecycle(
         overlay.orderFrontRegardless()
         workingFrame = WorkingFrame(model: model)
         let window = ConversationWindow(controller: controller)
+        let settingsWindow = SettingsWindow(controller: controller)
+        window.onSettings = { settingsWindow.open() }
         overlay.onClick = { window.toggle() }
-        let statusMenu = StatusMenu(controller: controller, panel: overlay, window: window, paths: paths)
+        let statusMenu = StatusMenu(controller: controller, panel: overlay, window: window, settings: settingsWindow,
+                                    paths: paths)
         controller.onBindingsChange = { statusMenu.show($0); window.show($0) }
         conversation = window
         panel = overlay

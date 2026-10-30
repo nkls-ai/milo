@@ -5,6 +5,8 @@ import SwiftUI
 public final class ConversationWindow: NSWindow {
     private let controller: MiloController
     private let settings: ConversationSettings
+    /// The gear in the title bar: open the Settings window.
+    public var onSettings: (() -> Void)?
 
     public init(controller: MiloController) {
         self.controller = controller
@@ -19,6 +21,7 @@ public final class ConversationWindow: NSWindow {
         contentView = NSHostingView(rootView: ConversationView(
             transcript: controller.transcript, model: controller.model, settings: settings,
             send: { [weak controller] text, speak in controller?.send(text: text, speak: speak) }))
+        addSettingsButton()
         if !setFrameUsingName(Self.frameName) { placeNearMilo() }
         setFrameAutosaveName(Self.frameName)
     }
@@ -41,6 +44,22 @@ public final class ConversationWindow: NSWindow {
         NSApp.activate(ignoringOtherApps: true)
         makeKeyAndOrderFront(nil)
     }
+
+    private func addSettingsButton() {
+        let button = NSButton(image: NSImage(systemSymbolName: "gearshape", accessibilityDescription: "Settings")!,
+                              target: self, action: #selector(openSettings))
+        button.bezelStyle = .accessoryBarAction
+        button.isBordered = false
+        button.contentTintColor = .secondaryLabelColor
+        button.toolTip = "Settings"
+        button.frame = NSRect(x: 0, y: 0, width: 34, height: 24)
+        let accessory = NSTitlebarAccessoryViewController()
+        accessory.view = button
+        accessory.layoutAttribute = .trailing
+        addTitlebarAccessoryViewController(accessory)
+    }
+
+    @objc private func openSettings() { onSettings?() }
 
     /// First open: just left of Milo's corner.
     private func placeNearMilo() {

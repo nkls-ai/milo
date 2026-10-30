@@ -47,6 +47,8 @@ public enum BrainEvent: Equatable, Sendable {
     case confirmDone(id: String, answer: String)
     /// Work only the app may do (EventKit). Answered with `BrainCommand.appResponse` and the same id.
     case appRequest(id: String, op: String, args: JSONValue)
+    /// The settings and their choices, after `getSettings` and after every `setSetting`.
+    case settings(SettingsReport)
     case unknown(String)
 }
 
@@ -58,7 +60,7 @@ extension BrainEvent: Decodable {
         case dictateKey = "dictate_key"
         case talkKey = "talk_key"
         case handsFreeMaxSeconds = "hands_free_max_s"
-        case character
+        case character, settings, restart, error
     }
 
     public init(from decoder: Decoder) throws {
@@ -103,6 +105,10 @@ extension BrainEvent: Decodable {
         case "app_request":
             self = .appRequest(id: try c.decode(String.self, forKey: .id), op: try c.decode(String.self, forKey: .op),
                                args: try c.decodeIfPresent(JSONValue.self, forKey: .args) ?? .object([:]))
+        case "settings":
+            self = .settings(SettingsReport(settings: try c.decode([Setting].self, forKey: .settings),
+                                            restart: try c.decodeIfPresent(Bool.self, forKey: .restart) ?? false,
+                                            error: try c.decodeIfPresent(String.self, forKey: .error) ?? ""))
         default: self = .unknown(type)
         }
     }

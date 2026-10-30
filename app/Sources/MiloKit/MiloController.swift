@@ -32,6 +32,8 @@ public final class MiloController {
     public let model: MiloModel
     /// The conversation the Milo window shows.
     public let transcript = TranscriptModel()
+    /// What the Settings window shows and changes.
+    public let settingsModel = SettingsModel()
     /// Looking at the screen and the worker's actions on it; nil without those ports.
     public let screen: ScreenController?
     public private(set) var muted = false
@@ -73,6 +75,7 @@ public final class MiloController {
 
     public func start() {
         model.onAnswer = { [weak self] question, yes in self?.brain.send(.confirmAnswer(id: question.id, yes: yes)) }
+        settingsModel.send = { [weak self] in self?.brain.send($0) }
         brain.onEvent = { [weak self] in self?.received($0) }
         brain.onConnectionChange = { [weak self] in self?.connectionChanged($0) }
         // Development brains are started by hand; only launch one if nothing answers.
@@ -134,6 +137,8 @@ public final class MiloController {
             onBindingsChange?(next)
         case .history, .entry, .replyDelta, .activity:
             transcript.apply(event)
+        case let .settings(report):
+            settingsModel.apply(report)
         case let .appRequest(id, op, args):
             guard let connections else {
                 brain.send(.appResponse(id: id, outcome: .failure(Self.noConnections)))
@@ -170,6 +175,8 @@ public final class MiloController {
         }
         sendContext()
         brain.send(.mute(muted))
+        // A restarted brain may run with changed settings: refresh them once the window asked for them.
+        if settingsModel.report != nil { brain.send(.getSettings) }
     }
 
     private func handleKey(_ event: KeyEvent) {
