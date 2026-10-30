@@ -19,6 +19,9 @@ public struct OverlayView: View {
                 .frame(width: 132, height: 132)
                 .overlay(alignment: .topLeading) { LookingBadge(model: model) }
                 .padding(.trailing, 8)
+                // A fixed answer, so the stack never walks into the figure to align it: every frame of
+                // every blink would lay out the whole drawing again.
+                .alignmentGuide(HorizontalAlignment.trailing) { $0.width }
         }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)

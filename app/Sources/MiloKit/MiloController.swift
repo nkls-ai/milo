@@ -212,7 +212,9 @@ public final class MiloController {
 
     private func sendContext() {
         let now = context.current()
-        model.drowsy = now.idleSeconds > settings.drowsyAfter
+        // Only on a change: every assignment redraws each view that watches the model, hidden windows too.
+        let drowsy = now.idleSeconds > settings.drowsyAfter
+        if model.drowsy != drowsy { model.drowsy = drowsy }
         brain.send(.context(app: now.app, idleSeconds: now.idleSeconds))
     }
 }

@@ -56,7 +56,11 @@ let lifecycle = AppLifecycle(
         overlay.onClick = { window.toggle() }
         let setupWindow = SetupWindow(
             setup: SetupModel(permissions: SystemPermissions(), scheduler: scheduler,
-                              dictateKey: controller.bindings.dictate.displayName),
+                              dictateKey: controller.bindings.dictate.displayName,
+                              // A copy with its own MILO_HOME shares the bundle id: keep its notes apart.
+                              defaults: environment["MILO_HOME"].flatMap { home in
+                                  UserDefaults(suiteName: "dev.nkls.milo.home" + home.replacingOccurrences(of: "/", with: "."))
+                              } ?? .standard),
             model: model)
         let statusMenu = StatusMenu(controller: controller, panel: overlay, window: window, settings: settingsWindow,
                                     setup: setupWindow, paths: paths)

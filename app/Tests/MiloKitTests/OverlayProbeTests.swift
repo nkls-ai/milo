@@ -88,7 +88,30 @@ struct OverlayProbeTests {
             let ms = measure { i in AnyView(CharacterFigure(for: style, pose: LifePose(lean: i % 2 == 0 ? 0 : 0.01), time: 0)) }
             return String(format: "%@ %.2f ms", style.rawValue, ms)
         }
-        let line = "frame cost: " + costs.joined(separator: ", ")
+        // Live: loops in their own hosting views, as on screen. A pose change re-lays out and redraws.
+        func live(_ make: (Int) -> AnyView) -> Double {
+            let host = NSHostingView(rootView: make(0))
+            host.frame = NSRect(x: 0, y: 0, width: 132, height: 132)
+            let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            window.contentView = host
+            window.orderFrontRegardless()
+            defer { window.orderOut(nil) }
+            func step(_ i: Int) {
+                host.rootView = make(i)
+                host.layoutSubtreeIfNeeded()
+                host.display()
+                CATransaction.flush()
+            }
+            for i in 0..<20 { step(i) }
+            let began = Date()
+            for i in 0..<300 { step(i) }
+            return Date().timeIntervalSince(began) / 300 * 1000
+        }
+        let liveCosts = CharacterStyle.allCases.map { style in
+            let ms = live { i in AnyView(CharacterFigure(for: style, pose: LifePose(blink: i % 2 == 0), size: 120)) }
+            return String(format: "%@ %.2f ms", style.rawValue, ms)
+        }
+        let line = "frame cost: " + costs.joined(separator: ", ") + "\nlive blink cost: " + liveCosts.joined(separator: ", ")
         try line.write(to: dir.appendingPathComponent("frame-cost.txt"), atomically: true, encoding: .utf8)
     }
 
