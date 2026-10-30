@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from concurrent.futures import Executor, Future
+from concurrent.futures import Executor, Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -87,13 +87,18 @@ class Stack:
     """A chat app for Milo by message. None: no MessageService."""
     remote: MemoryRemoteState = field(default_factory=MemoryRemoteState)
     message_settings: MessageSettings = field(default_factory=MessageSettings)
+    real_threads: bool = False
+    """STT, TTS and memory each on a real single thread, like compose builds them, instead of inline. For tests
+    that look for ordering bugs between the event loop and those threads (tests/test_races.py). close() ends them."""
 
     def __post_init__(self):
-        executor = InlineExecutor()
+        self.executors = {name: ThreadPoolExecutor(1, thread_name_prefix=name) if self.real_threads
+                          else InlineExecutor() for name in ("stt", "tts", "memory")}
+        executor = self.executors["stt"]
         self.ui = UiState(self.sink)
         self.context = UserContext(self.clock)
         self.conversation = Conversation(self.harness, self.ledger, self.clock, self.idle_reset_s)
-        self.speaker = Speaker(self.voice, self.output, self.ui, executor)
+        self.speaker = Speaker(self.voice, self.output, self.ui, self.executors["tts"])
         self.approvals = Approvals(self.ui, self.speaker, timeout_s=self.confirm_timeout_s,
                                    quiet=lambda: self.live_talk.busy)
         self.bridge = AppBridge(self.sink, timeout_s=self.confirm_timeout_s)
@@ -110,7 +115,7 @@ class Stack:
             self.index = FakeMemoryIndex(self.facts, self.episodes)
             parts = MemoryParts(self.facts, self.episodes, self.index, HybridRecaller(self.index, self.facts),
                                 HashEmbedder(), render)
-            self.memory = Memory(parts, executor, self.sink, self.clock)
+            self.memory = Memory(parts, self.executors["memory"], self.sink, self.clock)
             self.memory.ready.set()
             self.turn_memory = TurnMemory(self.memory)
         self.routines = Routines(self.routine_book, self.routine_state, self.tasks, self.speaker, self.ui,
@@ -148,6 +153,10 @@ class Stack:
                            approvals=self.approvals, bridge=self.bridge, hands=self.hands, screens=self.screens,
                            helpers=self.tasks, memory=self.memory, routines=self.routines,
                            settings=self.settings, messages=self.messages)
+
+    def close(self) -> None:
+        for executor in self.executors.values():
+            executor.shutdown(wait=False, cancel_futures=True)
 
     def states(self) -> list[MiloState]:
         return [e.state for e in self.sink.of(StateChanged)]

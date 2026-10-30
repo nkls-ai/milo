@@ -77,7 +77,7 @@ Rules that keep the parts swappable:
 1. **Services depend on ports, never on adapters.** `services/` imports from `milo.core` only. A service gets every collaborator through its constructor.
 2. **Adapters register themselves.** `@HARNESSES.register("codex")` sits next to the class. `milo.adapters.load_builtin()` imports the built-in modules. Adding an engine means adding a module, without editing any switch statement.
 3. **Config picks by name.** Every swappable section has `use = "<name>"` and a table `[<section>.<name>]` holding that implementation's options. An adapter parses its own table with `options_from(OptionsDataclass, table, "section.name")`, which rejects unknown keys.
-4. **Only `compose.py` wires concrete things.** Tests wire fakes from `tests/fakes.py` instead.
+4. **Only `compose.py` wires concrete things.** Tests wire fakes from `tests/fakes.py` instead. `tests/services/stack.py` runs STT, TTS and memory inline, so most tests are deterministic. `Stack(real_threads=True)` puts each on a real thread, as compose does, and `tests/test_races.py` uses it with the real socket and slow engines to catch ordering bugs between the loop and those threads.
 5. **Blocking work runs on dedicated single-thread executors.** STT gets one thread and TTS another, so MLX and PyTorch each stay on their own thread and the event loop never blocks.
 6. **"Is the user busy?" has one answer.** `services/attention.py` holds the facts (a turn runs, the mic records, Milo speaks, a question waits, a helper works) and named questions over them: `in_conversation`, `using_voice`, `occupied`, `at_work`, `private`, `user_speaking`. compose.py passes the question a service needs, never its own mix.
 
