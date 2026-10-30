@@ -143,6 +143,7 @@ def build(home: Path) -> Runtime:
                             transcript=transcript, approvals=approvals, quiet=lambda: live_talk.busy or mic.active,
                             max_runs_per_day=lambda: config.routines.max_runs_per_day,
                             grace_s=config.routines.grace_hours * 3600, inert=untrusted)
+        helpers.on_done.append(routines.seen)
         # Memory (episodes): routines.on_episode = <the episode log>.append
     live_talk = LiveTalk(live_model, speaker, ui, context, clock, profile, reminders, ledger,
                          _persona(workspace.persona_path), idle_reset_s, helpers, transcript, eyes=AppEyes(bridge),

@@ -582,3 +582,44 @@ def test_the_app_gets_routines_drafts_next_runs_and_files_that_dont_read():
     assert broken == {"id": "broken", "name": "broken", "problem": "it must start with a line of three dashes (---)"}
     assert event.drafts == []
     assert event in s.brain.greeting()
+
+
+# ---- tasks that repeat
+
+
+def ask_for(s: Stack, description: str, title: str = "Sales report") -> None:
+    run(s, lambda: s.tasks.submit(description, title=title, screen=False))
+
+
+def test_the_third_task_of_a_kind_gets_an_offer_once_after_its_result():
+    s = stack(harness=FakeHarness("September is in Reports.", "October is in Reports.", "Booked.",
+                                  "November is in Reports.", "December is in Reports."))
+    ask_for(s, "Make the sales report for September")
+    s.clock.advance(days=30)
+    ask_for(s, "the sales report for October please")
+    ask_for(s, "Find a flight to Lisbon", title="Flight")
+    assert "routine" not in said(s)
+    s.clock.advance(days=12)
+    ask_for(s, "Make the sales report for November")
+    bubbles = s.bubbles()
+    offer = "That's the third time you've asked me for “Sales report”. Want me to keep it as a routine?"
+    first_offer = next(i for i, b in enumerate(bubbles) if b.startswith(offer))
+    assert "November is in Reports." in " ".join(bubbles[:first_offer])  # after the result, not over it
+    ask_for(s, "Make the sales report for December")
+    assert len({b for b in s.bubbles() if b.endswith("give it a name.")}) == 1
+    assert "September" not in str(s.routine_state.data)  # only the shapes are kept
+
+
+def test_no_offer_for_routine_runs_old_tasks_or_a_task_there_is_a_routine_for():
+    s = stack(REPORT, harness=FakeHarness(*["Done."] * 6))
+    for month in ("October", "November", "December"):
+        run(s, lambda month=month: s.routines.run("monday report", f"month: {month}; folder: Sales"))
+    for month in ("May", "June", "July"):
+        ask_for(s, f"Make the weekly sales report for {month}")
+    assert "Want me to keep it" not in said(s)
+
+    s = stack(harness=FakeHarness(*["Done."] * 3))
+    for month in ("May", "June", "July"):
+        ask_for(s, f"Tidy the invoices folder for {month}", title="Invoices")
+        s.clock.advance(days=40)
+    assert "Want me to keep it" not in said(s)

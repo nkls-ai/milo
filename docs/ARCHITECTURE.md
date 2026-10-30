@@ -111,6 +111,7 @@ A routine is a recipe in words that a helper follows again: `~/Milo/routines/<sl
 - **Create.** A careful helper writes a draft to `state/routine-drafts/` from the last finished helper's task, steps and result. The brain normalizes it and sends it in the `routines` event; the window's draft card shows the steps, inputs and apps, or the whole file, with Save and Change it (`routine_draft_answer`).
 - **Run.** A helper gets the recipe and the inputs (`month: October`, a bare value for a single input, or the defaults). A recipe changed since it was saved, or a schedule set outside Milo, asks before it runs. `last_run` and `state/routine-runs.jsonl` record each run.
 - **Schedules.** `HeartbeatRunner.on_tick` calls `Routines.tick`, which costs no model call. Missed runs coalesce into one, run at wake within `[routines] grace_hours` and are reported after it. `[routines] max_runs_per_day` caps scheduled runs.
+- **Tasks that repeat.** `Orchestrator.on_done` calls `Routines.seen`, which keeps the shape of each finished task (`core/task_patterns.py`) for 45 days and offers, once per kind, to keep the third one alike as a routine.
 - **The window.** A Routines section above the conversation lists them with their schedule, next and last run, Run now and a menu for pause, resume and delete (`routine`).
 
 ## Looking and computer use

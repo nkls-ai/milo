@@ -8,7 +8,8 @@ A routine is a recipe in words (milo.core.routines), kept in ~/Milo/routines. Th
   should be true after each step, and stops to say what's different instead of improvising;
 - keeps the schedules on the heartbeat's tick, with no model call: a run the Mac slept through runs once at
   wake within the grace window, and is reported after that;
-- lists, renames, pauses and deletes them, by voice through the talker's <routine> tags and from the window.
+- lists, renames, pauses and deletes them, by voice through the talker's <routine> tags and from the window;
+- notices a task the user asked for three times and offers, once, to keep it as a routine.
 
 A recipe runs only as the user last saw it: one that changed since (a hand edit, or a worker writing into the
 folder) asks before it runs. See ADR 0016.
@@ -29,6 +30,7 @@ from milo.core.logtext import private
 from milo.core.ports import Clock, EventSink, RoutineBook, StateFile
 from milo.core.routines import (RecipeError, Routine, find, parse, parse_schedule, render, schedule_or_none,
                                 slugify)
+from milo.core.task_patterns import alike, shape
 from milo.core.types import Emotion, Step
 
 from .helpers import Helper, HelperStatus
@@ -47,6 +49,12 @@ MAX_STEPS = 60
 MAX_DETAIL = 300
 MAX_RESULT = 1500
 MAX_LISTED = 20
+REPEATS = 3
+"""Tasks of the same kind, within REPEAT_DAYS, before Milo offers to keep it as a routine (once per kind)."""
+REPEAT_DAYS = 45
+ALIKE_ROUTINE = 0.4
+"""A routine's name and description share this much with a task: the task is that routine, no offer."""
+MAX_REMEMBERED = 40
 
 ROUTINE_RULES = """\
 ## Routines
@@ -786,13 +794,43 @@ class Routines:
         except OSError as e:
             log.warning("could not save the routines state: %s", e)
 
+    # ---- tasks that repeat
+
+    def seen(self, helper: Helper) -> None:
+        """Hears every helper that ended (Orchestrator.on_done). The REPEATS-th finished task of the same kind
+        within REPEAT_DAYS gets an offer to keep it as a routine, once per kind and never for one there is.
+        Only the shape of each task is kept (its words without numbers and dates), in the state file."""
+        if helper.status is not HelperStatus.DONE or helper.instructions:  # routine runs and recipe writers
+            return
+        words = shape(helper.description)
+        if len(words) < 2:
+            return
+        now = self._clock.now()
+        since = now - timedelta(days=REPEAT_DAYS)
+        recent = [r for r in self._state.get("recent", []) if _time(r.get("at")) >= since]
+        times = 1 + sum(alike(frozenset(r.get("words", ())), words) for r in recent)
+        self._state["recent"] = [*recent, {"at": now.isoformat(timespec="seconds"),
+                                           "words": sorted(words)}][-MAX_REMEMBERED:]
+        offered = self._state.setdefault("offered", [])
+        kept = any(alike(shape(f"{r.name} {r.description}"), words, ALIKE_ROUTINE) for r in self._book.all())
+        if times >= REPEATS and not kept and not any(alike(frozenset(o), words) for o in offered):
+            offered.append(sorted(words))
+            del offered[:-MAX_REMEMBERED]
+            log.info("offering a routine after %d tasks alike", times)
+            self._tell(f"That's the {_nth(times)} time you've asked me for “{plain_name(helper.title)}”. "
+                       "Want me to keep it as a routine? Say “remember how to do this” and give it a name.",
+                       Emotion.HAPPY)
+        self._save_state()
+
     def _tell(self, text: str, emotion: Emotion, *, speak: bool = True) -> None:
         """Say something about routines, after the user's turn and whatever Milo is saying."""
         self._transcript.say(text, emotion)
         self._spawn(self._say(text, emotion, speak))
 
     async def _say(self, text: str, emotion: Emotion, speak: bool) -> None:
-        free = await wait_while(lambda: self._quiet() or self._speaker.active, self._wait_s, self._poll_s)
+        # After a helper's own result too: an offer made as a task ends would otherwise go first.
+        busy = lambda: self._quiet() or self._speaker.active or getattr(self._tasks, "reporting", False)  # noqa: E731
+        free = await wait_while(busy, self._wait_s, self._poll_s)
         await asyncio.wait({self._speaker.say(text, emotion, speak=speak and free)})
 
     def _spawn(self, coro) -> None:
@@ -804,6 +842,10 @@ class Routines:
         """Wait until what this service started is done. For tests."""
         while self._tasks_running:
             await asyncio.wait(set(self._tasks_running))
+
+
+def _nth(n: int) -> str:
+    return {3: "third", 4: "fourth", 5: "fifth"}.get(n, f"{n}th")
 
 
 def _time(text: object) -> datetime:

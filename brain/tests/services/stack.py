@@ -93,6 +93,7 @@ class Stack:
                                  self.clock, approvals=self.approvals, quiet=lambda: self.live_talk.busy,
                                  max_runs_per_day=lambda: self.max_routine_runs, inert=untrusted, wait_s=self.wait_s,
                                  poll_s=0.005)
+        self.tasks.on_done.append(self.routines.seen)
         self.live_talk = LiveTalk(self.model, self.speaker, self.ui, self.context, self.clock, self.profile,
                                   self.reminders, self.ledger, lambda: self.persona, self.idle_reset_s, self.tasks,
                                   eyes=self.eyes, approvals=self.approvals, routines=self.routines)

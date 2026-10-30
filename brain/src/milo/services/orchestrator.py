@@ -93,12 +93,19 @@ class Orchestrator:
         self._sent: Helpers | None = None
         self.on_result: Callable[[str, str], None] | None = None
         """Called with (description, what Milo said) after each finished helper, e.g. LiveTalk.note."""
+        self.on_done: list[Callable[[Helper], None]] = []
+        """Hear every helper that ended, after its own `on_finish` (routines look for tasks that repeat)."""
 
     # ---- what the talker and the app see
 
     @property
     def helpers(self) -> list[Helper]:
         return list(self._helpers)
+
+    @property
+    def reporting(self) -> bool:
+        """A helper's result is waiting to be said or being said."""
+        return bool(self._reports)
 
     @property
     def busy(self) -> bool:
@@ -376,6 +383,11 @@ class Orchestrator:
                 finished(helper)
             except Exception:
                 log.exception("helper %d: on_finish failed", helper.number)
+        for listener in self.on_done:
+            try:
+                listener(helper)
+            except Exception:
+                log.exception("helper %d: on_done failed", helper.number)
 
     def _report(self, text: str, emotion: Emotion, *, speak: bool) -> None:
         task = asyncio.create_task(self._say(text, emotion, speak=speak))
