@@ -1,6 +1,6 @@
 # 11. The talker and its helpers
 
-Date: 2026-10-30. Status: accepted. Replaces the one-task-at-a-time `TaskRunner` from [ADR 5](0005-live-chat.md).
+Date: 2026-10-30. Status: accepted. Builds on [ADR 5](0005-live-chat.md), which handed `<task>` work to the harness one task at a time.
 
 ## Context
 
