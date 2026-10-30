@@ -426,6 +426,10 @@ class MemoryFactStore:
     def get(self, id: str):
         return self.facts.get(id)
 
+    def forgotten(self) -> list:
+        ids = [id for op, id, by in reversed(self.log) if op == "retire" and by in ("you", "worker")]
+        return [self.facts[id] for id in dict.fromkeys(ids) if self.facts[id].retired]
+
 
 class FakeMemoryIndex:
     """MemoryIndex over a dict: words shared with the query make a hit. refresh() follows the fake logs."""

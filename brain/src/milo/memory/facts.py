@@ -24,6 +24,10 @@ from . import jsonl
 log = logging.getLogger(__name__)
 
 
+FORGOTTEN_BY = ("you", "worker")
+"""Who retires a fact when the user asks Milo to forget it."""
+
+
 class JsonlFactStore:
     """FactStore over facts.jsonl, held in memory and caught up from the file when it changes."""
 
@@ -47,6 +51,13 @@ class JsonlFactStore:
         with self._lock:
             self._catch_up()
             return self._facts.get(id)
+
+    def forgotten(self) -> list[Fact]:
+        with self._lock:
+            self._catch_up()
+            ids = [c["id"] for c in reversed(self._changes) if c.get("op") == "retire" and c.get("by") in FORGOTTEN_BY]
+            facts = (self._facts.get(id) for id in dict.fromkeys(ids))
+            return [f for f in facts if f is not None and f.retired]
 
     def changes(self) -> list[dict]:
         """Every line read so far, oldest first."""

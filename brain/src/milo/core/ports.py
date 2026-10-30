@@ -407,6 +407,11 @@ class FactStore(Protocol):
         """Any fact ever added, current or not, with `retired` as it is now."""
         ...
 
+    def forgotten(self) -> list[Fact]:
+        """Facts the user had Milo forget (themselves, or through the worker after a yes), still retired, newest
+        first. The night must not learn them again from the day's episodes."""
+        ...
+
 
 @runtime_checkable
 class Embedder(Protocol):

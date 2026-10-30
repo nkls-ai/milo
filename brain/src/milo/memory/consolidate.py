@@ -37,6 +37,7 @@ MAX_EPISODES = 150
 """The day's most recent episodes that go in one call. More than that is a very busy day."""
 MAX_LINE = 600
 MAX_FACTS = 400
+MAX_FORGOTTEN = 100
 JOURNAL_HEADING = "## Summed up at night"
 
 PROMPT = """\
@@ -46,6 +47,9 @@ the JSON object in it as text and set emotion to "neutral").
 
 What Milo knows now, one fact per line with its id and topic:
 {facts}
+
+The user asked Milo to forget these. Never add them back, in any wording, even if the day mentions them:
+{forgotten}
 
 What happened that day, oldest first, one episode per line with its id:
 {episodes}
@@ -100,8 +104,9 @@ class NightlyConsolidator:
         episode_lines = "\n".join(
             f"- {a} {e.at:%H:%M} {e.kind}: {_line(e.summary)}"
             + (f" (apps: {', '.join(e.apps)})" if e.apps else "") for a, e in episodes.items())
-        text = PROMPT.format(day=f"{day:%A %-d %B %Y}", facts=fact_lines, episodes=episode_lines,
-                             topics="|".join(TOPICS))
+        forgotten = "\n".join(f"- {_line(f.text)}" for f in self._facts.forgotten()[:MAX_FORGOTTEN]) or "- (nothing)"
+        text = PROMPT.format(day=f"{day:%A %-d %B %Y}", facts=fact_lines, forgotten=forgotten,
+                             episodes=episode_lines, topics="|".join(TOPICS))
         return text, episodes, facts
 
     async def consolidate(self, day: date) -> ConsolidationReport:
@@ -148,9 +153,13 @@ class NightlyConsolidator:
 
         changes: list[FactChange] = []
         known = {f.text.lower() for f in self._facts.current()}
+        forgotten = {f.text.lower() for f in self._facts.forgotten()}
         for item in _list(proposal, "add"):
             text, source = _clean(item.get("text")), trusted_source(item)
             if not text or text.lower() in known:
+                continue
+            if text.lower() in forgotten:
+                notes.append(f"left out a fact the user had forgotten: {private(text)}")
                 continue
             if source is None:
                 notes.append(f"left out a fact without a trusted source: {private(text)}")

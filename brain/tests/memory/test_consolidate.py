@@ -99,6 +99,20 @@ def test_the_night_never_puts_a_fact_into_the_basics(tmp_path):
     assert eve.topic == "learned" and not eve.always_on
 
 
+def test_the_night_never_learns_again_what_the_user_had_forgotten(tmp_path):
+    answer = {"add": [{"text": "The user's sister is Anna.", "topic": "people", "from": ["E1"]}]}
+    sleeper, _, facts, harness, _, _ = world(tmp_path, answer)
+    at = datetime(2026, 10, 29, 9, 30)
+    sister = Fact(new_id(at), "The user's sister is Anna.", "people", at, "chat")
+    facts.add(sister)
+    facts.retire(sister.id, "the user forgot it in What Milo knows", by="you")
+    report = asyncio.run(sleeper.consolidate(DAY))
+    prompt = harness.calls[0][0]
+    assert "forget these" in prompt and "- The user's sister is Anna." in prompt
+    assert report.changes == () and any("had forgotten" in n for n in report.notes)
+    assert all("sister" not in f.text for f in facts.current())
+
+
 def test_answers_are_found_inside_say_or_a_code_fence():
     assert parse('{"emotion": "neutral", "say": "{\\"add\\": []}"}') == {"add": []}
     assert parse('Here:\n```json\n{"journal": "x"}\n```') == {"journal": "x"}

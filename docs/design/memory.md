@@ -8,7 +8,7 @@ Status: built, 2026-10-30, except knowledge sources (the port exists, no adapter
 - **Changes to the types and ports, and why:**
   - `Fact.pinned`: the "few pinned preferences" needed a field. A fact is always on when it is pinned or its topic is `basics`.
   - `EpisodeLog.forget(id, reason)`: Forget has to reach episodes too, without rewriting a log. It appends a marker line.
-  - `FactStore.restore(id)` and `get(id)`: undoing a night needs to bring a retired fact back, and Edit needs to find one.
+  - `FactStore.restore(id)`, `get(id)` and `forgotten()`: undoing a night needs to bring a retired fact back, Edit needs to find one, and the night must not learn again what the user had Milo forget (it sees those in its prompt, and an exact repeat is refused).
   - `MemoryIndex.remove(ids)`, `refresh(limit)` and `search(until=)`: forgetting must leave the index at once; `refresh` catches up with lines another process wrote (the consolidator CLI, the worker's tools) by file size, without reading the logs again; time phrases like "last Monday" need an end as well as a start.
   - `Embedder.embed(texts, *, query=False) -> np.ndarray`: e5 embeds questions and passages differently, and NumPy arrays avoid copying 384 floats into Python lists per item. `key` names the model, so a different embedder rebuilds the index; `relevant_margin` is the embedder's own threshold, since cosine values mean different things per model.
   - `Hit.background`: see Relevance below.
