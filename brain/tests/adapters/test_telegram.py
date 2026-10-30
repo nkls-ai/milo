@@ -244,3 +244,41 @@ def test_a_file_goes_as_a_document_with_its_name_and_caption(api, token_file, tm
     assert body["document"] == ("Q3 _review_.key", b"\x00deck bytes")
     with pytest.raises(ChannelError, match="too big"):
         asyncio.run(ch.send_file("42", "big", b"x" * (50 * 1024 * 1024 + 1)))
+
+
+def test_end_to_end_pairing_and_a_conversation_over_the_fake_bot_api(api, token_file, tmp_path):
+    """The real channel and the real MessageService: a stranger can't get in, the owner pairs with the code
+    from the Mac and gets an answer, all through HTTP like the real Bot API."""
+    from milo.services.pairing import Pairing
+    from tests.fakes import FakeLiveModel, MemoryRemoteState
+    from tests.services.stack import Stack, settle
+
+    s = Stack(model=FakeLiveModel(["[happy] Your standup is at 10."]), remote=MemoryRemoteState())
+    ch = channel(api, token_file, tmp_path)
+    from milo.services.messages import MessageService
+
+    messages = MessageService(ch, s.live_talk, s.approvals, s.remote, s.speaker, s.ui, s.context, s.clock,
+                              wait_for_mac_s=0.01, typing_every_s=0.05)
+    messages.pairing = Pairing(s.clock, code=lambda: "246810")
+    api.replies["getUpdates"] = [[message(1, "/start")], [message(2, "246 810")],
+                                 [message(3, "let me in", chat_id=666, user_id=666)],
+                                 [message(4, "when is my standup?")], []]
+
+    async def go():
+        task = asyncio.create_task(messages.run())
+        for _ in range(100):
+            await asyncio.sleep(0.02)
+            await settle()
+            if sum(1 for m, b in api.calls if m == "sendMessage") >= 3:
+                break
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+    asyncio.run(go())
+    sent = [(b["chat_id"], b["text"]) for m, b in api.calls if m == "sendMessage"]
+    assert sent[0][0] == "42" and "send me the 6-digit code" in sent[0][1]
+    assert sent[1][0] == "42" and sent[1][1].startswith("Connected!")
+    assert sent[2] == ("42", "Your standup is at 10.")
+    assert all(chat != "666" for chat, _ in sent), "the stranger got nothing"
+    assert s.remote.data["owner"]["chat"] == "42"
+    assert "sendChatAction" in api.methods()
