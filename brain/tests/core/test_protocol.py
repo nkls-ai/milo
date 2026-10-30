@@ -37,6 +37,7 @@ OUTBOUND = {
     "app_request": lambda m: ev.AppRequest(m["id"], m["op"], m["args"]),
     "helpers": lambda m: ev.Helpers(m["helpers"]),
     "hands_borrow": lambda m: ev.HandsBorrow(m["on"], m["what"]),
+    "remote": lambda m: ev.Remote(m["channel"], m["label"], m["state"], m["paused"], m["detail"]),
 }
 
 
@@ -78,6 +79,10 @@ def test_parsed_values():
     assert ev.parse_command({"type": "app_response", "id": "a1", "ok": True, "result": [1]}) == \
         ev.AppResponse("a1", True, [1])
     assert ev.parse_command({"type": "app_response", "id": "a1", "ok": "yes"}).ok is False
+    assert ev.parse_command({"type": "remote_pause", "on": True}) == ev.RemotePause(True)
+    assert ev.parse_command({"type": "remote_forget"}) == ev.RemoteForget()
+    with pytest.raises(ev.ProtocolError):
+        ev.parse_command({"type": "remote_pause", "on": "yes"})
     assert ev.parse_command({"type": "stop_helper", "id": "c0ffee12ab34"}) == ev.StopHelper("c0ffee12ab34")
     with pytest.raises(ev.ProtocolError):
         ev.parse_command({"type": "stop_helper", "id": " "})

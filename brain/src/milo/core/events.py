@@ -242,6 +242,21 @@ class HandsBorrow(Event):
     what: str = ""
 
 
+@dataclass(frozen=True)
+class Remote(Event):
+    """Milo by message, for the menu. `channel` is the chat app's name ("telegram"), `label` what the user calls
+    it. state: "starting", "unpaired" (no phone yet; `detail` says how to connect), "paired" (`detail`: the
+    owner's name in the chat app) or "error" (`detail`: what is wrong, in plain words). Sent on connect when
+    messages are on, and on every change."""
+
+    type: ClassVar[str] = "remote"
+    channel: str
+    label: str
+    state: str
+    paused: bool = False
+    detail: str = ""
+
+
 # ---- app -> brain
 
 
@@ -374,6 +389,21 @@ class StopHelper(Command):
     id: str
 
 
+@dataclass(frozen=True)
+class RemotePause(Command):
+    """The menu's "Pause messages from your phone": Milo ignores the phone until it is switched off again."""
+
+    type: ClassVar[str] = "remote_pause"
+    on: bool
+
+
+@dataclass(frozen=True)
+class RemoteForget(Command):
+    """The menu's "Disconnect phone": unpair it. Connecting again needs a new code shown on the Mac."""
+
+    type: ClassVar[str] = "remote_forget"
+
+
 def parse_command(raw: object) -> Command:
     if not isinstance(raw, dict):
         raise ProtocolError("message must be a JSON object")
@@ -418,6 +448,12 @@ def parse_command(raw: object) -> Command:
                 return ConfirmAnswer(str(raw["id"]), raw["yes"])
             case "app_response":
                 return AppResponse(str(raw["id"]), raw["ok"] is True, raw.get("result"), str(raw.get("error") or ""))
+            case "remote_pause":
+                if not isinstance(raw["on"], bool):
+                    raise ProtocolError("on must be true or false")
+                return RemotePause(raw["on"])
+            case "remote_forget":
+                return RemoteForget()
             case "stop_helper":
                 id = str(raw["id"]).strip()
                 if not id:
