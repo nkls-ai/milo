@@ -1,8 +1,9 @@
 """Transcription while the user is still speaking ([dictation] stream = "preview" or "type").
 
-A Whisper pass costs about 1.1 s on an M3 whatever the length up to 30 s, because the encoder always
-sees a padded 30 s window. So passes run one at a time, back to back with a short gap, and each covers
-only the phrase after the last pause, never the whole growing recording.
+A Whisper pass costs about the same whatever the length up to 30 s, because the encoder always sees a
+padded 30 s window: 1.2 s for large-v3-turbo on an M3, 0.1 to 0.25 s for the preview model. So passes run
+one at a time, back to back with a short gap, and each covers only the phrase after the last pause, never
+the whole growing recording.
 """
 
 from __future__ import annotations
