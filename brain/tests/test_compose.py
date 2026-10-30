@@ -117,6 +117,19 @@ def test_persona_is_read_from_the_workspace_on_each_conversation_start(build):
     assert runtime.live_talk._system_prompt().startswith("You are Milo, a small"), "a missing file falls back"
 
 
+def test_the_worker_gets_the_mac_tools_through_the_hands_socket(build):
+    runtime, home = build(cheap(**{"harness.use": "claude"}))
+    assert runtime.hands_server is not None and runtime.hands_server.path == home / "run" / "hands.sock"
+    assert runtime.harness.mac_tools[1:] == ("-m", "milo.mcp_server", "--socket", str(home / "run" / "hands.sock"))
+    assert not runtime.hands_server.path.exists(), "bound by main(), not by build()"
+    assert runtime.live_talk._eyes is not None
+
+
+def test_hands_disabled_gives_the_worker_no_mac_tools(build):
+    runtime, _ = build(cheap(**{"hands.enabled": False}))
+    assert runtime.hands_server is None and runtime.harness.mac_tools == ()
+
+
 def test_heartbeat_disabled_builds_no_runner(build):
     runtime, _ = build(cheap(**{"heartbeat.enabled": False}))
     assert runtime.heartbeat is None

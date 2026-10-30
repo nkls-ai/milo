@@ -20,3 +20,8 @@ public struct MiloPaths: Sendable {
     /// Where a brain launched by the app writes stdout and stderr.
     public var brainStdoutLog: URL { home.appendingPathComponent("logs/brain.stdout.log") }
 }
+
+extension MiloPaths {
+    /// Screenshots for a look or the worker. Private, pruned to the newest few.
+    public var screens: URL { home.appendingPathComponent("state/screens") }
+}

@@ -54,6 +54,16 @@ class Workspace:
         return self.home / "run" / "brain.sock"
 
     @property
+    def hands_socket_path(self) -> Path:
+        """Where the milo-mac MCP server reaches the brain."""
+        return self.home / "run" / "hands.sock"
+
+    @property
+    def screens_dir(self) -> Path:
+        """Screenshots the app takes for a look or the worker. The app writes and prunes them."""
+        return self.state_dir / "screens"
+
+    @property
     def usage_path(self) -> Path:
         return self.state_dir / "usage.jsonl"
 

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from milo.adapters.harness.claude_live import ClaudeLiveModel
+from milo.adapters.harness.claude_live import ClaudeLiveModel, content
 from milo.core.ports import LiveModel
 from milo.core.registry import LIVE_MODELS, ConfigError
 from milo.core.types import HarnessError, Usage
@@ -238,3 +238,13 @@ def test_missing_binary_is_a_permanent_harness_error(tmp_path, ctx):
 def test_unknown_option_is_a_config_error(ctx):
     with pytest.raises(ConfigError, match=r"unknown key.*\[chat.claude_live\].*tmeout_s"):
         LIVE_MODELS.create("claude_live", {"tmeout_s": 1}, ctx)
+
+
+def test_a_screenshot_goes_along_as_a_base64_image_block(tmp_path):
+    png = tmp_path / "look.png"
+    png.write_bytes(b"\x89PNG")
+    assert content("hi") == "hi"
+    assert content("what's this", [png, tmp_path / "gone.png"]) == [
+        {"type": "text", "text": "what's this"},
+        {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "iVBORw=="}},
+    ]

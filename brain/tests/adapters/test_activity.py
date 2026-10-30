@@ -33,8 +33,8 @@ CODEX_OTHER_ITEMS = """\
 {"type":"item.completed","item":{"id":"item_4","type":"command_execution","command":"/bin/zsh -lc 'cat missing.txt'","aggregated_output":"cat: missing.txt: No such file or directory\\n","exit_code":1,"status":"failed"}}
 {"type":"item.completed","item":{"id":"item_5","type":"file_change","changes":[{"path":"/Users/you/Milo/memory/notes.md","kind":"update"}],"status":"completed"}}
 {"type":"item.completed","item":{"id":"item_6","type":"file_change","changes":[{"path":"a.md","kind":"add"},{"path":"b.md","kind":"delete"}],"status":"failed"}}
-{"type":"item.started","item":{"id":"item_7","type":"mcp_tool_call","server":"milo-mac","tool":"run_applescript","arguments":{"script":"tell application \\"Numbers\\" to activate"},"status":"in_progress"}}
-{"type":"item.completed","item":{"id":"item_7","type":"mcp_tool_call","server":"milo-mac","tool":"run_applescript","arguments":{"script":"tell application \\"Numbers\\" to activate"},"result":{"content":[]},"error":null,"status":"completed"}}
+{"type":"item.started","item":{"id":"item_7","type":"mcp_tool_call","server":"mac-helper","tool":"run_applescript","arguments":{"script":"tell application \\"Numbers\\" to activate"},"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_7","type":"mcp_tool_call","server":"mac-helper","tool":"run_applescript","arguments":{"script":"tell application \\"Numbers\\" to activate"},"result":{"content":[]},"error":null,"status":"completed"}}
 {"type":"item.started","item":{"id":"item_8","type":"web_search","query":"hetzner invoice pdf"}}
 {"type":"item.completed","item":{"id":"item_8","type":"web_search","query":"hetzner invoice pdf"}}
 {"type":"item.completed","item":{"id":"item_9","type":"reasoning","text":"**Looking for the file**"}}
@@ -94,7 +94,7 @@ def test_codex_failures_file_changes_tools_and_searches():
     ]
     assert steps[1].detail.endswith("No such file or directory")
     assert steps[3].detail == "add a.md\ndelete b.md"
-    assert steps[4].detail.startswith('milo-mac.run_applescript {"script"')
+    assert steps[4].detail.startswith('mac-helper.run_applescript {"script"')
 
 
 def test_claude_recorded_run():
@@ -123,7 +123,7 @@ def claude_line(name: str, args: dict) -> str:
      "Looking for files in your Downloads folder"),
     ("WebSearch", {"query": "weather berlin"}, "web", "Searching the web for “weather berlin”"),
     ("WebFetch", {"url": "https://www.example.com/a"}, "web", "Reading example.com"),
-    ("mcp__milo-mac__screenshot", {}, "tool", "Looking at the screen"),
+    ("mcp__computer__screenshot", {}, "tool", "Looking at the screen"),
     ("mcp__notes__create_note", {"title": "x"}, "tool", "Create note"),
     ("Bash", {"command": "make -j8", "description": "Build the thing"}, "command", "Build the thing"),
 ])
@@ -134,6 +134,14 @@ def test_claude_tools_get_plain_titles(name, args, kind, title):
 
 def test_claude_bookkeeping_tools_are_not_shown():
     assert feed(ClaudeActivity, claude_line("TodoWrite", {"todos": []})) == []
+
+
+def test_milo_mac_calls_are_left_to_the_brain():
+    """HandsService logs them with what they touched ("Clicking Save in Excel"), so the CLI's copy is skipped."""
+    assert feed(ClaudeActivity, claude_line("mcp__milo-mac__click", {"x": 1, "y": 2})) == []
+    codex = json.dumps({"type": "item.started", "item": {"id": "i1", "type": "mcp_tool_call", "server": "milo-mac",
+                                                          "tool": "click", "arguments": {}, "status": "in_progress"}})
+    assert feed(CodexActivity, codex) == []
 
 
 @pytest.mark.parametrize("command, kind, title", [

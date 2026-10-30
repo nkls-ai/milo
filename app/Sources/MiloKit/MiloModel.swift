@@ -14,6 +14,25 @@ public final class MiloModel: ObservableObject {
     @Published public var partial: String?
     /// The mode a double tap locked on (hands-free), set by the controller.
     @Published public var handsFree: ListenMode?
+    /// Milo is looking at the screen: a small eye shows on him.
+    @Published public var looking = false
+    /// The worker agent is acting on screen: the "Milo is working" frame shows.
+    @Published public var handsActive = false
+    /// Where Milo acts right now, in AppKit global screen coordinates (points, origin bottom-left of the
+    /// main display). nil: he is home in his corner.
+    @Published public var flyTarget: CGPoint?
+    /// A yes-or-no question waiting in the bubble.
+    @Published public var question: Question?
+
+    public struct Question: Equatable, Identifiable, Sendable {
+        public let id: String
+        public let text: String
+
+        public init(id: String, text: String) {
+            self.id = id
+            self.text = text
+        }
+    }
 
     private let scheduler: Scheduler
     private var hideBubble: ScheduledTask?
@@ -51,7 +70,10 @@ public final class MiloModel: ObservableObject {
             level = value
         case let .partial(text):
             partial = text.isEmpty ? nil : text
-        case .dictation, .uiConfig, .history, .entry, .replyDelta, .activity, .unknown:
+        case let .looking(on):
+            looking = on
+        case .dictation, .uiConfig, .history, .entry, .replyDelta, .activity, .lookRequest, .handsRequest,
+             .handsSession, .flyTo, .confirmRequest, .confirmEnd, .unknown:
             break
         }
     }

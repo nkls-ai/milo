@@ -8,8 +8,9 @@ from milo.core.types import Emotion
 
 log = logging.getLogger("milo.reply")
 
-TAGS = ("remember", "reminder", "task")
-_MARKERS = tuple(f"<{name}>" for name in TAGS) + tuple(f"</{name}>" for name in TAGS)
+TAGS = ("remember", "reminder", "task", "look")
+_SELF_CLOSING = ("<look/>", "<look />")
+_MARKERS = tuple(f"<{name}>" for name in TAGS) + tuple(f"</{name}>" for name in TAGS) + _SELF_CLOSING
 _LONGEST_MARKER = max(map(len, _MARKERS))
 # "[happy]" is short; a longer bracket is real text, not an emotion tag.
 _MAX_BRACKET = 16
@@ -22,7 +23,8 @@ class ReplyParser:
     """Turns the live model's streamed deltas into speakable text plus the side effects it asked for.
 
     The model opens each reply with an emotion tag like `[happy]` and may embed `<remember>fact</remember>`,
-    `<reminder>YYYY-MM-DD HH:MM text</reminder>` and `<task>description</task>`. feed() returns only text
+    `<reminder>YYYY-MM-DD HH:MM text</reminder>`, `<task>description</task>` and `<look/>` (or
+    `<look>what for</look>`) to see the screen. feed() returns only text
     that is safe to speak: a tag is never spoken, even when it arrives split across deltas, because text
     that could still become one is held back until it can't.
     """
@@ -33,6 +35,8 @@ class ReplyParser:
         self.remembers: list[str] = []
         self.reminders: list[tuple[datetime, str]] = []
         self.tasks: list[str] = []
+        self.look: str | None = None
+        """Set when the model asked to see the screen: what it wants to look at, often ""."""
         self.spoken = ""
         """Everything feed() and finish() returned so far."""
         self._buf = ""
@@ -121,6 +125,10 @@ class ReplyParser:
         if rest[0] == "<":
             lower = rest[:_LONGEST_MARKER].lower()
             marker = next((m for m in _MARKERS if lower.startswith(m)), None)
+            if marker in _SELF_CLOSING:
+                self.look = self.look or ""
+                self._buf = rest[len(marker):]
+                return text, True
             if marker is not None:
                 if not marker.startswith("</"):
                     self._tag = marker[1:-1]
@@ -147,6 +155,9 @@ class ReplyParser:
 
     def _collect(self, tag: str, content: str) -> None:
         content = " ".join(content.split())
+        if tag == "look":
+            self.look = self.look or content
+            return
         if not content:
             return
         if tag == "remember":

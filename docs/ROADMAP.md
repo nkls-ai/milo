@@ -61,9 +61,9 @@ Milo already runs Claude Code and Codex as his worker. The cheapest first versio
 
 ## Phase 2: Milo uses the computer
 
-1. `milo-mac` MCP server (Swift, runs inside the app since it already holds Accessibility permission): `list_apps`, `ax_tree(app)`, `ax_press(element)`, `ax_set_value`, `run_applescript`, `screenshot`, `click(x, y)`, `type(text)`. Attached to the worker CLI with `--mcp-config`.
+1. `milo-mac` MCP server: `list_apps`, `ax_tree(app)`, `ax_press(element)`, `ax_set_value`, `run_applescript`, `screenshot`, `click(x, y)`, `type(text)`. Attached to the worker CLI with `--mcp-config`. Built: a small Python server forwards to the brain, which checks each action, and the app runs it ([ADR 7](adr/0007-computer-use-through-the-brain.md)).
 2. Milo flies to the element he is about to act on and points at it. The overlay panel already floats over everything, so this is animation plus a coordinate from the tool call.
-3. Confirmation gate in the app for irreversible actions, and a stop key.
+3. Confirmation gate in the app for irreversible actions, and a stop key. Built: a Yes and No question in the bubble, and `esc` or any real input stops the worker.
 4. Demo tasks used as tests: fill an Excel column from a formula description, file a PDF from Downloads, reply to the newest Mail message as a draft.
 5. Routines. After Milo does a task, the user says "remember how to do this, call it the Monday report". Milo writes the steps as a plain recipe in `~/Milo/routines/monday-report.md`: what to open, what to fill in, what to check. "Do the Monday report" or a schedule ("every Monday at 9", through the existing zero-token heartbeat) runs it again. The agent follows the recipe rather than replaying recorded clicks, so a moved button doesn't break it, and it asks when something looks different from last time. The user can list routines, rename them and delete them by voice or in the Milo window.
 6. Calendar. Read events through EventKit in the app (one permission prompt), "you have the dentist in 30 minutes" as a local heartbeat rule, and "put lunch with Anna on Friday at 1" as a write.

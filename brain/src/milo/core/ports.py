@@ -6,12 +6,13 @@ milo.core.registry and are picked by name from config.toml in milo.compose.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Sequence
 from datetime import date, datetime
+from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from .events import Event
-from .types import Audio, Nudge, Reminder, Reply, Signals, Step, Usage
+from .types import Audio, Nudge, Reminder, Reply, ScreenCapture, Signals, Step, Usage
 
 LevelCallback = Callable[[float], None]
 """Receives loudness in 0..1. May be called from an audio thread."""
@@ -120,10 +121,11 @@ class LiveModel(Protocol):
         """Begin a fresh conversation with this system prompt, replacing any running one."""
         ...
 
-    def turn(self, text: str) -> AsyncIterator[str]:
+    def turn(self, text: str, images: Sequence[Path] = ()) -> AsyncIterator[str]:
         """Send one user message and yield the reply's text deltas as they arrive. Raises HarnessError.
 
-        Starts a conversation with an empty system prompt if start() was never called.
+        `images` are PNG files sent with the message (a screenshot). Starts a conversation with an empty
+        system prompt if start() was never called.
         """
         ...
 
@@ -132,6 +134,38 @@ class LiveModel(Protocol):
         ...
 
     async def close(self) -> None: ...
+
+
+@runtime_checkable
+class ScreenEyes(Protocol):
+    """Reads the frontmost window through the app, which holds the Accessibility and Screen Recording
+    permissions."""
+
+    async def look(self, mode: str = "window") -> ScreenCapture:
+        """mode "window" or "selection". Never raises: a capture that failed has `error` set."""
+        ...
+
+
+@runtime_checkable
+class AppHands(Protocol):
+    """Runs one computer-use action inside the app."""
+
+    async def act(self, tool: str, args: dict) -> dict:
+        """The action's result. Raises HandsError with plain words the worker can act on."""
+        ...
+
+    def cancel(self) -> None:
+        """Give up on every action still waiting for the app; each raises HandsError."""
+        ...
+
+
+@runtime_checkable
+class ConfirmGate(Protocol):
+    """Asks the user before an action that can't be undone."""
+
+    async def confirm(self, summary: str) -> bool:
+        """True only on a clear yes. No, a timeout or nobody there to answer is False."""
+        ...
 
 
 @runtime_checkable

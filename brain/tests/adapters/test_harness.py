@@ -232,3 +232,22 @@ def test_find_binary_missing_names_the_section(tmp_path, monkeypatch):
     monkeypatch.setattr(_binary.Path, "home", lambda: tmp_path)
     with pytest.raises(ConfigError, match=r"\[harness.claude\]"):
         _binary.find_binary("", "claude-milo-test", section="harness.claude")
+
+
+def test_claude_gets_milo_mac_as_an_allowed_mcp_server(tmp_path):
+    mac_tools = ("/py", "-m", "milo.mcp_server", "--socket", "/s")
+    cmd = ClaudeHarness("claude", tmp_path, mac_tools=mac_tools).command("hi", None)
+    config = json.loads(cmd[cmd.index("--mcp-config") + 1])
+    assert config == {"mcpServers": {"milo-mac": {"type": "stdio", "command": "/py",
+                                                  "args": ["-m", "milo.mcp_server", "--socket", "/s"]}}}
+    assert cmd[cmd.index("--allowedTools") + 1] == "mcp__milo-mac"
+    assert cmd[-2:] == ["--", "hi"]
+    assert "--mcp-config" not in ClaudeHarness("claude", tmp_path).command("hi", None)
+
+
+def test_codex_gets_milo_mac_through_config_overrides(tmp_path):
+    h = CodexHarness("codex", tmp_path, tmp_path / "s.json", mac_tools=("/py", "-m", "milo.mcp_server"))
+    for cmd in (h.command("hi", None), h.command("again", "abc")):
+        assert 'mcp_servers.milo-mac.command="/py"' in cmd
+        assert 'mcp_servers.milo-mac.args=["-m", "milo.mcp_server"]' in cmd
+        assert 'mcp_servers.milo-mac.default_tools_approval_mode="approve"' in cmd

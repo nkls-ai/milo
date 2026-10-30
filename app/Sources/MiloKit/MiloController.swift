@@ -32,6 +32,8 @@ public final class MiloController {
     public let model: MiloModel
     /// The conversation the Milo window shows.
     public let transcript = TranscriptModel()
+    /// Looking at the screen and the worker's actions on it; nil without those ports.
+    public let screen: ScreenController?
     public private(set) var muted = false
     public var bindings: HotkeyBindings { pushToTalk.bindings }
     /// Called when `ui_config` changes the bindings.
@@ -51,8 +53,9 @@ public final class MiloController {
 
     public init(model: MiloModel, brain: BrainClient, launcher: BrainLauncher, inserter: TextInserter,
                 keys: KeyEventSource, context: ContextProvider, accessibility: AccessibilityPermission,
-                scheduler: Scheduler, settings: Settings = Settings()) {
+                scheduler: Scheduler, settings: Settings = Settings(), screen: ScreenController? = nil) {
         self.model = model
+        self.screen = screen
         self.brain = brain
         self.launcher = launcher
         self.inserter = inserter
@@ -74,6 +77,7 @@ public final class MiloController {
 
         keys.onEvent = { [weak self] in self?.handleKey($0) }
         keys.start()
+        screen?.start()
 
         if !accessibility.isTrusted(prompt: true) {
             model.show("Grant me Accessibility in System Settings so I can hear the \(bindings.dictate.displayName) key and paste for you.")
@@ -102,6 +106,7 @@ public final class MiloController {
     static let pasteBlocked = "I can't paste: macOS turned off my Accessibility permission. Your text is on the clipboard, press ⌘V. To fix it, remove Milo in System Settings › Privacy & Security › Accessibility and add him again."
 
     private func received(_ event: BrainEvent) {
+        if let screen, screen.apply(event) { return }
         switch event {
         case let .dictation(text):
             // Without Accessibility macOS drops Milo's Cmd-V without an error. An ad-hoc signed
@@ -113,8 +118,9 @@ public final class MiloController {
                 NSLog("Milo: not trusted for Accessibility, dictation left on the clipboard")
                 model.show(Self.pasteBlocked)
             }
-        case let .uiConfig(dictateKey, talkKey, handsFreeMax):
+        case let .uiConfig(dictateKey, talkKey, handsFreeMax, whatsThisKey):
             if let handsFreeMax, handsFreeMax > 0 { pushToTalk.maxLocked = handsFreeMax }
+            if let whatsThisKey { screen?.setShortcut(whatsThisKey) }
             let next = bindings.applying(dictateKey: dictateKey, talkKey: talkKey)
             guard next != bindings else { return }
             pushToTalkChanged(pushToTalk.rebind(next), at: nil)

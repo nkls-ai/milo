@@ -119,3 +119,53 @@ final class ManualScheduler: Scheduler {
         return task
     }
 }
+
+final class FakeScreenReader: ScreenReader {
+    var capture = ScreenCapture(app: "Numbers", window: "Budget", text: "Rent 900")
+    private(set) var requests: [Bool] = []
+    func capture(selection: Bool, completion: @escaping (ScreenCapture) -> Void) {
+        requests.append(selection)
+        completion(capture)
+    }
+}
+
+/// Answers each action at once, or holds it until `finish` when `hold` is set.
+final class FakeHandsExecutor: HandsExecutor {
+    var result: Result<[String: JSONValue], HandsFailure> = .success(["text": "done"])
+    var hold = false
+    private(set) var performed: [String] = []
+    private(set) var cancels = 0
+    private var held: [(Result<[String: JSONValue], HandsFailure>) -> Void] = []
+
+    func perform(_ tool: String, args: [String: JSONValue],
+                 completion: @escaping (Result<[String: JSONValue], HandsFailure>) -> Void) {
+        performed.append(tool)
+        if hold { held.append(completion) } else { completion(result) }
+    }
+
+    func cancel() { cancels += 1 }
+
+    func finish() {
+        let pending = held
+        held.removeAll()
+        pending.forEach { $0(result) }
+    }
+}
+
+final class FakeInputSource: UserInputSource {
+    var onInput: ((UserInput) -> Void)?
+    private(set) var running = false
+    func start() { running = true }
+    func stop() { running = false }
+    func send(_ input: UserInput) { onInput?(input) }
+}
+
+final class FakeHotkey: HotkeySource {
+    var onPress: (() -> Void)?
+    private(set) var registered: [KeyCombo?] = []
+    func register(_ combo: KeyCombo?) -> Bool {
+        registered.append(combo)
+        return true
+    }
+    func press() { onPress?() }
+}

@@ -31,6 +31,10 @@ class UnixSocketServer:
         self._clients: set[asyncio.StreamWriter] = set()
         self._server: asyncio.Server | None = None
 
+    def connected(self) -> bool:
+        """Some app is connected and would see an event."""
+        return any(not w.is_closing() for w in self._clients)
+
     def emit(self, event: Event) -> None:
         line = _encode(event)
         for writer in list(self._clients):

@@ -58,6 +58,8 @@ def _setup_logging(log_file: Path) -> None:
 
 async def _serve(runtime: Runtime) -> None:
     await runtime.server.start()
+    if runtime.hands_server is not None:
+        await runtime.hands_server.start()
     log.info("brain up (chat=%s, harness=%s)", runtime.live_model.name, runtime.harness.name)
     warming = asyncio.create_task(_warm_all({
         "stt": (runtime.stt_executor, runtime.transcriber.warm),
@@ -77,6 +79,8 @@ async def _serve(runtime: Runtime) -> None:
 
 
 async def _close(runtime: Runtime) -> None:
+    if runtime.hands_server is not None:
+        await runtime.hands_server.close()
     try:
         await asyncio.wait_for(runtime.live_model.close(), CLOSE_TIMEOUT_S)
     except Exception:

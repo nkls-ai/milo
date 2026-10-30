@@ -19,7 +19,8 @@ public enum BrainEvent: Equatable, Sendable {
     case partial(String)
     /// Push-to-talk key names: "fn", "right_option", "right_command", "right_control".
     /// `handsFreeMaxSeconds` caps a recording locked on by a double tap; nil keeps the app's default.
-    case uiConfig(dictateKey: String, talkKey: String, handsFreeMaxSeconds: Double? = nil)
+    /// `whatsThisKey` is the "What's this?" shortcut, e.g. "ctrl+option+m"; "" turns it off, nil keeps it.
+    case uiConfig(dictateKey: String, talkKey: String, handsFreeMaxSeconds: Double? = nil, whatsThisKey: String? = nil)
     /// The recent conversation for the Milo window, oldest first.
     case history([TranscriptEntry])
     /// A transcript entry was added or changed; replaces the one with the same id.
@@ -28,13 +29,28 @@ public enum BrainEvent: Equatable, Sendable {
     case replyDelta(id: String, text: String)
     /// A step of the running task `taskID` started or ended; replaces the step with the same id.
     case activity(taskID: String, step: ActivityStep)
+    /// Capture the frontmost window ("window") or the selection ("selection") and answer with look_result.
+    case lookRequest(id: String, mode: String)
+    /// Milo is looking at the screen: show the eye.
+    case looking(Bool)
+    /// Run one computer-use action and answer with hands_result.
+    case handsRequest(id: String, tool: String, args: [String: JSONValue])
+    /// The worker acts on screen: show the frame, stop on real user input.
+    case handsSession(Bool)
+    /// Where Milo is about to act; nil sends him home.
+    case flyTo(ScreenPoint?)
+    /// A yes-or-no question before an action that can't be undone.
+    case confirmRequest(id: String, text: String)
+    /// The question `id` is settled; take the buttons away.
+    case confirmEnd(id: String)
     case unknown(String)
 }
 
 extension BrainEvent: Decodable {
     private enum Key: String, CodingKey {
-        case type, state, emotion, text, value, entries, entry, id, step
+        case type, state, emotion, text, value, entries, entry, id, step, mode, on, tool, args, point
         case taskID = "task_id"
+        case whatsThisKey = "whats_this_key"
         case dictateKey = "dictate_key"
         case talkKey = "talk_key"
         case handsFreeMaxSeconds = "hands_free_max_s"
@@ -56,13 +72,26 @@ extension BrainEvent: Decodable {
         case "ui_config":
             self = .uiConfig(dictateKey: try c.decode(String.self, forKey: .dictateKey),
                              talkKey: try c.decode(String.self, forKey: .talkKey),
-                             handsFreeMaxSeconds: try c.decodeIfPresent(Double.self, forKey: .handsFreeMaxSeconds))
+                             handsFreeMaxSeconds: try c.decodeIfPresent(Double.self, forKey: .handsFreeMaxSeconds),
+                             whatsThisKey: try c.decodeIfPresent(String.self, forKey: .whatsThisKey))
         case "history": self = .history(try c.decode([TranscriptEntry].self, forKey: .entries))
         case "entry": self = .entry(try c.decode(TranscriptEntry.self, forKey: .entry))
         case "reply_delta": self = .replyDelta(id: try c.decode(String.self, forKey: .id), text: try text())
         case "activity":
             self = .activity(taskID: try c.decode(String.self, forKey: .taskID),
                              step: try c.decode(ActivityStep.self, forKey: .step))
+        case "look_request":
+            self = .lookRequest(id: try c.decode(String.self, forKey: .id),
+                                mode: try c.decodeIfPresent(String.self, forKey: .mode) ?? "window")
+        case "looking": self = .looking(try c.decode(Bool.self, forKey: .on))
+        case "hands_request":
+            self = .handsRequest(id: try c.decode(String.self, forKey: .id), tool: try c.decode(String.self, forKey: .tool),
+                                 args: try c.decodeIfPresent([String: JSONValue].self, forKey: .args) ?? [:])
+        case "hands_session": self = .handsSession(try c.decode(Bool.self, forKey: .on))
+        case "fly_to": self = .flyTo(try c.decodeIfPresent(ScreenPoint.self, forKey: .point))
+        case "confirm_request":
+            self = .confirmRequest(id: try c.decode(String.self, forKey: .id), text: try text())
+        case "confirm_end": self = .confirmEnd(id: try c.decode(String.self, forKey: .id))
         default: self = .unknown(type)
         }
     }

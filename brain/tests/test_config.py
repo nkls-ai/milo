@@ -121,6 +121,10 @@ def test_an_unknown_section_names_it():
     ("[heartbeat]\nenabled = \"no\"\n", "enabled"),
     ("[ui]\ndictate_key = \"caps_lock\"\n", "dictate_key"),
     ("[ui]\ndictate_key = \"right_option\"\n", "same key"),
+    ("[ui]\nwhats_this_key = \"m\"\n", "whats_this_key"),
+    ("[ui]\nwhats_this_key = \"ctrl+\"\n", "whats_this_key"),
+    ("[hands]\nenabled = \"yes\"\n", "enabled"),
+    ("[hands]\nconfirm = 3\n", "confirm"),
 ])
 def test_bad_values_are_errors(extra, key):
     with pytest.raises(ConfigError, match=key):
@@ -156,3 +160,12 @@ def test_a_non_table_section_is_an_error():
 def test_invalid_toml_names_the_file():
     with pytest.raises(ConfigError, match="my.toml is not valid TOML"):
         Config.parse("[harness\n", "my.toml")
+
+
+def test_hands_and_the_whats_this_key_have_defaults_and_can_be_changed():
+    config = Config.parse(MINIMAL)
+    assert config.hands.enabled and config.hands.applescript and config.hands.confirm_timeout_s == 60
+    assert config.ui.whats_this_key == "ctrl+option+m"
+    changed = Config.parse(MINIMAL + "[ui]\nwhats_this_key = \"cmd+shift+F12\"\n[hands]\napplescript = false\n")
+    assert changed.ui.whats_this_key == "cmd+shift+F12" and not changed.hands.applescript
+    assert Config.parse(MINIMAL + "[ui]\nwhats_this_key = \"\"\n").ui.whats_this_key == ""

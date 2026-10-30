@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from milo.core.hands import SERVER_NAME
 from milo.core.ports import StepCallback
 from milo.core.registry import HARNESSES, AdapterContext, options_from
 from milo.core.types import REPLY_SCHEMA, HarnessError, Reply, Usage
@@ -29,12 +30,13 @@ class ClaudeHarness:
     name = "claude"
 
     def __init__(self, binary: str, workdir: Path, *, model: str = "", permission_mode: str = "acceptEdits",
-                 timeout_s: float = 180):
+                 timeout_s: float = 180, mac_tools: Sequence[str] = ()):
         self.binary = binary
         self.workdir = workdir
         self.model = model
         self.permission_mode = permission_mode
         self.timeout_s = timeout_s
+        self.mac_tools = tuple(mac_tools)
 
     def command(self, prompt: str, session_id: str | None) -> list[str]:
         cmd = [self.binary, "-p", "--output-format", "stream-json", "--verbose",
@@ -43,6 +45,11 @@ class ClaudeHarness:
             cmd += ["--resume", session_id]
         if self.model:
             cmd += ["--model", self.model]
+        if self.mac_tools:
+            server = {"type": "stdio", "command": self.mac_tools[0], "args": list(self.mac_tools[1:])}
+            # -p can't ask for permission, so the Mac tools are allowed up front; the brain gates each call.
+            cmd += ["--mcp-config", json.dumps({"mcpServers": {SERVER_NAME: server}}),
+                    "--allowedTools", f"mcp__{SERVER_NAME}"]
         return cmd + ["--", prompt]
 
     async def reply(self, prompt: str, session_id: str | None, *, on_step: StepCallback | None = None) -> Reply:
@@ -96,4 +103,5 @@ def _claude(options: Mapping[str, Any], ctx: AdapterContext) -> ClaudeHarness:
         model=o.model,
         permission_mode=o.permission_mode,
         timeout_s=o.timeout_s,
+        mac_tools=ctx.mac_tools,
     )

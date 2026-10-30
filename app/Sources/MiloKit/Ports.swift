@@ -60,3 +60,42 @@ public protocol AccessibilityPermission {
     /// With `prompt`, macOS shows its permission dialog if not yet trusted.
     func isTrusted(prompt: Bool) -> Bool
 }
+
+/// Reads the frontmost window: its text through Accessibility and a screenshot through ScreenCaptureKit.
+public protocol ScreenReader: AnyObject {
+    /// `selection`: the selected text alone if there is one, else the window. Completion on the main queue;
+    /// a capture that failed has `error` set in plain words.
+    func capture(selection: Bool, completion: @escaping (ScreenCapture) -> Void)
+}
+
+/// Runs the milo-mac actions inside the app, which holds the Accessibility and Screen Recording permissions.
+public protocol HandsExecutor: AnyObject {
+    /// One action (a milo-mac tool, or "describe"). Completion on the main queue.
+    func perform(_ tool: String, args: [String: JSONValue],
+                 completion: @escaping (Result<[String: JSONValue], HandsFailure>) -> Void)
+    /// Stop what is still running, e.g. an AppleScript.
+    func cancel()
+}
+
+public struct HandsFailure: Error, Equatable, Sendable {
+    /// Plain words for the worker agent, e.g. "There is no element e9. Call ax_tree again."
+    public let message: String
+
+    public init(_ message: String) {
+        self.message = message
+    }
+}
+
+/// Mouse and keyboard input from every app while the worker acts. Callbacks on the main queue.
+public protocol UserInputSource: AnyObject {
+    var onInput: ((UserInput) -> Void)? { get set }
+    func start()
+    func stop()
+}
+
+/// A global shortcut that works without focus, for "What's this?".
+public protocol HotkeySource: AnyObject {
+    var onPress: (() -> Void)? { get set }
+    /// nil removes it. Returns false if macOS refused, e.g. another app holds the combo.
+    @discardableResult func register(_ combo: KeyCombo?) -> Bool
+}

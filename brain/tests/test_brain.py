@@ -8,10 +8,12 @@ import pytest
 
 from milo.brain import Brain
 from milo.config import UiSettings
-from milo.core.events import (Bubble, Dictation, EmotionChanged, Heard, Level, ListenStart, ListenStop, Mute,
-                              StateChanged, TextInput, UiConfig, parse_command)
-from milo.core.types import Emotion, ListenMode, MiloState, Nudge
-from tests.fakes import FakeLiveModel, FakeTranscriber
+from milo.core.events import (Bubble, ConfirmEnd, ConfirmRequest, Dictation, EmotionChanged, HandsSession, Heard,
+                              Level, ListenStart, ListenStop, Looking, Mute, StateChanged, Status, TextInput, UiConfig,
+                              parse_command)
+from milo.core.types import Emotion, HandsError, ListenMode, MiloState, Nudge, ScreenCapture
+from milo.services.app_bridge import AppEyes, AppHands, BubbleConfirm
+from tests.fakes import FakeEyes, FakeHands, FakeLiveModel, FakeTranscriber
 from tests.services.stack import Stack, settle
 
 FIXTURE = json.loads((Path(__file__).parents[2] / "protocol" / "messages.json").read_text())
@@ -38,7 +40,7 @@ def test_greeting_draws_the_current_state_and_sends_the_configured_keys():
     brain = Brain(s.ui, s.listening, s.live_talk, s.context, s.heartbeat,
                   UiSettings("right_command", "right_control"))
     assert brain.greeting() == [StateChanged(MiloState.IDLE), EmotionChanged(Emotion.NEUTRAL),
-                                UiConfig("right_command", "right_control")]
+                                UiConfig("right_command", "right_control", whats_this_key="ctrl+option+m")]
     s.ui.set_state(MiloState.THINKING)
     s.ui.set_emotion(Emotion.SAD)
     assert brain.greeting()[:2] == [StateChanged(MiloState.THINKING), EmotionChanged(Emotion.SAD)]
@@ -88,7 +90,69 @@ def check_mute(s: Stack, msg: dict) -> None:
     assert s.heartbeat.muted is msg["on"]
 
 
+def answered(s: Stack, msg: dict, ask) -> object:
+    """Start a request through the bridge, feed the fixture message to the brain, return what the request got."""
+    async def go():
+        waiting = asyncio.create_task(ask())
+        await settle()
+        await s.brain.handle(parse_command(msg))
+        return await waiting
+
+    return asyncio.run(go())
+
+
+def check_look_result(s: Stack, msg: dict) -> None:
+    if msg["id"] != "look-1":  # nobody waits for it: dropped quietly
+        run(s, parse_command(msg))
+        return
+    capture = answered(s, msg, lambda: AppEyes(s.bridge).look())
+    assert capture.app == "Microsoft Excel" and capture.text.startswith("Rent")
+    assert capture.image == "", "a path outside state/screens is never read"
+
+
+def check_whats_this(s: Stack, msg: dict) -> None:
+    s.model.script.append(["[concerned] That looks like a scam."])
+    run(s, parse_command(msg))
+    assert s.sink.of(Heard) == [Heard("What's this?")]
+    assert "Your parcel is waiting" in s.model.turns[0] and "<screen_data>" in s.model.turns[0]
+
+
+def check_hands_result(s: Stack, msg: dict) -> None:
+    async def act():
+        try:
+            return await AppHands(s.bridge).act("click", {"x": 1, "y": 2})
+        except HandsError as e:
+            return e
+
+    if msg["id"] == "hands-2":
+        next(s.bridge._ids)  # ids count up across kinds: make this the bridge's second request
+        assert answered(s, msg, act) == {"text": "Clicked."}
+    else:
+        run(s, parse_command(msg))
+
+
+def check_hands_stop(s: Stack, msg: dict) -> None:
+    s.hands.begin("t1")
+    s.hands._start_session({})
+    run(s, parse_command(msg))
+    assert s.sink.events[-2:] == [HandsSession(False), Status("Okay, I stopped. It's all yours.")]
+    assert s.hands_port.cancels == 1
+
+
+def check_confirm_result(s: Stack, msg: dict) -> None:
+    for _ in range(2):
+        next(s.bridge._ids)
+    yes = answered(s, msg, lambda: BubbleConfirm(s.bridge, s.ui).confirm("Send it?"))
+    assert yes is False
+    assert s.sink.events == [ConfirmRequest("confirm-3", "Send it?"), ConfirmEnd("confirm-3")]
+
+
 CHECKS = {
+    "look_result": check_look_result,
+    "whats_this": check_whats_this,
+    "hands_result": check_hands_result,
+    "hands_stop": check_hands_stop,
+    "confirm_result": check_confirm_result,
     "listen_start": check_listen_start,
     "listen_stop": check_listen_stop,
     "listen_cancel": check_listen_cancel,
@@ -104,7 +168,8 @@ def test_every_fixture_command_has_a_routing_check():
     assert {m["type"] for m in FIXTURE["app_to_brain"]} == set(CHECKS)
 
 
-@pytest.mark.parametrize("msg", FIXTURE["app_to_brain"], ids=lambda m: f"{m['type']}-{m.get('mode', '')}")
+@pytest.mark.parametrize("msg", FIXTURE["app_to_brain"],
+                         ids=lambda m: f"{m['type']}-{m.get('mode', '')}{m.get('id', '')}")
 def test_every_fixture_command_routes_to_its_service(msg):
     CHECKS[msg["type"]](Stack(transcriber=FakeTranscriber("something")), msg)
 

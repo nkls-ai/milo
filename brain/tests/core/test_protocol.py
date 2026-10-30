@@ -20,12 +20,19 @@ OUTBOUND = {
     "level": lambda m: ev.Level(m["value"]),
     "dictation": lambda m: ev.Dictation(m["text"]),
     "status": lambda m: ev.Status(m["text"]),
-    "ui_config": lambda m: ev.UiConfig(m["dictate_key"], m["talk_key"], m["hands_free_max_s"]),
+    "ui_config": lambda m: ev.UiConfig(m["dictate_key"], m["talk_key"], m["hands_free_max_s"], m["whats_this_key"]),
     "partial": lambda m: ev.Partial(m["text"]),
     "history": lambda m: ev.History(m["entries"]),
     "entry": lambda m: ev.EntryChanged(m["entry"]),
     "reply_delta": lambda m: ev.ReplyDelta(m["id"], m["text"]),
     "activity": lambda m: ev.Activity(m["task_id"], m["step"]),
+    "look_request": lambda m: ev.LookRequest(m["id"], m["mode"]),
+    "looking": lambda m: ev.Looking(m["on"]),
+    "hands_request": lambda m: ev.HandsRequest(m["id"], m["tool"], m["args"]),
+    "hands_session": lambda m: ev.HandsSession(m["on"]),
+    "fly_to": lambda m: ev.FlyTo(m["point"]),
+    "confirm_request": lambda m: ev.ConfirmRequest(m["id"], m["text"]),
+    "confirm_end": lambda m: ev.ConfirmEnd(m["id"]),
 }
 
 
@@ -51,6 +58,16 @@ def test_fixture_covers_every_command_type():
     assert defined == {m["type"] for m in FIXTURE["app_to_brain"]}
 
 
+def test_screen_commands_parse_into_their_values():
+    look, error = (ev.parse_command(m) for m in FIXTURE["app_to_brain"] if m["type"] == "look_result")
+    assert look.capture.app == "Microsoft Excel" and look.capture.image.endswith(".png") and not look.capture.error
+    assert not error.capture.image and "Screen Recording" in error.capture.error
+    assert ev.parse_command({"type": "hands_result", "id": "h", "ok": False, "error": "nope"}) == \
+        ev.HandsResult("h", False, {}, "nope")
+    assert ev.parse_command({"type": "hands_stop"}) == ev.HandsStop("user")
+    assert ev.parse_command({"type": "confirm_result", "id": "c", "yes": True}) == ev.ConfirmResult("c", True)
+
+
 def test_parsed_values():
     assert ev.parse_command({"type": "listen_start", "mode": "dictate"}) == ev.ListenStart(ListenMode.DICTATE)
     assert ev.parse_command({"type": "context", "app": "", "idle_s": -3}) == ev.ContextUpdate(None, 0.0)
@@ -59,6 +76,8 @@ def test_parsed_values():
 @pytest.mark.parametrize("raw", [
     [], {"type": "nope"}, {"type": "listen_start", "mode": "shout"}, {"type": "text", "text": "  "},
     {"type": "text"}, {"type": "mute"}, {"type": "context", "idle_s": "soon"},
+    {"type": "whats_this"}, {"type": "whats_this", "capture": "screen"}, {"type": "hands_result", "id": "h"},
+    {"type": "hands_result", "id": "h", "ok": True, "result": []}, {"type": "confirm_result", "id": "c"},
 ])
 def test_bad_commands_raise_protocol_error(raw):
     with pytest.raises(ev.ProtocolError):
