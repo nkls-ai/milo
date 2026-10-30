@@ -1,0 +1,31 @@
+# 15. Milo by message
+
+Date: 2026-10-30. Status: accepted. Builds on [ADR 9](0009-approvals-and-action-levels.md), [ADR 10](0010-untrusted-results-and-a-private-log.md) and [ADR 11](0011-helpers-and-the-orchestrator.md).
+
+## Context
+
+[VISION.md](../VISION.md) puts "Milo by message" before a phone app: message Milo in a chat app ("send me the slides from today's meeting" from the train) and the Mac does the work. Projects like OpenClaw (formerly Clawdbot) do this, and their history shows what goes wrong: Gateways open to the internet, stolen tokens, plugins from strangers, and agents that follow instructions hidden in what they read. The research is in [research/messaging.md](../research/messaging.md).
+
+## Decision
+
+- **A `Channel` port with a registry** (`CHANNELS`, `[messages] use`). A channel only moves messages: `receive`, `send`, `ask` (yes/no buttons where the app has them), `typing`, `send_file`, `acknowledge`. Everything about trust lives in `services/messages.py`.
+- **Telegram first**, through the Bot API with long polling over HTTPS: nothing on the Mac listens for the network. Standard library only, about 200 lines ([ADR 4](0004-dependencies.md)). The bot token sits in `~/Milo/secrets/telegram-token`, which must be the user's own plain file with mode 0600, and it never appears in a log or an error. **iMessage** is an optional, experimental second channel (chat.db read-only with Full Disk Access, sending with AppleScript only to the owner's own handle). **No WhatsApp**: Meta's API forbids general-purpose assistants since January 2026 and the unofficial libraries break its terms. **No Signal** for now.
+- **One owner, paired on the Mac.** Until a phone is paired, whoever messages the bot is asked for a 6-digit code that Milo shows on the Mac's screen, in the bubble and the window, never in the chat. The code is tied to the chat that asked, works for 10 minutes and 5 tries, a chat that used them up waits an hour, at most 3 chats wait at once. Whoever sends it back becomes the owner (`state/messages.json`, 0600). From then on only that private chat and user id count: everything else is dropped without an answer and logged with its chat id but never its text.
+- **A text turn on the same conversation.** An owner message becomes `LiveTalk.message(text, prompt, data)`, a small hook next to `turn()`: the same chat model, persona, memory and helpers, no speech, no looking at the screen. The prompt says the user reads the answer on their phone. A turn at the Mac waits up to a minute for the turn there to end; a turn started at the Mac interrupts a message turn, and the phone is told.
+- **The owner's words are requests, the rest is data.** Forwarded messages, quotes from other chats and long messages (over 600 characters, which may be pasted) go in as `<forwarded>`, `<quoted>` and `<pasted>` blocks with `<` and `>` escaped. Like task results, they make every tag in the conversation wait for a yes until it resets.
+- **Remote questions.** `MessageService` is a `QuestionRelay` on `Approvals`. While the Mac has had no input for `[messages] away_after_min`, a question goes to the chat with Yes and No buttons, waits `question_timeout_s`, and **only the chat may answer it**: the Mac shows "Asked on your phone" without buttons and refuses clicks and spoken answers, since whoever sits there isn't the user who asked. While the owner writes from the phone but someone uses the Mac, both may answer and the first answer counts. A plain "yes" or "no" message answers the question the chat shows last.
+- **Helpers report back.** Helpers started while the owner writes from the phone are followed through `Orchestrator.watchers`: milestones (at most one a minute each) and results go to the chat.
+- **Files go out after a yes.** The worker gets a `send_to_phone(path, caption)` tool on the connections server when messages are on. The brain checks the file (a plain file, at most `max_file_mb`, not in `~/.ssh`, the keychains, mail, messages, agent settings, or Milo's own settings, state, secrets, logs and memory; compared case-insensitively, links resolved first), asks `share` ("Send Q3 review.key (2.1 MB) to your phone?"), and sends exactly the bytes it read through one descriptor opened without following links, if the file is still the one it asked about.
+- **Remote can't loosen anything.** `/pause` works from the phone; resuming, pairing, disconnecting, the approval levels and every setting only at the Mac. While the owner is away, `SettingsGuard` puts `config.toml`, `state/messages.json` and `secrets/` back if anything but Milo's own save changed them, and says so on the Mac.
+- **Limits.** At most `max_per_minute` owner messages are answered (one note when more come), strangers get one reply per code.
+- **The morning brief** (`brief_at = "07:30"`) is built from local data with templates, zero tokens: today's events and Apple Reminders through the app, due and overdue reminders from `reminders.md`, helpers still at work. It runs on the heartbeat's tick and goes once a day, up to three hours late if the Mac slept.
+- **The menu** shows the chat app's state, "Pause messages from your phone" and "Disconnect phone…". The app gets a `remote` event; it sends `remote_pause` and `remote_forget`.
+
+## Consequences
+
+- Turning it on is four steps (make a bot, paste the token, switch it on, send the code), described in [setup/messages.md](../setup/messages.md). Nothing is on by default.
+- Telegram bot chats are not end-to-end encrypted: Telegram's servers see what Milo sends, including files. The setup guide says so; iMessage is the encrypted option.
+- A helper's turn ends after `[harness.*] timeout_s` (180 s by default), so a remote question that waits longer can't help that helper. The default `question_timeout_s` is 150 s.
+- The settings guard can't tell the user's own edits made over SSH while away from a helper's. It puts both back.
+- The iMessage channel is built from how chat.db and other tools work and tested against a made-up database. It hasn't run against the real Messages app.
+- A helper can still write files in `~/Milo` while the owner is away; the guard covers the files that decide Milo's safety, not all of them. Taking the shell away from the worker (TODO) would close more.

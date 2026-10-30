@@ -30,6 +30,13 @@
 - Looking: send the screenshot only when the window text isn't enough, to save tokens on text-heavy windows.
 - Milo window: persist a helper when it starts, so one cut off by a brain restart still shows (now it is lost).
 
+- Milo by message: try it with a real bot (make one with @BotFather, pair, ask for a file, answer a question from the phone). Everything so far ran against a fake Bot API.
+- Milo by message: run the iMessage channel against the real Messages app (message yourself, check that Milo's own messages are skipped and that "from me" rows of the self chat come through as expected).
+- Milo by message: a Settings window field for the bot token and a "Connect your phone" button (now config.toml and a file), once the Settings window exists.
+- Milo by message: voice notes from the phone through Whisper, photos to the chat model as images (both are refused with a plain note now).
+- Milo by message: say which helper a phone question comes from, and let a helper's turn wait as long as a question on the phone does (now the harness timeout ends it first).
+- Milo by message: keep helpers from writing into ~/Milo/state and ~/Milo/secrets at all, not only putting them back while the owner is away.
+
 ## Later
 - Wake word ("hey Milo") with a small local model.
 - Rive or sprite animations instead of SwiftUI shapes.
