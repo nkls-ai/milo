@@ -181,14 +181,29 @@ final class FakeConnections: AppConnections {
 final class FakePermissions: PermissionSource {
     var states: [Permission: PermissionState] = [:]
     private(set) var checks = 0
-    private(set) var prompted: [Permission] = []
+    private(set) var registered: [Permission] = []
     private(set) var opened: [Permission] = []
+    private(set) var resets: [Permission] = []
+    /// Every call in order, e.g. "reset accessibility".
+    private(set) var calls: [String] = []
 
     func state(of permission: Permission) -> PermissionState {
         checks += 1
         return states[permission] ?? .granted
     }
 
-    func prompt(_ permission: Permission) { prompted.append(permission) }
-    func openSettings(_ permission: Permission) { opened.append(permission) }
+    func register(_ permission: Permission) {
+        registered.append(permission)
+        calls.append("register \(permission.rawValue)")
+    }
+
+    func openSettings(_ permission: Permission) {
+        opened.append(permission)
+        calls.append("open \(permission.rawValue)")
+    }
+
+    func reset(_ permission: Permission) {
+        resets.append(permission)
+        calls.append("reset \(permission.rawValue)")
+    }
 }

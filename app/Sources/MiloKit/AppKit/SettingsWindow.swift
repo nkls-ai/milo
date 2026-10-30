@@ -1,19 +1,24 @@
 import AppKit
+import Combine
 import SwiftUI
 
 /// The Settings window. Opened from the menu bar and from the Milo window; closing only hides it.
 public final class SettingsWindow: NSWindow {
     private let controller: MiloController
+    private var restyle: AnyCancellable?
 
     public init(controller: MiloController) {
         self.controller = controller
         super.init(contentRect: NSRect(x: 0, y: 0, width: 500, height: 640),
-                   styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: true)
+                   styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView], backing: .buffered, defer: true)
         title = "Milo Settings"
+        titlebarAppearsTransparent = true
         isReleasedWhenClosed = false
         contentView = NSHostingView(rootView: SettingsView(
             settings: controller.settingsModel, model: controller.model,
-            restart: { [weak controller] in controller?.restartBrain() }))
+            restart: { [weak controller] in controller?.restartBrain() })
+            .themed(by: controller.model))
+        restyle = controller.model.$character.sink { [weak self] in self?.backgroundColor = Theme.for($0).appKit.tint }
         if !setFrameUsingName(Self.frameName) { center() }
         setFrameAutosaveName(Self.frameName)
     }

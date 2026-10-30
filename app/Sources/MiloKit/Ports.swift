@@ -124,8 +124,12 @@ public enum PermissionState: Equatable, Sendable {
 /// Reads and asks for permissions. Every call is cheap enough to poll once a second.
 public protocol PermissionSource: AnyObject {
     func state(of permission: Permission) -> PermissionState
-    /// Shows macOS's own question. Only for permissions that can be `notAsked`.
-    func prompt(_ permission: Permission)
+    /// Puts Milo in the permission's list in System Settings, so he is there to switch on. Shows macOS's own
+    /// question where there is one and it wasn't asked yet.
+    func register(_ permission: Permission)
     /// Opens the page in System Settings where the user switches Milo on.
     func openSettings(_ permission: Permission)
+    /// Forgets Milo's own entry for the permission (`tccutil reset`), e.g. one that shows as on after a rebuild
+    /// but no longer counts. Only Milo's bundle id, never another app's.
+    func reset(_ permission: Permission)
 }
