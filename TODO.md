@@ -25,6 +25,10 @@
 - Looking: send the screenshot only when the window text isn't enough, to save tokens on text-heavy windows.
 - Milo window: persist a task when it starts, so one cut off by a brain restart still shows (now it is lost).
 
+- Voice barge-in (`[chat] voice_barge_in`): try it with the MacBook speakers in a real room, then with headphones, and tune `TalkDetector` on what it gets wrong. Turn it on by default once a few days of use show no false stops. It only listens while Milo speaks; talking while he thinks still needs the key.
+- First sound is about 1.5 to 2.5 s after the user's words, and most of it is OmniVoice's first piece (each diffusion step costs 200 to 500 ms even for a short piece, and the audio decoder another 0.3 s). Ideas not yet measured: start the chat turn on the committed words before the key comes up (needs the live transcript's final phrases), and a per-call cache of the voice reference's encoder pass.
+- OmniVoice garbled one 6-step render out of about 40 in a Whisper check ("Goodnight..."). If it happens in use, 8 steps when the GPU is free.
+
 ## Later
 - Wake word ("hey Milo") with a small local model.
 - Rive or sprite animations instead of SwiftUI shapes.
