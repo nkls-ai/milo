@@ -18,8 +18,8 @@ enum PipPalette {
 }
 
 /// Pip, the small lavender bird. Drawn in a 120 pt box with his body centred at (60, 66) and his feet on
-/// y = 107. Same inputs as `CharacterFigure` plus the flight. One clock drives breathing and the tuft:
-/// 15 Hz while he sits, faster only while he flies, paused while hidden.
+/// y = 107. Same inputs as `CharacterFigure` plus the flight. One clock drives breathing, the tuft and
+/// the pointing wing: 15 Hz, 40 Hz only while his wings flap, paused while hidden.
 struct PipFigure: View {
     var state: MiloState
     var emotion: Emotion
@@ -33,6 +33,10 @@ struct PipFigure: View {
     var time: Double?
     @State private var hops = 0
 
+    private var flapping: Bool {
+        if case .flying = flight { true } else { false }
+    }
+
     private var shown: Emotion {
         if asleep && !pose.hovered { return .sleepy }
         if pose.pleased && emotion == .neutral && state == .idle { return .happy }
@@ -44,7 +48,7 @@ struct PipFigure: View {
             if let time {
                 bird(time: time)
             } else {
-                TimelineView(.animation(minimumInterval: flight.airborne ? 1.0 / 40 : 1.0 / 15, paused: !floating)) {
+                TimelineView(.animation(minimumInterval: flapping ? 1.0 / 40 : 1.0 / 15, paused: !floating)) {
                     bird(time: $0.date.timeIntervalSinceReferenceDate)
                 }
             }
