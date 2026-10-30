@@ -10,6 +10,7 @@ from .core.events import (AppResponse, Command, ConfirmAnswer, ContextUpdate, Ed
                           Facts, ForgetFact, GetFacts, GetHistory, HandsResult, HandsStop, ListenCancel, ListenConfirm,
                           ListenStart, ListenStop, LookResult, Mute, StateChanged, StopHelper, TextInput, UiConfig,
                           WhatsThis)
+from .core.types import ListenMode
 from .services.app_bridge import AppBridge
 from .services.approvals import Approvals
 from .services.context import UserContext
@@ -65,6 +66,8 @@ class Brain:
     async def handle(self, command: Command) -> None:
         match command:
             case ListenStart(mode, tentative):
+                if mode is ListenMode.TALK:
+                    self._live_talk.prepare()  # a fresh conversation starts while the user speaks
                 self._listening.start(mode, tentative)
             case ListenConfirm():
                 self._listening.confirm()

@@ -16,6 +16,7 @@ BUILTIN = (
     "tts.say",
     "tts.omnivoice",
     "audio.sounddevice_io",
+    "audio.wav_file",
     "text.fillers",
     "text.plain",
     "connect.mac",

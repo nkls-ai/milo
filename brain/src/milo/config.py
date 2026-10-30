@@ -40,6 +40,10 @@ class ChatSettings:
     updates: str = "bubble"
     """How Milo tells you about work in progress: "quiet" (only the small birds and the window), "bubble"
     (short notes in the bubble) or "chatty" (he also says them). Results and questions always come through."""
+    voice_barge_in: bool = False
+    """Listen while Milo speaks, and let the user stop him by talking. Opens the mic whenever he speaks."""
+    backchannels: bool = True
+    """A short "hm" when the answer is slow to come, so silence never feels like Milo didn't hear."""
 
     def __post_init__(self):
         if self.updates not in UPDATES:

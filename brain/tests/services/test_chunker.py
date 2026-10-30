@@ -63,9 +63,18 @@ def test_a_boundary_a_little_past_the_budget_beats_a_mid_clause_cut():
     assert chunker.next(50) == "the fridge moves the heat from inside to outside,"
 
 
-def test_text_past_the_budget_without_a_boundary_cuts_on_a_space():
+def test_text_past_the_budget_waits_for_a_boundary_rather_than_cut_mid_clause():
     chunker = SpeechChunker()
-    chunker.add("Okay then, here you go, " + "word " * 30)
+    chunker.add("Okay then, here you go, just don't make me so smart I start giving opinions about ")
+    chunker.next()
+    assert chunker.next(45) is None, "a cut here would sound like Milo was cut off"
+    chunker.add("your bedtime. And")
+    assert chunker.next(45) == "just don't make me so smart I start giving opinions about your bedtime."
+
+
+def test_text_past_the_cap_without_a_boundary_cuts_on_a_space():
+    chunker = SpeechChunker()
+    chunker.add("Okay then, here you go, " + "word " * 50)
     chunker.next()
     piece = chunker.next(60)
     assert piece is not None and len(piece) <= 60 and piece.endswith("word")

@@ -93,6 +93,8 @@ async def _serve(runtime: Runtime) -> None:
     engines: dict[str, Warmup] = {
         "stt": (runtime.stt_executor, runtime.transcriber.warm),
         "tts": (runtime.tts_executor, runtime.voice.warm),
+        # Queued behind the voice on the one TTS thread: the "Hm." clips for slow replies, in his voice.
+        **({"backchannels": (runtime.tts_executor, runtime.backchannel.warm)} if runtime.backchannel else {}),
         # Starts the chat model's process with the system prompt now, saving 1-2 s on the first turn.
         "chat": runtime.live_talk.warm,
     }
@@ -103,6 +105,8 @@ async def _serve(runtime: Runtime) -> None:
     tasks = [warming] + ([asyncio.create_task(runtime.heartbeat.run())] if runtime.heartbeat else [])
     if memory is not None and memory.sleep is not None:
         tasks.append(asyncio.create_task(memory.sleep.run()))
+    if runtime.barge_in is not None:
+        tasks.append(asyncio.create_task(runtime.barge_in.run()))
     try:
         await runtime.server.serve_forever()
     finally:

@@ -129,6 +129,17 @@ class AudioOutput(Protocol):
 
 
 @runtime_checkable
+class PlaybackTap(Protocol):
+    """What an AudioOutput has actually played, with timestamps, so a listener can tell Milo's own voice in the
+    microphone from the user's (barge-in). Optional: outputs that can't say leave voice barge-in off."""
+
+    def played(self, since: float) -> tuple[int, list[tuple[float, Audio]]]:
+        """(sample rate, blocks) played from `since` on: each block is the time its first sample reached the
+        speaker, on the clock of AudioInput.started_at, and its samples."""
+        ...
+
+
+@runtime_checkable
 class LiveModel(Protocol):
     """A fast conversational model that streams its reply and keeps the conversation in memory."""
 

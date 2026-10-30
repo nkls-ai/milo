@@ -13,12 +13,14 @@ from typing import TYPE_CHECKING
 from .brain import Brain
 from .config import Config
 from .core.clock import SystemClock
-from .core.ports import Harness, LiveModel, Transcriber, Voice
+from .core.ports import Harness, LiveModel, PlaybackTap, Transcriber, Voice
 from .core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, EMBEDDERS, HARNESSES, LIVE_MODELS, TEXT_CLEANERS,
                             TRANSCRIBERS, VOICES, AdapterContext, ConfigError, Registry)
 from .core.types import LiveMode, ToolServer
 from .services.app_bridge import AppBridge, AppEyes, AppHands
 from .services.approvals import ActionPolicy, Approvals
+from .services.backchannel import Backchannel
+from .services.barge_in import BargeIn
 from .services.context import UserContext
 from .services.conversation import Conversation
 from .services.dictation import DictationService
@@ -66,6 +68,8 @@ class Runtime:
     hands_server: HandsSocketServer | None = None
     helpers: Orchestrator | None = None
     memory: MemoryRuntime | None = None
+    barge_in: BargeIn | None = None
+    backchannel: Backchannel | None = None
 
 
 @dataclass
@@ -137,6 +141,7 @@ def build(home: Path) -> Runtime:
     idle_reset_s = config.chat.conversation_idle_reset_s
     conversation = Conversation(harness, ledger, clock, idle_reset_s)
     speaker = Speaker(voice, output, ui, tts_executor)
+    backchannel = Backchannel(speaker, enabled=config.chat.backchannels)
     transcript_store = JsonlTranscript(workspace.transcript_path)
     if mem is not None:
         transcript_store = EpisodeTranscript(transcript_store, mem.memory.record, now=clock.now,
@@ -171,11 +176,21 @@ def build(home: Path) -> Runtime:
                            inert=untrusted)
     live_talk = LiveTalk(live_model, speaker, ui, context, clock, profile, reminders, ledger,
                          _persona(workspace.persona_path), idle_reset_s, helpers, transcript, eyes=eyes,
-                         approvals=approvals, memory=mem.turns if mem is not None else None)
+                         approvals=approvals, memory=mem.turns if mem is not None else None,
+                         backchannel=backchannel)
     helpers.on_result = live_talk.note
     updates.speak = live_talk.speak_update
     listening = Listening(mic, transcriber, stt_executor, ui, DictationService(cleaner, history, ui),
                           live_talk, context, LiveMode(config.dictation.stream))
+
+    barge_in = None
+    if config.chat.voice_barge_in:
+        if isinstance(output, PlaybackTap):
+            # A mic of its own, so the talk key's recording never has to wait for it.
+            barge_in = BargeIn(create(AUDIO_INPUTS, "audio"), output, transcriber, stt_executor, ui, live_talk,
+                               speaker, mic_busy=lambda: mic.active)
+        else:
+            log.warning("[chat] voice_barge_in needs an audio output that reports what it played; it is off")
 
     heartbeat = None
     if config.heartbeat.enabled:
@@ -189,7 +204,7 @@ def build(home: Path) -> Runtime:
                   bridge=bridge, hands=hands, screens=workspace.screens_dir, helpers=helpers,
                   memory=mem.memory if mem is not None else None)
     return Runtime(brain, server, heartbeat, transcriber, voice, stt_executor, tts_executor, harness,
-                   live_model, live_talk, tool_server, hands_server, helpers, mem)
+                   live_model, live_talk, tool_server, hands_server, helpers, mem, barge_in, backchannel)
 
 
 def _memory(config: Config, workspace, ctx: AdapterContext, clock, ui: UiState, harness: Harness, ledger,

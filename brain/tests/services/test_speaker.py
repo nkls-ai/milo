@@ -4,8 +4,13 @@ from milo.core.events import Bubble, EmotionChanged, Level, StateChanged
 from milo.core.types import Emotion, MiloState
 from milo.services.levels import throttled_levels
 from milo.services.speaker import SECONDS_PER_CHAR_WITHOUT_AUDIO
+from milo.services.speech_audio import CLAUSE_PAUSE_S, END_PAD_S, SENTENCE_PAUSE_S
 from tests.fakes import FakeAudioOutput, FakeVoice, RecordingSink
 from tests.services.stack import Stack, settle
+
+
+def samples(seconds: float) -> int:
+    return int(round(seconds * FakeVoice.sample_rate))
 
 
 def test_say_speaks_chunk_by_chunk_on_one_stream_with_a_growing_bubble():
@@ -19,7 +24,9 @@ def test_say_speaks_chunk_by_chunk_on_one_stream_with_a_growing_bubble():
     assert s.voice.spoken == ["Hello there, my good old friend.", "How are you?"]
     assert len(s.output.streams) == 1, "one stream per utterance, so chunks play without gaps"
     assert s.output.streams[0]["sample_rate"] == FakeVoice.sample_rate
-    assert s.output.fed == [10 * len("Hello there, my good old friend."), 10 * len("How are you?")]
+    assert s.output.fed == [10 * len("Hello there, my good old friend."),
+                            samples(SENTENCE_PAUSE_S) + 10 * len("How are you?"), samples(END_PAD_S)], \
+        "a sentence pause before the second piece, and room for the device to play out the last syllable"
     assert s.bubbles() == ["Hello there, my good old friend.", "Hello there, my good old friend. How are you?"]
     assert s.states() == [MiloState.SPEAKING, MiloState.IDLE]
     assert s.sink.of(EmotionChanged) == [EmotionChanged(Emotion.HAPPY)]
@@ -48,7 +55,9 @@ def test_an_utterance_speaks_text_as_it_arrives():
         await finishing
 
     asyncio.run(run())
-    assert len(s.output.streams) == 1 and len(s.output.fed) == 2
+    assert len(s.output.streams) == 1
+    assert s.output.fed == [10 * len("Oh wow, that is great,"), samples(CLAUSE_PAUSE_S) + 10 * len("really"),
+                            samples(END_PAD_S)], "a breath after the comma"
 
 
 def test_interrupt_stops_speech_and_drops_the_rest():
@@ -94,7 +103,8 @@ def test_tts_failure_still_shows_the_text_and_plays_silence_for_its_length():
     asyncio.run(run())
     assert s.bubbles() == ["Hi there, how are you.", "Hi there, how are you. Yo."]
     silence = lambda text: int(SECONDS_PER_CHAR_WITHOUT_AUDIO * len(text) * FakeVoice.sample_rate)
-    assert s.output.fed == [silence("Hi there, how are you."), silence("Yo.")]
+    assert s.output.fed == [silence("Hi there, how are you."), samples(SENTENCE_PAUSE_S) + silence("Yo."),
+                            samples(END_PAD_S)]
     assert s.states() == [MiloState.SPEAKING, MiloState.IDLE]
 
 
@@ -186,3 +196,66 @@ def test_interrupt_cancels_the_synthesis_in_flight():
 
     asyncio.run(run())
     assert s.voice.cancels == 1, "frees the TTS thread so the next reply needn't wait for this one"
+
+
+def test_hold_keeps_the_place_and_text_that_arrives_meanwhile():
+    s = Stack(output=FakeAudioOutput(block=True))
+
+    async def run():
+        utterance = s.speaker.utterance(Emotion.NEUTRAL)
+        utterance.add("One two three four five, ")
+        await settle()
+        s.speaker.hold()
+        assert s.output.interrupts == 1 and not utterance.done and utterance.held
+        utterance.add("six seven. ")
+        finishing = asyncio.create_task(utterance.finish())
+        await settle()
+        assert not finishing.done(), "a held utterance waits for resume() or interrupt()"
+        assert s.voice.spoken == ["One two three four five,"], "nothing synthesizes while held"
+        s.output.block = False
+        assert s.speaker.resume() and not s.speaker.held
+        assert await finishing is True
+
+    asyncio.run(run())
+    assert s.voice.spoken == ["One two three four five,", "One two three four five,", "six seven."]
+    assert len(s.output.streams) == 2, "a fresh stream after the hold"
+
+
+def test_an_utterance_that_starts_while_held_waits_too():
+    s = Stack()
+
+    async def run():
+        s.speaker.hold()
+        utterance = s.speaker.utterance(Emotion.HAPPY)
+        utterance.add("Here is the answer, all of it.")
+        finishing = asyncio.create_task(utterance.finish())
+        await settle()
+        assert s.voice.spoken == [] and not finishing.done()
+        s.speaker.resume()
+        assert await finishing is True
+
+    asyncio.run(run())
+    assert s.voice.spoken == ["Here is the answer, all of it."]
+
+
+def test_interrupt_while_held_drops_it_for_good():
+    s = Stack(output=FakeAudioOutput(block=True))
+
+    async def run():
+        speech = s.speaker.say("One two three four five, six.", Emotion.NEUTRAL)
+        await settle()
+        s.speaker.hold()
+        s.speaker.interrupt()
+        assert await speech is False
+        assert not s.speaker.resume(), "nothing left to go on with"
+
+    asyncio.run(run())
+
+
+def test_a_piece_cut_off_halfway_picks_up_at_its_last_sentence_or_clause():
+    from milo.services.speaker import _from_heard_part
+
+    text = "Owls turn their heads far. Their feathers are soft, so they fly in silence."
+    assert _from_heard_part(text, 0.1) == text
+    assert _from_heard_part(text, 0.5) == "Their feathers are soft, so they fly in silence."
+    assert _from_heard_part(text, 0.9) == "so they fly in silence."

@@ -23,7 +23,8 @@ log = logging.getLogger("milo.listening")
 class Listening:
     """Push-to-talk: record while the key is held, then transcribe and hand the text to dictation or live talk.
 
-    The talk key is also barge-in: pressing it while Milo thinks or speaks stops him at once.
+    The talk key is also barge-in: pressing it while Milo thinks or speaks stops him at once. He keeps his
+    place (LiveTalk.hold): if the recording turns out empty or is cancelled, he goes on where he was.
 
     A tentative start records without showing anything (no state, no levels, no barge-in) until confirm()
     or stop(), because the key press may still turn out to be a tap. `live` transcribes while recording.
@@ -47,15 +48,15 @@ class Listening:
     def start(self, mode: ListenMode, tentative: bool = False) -> None:
         if self._mic.active:
             return
-        # Barge-in. rest=False: LISTENING comes next, no flash of IDLE in between.
-        stopped = not tentative and mode is ListenMode.TALK and self._live_talk.interrupt(rest=False)
+        # Barge-in. LISTENING comes next, no flash of IDLE in between.
+        stopped = not tentative and mode is ListenMode.TALK and self._live_talk.hold()
         levels = throttled_levels(self._ui, asyncio.get_running_loop())
         try:
             self._mic.start(lambda value: self._shown and levels(value))
         except Exception as e:
             log.exception("mic failed")
             self._ui.emit(Status(f"Mic unavailable: {e}"))
-            if stopped:
+            if stopped and not self._live_talk.resume():
                 self._ui.rest()
             return
         self._mode = mode
@@ -68,7 +69,7 @@ class Listening:
         if not self._mic.active or self._shown:
             return
         if self._mode is ListenMode.TALK:
-            self._live_talk.interrupt(rest=False)
+            self._live_talk.hold()
         self._show()
 
     def _show(self) -> None:
@@ -88,7 +89,7 @@ class Listening:
         mode, self._mode = self._mode, None
         live, self._live = self._live, None
         if not self._shown and mode is ListenMode.TALK:
-            self._live_talk.interrupt(rest=False)  # released before the confirm arrived: still a real hold
+            self._live_talk.hold()  # released before the confirm arrived: still a real hold
         self._shown = False
         audio = self._mic.stop()
         self._ui.set_state(MiloState.TRANSCRIBING)
@@ -107,6 +108,8 @@ class Listening:
             self._ui.emit(Status("I couldn't transcribe that."))
             if typed is not None:
                 typed.finish(self._context.app)
+            if mode is ListenMode.TALK:
+                self._live_talk.interrupt(rest=False)
             self._ui.rest()
             return
         log.info("stt %.2fs audio in %.2fs: %s", len(audio) / STT_SAMPLE_RATE, time.monotonic() - started,
@@ -121,7 +124,7 @@ class Listening:
             self._ui.rest()
         elif text:
             self._live_talk.start(text)
-        else:
+        elif not self._live_talk.resume():  # nothing said: go on with what was cut off
             self._ui.rest()
 
     def cancel(self) -> None:
@@ -133,7 +136,8 @@ class Listening:
                 live.typed.finish(self._context.app)
         if self._mic.active:
             self._mic.stop()
-        self._mode = None
+        mode, self._mode = self._mode, None
         shown, self._shown = self._shown, False
-        if shown:
+        resumed = mode is ListenMode.TALK and self._live_talk.resume()  # e.g. right ⌥ was for typing an @
+        if shown and not resumed:
             self._ui.rest()
