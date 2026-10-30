@@ -95,6 +95,46 @@ def test_memory_that_is_too_slow_is_skipped():
     asyncio.run(run())
 
 
+def test_a_recall_still_running_on_the_memory_thread_is_not_queued_behind(caplog):
+    # M6: the memory thread is real here. A recall that timed out keeps the thread; the next turn mustn't wait
+    # out its own timeout behind it (each turn's reply would start that much later, for no memory anyway).
+    import time
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    s = stack()
+    s.memory._recall_timeout_s = 0.3
+    release, calls = threading.Event(), []
+    real = s.memory._recaller.recall
+
+    def stuck_once(turn, context, budget):
+        calls.append(turn)
+        if len(calls) == 1:
+            release.wait(5)
+            raise RuntimeError("the embedder was paged out")
+        return real(turn, context, budget)
+
+    s.memory._recaller.recall = stuck_once
+
+    async def run():
+        s.memory._executor = ThreadPoolExecutor(1)
+        first = await s.memory.recall("Anna", TurnContext(s.clock.now()))
+        started = time.monotonic()
+        second = await s.memory.recall("Anna", TurnContext(s.clock.now()))
+        assert time.monotonic() - started < 0.1, "the second turn didn't wait for the stuck one"
+        release.set()
+        await asyncio.sleep(0.1)
+        third = await s.memory.recall("Anna", TurnContext(s.clock.now()))
+        s.memory._executor.shutdown(wait=True)
+        return first, second, third
+
+    first, second, third = asyncio.run(run())
+    assert first.empty and second.empty
+    assert calls == ["Anna", "Anna"], "the second turn queued nothing behind the stuck one"
+    assert [f.text for f in third.facts if f.text == ANNA] == [ANNA], "once it ends, recall works again"
+    assert "still running" in caplog.text
+
+
 def test_turns_and_tasks_become_episode_stubs():
     s = stack()
     store = MemoryTranscript()

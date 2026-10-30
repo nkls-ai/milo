@@ -81,6 +81,8 @@ class Memory:
         self._on_facts_changed = on_facts_changed
         self._recall_timeout_s = recall_timeout_s
         self._indexing: asyncio.Task | None = None
+        self._recalling: asyncio.Future | None = None
+        """The last recall on the memory thread. One that timed out still runs there; the next waits for none."""
         self._again = False
         self._names: frozenset[str] | None = None
         self._fact_ids: frozenset[str] | None = None
@@ -103,13 +105,18 @@ class Memory:
         """What `turn` should remember. Never raises; an empty Recall if memory isn't ready or takes too long."""
         if not self.ready.is_set():
             return Recall()
+        if self._recalling is not None and not self._recalling.done():
+            log.warning("the last recall is still running; this turn goes without memory")
+            return Recall()
         budget = self.recall_tokens if budget_tokens is None else budget_tokens
         loop = asyncio.get_running_loop()
         started = self._clock.monotonic()
+        job = loop.run_in_executor(self._executor, self._recaller.recall, turn, context, budget)
+        job.add_done_callback(_quiet)
+        self._recalling = job
         try:
-            recall = await asyncio.wait_for(
-                loop.run_in_executor(self._executor, self._recaller.recall, turn, context, budget),
-                self._recall_timeout_s)
+            # Shielded: cancelling the wait doesn't stop the thread, so `job` must say when it really ends.
+            recall = await asyncio.wait_for(asyncio.shield(job), self._recall_timeout_s)
         except TimeoutError:
             log.warning("recall took longer than %.0f ms; this turn goes without memory", self._recall_timeout_s * 1000)
             return Recall()
@@ -312,3 +319,9 @@ _NOT_NAMES = frozenset({"The", "User", "User's", "Users", "Der", "Die", "Das", "
                         "They", "Their", "Sie", "Ihr", "Ihre", "Sein", "Seine", "January", "February", "March",
                         "April", "May", "June", "July", "August", "September", "October", "November", "December",
                         "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"})
+
+
+def _quiet(job: asyncio.Future) -> None:
+    """A recall that ended after its turn gave up: its error was logged by nobody, so log it here."""
+    if not job.cancelled() and job.exception() is not None:
+        log.debug("a late recall failed: %s", job.exception())
