@@ -9,6 +9,7 @@ type MiloEl = HTMLElement & {
   extra: Record<string, number>;
   flying: boolean;
   blinking: boolean;
+  life: boolean;
   play(name: string): Promise<void>;
   lookAt(x: number | null, y?: number): void;
 };
@@ -56,7 +57,7 @@ export function talk(ms: number) {
   const step = () => {
     if (id !== speaking) return;
     if (performance.now() > end) { char.extra = {}; return; }
-    char.extra = { mouth: 0.15 + Math.random() * 0.6 };
+    char.extra = { beak: 0.15 + Math.random() * 0.6 };
     mouthTimer = window.setTimeout(step, 85 + Math.random() * 60);
   };
   step();
@@ -125,9 +126,8 @@ function place_() {
     char.flying = true;
     if (Math.abs(dx) > 0.5) char.extra = { turn: clamp(dx / 30, -0.5, 0.5) };
   } else if (wasFlying) {
-    char.flying = false;
+    char.flying = false; // he lands with a squash and a bounce of the tail
     char.extra = {};
-    if (!reduce.matches) char.play('hop');
   }
   wasFlying = flying;
   lastX = x;
@@ -299,7 +299,7 @@ if (pricing) {
     const r = pricing.getBoundingClientRect();
     char.lookAt(r.left + r.width / 2, r.top + r.height / 2);
     lastPointer = performance.now();
-    setTimeout(() => say('Ah. The part with the numbers.', 3400), 350);
+    setTimeout(() => { char.play('fluff'); say('Ah. The part with the numbers.', 3400); }, 350);
   }, { threshold: 0.4 });
   io.observe(pricing);
 }
@@ -310,3 +310,5 @@ addEventListener('keydown', (e) => {
 });
 
 if (!finePointer.matches) char.lookAt(null);
+// now and then, while nothing happens, a glance, a bob, a tail flick or a tug at his scarf
+char.life = true;

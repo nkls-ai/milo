@@ -120,7 +120,6 @@ const jobs = [
         j.el.classList.remove('is-waiting');
         j.el.classList.add('is-working');
         j.bird.pose = 'busy';
-        j.bird.play('toss');
       }
       j.step.textContent = plan.steps[s];
       j.bar.style.width = `${((s + 1) / (n + 1)) * 100}%`;
@@ -132,7 +131,6 @@ const jobs = [
     j.step.textContent = plan.done;
     j.bar.style.width = '100%';
     j.bird.pose = 'happy';
-    j.bird.play('hop');
   }
 
   demo(root, async (ctx) => {

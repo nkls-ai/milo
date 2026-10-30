@@ -95,7 +95,7 @@ export function chatter(el: MiloEl, ms: number) {
   const end = performance.now() + ms;
   const step = () => {
     if (performance.now() > end) { el.extra = {}; return; }
-    el.extra = { mouth: 0.15 + Math.random() * 0.6 };
+    el.extra = { beak: 0.15 + Math.random() * 0.6 };
     setTimeout(step, 85 + Math.random() * 60);
   };
   step();

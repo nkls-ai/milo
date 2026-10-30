@@ -175,8 +175,8 @@ const rows = [
     m.pose = 'idle';
     await ctx.wait(500);
     step('Opening your spreadsheet.');
-    await m.play('toss');
-    m.pose = 'busy';
+    m.pose = 'busy'; // "on it": he throws his scarf back
+    await ctx.wait(450);
     chatter(m, 700);
     await ctx.wait(500);
     step('Adding up each row into column D.');

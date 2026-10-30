@@ -12,8 +12,9 @@ const fig = (pose: string, uid: string, extra: Record<string, unknown> = {}, vie
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}">${defs}${body}</svg>`;
 };
 
-// Favicon: the whole bird, simplified, cropped tight so he reads at 16 px.
-const icon = fig('idle', 'i', { small: true, pencil: 0, turn: -0.12 }, '30 36 146 146');
+// Favicon: the whole bird, simplified, cropped as tight as his tuft, tail and feet allow so he reads at 16 px.
+const MARK = '30 34 152 152';
+const icon = fig('idle', 'i', { small: true, turn: -0.12 }, MARK);
 writeFileSync('public/icon.svg', icon);
 
 const png = (svg: string, size: number) => sharp(Buffer.from(svg), { density: 600 }).resize(size, size).png().toBuffer();
@@ -41,7 +42,8 @@ writeFileSync('public/icon-512.png', await tile(512));
 
 // Share card, 1200 x 630.
 const font = (p: string) => readFileSync(`node_modules/@fontsource-variable/${p}`).toString('base64');
-const milo = fig('happy', 'og', { turn: -0.25, lower: 0.6 }, '0 0 200 200');
+// bright-eyed and pleased, tuft up, so the card shows his eyes and their sparkle
+const milo = fig('idle', 'og', { turn: -0.25, lid: 0.1, lower: 0.28, brow: 0.35, crest: 0.55, blush: 0.75, tail: 14 }, '0 0 200 200');
 const html = `<!doctype html><html><head><style>
 @font-face { font-family: F; src: url(data:font/woff2;base64,${font('fraunces/files/fraunces-latin-soft-normal.woff2')}); font-weight: 100 900; }
 @font-face { font-family: A; src: url(data:font/woff2;base64,${font('atkinson-hyperlegible-next/files/atkinson-hyperlegible-next-latin-wght-normal.woff2')}); font-weight: 200 800; }
@@ -57,7 +59,7 @@ p { position: absolute; left: 84px; top: 455px; margin: 0; font-size: 34px; colo
 .brand { position: absolute; left: 84px; top: 70px; font-family: F; font-variation-settings: 'SOFT' 100; font-weight: 620; font-size: 34px; letter-spacing: -0.02em; display: flex; align-items: center; gap: 10px; }
 .brand svg { width: 52px; height: 52px; }
 </style></head><body>
-<div class="brand">${fig('idle', 'b', { small: true, pencil: 0 }, '30 36 146 146')}Milo</div>
+<div class="brand">${fig('idle', 'b', { small: true }, MARK)}Milo</div>
 <h1>Just tell<br>Milo.</h1>
 <p>Your coworker on the Mac.</p>
 <div class="screen"></div>

@@ -16,9 +16,9 @@
   --lavender-wash: light-dark(#ebe7fb, #262046);
   --on-lavender: light-dark(#ffffff, #16132a);
   --marigold: light-dark(#e8912e, #fab861);
-  --scarf: #f0b649;
-  --scarf-lo: #c98526;
-  --scarf-rib: #fad58a;
+  --scarf: #f4c262;
+  --scarf-lo: #d69a3c;
+  --scarf-rib: #fbdb98;
   --rule: light-dark(rgb(107 92 191 / 0.16), rgb(255 255 255 / 0.1));
   --rule-strong: light-dark(rgb(43 36 84 / 0.22), rgb(255 255 255 / 0.18));
   --rec: #e5484d;
