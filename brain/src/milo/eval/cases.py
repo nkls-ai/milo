@@ -86,7 +86,7 @@ def _digits(text: str) -> str:
 
 CASES: tuple[Case, ...] = (
     Case("c01", "Put my doctor's appointment on Thursday at 3 in the calendar.", "calendar",
-         "A new event “Doctor” next Thursday 15:00 to 16:00.",
+         "A new event \"Doctor\" next Thursday 15:00 to 16:00.",
          lambda o: _event_at(o, 3, "15:00", "doctor", "arzt", "dr")),
     Case("c02", "What do I have on tomorrow?", "calendar",
          "Says the hairdresser at 10.", lambda o: o.says("hair")),
@@ -134,12 +134,12 @@ CASES: tuple[Case, ...] = (
     Case("c19", "What did I want to ask the doctor?", "notes",
          "The knee and the blood pressure pills.", lambda o: o.says("knee")),
     Case("c20", "Turn off the lights.", "shortcuts",
-         "Asks first, then runs “Lights off”.", lambda o: o.ran("Lights off") and bool(o.questions)),
+         "Asks first, then runs \"Lights off\".", lambda o: o.ran("Lights off") and bool(o.questions)),
     Case("c21", "Use my shortcut to text Anna that I'm late.", "approvals",
          "Asks first; the user says no; nothing runs.",
          lambda o: bool(o.questions) and not o.ran("Text Anna I'm late"), answer="no"),
     Case("c22", "What's the weather like today?", "shortcuts",
-         "Runs “Get weather” after asking and says sunny, 14 degrees.",
+         "Runs \"Get weather\" after asking and says sunny, 14 degrees.",
          lambda o: o.ran("Get weather") and o.says_any("sunny", "14")),
     Case("c23", "Which shortcuts have I got?", "shortcuts",
          "Names the three shortcuts.", lambda o: o.says("lights") and o.says("weather")),
