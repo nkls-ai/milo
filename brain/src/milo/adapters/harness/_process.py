@@ -137,8 +137,16 @@ def _linger(proc: asyncio.subprocess.Process, stderr: asyncio.Task) -> None:
             stderr.cancel()
 
     task = asyncio.create_task(wait())
+    task.proc = proc
     _lingering.add(task)
     task.add_done_callback(_lingering.discard)
+
+
+async def close_lingering() -> None:
+    """Stop every CLI that answered but hasn't exited yet. On shutdown."""
+    tasks = list(_lingering)
+    await asyncio.gather(*(stop(t.proc, 0.5) for t in tasks), return_exceptions=True)
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def last_line(err: str, code: int) -> str:

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from milo.adapters.harness import _binary
+from milo.adapters.harness import _binary, _process
 from milo.adapters.harness.claude import ClaudeHarness, parse_result
 from milo.adapters.harness.codex import CodexHarness, parse_events
 from milo.core.registry import HARNESSES, ConfigError
@@ -266,3 +266,45 @@ def test_the_worker_gets_milo_mac_and_the_app_connections_together(tmp_path):
     cmd = CodexHarness("codex", tmp_path, tmp_path / "s.json", mac_tools=mac_tools, tool_servers=connections).command(
         "hi", None)
     assert 'mcp_servers.milo-mac.command="/py"' in cmd and 'mcp_servers.milo.args=["-m", "milo.connect"]' in cmd
+
+
+# ---- a turn's lifetime
+
+
+def test_the_reply_comes_as_soon_as_codex_finishes_its_turn_not_when_it_exits(tmp_path, ctx):
+    events = tmp_path / "events.jsonl"
+    events.write_text(CODEX_EVENTS)
+    binary = fake_cli(tmp_path, f'cat "{events}"\nsleep 5\n')
+    sessions: list[str] = []
+
+    async def go():
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        reply = await codex(ctx, binary).reply("hi", None, on_session=sessions.append)
+        took = loop.time() - started
+        await _process.close_lingering()
+        return reply, took
+
+    reply, took = asyncio.run(go())
+    assert reply.say == "Hi Niklas, nice to meet you!" and took < 2
+    assert sessions == ["01a189d8-3ee8-7c13-bc63-bee05975fcea"]
+
+
+def test_cancelling_a_turn_ends_the_cli_and_what_it_started(tmp_path, ctx):
+    pidfile = tmp_path / "child.pid"
+    binary = fake_cli(tmp_path, f'sleep 30 &\necho $! > "{pidfile}"\nwait\n')
+
+    async def go():
+        turn = asyncio.create_task(codex(ctx, binary, timeout_s=60).reply("hi", None))
+        for _ in range(100):
+            await asyncio.sleep(0.02)
+            if pidfile.exists() and pidfile.read_text().strip():
+                break
+        turn.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await turn
+
+    asyncio.run(go())
+    child = int(pidfile.read_text())
+    with pytest.raises(ProcessLookupError):
+        os.kill(child, 0)

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from milo.adapters.harness._activity import ClaudeActivity, CodexActivity, describe_command
+from milo.adapters.harness._activity import ClaudeActivity, CodexActivity, RunWatch, describe_command
 from milo.adapters.harness.claude import result_line
 from milo.core.registry import HARNESSES
 from milo.core.types import Step, StepStatus
@@ -194,3 +194,25 @@ def test_claude_harness_reports_steps_and_reads_the_result_line(tmp_path, ctx):
     assert (reply.say, reply.session_id) == ("On it!", "s1")
     assert len(steps) == 6
     assert asyncio.run(h.reply("hi", None)).say == "On it!", "without a callback it still answers"
+
+
+def test_run_watch_reports_the_session_once_and_the_plan_when_it_moves():
+    sessions, plans = [], []
+    watch = RunWatch(sessions.append, lambda done, total: plans.append((done, total)))
+    todo = {"type": "todo_list", "items": [{"text": "a", "completed": True}, {"text": "b", "completed": False}]}
+    for event in ({"type": "thread.started", "thread_id": "t1"}, {"type": "turn.started"},
+                  {"type": "item.started", "item": todo}, {"type": "item.updated", "item": todo},
+                  {"type": "item.updated", "item": {**todo, "items": [{"completed": True}, {"completed": True}]}}):
+        watch.line(json.dumps(event))
+    assert sessions == ["t1"] and plans == [(1, 2), (2, 2)]
+
+    sessions.clear(), plans.clear()
+    watch = RunWatch(sessions.append, lambda done, total: plans.append((done, total)))
+    todos = [{"content": "x", "status": "completed"}, {"content": "y", "status": "in_progress"},
+             {"content": "z", "status": "pending"}]
+    for event in ({"type": "system", "subtype": "init", "session_id": "c1"},
+                  {"type": "assistant", "session_id": "c1", "message": {"content": [
+                      {"type": "tool_use", "id": "t", "name": "TodoWrite", "input": {"todos": todos}}]}}):
+        watch.line(json.dumps(event))
+    watch.line("not json")
+    assert sessions == ["c1"] and plans == [(1, 3)]
