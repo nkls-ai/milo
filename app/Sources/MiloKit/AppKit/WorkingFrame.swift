@@ -9,7 +9,9 @@ public final class WorkingFrame {
     private var subscription: AnyCancellable?
 
     public init(model: MiloModel) {
-        subscription = model.$handsActive.removeDuplicates().receive(on: DispatchQueue.main).sink { [weak self] on in
+        // Only while Milo borrows the real mouse or keyboard: then any touch stops him, so the whole screen
+        // says so. Background work shows the per-window outline instead (WorkingOutline).
+        subscription = model.$handsBorrowed.removeDuplicates().receive(on: DispatchQueue.main).sink { [weak self] on in
             on ? self?.show() : self?.hide()
         }
     }
@@ -48,7 +50,7 @@ struct WorkingFrameView: View {
                               lineWidth: 5)
                 .opacity(glow ? 0.85 : 0.45)
                 .blur(radius: 1.5)
-            Text("Milo is working · move the mouse or press esc to stop")
+            Text("Milo is borrowing your mouse · move it or press esc to take over")
                 .font(.system(size: 12, weight: .medium))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 5)
