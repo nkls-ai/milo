@@ -42,6 +42,8 @@ class MlxE5:
 
     name = "mlx_e5"
     dimensions = 384
+    relevant_similarity = 0.82
+    """e5 puts unrelated sentences near 0.75 and related ones above 0.8 (measured on the recall eval)."""
 
     def __init__(self, model: str = MlxE5Options.model, *, revision: str = "main", device: str = "gpu",
                  quantize_table: bool = True, path: Path | None = None):

@@ -216,6 +216,17 @@ class AppRequest(Event):
     args: dict
 
 
+@dataclass(frozen=True)
+class Facts(Event):
+    """What Milo knows, for the "What Milo knows" screen: every current fact as {id, text, topic, since, pinned}.
+
+    Sent on `get_facts` and whenever a fact is added, edited or forgotten.
+    """
+
+    type: ClassVar[str] = "facts"
+    facts: list[dict]
+
+
 # ---- app -> brain
 
 
@@ -340,6 +351,30 @@ class AppResponse(Command):
     error: str = ""
 
 
+@dataclass(frozen=True)
+class GetFacts(Command):
+    """The "What Milo knows" screen opened: send `facts`."""
+
+    type: ClassVar[str] = "get_facts"
+
+
+@dataclass(frozen=True)
+class ForgetFact(Command):
+    """The user pressed Forget on fact `id`."""
+
+    type: ClassVar[str] = "forget_fact"
+    id: str
+
+
+@dataclass(frozen=True)
+class EditFact(Command):
+    """The user rewrote fact `id` as `text`."""
+
+    type: ClassVar[str] = "edit_fact"
+    id: str
+    text: str
+
+
 def parse_command(raw: object) -> Command:
     if not isinstance(raw, dict):
         raise ProtocolError("message must be a JSON object")
@@ -384,6 +419,19 @@ def parse_command(raw: object) -> Command:
                 return ConfirmAnswer(str(raw["id"]), raw["yes"])
             case "app_response":
                 return AppResponse(str(raw["id"]), raw["ok"] is True, raw.get("result"), str(raw.get("error") or ""))
+            case "get_facts":
+                return GetFacts()
+            case "forget_fact":
+                return ForgetFact(_required(raw, "id"))
+            case "edit_fact":
+                return EditFact(_required(raw, "id"), _required(raw, "text"))
     except (KeyError, TypeError, ValueError) as e:
         raise ProtocolError(f"bad {kind} message: {e}") from None
     raise ProtocolError(f"unknown message type {kind!r}")
+
+
+def _required(raw: dict, key: str) -> str:
+    value = " ".join(str(raw[key]).split())
+    if not value:
+        raise ProtocolError(f"{key} must not be empty")
+    return value

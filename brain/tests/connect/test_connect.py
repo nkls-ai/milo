@@ -315,3 +315,40 @@ def test_questions_name_every_recipient_and_the_shortcut_input(home):
         "Write a draft to Anna <anna@example.com>, boss@example.com? It stays in Mail until you send it."
     ok, text = call(server, "mail_draft", {"to": ["anna@example.com\nevil@example.com"], "body": "x"})
     assert not ok and text == "each entry of to must be one line"
+
+
+class MemoryBrain(FakeBrain):
+    """Also answers the memory ops, the way the brain's MemoryRequests would."""
+
+    def __init__(self):
+        super().__init__()
+        self.requests: list[dict] = []
+
+    def request(self, body: dict):
+        self.requests.append(body)
+        if body["op"] == "memory.search":
+            return {"results": [{"id": "f1", "kind": "fact", "text": "Anna is the user's sister."}]}
+        if body["op"] == "memory.forget":
+            raise ToolError("The user said no, so it stays.")
+        return {"remembered": body["text"]}
+
+
+def test_memory_tools_go_to_the_brain_which_asks_itself(home):
+    from milo.connect.memory_tools import RemoteMemory
+
+    brain = MemoryBrain()
+    box = Toolbox(_fake({}, AdapterContext(home, home / "state", FakeClock())), brain, RemoteMemory(brain))
+    server = mcp_server(box)
+    tools = {t["name"]: t for t in rpc(server, "tools/list")["result"]["tools"]}
+    assert {"memory_search", "memory_remember", "memory_forget"} <= set(tools)
+    assert tools["memory_search"]["annotations"]["readOnlyHint"]
+    assert "memory_search" in rpc(server, "initialize")["result"]["instructions"]
+    assert call(server, "memory_search", {"query": "Anna", "limit": 99}) == (
+        True, {"results": [{"id": "f1", "kind": "fact", "text": "Anna is the user's sister."}]})
+    assert brain.requests[0] == {"op": "memory.search", "query": "Anna", "limit": 30}
+    assert call(server, "memory_remember", {"text": "Anna moved.", "topic": "people"})[0]
+    assert call(server, "memory_forget", {"id": "f1"}) == (False, "The user said no, so it stays.")
+    assert not call(server, "memory_remember", {"text": "x", "topic": "gossip"})[0]
+    assert brain.asked == [], "the brain asks the user itself; the toolbox doesn't approve memory tools"
+    plain = {t["name"] for t in rpc(mcp_server(toolbox(home)), "tools/list")["result"]["tools"]}
+    assert not plain & {"memory_search"}

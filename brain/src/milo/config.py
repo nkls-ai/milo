@@ -19,7 +19,7 @@ log = logging.getLogger("milo.config")
 KEY_NAMES = ("fn", "right_option", "right_command", "right_control")
 CHARACTERS = ("pip", "classic")
 PLUGGABLE = ("chat", "harness", "stt", "tts", "audio", "dictation", "connections")
-SECTIONS = (*PLUGGABLE, "ui", "heartbeat", "hands", "approvals", "logging")
+SECTIONS = (*PLUGGABLE, "ui", "heartbeat", "hands", "approvals", "logging", "memory")
 _COMBO = re.compile(r"^((ctrl|control|option|alt|shift|cmd|command)\+)+[a-z0-9]+$|^f([1-9]|1[0-9])$")
 
 # `use` when a section leaves it out. Lets configs written before a section existed keep working.
@@ -135,6 +135,28 @@ class AudioSettings:
     pass
 
 
+@dataclass(frozen=True)
+class MemorySettings:
+    enabled: bool = True
+    """Remember conversations, tasks and facts, and recall what matters with each turn."""
+    recall_tokens: int = 800
+    """How much memory goes along with each turn, at most (about 4 characters a token)."""
+    embedder: str = "mlx_e5"
+    """What turns text into numbers for search: "mlx_e5" (a small model, 140 MB) or "hash" (no model, words only)."""
+    dictations: bool = False
+    """Also remember what you dictate into other apps."""
+    consolidate: bool = True
+    """Once a night, while the Mac is idle and plugged in, summarize the day and update what Milo knows."""
+    consolidate_calls_per_day: int = 2
+    """Hard cap on worker calls for that. 0 turns it off."""
+
+    def __post_init__(self):
+        if not 0 <= self.recall_tokens <= 4000:
+            raise ConfigError("[memory] recall_tokens must be between 0 and 4000")
+        if self.consolidate_calls_per_day < 0:
+            raise ConfigError("[memory] consolidate_calls_per_day can't be negative")
+
+
 _PLUGGABLE_SETTINGS: dict[str, type] = {
     "chat": ChatSettings, "harness": HarnessSettings, "stt": SttSettings, "tts": TtsSettings,
     "audio": AudioSettings, "dictation": DictationSettings, "connections": ConnectionSettings,
@@ -167,6 +189,7 @@ class Config:
         heartbeat = {k: v for k, v in raw.get("heartbeat", {}).items() if k == "enabled"}
         self.heartbeat = _typed(HeartbeatSettings(**heartbeat), "heartbeat")
         self.hands = _typed(options_from(HandsSettings, _current(raw.get("hands", {}), "hands"), "hands"), "hands")
+        self.memory: MemorySettings = _pluggable_settings(MemorySettings, raw.get("memory", {}), "memory")
 
     @classmethod
     def load(cls, path: Path) -> Config:
@@ -192,6 +215,14 @@ class Config:
 
     def section(self, name: str) -> dict[str, Any]:
         return self._raw.get(name, {})
+
+    def embedder(self) -> tuple[str, dict[str, Any]]:
+        """[memory] embedder and its `[memory.<name>]` table."""
+        name = self.memory.embedder
+        options = self.section("memory").get(name, {})
+        if not isinstance(options, dict):
+            raise ConfigError(f"[memory.{name}] must be a table")
+        return name, options
 
 
 def _pluggable_settings(cls: type, table: Mapping[str, Any], section: str):

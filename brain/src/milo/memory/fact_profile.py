@@ -18,6 +18,7 @@ from pathlib import Path
 from milo.core.memory import TOPIC_TITLES, TOPICS, Fact, new_id
 from milo.core.ports import Clock
 
+from . import jsonl
 from .facts import JsonlFactStore
 
 log = logging.getLogger(__name__)
@@ -198,6 +199,7 @@ def migrate(profile: Path, facts: JsonlFactStore, clock: Clock) -> int:
         backup = profile.with_name(BACKUP)
         if not backup.exists():
             shutil.copy2(profile, backup)
+            os.chmod(backup, 0o600)
         when = datetime.fromtimestamp(profile.stat().st_mtime)
         seen: set[str] = set()
         for topic, text in parse(profile.read_text(encoding="utf-8", errors="replace")):
@@ -213,7 +215,4 @@ def migrate(profile: Path, facts: JsonlFactStore, clock: Clock) -> int:
 
 
 def _write_atomic(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
+    jsonl.write_private(path, text)

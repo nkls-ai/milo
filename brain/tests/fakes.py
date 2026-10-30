@@ -425,3 +425,55 @@ class MemoryFactStore:
 
     def get(self, id: str):
         return self.facts.get(id)
+
+
+class FakeMemoryIndex:
+    """MemoryIndex over a dict: words shared with the query make a hit. refresh() follows the fake logs."""
+
+    def __init__(self, facts=None, episodes=None):
+        self.items: dict = {}
+        self.facts = facts
+        self.episodes = episodes
+        self.searches: list[str] = []
+
+    def upsert(self, items) -> None:
+        for item in items:
+            self.items[item.id] = item
+
+    def remove(self, ids) -> None:
+        for id in ids:
+            self.items.pop(id, None)
+
+    def search(self, query, *, kinds=(), since=None, until=None, limit=20) -> list:
+        from milo.core.memory import Hit
+        from milo.memory.index import terms
+
+        self.searches.append(query)
+        words = set(terms(query))
+        found = []
+        for item in self.items.values():
+            if (kinds and item.kind not in kinds) or (since and item.at < since) or (until and item.at >= until):
+                continue
+            shared = len(words & set(terms(item.text)))
+            if shared or since is not None:
+                found.append((shared, item))
+        found.sort(key=lambda x: -x[0])
+        return [Hit(item, 1 / (60 + rank), rank if shared else None, None, 0.0)
+                for rank, (shared, item) in enumerate(found[:limit])]
+
+    def rebuild(self) -> None:
+        self.items.clear()
+        self.refresh()
+
+    def refresh(self, limit=None) -> int:
+        from datetime import datetime
+
+        from milo.core.memory import IndexItem
+
+        want = {}
+        if self.facts is not None:
+            want |= {f.id: IndexItem.of_fact(f) for f in self.facts.current()}
+        if self.episodes is not None:
+            want |= {e.id: IndexItem.of_episode(e) for e in self.episodes.between(datetime.min, datetime.max)}
+        self.items = want
+        return 0  # all at once, so it is up to date after one call

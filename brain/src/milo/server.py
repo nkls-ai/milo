@@ -90,13 +90,19 @@ async def _serve(runtime: Runtime) -> None:
     if runtime.hands_server is not None:
         await runtime.hands_server.start()
     log.info("brain up (chat=%s, harness=%s)", runtime.live_model.name, runtime.harness.name)
-    warming = asyncio.create_task(_warm_all({
+    engines: dict[str, Warmup] = {
         "stt": (runtime.stt_executor, runtime.transcriber.warm),
         "tts": (runtime.tts_executor, runtime.voice.warm),
         # Starts the chat model's process with the system prompt now, saving 1-2 s on the first turn.
         "chat": runtime.live_talk.warm,
-    }))
+    }
+    memory = runtime.memory
+    if memory is not None:
+        engines["memory"] = memory.memory.warm  # the embedder on its own thread, then the index catches up
+    warming = asyncio.create_task(_warm_all(engines))
     tasks = [warming] + ([asyncio.create_task(runtime.heartbeat.run())] if runtime.heartbeat else [])
+    if memory is not None and memory.sleep is not None:
+        tasks.append(asyncio.create_task(memory.sleep.run()))
     try:
         await runtime.server.serve_forever()
     finally:
@@ -104,6 +110,9 @@ async def _serve(runtime: Runtime) -> None:
             task.cancel()
         runtime.stt_executor.shutdown(wait=False, cancel_futures=True)
         runtime.tts_executor.shutdown(wait=False, cancel_futures=True)
+        if memory is not None:
+            memory.memory.close()  # queued behind whatever the memory thread is doing
+            memory.executor.shutdown(wait=False)
         await runtime.tool_server.close()
         await _close(runtime)
 

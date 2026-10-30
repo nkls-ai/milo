@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import re
 import sqlite3
 from collections.abc import Collection, Iterable, Sequence
@@ -200,7 +201,15 @@ class SqliteMemoryIndex:
         return self._db
 
     def _connect(self) -> sqlite3.Connection:
-        """Open the database, starting a fresh one if it was built with another layout or embedder."""
+        """Open the database, starting a fresh one if it was built with another layout or embedder.
+        It holds what Milo remembers, so its files are the user's only."""
+        old = os.umask(0o077)
+        try:
+            return self._connect_private()
+        finally:
+            os.umask(old)
+
+    def _connect_private(self) -> sqlite3.Connection:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         db = sqlite3.connect(self.path, check_same_thread=False, isolation_level=None)
         try:
@@ -234,6 +243,9 @@ class SqliteMemoryIndex:
                 db.execute(f"CREATE VIRTUAL TABLE IF NOT EXISTS items_vec USING vec0("
                            f"embedding float[{self.embedder.dimensions}] distance_metric=cosine, kind text, at float)")
             db.execute("INSERT OR REPLACE INTO meta VALUES ('layout', ?)", (layout,))
+            for suffix in ("", "-wal", "-shm"):
+                if Path(str(self.path) + suffix).exists():
+                    os.chmod(str(self.path) + suffix, 0o600)
         except Exception:
             db.close()
             raise

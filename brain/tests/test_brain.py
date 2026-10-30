@@ -8,8 +8,9 @@ import pytest
 
 from milo.brain import Brain
 from milo.config import UiSettings
-from milo.core.events import (Bubble, Dictation, EmotionChanged, HandsSession, Heard, Level, ListenStart, ListenStop,
-                              Looking, Mute, StateChanged, Status, TextInput, UiConfig, parse_command)
+from milo.core.events import (Bubble, Dictation, EmotionChanged, Facts, HandsSession, Heard, Level, ListenStart,
+                              ListenStop, Looking, Mute, StateChanged, Status, TextInput, UiConfig, parse_command)
+from milo.core.memory import Fact
 from milo.core.types import Emotion, HandsError, ListenMode, MiloState, Nudge, ScreenCapture
 from milo.services.app_bridge import AppEyes, AppHands
 from tests.fakes import FakeEyes, FakeHands, FakeLiveModel, FakeTranscriber
@@ -164,7 +165,49 @@ def check_app_response(s: Stack, msg: dict) -> None:
     assert asyncio.run(go()) == (msg["result"] if msg["ok"] else msg["error"])
 
 
+def memory_stack() -> Stack:
+    s = Stack(with_memory=True)
+    for text, topic in (("The user's name is Niklas.", "basics"),
+                        ("Anna is the user's sister. Her birthday is March 3.", "people")):
+        s.facts.add(Fact(FACT_IDS[topic], text, topic, s.clock.now(), "chat"))
+    return s
+
+
+FACT_IDS = {"basics": "01JBF6Z3Q8M2X4K7N9P0R5T6VW", "people": "01JBF7A1B2C3D4E5F6G7H8J9KM"}
+
+
+def check_get_facts(s: Stack, msg: dict) -> None:
+    s = memory_stack()
+    run(s, parse_command(msg))
+    [event] = s.sink.of(Facts)
+    assert [(f["topic"], f["pinned"]) for f in event.facts] == [("basics", True), ("people", False)]
+    plain = Stack()  # memory switched off: an empty list
+    run(plain, parse_command(msg))
+    assert plain.sink.of(Facts) == [Facts([])]
+
+
+def check_forget_fact(s: Stack, msg: dict) -> None:
+    s = memory_stack()
+    run(s, parse_command(msg))
+    assert [f.topic for f in s.facts.current()] == ["basics"]
+    assert s.facts.log[-1] == ("retire", msg["id"], "you")
+    assert [f["topic"] for f in s.sink.of(Facts)[-1].facts] == ["basics"]
+    run(s, parse_command(msg))  # gone already: the app just gets the list again
+    assert len(s.sink.of(Facts)) == 2
+
+
+def check_edit_fact(s: Stack, msg: dict) -> None:
+    s = memory_stack()
+    run(s, parse_command(msg))
+    [anna] = [f for f in s.facts.current() if f.topic == "people"]
+    assert anna.text == msg["text"] and anna.replaces == msg["id"] and anna.source == "you"
+    assert s.sink.of(Facts)[-1].facts[-1]["text"] == msg["text"]
+
+
 CHECKS = {
+    "get_facts": check_get_facts,
+    "forget_fact": check_forget_fact,
+    "edit_fact": check_edit_fact,
     "look_result": check_look_result,
     "whats_this": check_whats_this,
     "hands_result": check_hands_result,

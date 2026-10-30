@@ -68,3 +68,14 @@ def _parse(data: bytes, path: Path) -> Iterator[dict]:
             continue
         if isinstance(record, dict):
             yield record
+
+
+def write_private(path: Path, text: str) -> None:
+    """Replace `path` with `text` in one step, readable by the user only."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(text)
+    os.chmod(tmp, 0o600)  # an old .tmp left by a crash keeps its mode otherwise
+    os.replace(tmp, path)

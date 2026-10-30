@@ -33,7 +33,11 @@
     {"type": "fly_to", "point": null},
     {"type": "confirm", "id": "3b9e7a01c4d2", "question": "I'm about to run your shortcut “Text Anna I'm late”. Go ahead?"},
     {"type": "confirm_done", "id": "3b9e7a01c4d2", "answer": "yes"},
-    {"type": "app_request", "id": "a41f", "op": "calendar.add_event", "args": {"title": "Doctor", "start": "2026-11-05T15:00:00", "end": "2026-11-05T16:00:00"}}
+    {"type": "app_request", "id": "a41f", "op": "calendar.add_event", "args": {"title": "Doctor", "start": "2026-11-05T15:00:00", "end": "2026-11-05T16:00:00"}},
+    {"type": "facts", "facts": [
+      {"id": "01JBF6Z3Q8M2X4K7N9P0R5T6VW", "text": "The user's name is Niklas.", "topic": "basics", "since": "2026-10-30T09:12:00", "pinned": true},
+      {"id": "01JBF7A1B2C3D4E5F6G7H8J9KM", "text": "Anna is the user's sister. Her birthday is March 3.", "topic": "people", "since": "2026-10-30T18:05:41", "pinned": false}
+    ]}
   ],
   "app_to_brain": [
     {"type": "listen_start", "mode": "dictate"},
@@ -55,6 +59,9 @@
     {"type": "hands_stop", "reason": "escape"},
     {"type": "confirm_answer", "id": "3b9e7a01c4d2", "yes": true},
     {"type": "app_response", "id": "a41f", "ok": true, "result": {"id": "E1F2-77", "title": "Doctor", "start": "2026-11-05T15:00:00", "end": "2026-11-05T16:00:00", "calendar": "Home"}},
-    {"type": "app_response", "id": "a42f", "ok": false, "error": "Milo isn't allowed to use your calendar. Turn it on in System Settings › Privacy & Security › Calendars."}
+    {"type": "app_response", "id": "a42f", "ok": false, "error": "Milo isn't allowed to use your calendar. Turn it on in System Settings › Privacy & Security › Calendars."},
+    {"type": "get_facts"},
+    {"type": "forget_fact", "id": "01JBF7A1B2C3D4E5F6G7H8J9KM"},
+    {"type": "edit_fact", "id": "01JBF7A1B2C3D4E5F6G7H8J9KM", "text": "Anna is the user's sister. Her birthday is March 4."}
   ]
 }
