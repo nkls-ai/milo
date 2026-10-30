@@ -137,10 +137,13 @@ def short_title(description: str, title: str = "") -> str:
 
 
 def reads_outside(step: Step) -> bool:
-    """A worker step that may bring in text someone else wrote: the web, any of Milo's connection tools (mail,
-    notes, calendar, files: the Mac tools never show up as worker steps), or a file's contents. Listing a folder
-    or searching file names doesn't count."""
-    return step.kind in ("web", "tool") or (step.kind == "read" and step.title.startswith("Reading"))
+    """A worker step that may bring in text someone else wrote. Every step counts except the few known to read
+    nothing back: the worker's own edits, opening an app by name, listing a folder and finding files by name.
+    The web, the connection tools (mail, notes, calendar, files), a file's contents, a grep and any other command
+    count. The Mac tools never show up as worker steps; HandsService logs them itself."""
+    return not (step.kind == "edit" or (step.kind == "app" and step.title.startswith("Opening "))
+                or (step.kind == "read" and step.title.startswith("Looking in"))
+                or (step.kind == "search" and step.title.startswith("Looking for files")))
 
 
 def plain_step(step: Step, installed=None) -> str:

@@ -71,6 +71,19 @@ struct OverlayRenderTests {
         Moment(name: "11-confirm") { m in
             m.apply(.confirm(id: "q", question: "Send the email to Dr. Lee about moving Thursday's appointment?"))
         },
+        Moment(name: "11b-confirm-always") { m in
+            m.apply(.confirm(id: "q", question: "Replace 8 filled cells in “Budget”?", always: true))
+        },
+        Moment(name: "11c-confirm-always-long") { m in
+            m.apply(.confirm(id: "q", question: "Run a script in Microsoft Excel? It's in my window.", always: true))
+        },
+        Moment(name: "11d-confirm-always-longest") { m in
+            // As long as approvals.fit_bubble lets a question get: eight lines, and the third button under them.
+            m.apply(.confirm(id: "q", question: "May I use Microsoft Excel for this? You'll see each step. I'll fill "
+                + "in the November budget, add the totals row, make the header bold and add a chart next to the table "
+                + "so the months are easy to compare with October and the year before… (all of it is in the Milo window)",
+                always: true))
+        },
         Moment(name: "12-error") { m in
             m.show(MiloController.pasteBlocked, action: .permissions)
         },

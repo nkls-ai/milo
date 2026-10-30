@@ -9,7 +9,7 @@ import Testing
 @Suite(.enabled(if: ProcessInfo.processInfo.environment["MILO_RENDER_DIR"] != nil))
 @MainActor
 struct SettingsRenderTests {
-    static let size = CGSize(width: 520, height: 1020)
+    static let size = CGSize(width: 520, height: 1400)
     let dir = URL(fileURLWithPath: ProcessInfo.processInfo.environment["MILO_RENDER_DIR"] ?? "/tmp")
 
     /// What the brain reports, as in brain/src/milo/settings.py.
@@ -29,6 +29,12 @@ struct SettingsRenderTests {
                 options: ["ctrl+option+m", "ctrl+option+w", "ctrl+shift+m", ""],
                 labels: ["Control-Option-M", "Control-Option-W", "Control-Shift-M", "Off"]),
         Setting(section: "ui", key: "voice", value: true),
+        Setting(section: "approvals", key: "ask", value: "task", options: ["step", "task", "auto"],
+                labels: ["Every step", "Once per task", "Don't ask (auto)"], live: true),
+        Setting(section: "approvals", key: "allowed_apps", value: .array([
+            .object(["name": "Microsoft Excel", "bundle": ""]),
+            .object(["name": "Numbers", "bundle": "com.apple.iWork.Numbers"]),
+        ]), live: true),
     ])
 
     @Test func renderTheWindow() throws {
@@ -47,6 +53,11 @@ struct SettingsRenderTests {
             }
         }
         try render(SettingsModel(report: waiting), .milo, name: "settings-restart-light", dark: false)
+        var auto = Self.report
+        auto.settings[auto.settings.count - 2].value = "auto"
+        auto.settings[auto.settings.count - 1].value = .array([])
+        try render(SettingsModel(report: auto), .milo, name: "settings-auto-light", dark: false)
+        try render(SettingsModel(report: auto), .milo, name: "settings-auto-dark", dark: true)
         try render(SettingsModel(report: refused), .milo, name: "settings-error-light", dark: false)
         try render(SettingsModel(report: nil), .milo, name: "settings-starting-dark", dark: true)
     }

@@ -514,6 +514,8 @@ def test_only_words_that_ask_for_work_let_a_task_from_a_look_start_unasked(text,
     ("web", "Reading example.com", True), ("tool", "Mail search", True), ("tool", "Notes read", True),
     ("read", "Reading invoice.pdf", True), ("read", "Looking in Downloads", False),
     ("search", "Looking for files", False), ("edit", "Editing notes.md", False),
+    ("search", "Searching your files for “budget”", True), ("command", "Running a command", True),
+    ("app", "Opening Microsoft Excel", False), ("app", "Controlling an app", True),
 ])
 def test_what_counts_as_reading_outside_text(kind, title, outside):
     from milo.core.types import Step, StepStatus

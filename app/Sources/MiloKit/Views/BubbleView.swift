@@ -149,8 +149,9 @@ struct TightLabel: LabelStyle {
     }
 }
 
-/// Yes and No, or for a question about working in an app, Allow, Allow always and No (ADR 22). Where the three
-/// don't fit in a row (the bubble), Allow always goes on a line of its own under the other two.
+/// Yes and No, or for a question about working in an app, Allow, Allow always and No (ADR 22). The three are a
+/// little narrower, so they fit in one row even in the bubble: a second row would push an eight-line question's
+/// top out of Milo's panel. Should they not fit, Allow always goes on a line of its own.
 struct AnswerButtons: View {
     var always = false
     let answer: (Answer) -> Void
@@ -158,7 +159,7 @@ struct AnswerButtons: View {
     var body: some View {
         if always {
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) { allow; allowAlways; no }
+                HStack(spacing: 6) { allow; allowAlways; no }
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) { allow; no }
                     allowAlways
@@ -176,13 +177,13 @@ struct AnswerButtons: View {
 
     private var allow: some View {
         Button("Allow") { answer(.yes) }
-            .buttonStyle(AnswerButtonStyle(prominent: true))
+            .buttonStyle(AnswerButtonStyle(prominent: true, compact: always))
             .accessibilityHint("Milo goes ahead, and doesn't ask again about this work in this app until the task is done")
     }
 
     private var allowAlways: some View {
         Button("Allow always") { answer(.always) }
-            .buttonStyle(AnswerButtonStyle(prominent: false))
+            .buttonStyle(AnswerButtonStyle(prominent: false, compact: true))
             .accessibilityHint("Milo won't ask about work in this app again. Take it back in Settings.")
             .help("Milo won't ask about work in this app again. Sending, deleting and buying still ask. "
                   + "Take it back in Settings.")
@@ -190,7 +191,7 @@ struct AnswerButtons: View {
 
     private var no: some View {
         Button("No") { answer(.no) }
-            .buttonStyle(AnswerButtonStyle(prominent: false))
+            .buttonStyle(AnswerButtonStyle(prominent: false, compact: always))
             .accessibilityHint("Milo leaves it")
     }
 }
@@ -201,6 +202,8 @@ struct AnswerButtonStyle: ButtonStyle {
     @Environment(\.miloTheme) private var theme
     @Environment(\.colorSchemeContrast) private var contrast
     let prominent: Bool
+    /// Narrower, for three buttons in a row.
+    var compact = false
     @State private var hovered = false
 
     func makeBody(configuration: Configuration) -> some View {
@@ -208,9 +211,9 @@ struct AnswerButtonStyle: ButtonStyle {
         return configuration.label
             .font(.system(size: 13.5, weight: .semibold, design: .rounded))
             .foregroundStyle(prominent ? theme.onPrimary : theme.ink)
-            .frame(minWidth: 64)
+            .frame(minWidth: compact ? 34 : 64)
             .padding(.vertical, 7)
-            .padding(.horizontal, 10)
+            .padding(.horizontal, compact ? 9 : 10)
             .background(shape.fill(prominent ? theme.primary : theme.ink.opacity(hovered ? 0.12 : 0.08)))
             .overlay(shape.strokeBorder(theme.ink.opacity(contrast == .increased && !prominent ? 0.5 : 0)))
             .brightness(prominent && hovered ? 0.04 : 0)

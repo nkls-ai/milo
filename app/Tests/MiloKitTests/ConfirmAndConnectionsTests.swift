@@ -42,6 +42,45 @@ private final class Rig {
         withExtendedLifetime(rig) {}
     }
 
+    @Test func allowAlwaysIsSentOnlyWhereTheQuestionOfferedIt() {
+        let (rig, brain, model, _) = controller()
+        brain.emit(.confirm(id: "q1", question: "Replace 8 filled cells in “Budget”?", always: true))
+        #expect(model.question?.always == true)
+        model.answer(.always)
+        #expect(brain.sent.last == .confirmAnswer(id: "q1", yes: true, always: true))
+        brain.emit(.confirm(id: "q2", question: "Send it to Anna?"))
+        model.answer(.always)  // no such button here: a plain yes
+        #expect(brain.sent.last == .confirmAnswer(id: "q2", yes: true))
+        brain.emit(.confirm(id: "q3", question: "Fill column C?", always: true))
+        model.answer(.no)
+        #expect(brain.sent.last == .confirmAnswer(id: "q3", yes: false))
+        withExtendedLifetime(rig) {}
+    }
+
+    @Test func autoModeFollowsTheSettingsAndTheMenuTurnsItOff() {
+        let (rig, brain, _, _) = controller()
+        let ask = Setting(section: "approvals", key: "ask", value: "auto", options: ["step", "task", "auto"],
+                          labels: ["Every step", "Once per task", "Don't ask (auto)"], live: true)
+        brain.emit(.settings(SettingsReport(settings: [ask])))
+        #expect(rig.controller.autoMode)
+        rig.controller.endAutoMode()
+        #expect(brain.sent.last == .setSetting(section: "approvals", key: "ask", value: "task"))
+        #expect(!rig.controller.autoMode, "shown off at once; the brain's report confirms it")
+        withExtendedLifetime(rig) {}
+    }
+
+    @Test func removingAnAlwaysAllowedAppSendsTheListWithoutIt() {
+        let excel: JSONValue = .object(["name": "Microsoft Excel", "bundle": ""])
+        let numbers: JSONValue = .object(["name": "Numbers", "bundle": "com.apple.iWork.Numbers"])
+        let apps = Setting(section: "approvals", key: "allowed_apps", value: .array([excel, numbers]), options: [],
+                           labels: [], live: true)
+        let settings = SettingsModel(report: SettingsReport(settings: [apps]))
+        var sent: [BrainCommand] = []
+        settings.send = { sent.append($0) }
+        settings.change("approvals", "allowed_apps", to: .array([numbers]))
+        #expect(sent == [.setSetting(section: "approvals", key: "allowed_apps", value: .array([numbers]))])
+    }
+
     @Test func aSpokenAnswerOrTimeoutClearsTheQuestion() {
         let (rig, brain, model, _) = controller()
         brain.emit(.confirm(id: "q1", question: "Send it?"))

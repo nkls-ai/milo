@@ -53,7 +53,7 @@ struct WindowRenderTests {
                 HelperInfo(id: "t-excel", title: "Budget table in Excel", status: .working,
                            step: "Typing “Monday” in Excel", progress: 0.4),
             ]))
-            model.apply(.confirm(id: "q1", question: "I'm about to run your shortcut “Text Anna I'm late”. Go ahead?"))
+            model.apply(.confirm(id: "q1", question: "Replace 8 filled cells in “Budget”?", always: true))
         }
         if !empty && busy { transcript.apply(.reminders(Day.reminders)) }
         if !search.isEmpty {
