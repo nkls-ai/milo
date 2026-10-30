@@ -256,8 +256,10 @@ struct InputBar: View {
                 .onSubmit(send)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(RoundedRectangle(cornerRadius: 17, style: .continuous).fill(WindowColors.field))
-                .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous)
+                // Keep the radius under half the field's height (~32 pt): from about there on, the border
+                // renders with a short vertical bar at each end.
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(WindowColors.field))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(focused ? WindowColors.accent.opacity(0.55) : WindowColors.rule, lineWidth: 1))
             Button {
                 speakReplies.toggle()
