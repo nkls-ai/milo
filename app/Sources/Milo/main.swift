@@ -33,7 +33,9 @@ let controller = MiloController(
     accessibility: SystemAccessibilityPermission(),
     scheduler: scheduler,
     connections: EventKitConnections(),
-    screen: screen)
+    screen: screen,
+    meetings: MeetingController(model: model, brain: brain, recorder: MacMeetingRecorder(brainLock: paths.brainLock),
+                                signals: MacCallSignals(), scheduler: scheduler))
 
 // Windows and the status item are created once the app has finished launching.
 var panel: OverlayPanel?

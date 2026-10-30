@@ -147,3 +147,24 @@ public protocol HotkeySource: AnyObject {
     /// nil removes it. Returns false if macOS refused, e.g. another app holds the combo.
     @discardableResult func register(_ combo: KeyCombo?) -> Bool
 }
+
+/// Records a meeting in two tracks, "me" (the microphone) and "them" (the call's audio), as 30 s WAV chunks
+/// (see ChunkWriter). Callbacks on the main queue.
+public protocol MeetingRecorder: AnyObject {
+    /// A chunk of `track` is complete and on disk.
+    var onChunk: ((_ track: String, _ chunk: ChunkWriter.Finished) -> Void)? { get set }
+    /// The tracks being recorded changed. `error` says in plain words why one is missing, "" if none is.
+    var onTracks: ((_ tracks: [String], _ error: String) -> Void)? { get set }
+    /// What is recorded right now.
+    var tracks: [String] { get }
+    func start(dir: URL)
+    /// Stops, writes and reports the last chunks, then calls `done`.
+    func stop(done: @escaping () -> Void)
+}
+
+/// What a call looks like from outside: who uses the microphone, and a browser's window titles.
+public protocol CallSignals: AnyObject {
+    func micClients() -> [MicClient]
+    /// Titles of the windows of the running app with this bundle id, frontmost first.
+    func windowTitles(bundle: String) -> [String]
+}

@@ -85,12 +85,13 @@ def _setup_logging(log_file: Path, settings: LoggingSettings) -> None:
 async def _serve(runtime: Runtime) -> None:
     # The app stops its brain with SIGTERM (uv passes that on, not SIGINT). Shut down as for Ctrl-C.
     asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, asyncio.current_task().cancel)
+    if runtime.meetings is not None:
+        # Before the socket opens: the app says first thing whether it still records a meeting a crash left open.
+        runtime.meetings.start()
     await runtime.server.start()
     await runtime.tool_server.start()
     if runtime.hands_server is not None:
         await runtime.hands_server.start()
-    if runtime.meetings is not None:
-        runtime.meetings.start()  # meetings a crash left unfinished
     log.info("brain up (chat=%s, harness=%s)", runtime.live_model.name, runtime.harness.name)
     warming = asyncio.create_task(_warm_all({
         "stt": (runtime.stt_executor, runtime.transcriber.warm),

@@ -29,6 +29,8 @@ public final class MiloModel: ObservableObject {
     @Published public var looking = false
     /// The worker agent is acting on screen: the "Milo is working" frame shows.
     @Published public var handsActive = false
+    /// Milo records a meeting: a red dot shows on him and in the menu bar. Set by the meeting controller.
+    @Published public var recording = false
     /// The user lent Milo the real mouse and keyboard: the frame around the screen shows, and any touch stops him.
     @Published public var handsBorrowed = false
     /// The window Milo works in, in AppKit global coordinates: outlined, and Pip perches on its corner.
@@ -99,7 +101,7 @@ public final class MiloModel: ObservableObject {
         case let .helpers(list):
             if list != helpers { helpers = list }
         case .dictation, .uiConfig, .history, .entry, .replyDelta, .activity, .lookRequest, .handsRequest,
-             .handsSession, .flyTo, .appRequest, .handsBorrow, .unknown:
+             .handsSession, .flyTo, .appRequest, .handsBorrow, .meetingRecord, .unknown:
             break
         }
     }

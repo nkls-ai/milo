@@ -21,6 +21,7 @@ public struct OverlayView: View {
                 CharacterView(model: model)
                     .frame(width: 132, height: 132)
                     .overlay(alignment: .topLeading) { LookingBadge(model: model) }
+                    .overlay(alignment: .topTrailing) { RecordingBadge(model: model) }
                     .padding(.trailing, 8)
             }
         }
@@ -30,5 +31,6 @@ public struct OverlayView: View {
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: model.state)
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: model.question)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: model.looking)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: model.recording)
     }
 }

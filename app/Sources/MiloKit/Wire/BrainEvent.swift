@@ -52,12 +52,15 @@ public enum BrainEvent: Equatable, Sendable {
     /// The user lent Milo one real device ("mouse" or "keyboard") for an action that can't be done in the
     /// background. The app hands it back on its own a while after the last such action, or when the session ends.
     case handsBorrow(on: Bool, what: String)
+    /// Record meeting `id` into `dir` (two tracks in 30 s chunks), or stop recording it.
+    case meetingRecord(id: String, dir: String, on: Bool)
     case unknown(String)
 }
 
 extension BrainEvent: Decodable {
     private enum Key: String, CodingKey {
         case type, state, emotion, text, value, entries, entry, id, step, mode, on, tool, args, point, question, answer, op, what
+        case dir
         case taskID = "task_id"
         case whatsThisKey = "whats_this_key"
         case dictateKey = "dictate_key"
@@ -113,6 +116,10 @@ extension BrainEvent: Decodable {
         case "hands_borrow":
             self = .handsBorrow(on: try c.decode(Bool.self, forKey: .on),
                                 what: try c.decodeIfPresent(String.self, forKey: .what) ?? "")
+        case "meeting_record":
+            self = .meetingRecord(id: try c.decode(String.self, forKey: .id),
+                                  dir: try c.decodeIfPresent(String.self, forKey: .dir) ?? "",
+                                  on: try c.decode(Bool.self, forKey: .on))
         default: self = .unknown(type)
         }
     }

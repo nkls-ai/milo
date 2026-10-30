@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 
 /// The menu bar item.
 public final class StatusMenu: NSObject {
@@ -9,6 +10,8 @@ public final class StatusMenu: NSObject {
     private let statusItem: NSStatusItem
     private let hintItem: NSMenuItem
     private var muteItem: NSMenuItem!
+    private var notesItem: NSMenuItem?
+    private var recording: AnyCancellable?
 
     public init(controller: MiloController, panel: OverlayPanel, window: ConversationWindow, paths: MiloPaths) {
         self.controller = controller
@@ -26,6 +29,9 @@ public final class StatusMenu: NSObject {
         menu.addItem(.separator())
         add(menu, "Open conversation", #selector(toggleWindow))
         add(menu, "What's this?", #selector(whatsThis))
+        if controller.meetings != nil {
+            notesItem = add(menu, "Take meeting notes", #selector(toggleNotes))
+        }
         muteItem = add(menu, "Mute proactive nudges", #selector(toggleMute))
         add(menu, "Show / hide Milo", #selector(toggleVisible))
         add(menu, "Move Milo back to the corner", #selector(resetPosition))
@@ -36,6 +42,21 @@ public final class StatusMenu: NSObject {
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Milo", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu
+        recording = controller.model.$recording.removeDuplicates().sink { [weak self] on in self?.showRecording(on) }
+    }
+
+    /// A red dot in the menu bar while Milo records a meeting.
+    private func showRecording(_ on: Bool) {
+        notesItem?.title = on ? "Stop taking notes" : "Take meeting notes"
+        let button = statusItem.button
+        if on {
+            let config = NSImage.SymbolConfiguration(paletteColors: [.white, .systemRed])
+            button?.image = NSImage(systemSymbolName: "record.circle.fill", accessibilityDescription: "Milo is taking notes")?
+                .withSymbolConfiguration(config)
+            button?.image?.isTemplate = false
+        } else {
+            button?.image = NSImage(systemSymbolName: "face.smiling", accessibilityDescription: "Milo")
+        }
     }
 
     /// Updates the "Hold … to dictate" line.
@@ -58,6 +79,7 @@ public final class StatusMenu: NSObject {
     @objc private func toggleVisible() { panel.toggleVisible() }
     @objc private func toggleWindow() { window.toggle() }
     @objc private func whatsThis() { controller.screen?.whatsThis() }
+    @objc private func toggleNotes() { controller.meetings?.toggle() }
     @objc private func resetPosition() { panel.placeBottomRight() }
     @objc private func openHome() { NSWorkspace.shared.open(paths.home) }
     @objc private func openLog() { NSWorkspace.shared.open(paths.brainLog) }

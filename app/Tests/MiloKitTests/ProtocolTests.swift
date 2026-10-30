@@ -76,6 +76,8 @@ private func entries(_ key: String) throws -> [[String: Any]] {
                 HelperInfo(id: "f2f2f2f2f2f2", title: "Dentist email", status: .done),
             ]),
             .handsBorrow(on: true, what: "mouse"),
+            .meetingRecord(id: "2026-10-30-1400-weekly-sync",
+                           dir: "/Users/you/Milo/meetings/2026-10-30-1400-weekly-sync/audio", on: true),
         ])
     }
 
@@ -109,6 +111,14 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .stopHelper(id: "c0ffee12ab34"),
             .handsResult(id: "hands-7", ok: false, result: ["borrow": "mouse"],
                          error: "Excel doesn't take clicks in the background."),
+            .callStarted(app: "Zoom", bundle: "us.zoom.xos", title: "Zoom Meeting"),
+            .callEnded(app: "Zoom"),
+            .meetingChunk(MeetingChunk(
+                id: "2026-10-30-1400-weekly-sync", track: "them", index: 3,
+                path: "/Users/you/Milo/meetings/2026-10-30-1400-weekly-sync/audio/them-0003.wav", start: 60, seconds: 30)),
+            .meetingRecording(id: "2026-10-30-1400-weekly-sync", on: true, tracks: ["me"],
+                              error: "I can only hear you, not the others. Turn on System Audio Recording for Milo in System Settings › Privacy & Security."),
+            .meetingToggle(false),
         ]
         let encoder = JSONEncoder()
         let encoded = try commands.map { command in
