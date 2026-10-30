@@ -137,6 +137,13 @@ import Testing
         #expect(yawns(late: true) > yawns(late: false) + 5)
     }
 
+    @Test func aCursorSweepingFarAwayTurnsTheEyesOnlyAFewTimes() {
+        // Across a whole 1400 pt wide screen, 300 pt above Milo, in 10 pt steps.
+        let gazes = stride(from: -1400.0, through: 0, by: 10).map { CharacterLife.gaze(toward: CGPoint(x: $0, y: 300)) }
+        let turns = zip(gazes, gazes.dropFirst()).filter { $0 != $1 }.count
+        #expect(turns <= 4)
+    }
+
     @Test func gazeReachesTheEdgeOnlyForFarCursors() {
         #expect(CharacterLife.gaze(toward: CGPoint(x: 0, y: 80)) == CGVector(dx: 0, dy: -0.5))
         #expect(CharacterLife.gaze(toward: CGPoint(x: 0, y: -900)) == CGVector(dx: 0, dy: 1))
