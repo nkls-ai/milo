@@ -121,6 +121,7 @@ class LiveTalk:
         self._tainted = False
         """Task results entered the running conversation, so outside text can steer every later reply in it."""
         self._asking: set[asyncio.Task] = set()
+        self._preparing: asyncio.Task | None = None
 
     @property
     def busy(self) -> bool:
@@ -170,6 +171,21 @@ class LiveTalk:
     async def warm(self) -> None:
         """Start the conversation ahead of the first turn. Raises HarnessError."""
         await self._ensure_conversation()
+
+    def prepare(self) -> None:
+        """The user started talking to Milo: get the conversation ready while they speak.
+
+        After `idle_reset_s` of silence the next turn starts a fresh conversation, a new model process that
+        takes 1 to 3 s before its first word. Starting it now hides that behind the user's own words.
+        """
+        if (self._preparing is None or self._preparing.done()) and self._needs_fresh_conversation():
+            self._preparing = asyncio.create_task(self._prepare())
+
+    async def _prepare(self) -> None:
+        try:
+            await self._ensure_conversation()
+        except HarnessError as e:
+            log.warning("could not start the conversation ahead of the turn: %s", e)
 
     async def turn(self, text: str, *, via: str = "voice", speak: bool = True,
                    capture: ScreenCapture | None = None) -> None:
@@ -310,14 +326,17 @@ class LiveTalk:
             log.exception("interrupting the live model failed; starting a fresh conversation")
             self._system = None
 
+    def _needs_fresh_conversation(self, system: str | None = None) -> bool:
+        system = self._system_prompt() if system is None else system
+        idle = self._last_turn_at is not None and self._clock.monotonic() - self._last_turn_at > self._idle_reset_s
+        # A conversation nobody has talked to yet (warmed at boot) is kept unless its prompt went stale.
+        unused_but_stale = self._last_turn_at is None and system != self._system
+        return self._system is None or idle or unused_but_stale
+
     async def _ensure_conversation(self) -> None:
         async with self._starting:
             system = self._system_prompt()
-            now = self._clock.monotonic()
-            idle = self._last_turn_at is not None and now - self._last_turn_at > self._idle_reset_s
-            # A conversation nobody has talked to yet (warmed at boot) is kept unless its prompt went stale.
-            unused_but_stale = self._last_turn_at is None and system != self._system
-            if self._system is None or idle or unused_but_stale:
+            if self._needs_fresh_conversation(system):
                 await self._model.start(system)
                 self._system, self._last_turn_at = system, None
                 self._saw_screen = False

@@ -248,3 +248,35 @@ def test_a_screenshot_goes_along_as_a_base64_image_block(tmp_path):
         {"type": "text", "text": "what's this"},
         {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "iVBORw=="}},
     ]
+
+
+def test_start_primes_the_conversation_so_the_first_turn_is_fast(tmp_path, ctx, fake_claude):
+    from milo.adapters.harness.claude_live import PRIME_TEXT
+
+    async def main():
+        model = live(ctx, fake_claude)
+        try:
+            await model.start("You are Milo.")
+            first = await collect(model, "hello there")  # waits for the priming reply, never sees it
+            assert first == ["hello ", "there "]
+        finally:
+            await model.close()
+        unprimed = live(ctx, fake_claude, prime=False)
+        try:
+            await unprimed.start("You are Milo.")
+            assert unprimed._priming is None
+        finally:
+            await unprimed.close()
+
+    asyncio.run(main())
+    assert PRIME_TEXT.startswith("("), "reads as a stage direction, not as something the user said"
+
+
+def test_close_while_priming_stops_cleanly(tmp_path, ctx, fake_claude):
+    async def main():
+        model = live(ctx, fake_claude)
+        await model.start("You are Milo.")
+        await model.close()
+        assert model._session is None and model._priming is None
+
+    asyncio.run(main())
