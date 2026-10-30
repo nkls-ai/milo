@@ -18,7 +18,7 @@ export const C = {
 export const defaults = {
   turn: -0.15, lean: 0, squash: 0, lift: 0, headTilt: 0,
   gx: 0, gy: 0,
-  lid: 0.14, lidL: null, lidR: null, lower: 0, lowerL: null, lowerR: null,
+  lid: 0.2, lidL: null, lidR: null, lower: 0, lowerL: null, lowerR: null,
   eyeScale: 1, eyeScaleL: null, eyeScaleR: null,
   brow: 0, browL: null, browR: null, browTilt: 0, browTiltL: null, browTiltR: null,
   mouth: 0, smile: 0.08, blush: 0,
@@ -65,7 +65,7 @@ export function draw(input, uid) {
   const wing = (side) => {
     const s = side === 'L' ? -1 : 1;
     const ax = 100 + s * 20 + t * 6, ay = 108;
-    const fold = -s * 10 + p.fly * -s * 100 + p.flutter * -s * 8 + p.wrap * s * 40;
+    const fold = -s * 6 + p.fly * -s * 100 + p.flutter * -s * 8 + p.wrap * s * 40;
     const hindFold = -s * 6 + p.fly * -s * 52 + p.wrap * s * 30;
     const fore = `M0 0 C${s * 10} -4 ${s * 36} 2 ${s * 48} 18 C${s * 60} 34 ${s * 64} 58 ${s * 56} 70 C${s * 48} 80 ${s * 24} 76 ${s * 12} 62 C${s * 2} 48 ${s * 6} 22 0 0Z`;
     const fringe = p.small ? '' : `<path d="M${s * 56} 70 C${s * 48} 80 ${s * 24} 76 ${s * 12} 62" stroke="${C.fringe}" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-dasharray="0.1 3.4" opacity="0.9"/>`;
@@ -122,7 +122,7 @@ export function draw(input, uid) {
   // antennae, behind the head: feathery fronds that act as brows
   const antenna = (side) => {
     const s = side === 'L' ? -1 : 1;
-    const bx = hx + s * 13 + t * 10, by = hy - 26;
+    const bx = hx + s * 15 + t * 10, by = hy - 24;
     const raise = p[`brow${side}`], tilt = p[`browTilt${side}`];
     const ang = s * (8 + raise * -14 + tilt * 22) ;
     const pts = [[0, 0], [s * 6, -22], [s * 26, -36]];
@@ -139,6 +139,7 @@ export function draw(input, uid) {
   };
   head.push(antenna('L'), antenna('R'));
   head.push(`<path d="${headD}" fill="${fur}"/>`);
+  if (!p.small) head.push(`<path d="M${f(hx - 6)} ${hy - 31} q2 -6 5 -7 M${f(hx)} ${hy - 32} q1 -6 4 -8 M${f(hx + 6)} ${hy - 31} q0 -5 3 -6" stroke="${C.furMid}" stroke-width="2.4" fill="none" stroke-linecap="round"/>`);
   const headClip = d.clip('headclip', `<path d="${headD}"/>`);
   head.push(`<g clip-path="${headClip}"><ellipse cx="${f(hx - 14)}" cy="${hy - 22}" rx="17" ry="8" fill="#fff" opacity="0.3" transform="${rot(-20, hx - 14, hy - 22)}" filter="${soft}"/><ellipse cx="${hx}" cy="${hy + 36}" rx="40" ry="12" fill="#2E2463" opacity="0.3" filter="${softer}"/></g>`);
   // rim light
@@ -150,17 +151,17 @@ export function draw(input, uid) {
   const face = [];
   const R = 37;
   const gx = p.gx * 4, gy = p.gy * 3;
-  const eyeY = hy + 2 + gy;
+  const eyeY = hy + 4 + gy;
   if (p.blush > 0) {
     for (const s of [-1, 1]) face.push(`<ellipse cx="${f(hx + R * sinA(th + s * 40) + gx)}" cy="${f(eyeY + 14)}" rx="6" ry="3.4" fill="${C.blush}" opacity="${f(0.6 * p.blush)}" filter="${soft}"/>`);
   }
   for (const side of ['L', 'R']) {
     const s = side === 'L' ? -1 : 1;
-    const a = th + s * 27;
-    const x = hx + R * sinA(a) * 0.95 + gx;
+    const a = th + s * 29;
+    const x = hx + R * sinA(a) * 0.96 + gx;
     const fore = Math.max(0.35, cosA(a));
     const lid = p[`lid${side}`], lower = p[`lower${side}`], es = p[`eyeScale${side}`];
-    const rx = 9.6, ry = 11.4;
+    const rx = 8.8, ry = 10.4;
     const yl = -ry + lid * ry * 2.1, yb = ry - lower * ry * 1.25;
     const sag = -1.8 + 6 * lid * lid;
     const eyeFill = d.radial(`eye${side}`, [[0, C.eyeHi], [1, C.eye]], { cx: 0.5, cy: 0.85, r: 0.75 });
@@ -172,10 +173,11 @@ export function draw(input, uid) {
     const closed = Math.min(yl, ry - 0.5);
     const lidLine = lid > 0.04 ? `<path d="M${-rx - 0.4} ${f(closed)} Q0 ${f(closed + sag)} ${rx + 0.4} ${f(closed)}" stroke="${C.lidLine}" stroke-width="${lid > 0.95 ? 2.2 : 1.2}" fill="none" stroke-linecap="round" opacity="${lid > 0.95 ? 1 : 0.6}"/>` : '';
     const lowerLine = lower > 0.3 ? `<path d="M${-rx + 0.5} ${f(yb + 3)} Q0 ${f(yb - 7)} ${rx - 0.5} ${f(yb + 3)}" stroke="${C.lidLine}" stroke-width="${lower > 0.7 ? 2 : 1}" fill="none" stroke-linecap="round" opacity="0.85"/>` : '';
+    if (lower > 0.8) { face.push(`<g transform="translate(${f(x)} ${f(eyeY + 2)}) scale(${f(fore * es)} ${f(es)})"><path d="M-7.6 3 Q0 -8.4 7.6 3" stroke="${C.eye}" stroke-width="3.2" fill="none" stroke-linecap="round"/></g>`); continue; }
     face.push(`<g transform="translate(${f(x)} ${f(eyeY)}) scale(${f(fore * es)} ${f(es)})">${ball}<g clip-path="${big}">${lids}</g>${lidLine}${lowerLine}</g>`);
   }
   // mouth: a small soft line, opens to a rounded shape when he talks
-  const mx = hx + R * sinA(th) * 0.9 + gx * 1.1, my = hy + 17 + gy;
+  const mx = hx + R * sinA(th) * 0.9 + gx * 1.1, my = hy + 19 + gy;
   if (p.mouth > 0.05) {
     face.push(`<path d="M${f(mx - 4.5)} ${f(my)} Q${f(mx)} ${f(my - 1.5)} ${f(mx + 4.5)} ${f(my)} Q${f(mx + 3.5)} ${f(my + 3 + p.mouth * 6)} ${f(mx)} ${f(my + 3.5 + p.mouth * 6)} Q${f(mx - 3.5)} ${f(my + 3 + p.mouth * 6)} ${f(mx - 4.5)} ${f(my)}Z" fill="${C.mouth}"/>`);
   } else {

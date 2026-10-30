@@ -26,7 +26,7 @@ export const defaults = {
   wingL: 0, wingR: 0, wingLenL: 1, wingLenR: 1, wingOpenL: 0, wingOpenR: 0, fly: 0,
   tail: 0, tailFan: 0,
   scarf: 0, scarfToss: 0, scarfUp: 0,
-  feet: 1, extras: [], cursorAt: null, small: false,
+  feet: 1, pencil: 1, extras: [], cursorAt: null, small: false,
 };
 
 export function draw(input, uid) {
@@ -68,10 +68,10 @@ export function draw(input, uid) {
   // the tail sits on the side he faces away from (right, when he faces the screen centre)
   const back = t > 0.02 ? -1 : 1;
   const tailBase = [100 + back * (26 + Math.abs(t) * 34), 146];
-  const tailAngle = back * (27 + p.tail * 0.8 + Math.abs(t) * 10 + p.fly * 60); // degrees from vertical
+  const tailAngle = back * (27 + p.tail * 0.8 + Math.abs(t) * 10 + p.fly * 42); // degrees from vertical
   const tailFill = d.linear('tail', [[0, C.tail], [1, C.tailLo]]);
-  const L = 74 * (1 - p.fly * 0.15);
-  const w = 7.5 + p.tailFan * 3.5;
+  const L = 74 * (1 - p.fly * 0.3);
+  const w = 7.5 + Math.max(p.tailFan, p.fly) * 3.5;
   // narrow at the base, opening to three rounded feather tips
   const tip = (cx) => `Q${f(cx - w * 0.36)} ${f(-L - 3.2)} ${f(cx)} ${f(-L - 0.6)}`;
   const tailShape = `M${f(-w * 0.5)} 0 C${f(-w * 0.75)} ${f(-L * 0.45)} ${f(-w - 1.2)} ${f(-L * 0.78)} ${f(-w)} ${f(-L + 2)} ${tip(-w * 0.33)} ${tip(w * 0.33)} ${tip(w)} C${f(w + 1.2)} ${f(-L * 0.78)} ${f(w * 0.75)} ${f(-L * 0.45)} ${f(w * 0.5)} 0Z`;
@@ -136,17 +136,17 @@ export function draw(input, uid) {
     for (let i = 0; i <= 14; i++) {
       const x = 50 + i * 7.2;
       const yMid = sy - 5 + (1 - ((x - 100) / 56) ** 2) * 8.5;
-      ribs.push(`<path d="M${f(x)} ${f(yMid + 2)} l0.6 ${f(10.5)}" stroke="${C.scarfRib}" stroke-width="1.1" stroke-linecap="round" opacity="0.55"/>`);
+      ribs.push(`M${f(x)} ${f(yMid + 2)}l0.6 10.5`);
     }
-    fig.push(ribs.join(''));
+    fig.push(`<path d="${ribs.join('')}" stroke="${C.scarfRib}" stroke-width="1.1" stroke-linecap="round" opacity="0.55"/>`);
   }
   fig.push(`<path d="M44 ${f(sy - 5)} Q100 ${f(sy + 12)} 156 ${f(sy - 5)}" stroke="#FFE2A6" stroke-width="1.4" fill="none" opacity="0.7"/></g>`);
 
   // knot and loose end on his front right (turns with him)
   const knotX = 100 + R * sinA(th + 32);
   const knotY = sy + 10 + (1 - ((knotX - 100) / 56) ** 2) * 2;
-  const endAngle = -12 + p.scarf + p.scarfToss * -150 + p.fly * -70;
-  const endLen = 38;
+  const endAngle = -12 + p.scarf + p.scarfToss * -118 + p.fly * -70;
+  const endLen = 38 * (1 + p.scarfToss * 0.2);
   const endShape = `M-6 0 C-7 ${endLen * 0.4} -8.5 ${endLen * 0.8} -9 ${endLen} L9 ${endLen + 2} C7.5 ${endLen * 0.7} 6.5 ${endLen * 0.35} 6 0Z`;
   const fringe = p.small ? '' : [-7, -3.5, 0, 3.5, 7]
     .map((x) => `<path d="M${x} ${endLen + 1 + x * 0.1} l${x * 0.08} 5" stroke="${C.scarfLo}" stroke-width="1.7" stroke-linecap="round"/>`)
@@ -160,9 +160,15 @@ export function draw(input, uid) {
   if (farWing !== 'R' || Math.abs(t) < 0.25) fig.push(wing('R'));
 
   // the loose end hangs over the wing unless it is tossed back
-  if (p.scarfToss > 0.5) fig.splice(1, 0, scarfEnd);
-  else fig.push(scarfEnd);
+  // tossed over his shoulder it still lies in front, across the near shoulder
+  fig.push(scarfEnd);
   fig.push(knot);
+  if (p.pencil && !p.small) {
+    const px = 100 + R * sinA(th - 24), py = sy + 7;
+    fig.push(`<g transform="translate(${f(px)} ${f(py)}) rotate(-24)"><rect x="-2.6" y="-22" width="5.2" height="25" rx="1" fill="#4B3D86"/><rect x="-2.6" y="-22" width="1.8" height="25" fill="#6F61B4"/><rect x="-2.6" y="-25.5" width="5.2" height="4" rx="1.2" fill="#E89AA6"/><rect x="-2.6" y="-22.4" width="5.2" height="1.4" fill="#C9C2D8"/></g>`);
+    // the scarf band passes over the pencil's lower half
+    fig.push(`<g clip-path="${bodyClip}"><path d="${band}" fill="${scarfFill}" clip-path="${d.clip('pencilband', `<rect x="${f(px - 9)}" y="${f(sy - 6)}" width="18" height="30"/>`)}"/></g>`);
+  }
 
   // ---- rim light: a soft crescent on the side away from the key light
   d.raw(`<mask id="${d.id('rim')}" maskUnits="userSpaceOnUse" x="0" y="0" width="200" height="200"><path d="${bodyD}" fill="#fff"/><path d="${bodyD}" fill="#000" transform="translate(-5 3.5)" filter="${d.url('rimblur')}"/></mask>`);
@@ -211,11 +217,13 @@ export function draw(input, uid) {
     const lidLine = lid > 0.04 ? `<path d="M${-rx - 0.4} ${f(closed)} Q0 ${f(closed + sag)} ${rx + 0.4} ${f(closed)}" stroke="${C.lidLine}" stroke-width="${lid > 0.95 ? 2.1 : 1.1}" fill="none" stroke-linecap="round" opacity="${lid > 0.95 ? 1 : 0.6}"/>` : '';
     const lowerLine = lower > 0.3 ? `<path d="M${-rx + 0.5} ${f(yb + 2.6)} Q0 ${f(yb - 5.6)} ${rx - 0.5} ${f(yb + 2.6)}" stroke="${C.lidLine}" stroke-width="${lower > 0.7 ? 1.8 : 1}" fill="none" stroke-linecap="round" opacity="${lower > 0.7 ? 0.9 : 0.5}"/>` : '';
     const eyeBall = lid > 0.97 ? '' : `<g clip-path="${clip}">${parts.join('')}</g>`;
-    face.push(`<g transform="translate(${f(x)} ${f(eyeY)}) scale(${f(fore * es)} ${f(es)})">${eyeBall}<g clip-path="${big}">${lids.join('')}</g>${lidLine}${lowerLine}</g>`);
+    if (lower > 0.8) {
+      face.push(`<g transform="translate(${f(x)} ${f(eyeY + 2)}) scale(${f(fore * es)} ${f(es)})"><path d="M-6.8 2.6 Q0 -7.4 6.8 2.6" stroke="${C.eye}" stroke-width="3" fill="none" stroke-linecap="round"/></g>`);
+    } else face.push(`<g transform="translate(${f(x)} ${f(eyeY)}) scale(${f(fore * es)} ${f(es)})">${eyeBall}<g clip-path="${big}">${lids.join('')}</g>${lidLine}${lowerLine}</g>`);
 
     // brow stripe: a pale sweep over the eye, running back toward the side of the head
     const raise = p[`brow${e.side}`] * 4.5;
-    const tiltDeg = p[`browTilt${e.side}`] * 16 * -s;
+    const tiltDeg = p[`browTilt${e.side}`] * 16 * s;
     const bx = x, by = eyeY - 13.5 - raise;
     const inner = [bx - s * 8 * fore, by + 2.5];
     const outer = [bx + s * 18 * fore, by + 6];
@@ -265,7 +273,7 @@ export const states = [
   ['thinking', { gx: -0.6, gy: -0.8, lid: 0.3, browL: 0.9, browR: -0.1, headTilt: 5, tail: -6, extras: ['think'] }],
   ['speaking', { mouth: 0.7, lid: 0.16, brow: 0.3, tail: 4 }],
   ['working', { turn: -0.45, gx: -0.8, gy: 0.4, lid: 0.36, brow: -0.3, browTilt: -0.3, scarfToss: 1, cursorAt: [26, 128] }],
-  ['flying', { turn: -0.5, fly: 1, lean: -14, wingL: 58, wingR: 40, wingLenL: 0.95, wingLenR: 0.8, gx: -0.6, lid: 0.16, feet: 0 }],
+  ['flying', { turn: -0.3, fly: 1, lean: -8, wingL: 45, wingR: 45, wingLenL: 0.95, wingLenR: 0.95, gx: -0.6, lid: 0.16, feet: 0 }],
   ['pointing', { turn: -0.35, wingOpenL: 1, wingL: 40, wingLenL: 0.9, gx: -0.9, gy: -0.6, lid: 0.16, brow: 0.3, lean: -3, cursorAt: [16, 56] }],
   ['happy', { lower: 0.9, lid: 0, brow: 0.6, tail: 18, tailFan: 1, wingL: 14, wingR: 14, lift: 5, squash: 0.03, blush: 0.6 }],
   ['concerned', { lean: 5, browTilt: 0.9, brow: 0.3, lid: 0.1, eyeScale: 0.92, tail: -14, wingL: -4, wingR: -4, gy: 0.2 }],

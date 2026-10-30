@@ -3,7 +3,7 @@
 
 export const GROUND = 182;
 
-export const f = (n) => Math.round(n * 100) / 100;
+export const f = (n) => Math.round(n * 10) / 10;
 export const rad = (d) => (d * Math.PI) / 180;
 export const lerp = (a, b, t) => a + (b - a) * t;
 export const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));

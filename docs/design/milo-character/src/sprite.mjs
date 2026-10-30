@@ -7,7 +7,7 @@ export const name = 'Sprite';
 
 export const C = {
   hoodHi: '#C4B9F0', hoodMid: '#9A8CD8', hoodLo: '#5F50A6', rim: '#7466BE', stitch: '#D9D1FA',
-  faceHi: '#F7F2FD', faceLo: '#E3D9F3', nose: '#4E3A6E', mouth: '#6E2F3C', blush: '#EE9AA6',
+  faceHi: '#F4EEFC', faceLo: '#DCD1F0', nose: '#4E3A6E', mouth: '#6E2F3C', blush: '#EE9AA6',
   eye: '#1E1730', eyeHi: '#54477C', lidLine: '#4A3D78', lid: '#EEE7F8',
   tassel: '#F0B649', tasselLo: '#C98526', boot: '#4A3C7A', bootHi: '#6C5DA8', mitt: '#F3EDFB', mittLo: '#C9B6E0',
   mark: '#7C6CD0',
@@ -16,7 +16,7 @@ export const C = {
 export const defaults = {
   turn: -0.15, lean: 0, squash: 0, lift: 0, headTilt: 0,
   gx: 0, gy: 0,
-  lid: 0.15, lidL: null, lidR: null, lower: 0, lowerL: null, lowerR: null,
+  lid: 0.04, lidL: null, lidR: null, lower: 0, lowerL: null, lowerR: null,
   eyeScale: 1, eyeScaleL: null, eyeScaleR: null,
   brow: 0, browL: null, browR: null, browTilt: 0, browTiltL: null, browTiltR: null,
   mouth: 0, smile: 0.2, blush: 0.25,
@@ -47,7 +47,7 @@ export function draw(input, uid) {
   if (p.feet) {
     for (const [i, x] of [[0, 89 + t * 8], [1, 111 + t * 8]]) {
       const dangle = p.fly * (i ? 6 : -4);
-      fig.push(`<g transform="${rot(dangle, x, 160)}"><path d="M${f(x)} 150 L${f(x)} 173" stroke="${C.boot}" stroke-width="12" stroke-linecap="round"/><path d="M${f(x - 7)} 182 Q${f(x - 8)} 170 ${f(x + 1)} 170 Q${f(x + 11)} 170 ${f(x + 11)} 178 Q${f(x + 11)} 182 ${f(x + 7)} 182Z" fill="${C.boot}"/><path d="M${f(x - 2)} 174.5 Q${f(x + 2)} 173.5 ${f(x + 5)} 175" stroke="${C.bootHi}" stroke-width="1.2" fill="none" stroke-linecap="round"/></g>`);
+      fig.push(`<g transform="${rot(dangle, x, 160)}"><path d="M${f(x)} 150 L${f(x)} 172" stroke="${C.boot}" stroke-width="10" stroke-linecap="round"/><path d="M${f(x - 7)} 182 Q${f(x - 8)} 170 ${f(x + 1)} 170 Q${f(x + 11)} 170 ${f(x + 11)} 178 Q${f(x + 11)} 182 ${f(x + 7)} 182Z" fill="${C.boot}"/><path d="M${f(x - 2)} 174.5 Q${f(x + 2)} 173.5 ${f(x + 5)} 175" stroke="${C.bootHi}" stroke-width="1.2" fill="none" stroke-linecap="round"/></g>`);
     }
   }
 
@@ -103,6 +103,7 @@ export function draw(input, uid) {
   const mitt = (s, a) => {
     const ax = 100 + s * 40 + t * 6, ay = 120;
     if (a <= 40) {
+      if (a < 10) return '';
       const ex = 100 + s * 46 + t * 6, ey = 151;
       return `<ellipse cx="${f(ex)}" cy="${f(ey)}" rx="7" ry="6" fill="${C.mitt}"/><path d="M${f(ex - 4.5)} ${f(ey + 2)} q4.5 3 9 0" stroke="${C.mittLo}" stroke-width="1.2" fill="none"/>`;
     }
@@ -136,18 +137,20 @@ export function draw(input, uid) {
   shade.push(`<path d="M52 128 Q100 ${f(150)} 148 128" stroke="#2E2463" stroke-width="5" fill="none" opacity="0.18" filter="${soft}"/>`);
   if (!p.small) {
     // knit stitches: rows of small v's that follow the dome
+    let vs = '';
     for (let row = 0; row < 9; row++) {
       const y = 58 + row * 11;
       const half = Math.min(42, 20 + row * 7);
       for (let x = -half; x <= half; x += 7) {
         const xx = hx + x + (row % 2) * 3.5;
-        shade.push(`<path d="M${f(xx - 2)} ${f(y + Math.abs(x) * 0.06)} l2 2.4 l2 -2.4" stroke="${C.stitch}" stroke-width="0.9" fill="none" opacity="0.28" stroke-linecap="round"/>`);
+        vs += `M${f(xx - 2)} ${f(y + Math.abs(x) * 0.06)}l2 2.4l2-2.4`;
       }
     }
+    shade.push(`<path d="${vs}" stroke="${C.stitch}" stroke-width="0.9" fill="none" opacity="0.28" stroke-linecap="round"/>`);
     // ribbed hem
-    for (let x = 52; x <= 148; x += 5) {
-      shade.push(`<path d="M${x} ${f(hem(x) - 9)} l0 8" stroke="${C.stitch}" stroke-width="1.2" opacity="0.3" stroke-linecap="round"/>`);
-    }
+    let rib = '';
+    for (let x = 52; x <= 148; x += 5) rib += `M${x} ${f(hem(x) - 9)}v8`;
+    shade.push(`<path d="${rib}" stroke="${C.stitch}" stroke-width="1.2" opacity="0.3" stroke-linecap="round"/>`);
     shade.push(`<path d="M44 ${f(143)} Q100 ${f(151)} 156 143" stroke="${C.tassel}" stroke-width="2.6" fill="none" opacity="0.85"/>`);
   } else {
     shade.push(`<path d="M44 143 Q100 151 156 143" stroke="${C.tassel}" stroke-width="3" fill="none"/>`);
@@ -162,7 +165,7 @@ export function draw(input, uid) {
   const frx = 33 * (1 - Math.abs(t) * 0.22), fry = 28;
   const brimDrop = p.brim * 14;
   const face = [];
-  face.push(`<ellipse cx="${f(fcx)}" cy="${f(fcy + 0.5)}" rx="${f(frx + 3)}" ry="${f(fry + 2.6)}" fill="${C.rim}"/>`);
+  face.push(`<ellipse cx="${f(fcx)}" cy="${f(fcy + 0.5)}" rx="${f(frx + 2.2)}" ry="${f(fry + 2)}" fill="${C.rim}"/>`);
   const faceFill = d.linear('face', [[0, C.faceHi], [1, C.faceLo]]);
   const faceClip = d.clip('faceclip', `<ellipse cx="${f(fcx)}" cy="${f(fcy + 1)}" rx="${f(frx)}" ry="${f(fry)}"/>`);
   face.push(`<ellipse cx="${f(fcx)}" cy="${f(fcy + 1)}" rx="${f(frx)}" ry="${f(fry)}" fill="${faceFill}"/>`);
@@ -178,20 +181,22 @@ export function draw(input, uid) {
     const lid = p[`lid${sideName}`], lower = p[`lower${sideName}`], es = p[`eyeScale${sideName}`];
     const rx = 6.6, ry = 7.8;
     const yl = -ry + lid * ry * 2.1, yb = ry - lower * ry * 1.25;
+    const sag = -1.2 + 4 * lid * lid;
     const eyeFill = d.radial(`eye${sideName}`, [[0, C.eyeHi], [1, C.eye]], { cx: 0.5, cy: 0.85, r: 0.75 });
     const clip = d.clip(`eyeclip${sideName}`, `<ellipse rx="${rx}" ry="${ry}"/>`);
     const big = d.clip(`eyebig${sideName}`, `<ellipse rx="${rx + 1.2}" ry="${ry + 1.2}"/>`);
     const ball = lid > 0.97 ? '' : `<g clip-path="${clip}"><ellipse rx="${rx}" ry="${ry}" fill="${eyeFill}"/><circle cx="${f(1.8 + p.gx * 0.6)}" cy="${f(-2 + p.gy * 0.6)}" r="2" fill="#fff"/><circle cx="-1.9" cy="2.6" r="0.8" fill="#fff" opacity="0.7"/></g>`;
-    const lids = `<path d="M-8 -10 L8 -10 L8 ${f(yl)} Q0 ${f(yl + 2.6)} -8 ${f(yl)}Z" fill="${C.lid}"/>${lower > 0 ? `<path d="M-8 10 L-8 ${f(yb + 2)} Q0 ${f(yb - 4.6)} 8 ${f(yb + 2)} L8 10Z" fill="${C.lid}"/>` : ''}`;
+    const lids = `<path d="M-8 -10 L8 -10 L8 ${f(yl)} Q0 ${f(yl + sag)} -8 ${f(yl)}Z" fill="${C.lid}"/>${lower > 0 ? `<path d="M-8 10 L-8 ${f(yb + 2)} Q0 ${f(yb - 4.6)} 8 ${f(yb + 2)} L8 10Z" fill="${C.lid}"/>` : ''}`;
     const closed = Math.min(yl, ry - 0.4);
-    const lidLine = lid > 0.04 ? `<path d="M${-rx - 0.3} ${f(closed)} Q0 ${f(closed + 2.6)} ${rx + 0.3} ${f(closed)}" stroke="${C.lidLine}" stroke-width="${lid > 0.95 ? 1.6 : 0.9}" fill="none" stroke-linecap="round" opacity="${lid > 0.95 ? 1 : 0.55}"/>` : '';
+    const lidLine = lid > 0.12 ? `<path d="M${-rx - 0.3} ${f(closed)} Q0 ${f(closed + sag)} ${rx + 0.3} ${f(closed)}" stroke="${C.lidLine}" stroke-width="${lid > 0.95 ? 1.6 : 0.9}" fill="none" stroke-linecap="round" opacity="${lid > 0.95 ? 1 : 0.55}"/>` : '';
     const lowerLine = lower > 0.3 ? `<path d="M${-rx + 0.4} ${f(yb + 2)} Q0 ${f(yb - 4.6)} ${rx - 0.4} ${f(yb + 2)}" stroke="${C.lidLine}" stroke-width="${lower > 0.7 ? 1.5 : 0.9}" fill="none" stroke-linecap="round" opacity="0.85"/>` : '';
-    inner.push(`<g transform="translate(${f(x)} ${f(y)}) scale(${f(fore * es)} ${f(es)})">${ball}<g clip-path="${big}">${lids}</g>${lidLine}${lowerLine}</g>`);
+    if (lower > 0.8) inner.push(`<g transform="translate(${f(x)} ${f(y + 1.6)}) scale(${f(fore * es)} ${f(es)})"><path d="M-5.8 2.2 Q0 -6.4 5.8 2.2" stroke="${C.eye}" stroke-width="2.6" fill="none" stroke-linecap="round"/></g>`);
+    else inner.push(`<g transform="translate(${f(x)} ${f(y)}) scale(${f(fore * es)} ${f(es)})">${ball}<g clip-path="${big}">${lids}</g>${lidLine}${lowerLine}</g>`);
     // brows: short soft strokes, only when a feeling needs them
     const raise = p[`brow${sideName}`], tilt = p[`browTilt${sideName}`];
     if (Math.abs(raise) > 0.15 || Math.abs(tilt) > 0.15) {
       const by = y - 10 - raise * 2.5;
-      inner.push(`<path d="${taper([x - 4.5, by + 0.5], [x, by - 1.5], [x + 4.5, by + 0.5], 2, 1)}" fill="${C.lidLine}" opacity="0.7" transform="${rot(tilt * 18 * -s, x, by)}"/>`);
+      inner.push(`<path d="${taper([x - 4.5, by + 0.5], [x, by - 1.5], [x + 4.5, by + 0.5], 2, 1)}" fill="${C.lidLine}" opacity="0.7" transform="${rot(tilt * 18 * s, x, by)}"/>`);
     }
   }
   // nose and mouth
