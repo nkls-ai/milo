@@ -86,6 +86,42 @@ def test_conversation_continues_and_restarts_after_idle_with_a_fresh_profile():
     assert "- Drinks tea" in s.model.system_prompts[1]
 
 
+def test_the_talk_key_starts_a_fresh_conversation_while_the_user_speaks():
+    s = Stack()
+
+    async def run():
+        await s.live_talk.start("hi")
+        s.live_talk.prepare()
+        await settle()
+        assert len(s.model.system_prompts) == 1, "the conversation is fresh: nothing to do"
+        s.clock.advance(seconds=601)
+        s.live_talk.prepare()
+        s.live_talk.prepare()  # a second press while it starts doesn't start another
+        await settle()
+        assert len(s.model.system_prompts) == 2, "started before the words are in"
+        await s.live_talk.start("hello again")
+
+    asyncio.run(run())
+    assert len(s.model.system_prompts) == 2, "the turn found it ready"
+    assert s.model.turns[-1].endswith("hello again")
+
+
+def test_the_talk_key_reaches_live_talk_before_listening():
+    from milo.core.events import ListenStart
+    from milo.core.types import ListenMode
+
+    s = Stack()
+
+    async def run():
+        s.clock.advance(seconds=601)
+        await s.brain.handle(ListenStart(ListenMode.TALK, tentative=True))
+        await s.brain.handle(ListenStart(ListenMode.DICTATE, tentative=True))
+        await settle()
+
+    asyncio.run(run())
+    assert len(s.model.system_prompts) == 1, "talking prepares the conversation, dictating doesn't"
+
+
 def test_a_warmed_conversation_is_kept_unless_its_prompt_changed():
     s = Stack()
 
