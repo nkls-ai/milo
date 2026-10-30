@@ -84,18 +84,32 @@ def yes_or_no(text: str) -> bool | None:
 
 
 QUESTION_MAX = 240
-"""The longest question the bubble shows whole (about eight lines beside Milo)."""
+"""The longest question the bubble shows whole."""
+BUBBLE_LINES = 8
+"""The lines the bubble shows (BubbleView's lineLimit)."""
+LINE_CHARS = 32
+"""Fewer characters than a bubble line holds, so the estimate of the lines a question needs errs high."""
 SEE_WINDOW = " (all of it is in the Milo window)"
 
 
+def bubble_lines(text: str) -> int:
+    """About how many lines `text` takes in the bubble: each line break starts one, long lines wrap."""
+    return sum(max(1, -(-len(line) // LINE_CHARS)) for line in text.split("\n"))
+
+
 def fit_bubble(question: str, detail: str) -> tuple[str, str]:
-    """A question the bubble can show whole. A longer one is cut where everyone can see it was cut, and the
-    whole of it goes into the detail the Milo window shows: Yes must never sit under a hidden end."""
-    if len(question) <= QUESTION_MAX:
+    """A question the bubble can show whole. A longer one, in characters or in lines, is cut where everyone can
+    see it was cut, and the whole of it goes into the detail the Milo window shows: Yes must never sit under a
+    hidden end."""
+    if len(question) <= QUESTION_MAX and bubble_lines(question) <= BUBBLE_LINES:
         return question, detail
+    whole = f"{question}\n\n{detail}" if detail else question
     room = QUESTION_MAX - len(SEE_WINDOW) - 1
-    short = question[:room].rsplit(" ", 1)[0].rstrip(",;: ") + "…" + SEE_WINDOW
-    return short, f"{question}\n\n{detail}" if detail else question
+    short = " ".join(question.split())[:room]
+    while short and bubble_lines(short + "…" + SEE_WINDOW) > BUBBLE_LINES:
+        short = short[:-LINE_CHARS]
+    short = short.rsplit(" ", 1)[0].rstrip(",;: ") if " " in short else short
+    return short + "…" + SEE_WINDOW, whole
 
 
 class Approvals:

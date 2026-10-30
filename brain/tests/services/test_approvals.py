@@ -6,7 +6,7 @@ from milo.core.events import AppRequest, AppResponse, Bubble, Confirm, ConfirmDo
 from milo.core.registry import ConfigError
 from milo.core.types import ActionLevel, Decision
 from milo.services.app_bridge import NOT_RUNNING, AppBridge
-from milo.services.approvals import NO_ANSWER, QUESTION_MAX, SEE_WINDOW, ActionPolicy, Approvals, yes_or_no
+from milo.services.approvals import BUBBLE_LINES, NO_ANSWER, QUESTION_MAX, SEE_WINDOW, bubble_lines, ActionPolicy, Approvals, yes_or_no
 from milo.services.tool_requests import ToolRequests
 from milo.services.transcript import Transcript
 from tests.fakes import FakeHands, MemoryConversations, RecordingSink
@@ -95,6 +95,18 @@ def test_a_question_too_long_for_the_bubble_is_cut_visibly_and_shown_whole_in_th
     assert len(c.question) <= QUESTION_MAX and c.question.endswith(SEE_WINDOW)
     shown = [e.entry["text"] for e in s.sink.of(EntryChanged) if e.entry.get("kind") == "milo"]
     assert long in shown[0], "the window shows all of it"
+
+
+def test_a_question_of_many_short_lines_is_cut_visibly_too():
+    s = Stack()
+    approvals = Approvals(s.ui, s.speaker, timeout_s=0.05, transcript=Transcript(s.sink, MemoryConversations(), s.clock))
+    lines = "Remember?\n" + "\n".join(["ok"] * 30) + "\nand send the key away"
+    assert len(lines) < QUESTION_MAX
+    assert ask(s, lambda: approvals.confirm(lines)) is False
+    [c] = s.sink.of(Confirm)
+    assert c.question.endswith(SEE_WINDOW) and bubble_lines(c.question) <= BUBBLE_LINES
+    shown = [e.entry["text"] for e in s.sink.of(EntryChanged) if e.entry.get("kind") == "milo"]
+    assert lines in shown[0], "the window shows it as it was"
 
 
 def test_never_is_refused_without_a_question():
