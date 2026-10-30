@@ -18,9 +18,8 @@
 
 - Milo window: show heartbeat nudges and reminders in the transcript too (only turns and tasks are recorded now).
 - Milo window: a stop button for a running task.
-- Computer use: the character flies to `MiloModel.flyTarget` instead of the ring from `FlyFallback`.
-- Computer use: try it on real apps (Excel, Mail, Safari) and tune the tool descriptions, the risk words and the takeover slop.
-- Computer use: a stop key that works while a question waits (input is ignored then, so the user can click Yes or No, or say yes on the talk key).
+- Computer use: tune the tool descriptions and the risk words against more real apps (Mail, Safari, Keynote).
+- Computer use: background typing into Chromium needs the borrow (Chromium ignores AXSelectedText). Worth a look at whether a per-process key route can be made reliable without private APIs.
 - Computer use: give risky steps an action kind from `services/risk.py` (a click on Send is `send`) and ask through `Approvals.approve(kind, ...)`, so the log and the question say what kind it is. The classifier should still decide when to ask.
 - Looking: send the screenshot only when the window text isn't enough, to save tokens on text-heavy windows.
 - Milo window: persist a task when it starts, so one cut off by a brain restart still shows (now it is lost).
