@@ -199,7 +199,8 @@ def confirm_question(tool: str, args: dict, target: dict, reason: str) -> str:
     if tool == "run_applescript":
         told = _TELL.search(str(args["script"]))
         where = f" in {told.group(1)}" if told else ""
-        return f"I'm about to run a script{where} that can {reason}. Go ahead?"
+        can = "" if reason == "run a script" else f" that can {reason}"
+        return f"I'm about to run a script{where}{can}. The script is in my window. Go ahead?"
     return f"I'm about to {reason}{in_app}. Go ahead?"
 
 

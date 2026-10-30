@@ -89,7 +89,8 @@ def test_password_fields_are_never_typed_into():
 def test_a_risky_script_names_the_app_in_its_question():
     t = Setup(confirm=FakeConfirm(False))
     t.fails("run_applescript", {"script": 'tell application "Mail" to send m'})
-    assert t.confirm.asked == ["I'm about to run a script in Mail that can send. Go ahead?"]
+    assert t.confirm.asked == ["I'm about to run a script in Mail that can send. The script is in my window. "
+                              "Go ahead?"]
 
 
 def test_applescript_can_be_turned_off():

@@ -74,8 +74,8 @@ TOOLS: tuple[Tool, ...] = (
          {"element": _s("Element id from ax_tree."), "text": _s("The new value.")}, ("element", "text"),
          acts=True),
     Tool("run_applescript", "Run AppleScript in Milo. The fastest way to drive scriptable apps (Mail, Notes, "
-         "Finder, Safari, Calendar, Excel, Numbers, Keynote). Scripts that send, delete, buy or run shell "
-         "commands wait for the user's yes; scripts about passwords never run. Up to 30 s.",
+         "Finder, Safari, Calendar, Excel, Numbers, Keynote). Each script waits for the user's yes, so do the "
+         "whole job in one script rather than many small ones. Scripts about passwords never run. Up to 30 s.",
          {"script": _s("The AppleScript source.")}, ("script",), acts=True),
     Tool("screenshot", "Take a screenshot of the display with the front window. Slow and costly: use it only "
          "when window_text and ax_tree can't tell you enough. click and scroll take x and y in this "
