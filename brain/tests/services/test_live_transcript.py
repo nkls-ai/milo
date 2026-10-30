@@ -368,6 +368,38 @@ def test_commits_and_guesses_go_before_previews():
     assert kinds[:3] == ["preview", "full", "preview"], kinds
 
 
+def test_no_preview_starts_once_the_speaker_falls_quiet():
+    mic, stt, sink = GrowingMic(), HearingStt(), RecordingSink()
+    lt = live(mic, stt, sink, settle_s=0.4, min_new_s=0.1)
+
+    async def run():
+        lt.start()
+        mic.say(tone("alpha", 1))
+        await settle()
+        mic.say(quiet(0.3))  # quiet for longer than settle/2, not yet settle: the guess is about to come
+        await settle()
+        lt.abort()
+
+    asyncio.run(run())
+    assert [kind for kind, _, _ in stt.log] == ["preview"]
+
+
+def test_previews_leave_the_gpu_idle_for_a_gap_but_commits_do_not_wait():
+    mic, stt, sink = GrowingMic(), HearingStt(), RecordingSink()
+    lt = live(mic, stt, sink, gap_s=60)
+
+    async def run():
+        lt.start()
+        mic.say(tone("alpha", 1))
+        await settle()
+        mic.say(quiet(1), tone("bravo", 1))
+        await settle()
+        lt.abort()
+
+    asyncio.run(run())
+    assert [kind for kind, _, _ in stt.log] == ["preview", "full"]
+
+
 def test_finish_waits_for_the_phrase_in_flight_then_does_the_rest_in_order():
     mic, stt, sink = GrowingMic(), HearingStt(block=True), RecordingSink()
     executor = ThreadPoolExecutor(1)

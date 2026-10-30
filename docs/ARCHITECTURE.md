@@ -33,7 +33,7 @@ brain/src/milo/
                   transcript (the Milo window's conversation)
   proactive/      heartbeat engine, daily LLM budget, rules (one class per rule, registered by name)
   services/       use cases built only on ports: listening (push-to-talk, barge-in), dictation,
-                  live_transcript (pause segmenter and partial passes while recording),
+                  live_transcript (pause segmenter, phrases committed while recording, live words),
                   live_talk (user turns on the chat model), reply_stream (tags out of the reply stream),
                   chunker + speaker (streaming TTS), task_runner + conversation (delegated work on the
                   harness), transcript (what the Milo window shows), heartbeat_runner, approvals
@@ -47,6 +47,7 @@ brain/src/milo/
   mcp_server.py   the milo-mac MCP stdio server the worker CLI starts; forwards calls to hands.sock
   brain.py        routes inbound commands to services
   config.py       reads config.toml into sections
+  config_edit.py  changes one setting in config.toml in place (the menu's dictation style)
   compose.py      composition root: the only module that names concrete classes
   server.py       main()
 ```
@@ -75,6 +76,20 @@ Beyond `milo.core.ports`, these entry points are fixed:
 | `milo.services.approvals.Approvals` | services | `approve(kind, summary) -> Decision` applies the action level and asks if needed. `confirm(summary) -> bool` always asks (the `Confirmer` port). |
 | `milo.transport.tool_client.BrainClient(path)` | transport | `request(body) -> dict` on `run/tools.sock`; `approve(kind, summary) -> Decision`. Used by the MCP server, and by any helper process that needs a yes. |
 | `milo.proactive.build_engine(section, ctx, reminders) -> ProactiveEngine` | proactive | `section` is the whole `[heartbeat]` table including sub-tables. Ignores `enabled` (compose.py decides whether to run it). |
+
+## Listening
+
+Both keys listen the same way (`services/listening.py`, `services/live_transcript.py`). Only what happens to the text differs: dictation pastes it, talk hands it to `LiveTalk`.
+
+1. **Phrases.** While the key is held, `LiveTranscript` reads the new audio every 0.1 s and `PauseSegmenter` cuts it into phrases at pauses: 0.7 s of quiet, or 0.3 s once a phrase has run 6 s, or the quietest frame once it reaches 12 s.
+2. **Commits.** Each closed phrase is transcribed by the full model (large-v3-turbo) while the user goes on talking, with the text before it as Whisper's prompt so spelling, casing and language carry over. That text is final. `stream = "type"` pastes it at once.
+3. **Guess.** When the open phrase has been quiet for 0.25 s, the full model transcribes it as it stands. If the user speaks again, the guess is dropped. If a pause then closes the phrase, the guess becomes its commit. If the user lets go first, the guess is the last phrase and the release costs no pass at all.
+4. **Preview.** Otherwise the small model (whisper-base) re-reads the open phrase for the live words above Milo (`partial`). Commits and guesses always go first, so at most one preview pass (about 0.05 s) runs ahead of the full model.
+5. **Release.** `finish()` waits for the pass in flight, commits any phrase still waiting, and transcribes the open phrase unless a guess covers it. Only the last few seconds are ever transcribed after the key comes up.
+
+All passes run one at a time on the STT thread. Each costs roughly its own length: the Whisper adapter encodes the audio plus 1 s of silence, but at least 10 s, instead of a padded 30 s window. With less than 10 s the decoder loses track of where speech ends and repeats itself. A decode that loops, runs past 8 tokens a second or that Whisper itself doubts goes through the full 30 s window instead. `stream = "off"` runs no live passes and transcribes the whole recording on release.
+
+The menu bar item's "Dictation style" sends `set_dictation_stream`; the brain uses it from the next recording, writes `[dictation] stream` into `config.toml` in place (`config_edit.py`, comments kept) and answers `dictation_stream`, which it also sends on connect.
 
 ## A user turn
 

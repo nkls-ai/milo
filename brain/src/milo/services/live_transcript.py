@@ -45,8 +45,8 @@ class PauseSegmenter:
     without any pause is cut at its quietest frame, which keeps every pass inside one Whisper window.
     """
 
-    def __init__(self, sample_rate: int = STT_SAMPLE_RATE, *, pause_s: float = 0.7, long_s: float = 8.0,
-                 long_pause_s: float = 0.4, max_s: float = 20.0, min_speech_s: float = 0.2, lead_s: float = 0.3,
+    def __init__(self, sample_rate: int = STT_SAMPLE_RATE, *, pause_s: float = 0.7, long_s: float = 6.0,
+                 long_pause_s: float = 0.3, max_s: float = 12.0, min_speech_s: float = 0.2, lead_s: float = 0.3,
                  min_rms: float = 0.008, max_rms: float = 0.03, noise_ratio: float = 3.0, frame_s: float = 0.03):
         self._frame = int(sample_rate * frame_s)
         self._pause = max(2, round(pause_s / frame_s))
@@ -178,8 +178,10 @@ class LiveTranscript:
     3. Preview the open phrase with the fast model, once `min_new_s` more audio came in.
 
     `show` sends the words so far as a Partial: committed text, then the guess or preview of the open
-    phrase. Commits and guesses always run before previews, so the full model is never behind by more
-    than one preview pass (about 0.1 s). `gap_s` of idle GPU between passes leaves room for speech synthesis.
+    phrase. Commits and guesses always run before previews and start as soon as they are due, so the full
+    model is never behind by more than one preview pass (about 0.05 s). A preview needs `gap_s` of idle
+    GPU before it, which leaves room for speech synthesis, and none starts once the open phrase has gone
+    quiet: the guess is about to come.
 
     finish() is the release: it waits for the pass in flight, commits what is left and returns the whole text.
     """
@@ -208,6 +210,7 @@ class LiveTranscript:
         self._previewed = 0
         self._shown = ""
         self._passing = False
+        self._idle_since = float("-inf")  # when the last pass ended
         self._closing = False
         self._task: asyncio.Task | None = None
 
@@ -257,12 +260,11 @@ class LiveTranscript:
         await asyncio.wait({task})
 
     async def _run(self) -> None:
-        idle_s = self._poll_s
         try:
             while not self._closing:
-                await asyncio.sleep(idle_s)
+                await asyncio.sleep(self._poll_s)
                 self._listen(self._mic.peek(self._heard))
-                idle_s = self._poll_s if not await self._next_pass() else max(self._poll_s, self._gap_s)
+                await self._next_pass()
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -277,8 +279,8 @@ class LiveTranscript:
             if (closed.speech_end if closed is not None else self._segmenter.speech_end) > guess.end:
                 self._guess = None  # the user went on talking
 
-    async def _next_pass(self) -> bool:
-        """Run the most urgent pass. False if there was nothing to do."""
+    async def _next_pass(self) -> None:
+        """Run the most urgent pass, if any."""
         seg = self._segmenter
         if self._pending:
             await self._commit_next(lambda start, end: self._mic.peek(start)[:end - start])
@@ -288,16 +290,14 @@ class LiveTranscript:
             if seg.open_start == start and seg.speech_end <= end:  # kept on release too: it may be the end
                 self._guess = _Guess(start, end, text)
                 self._show()
-        elif seg.open_has_speech and self._heard - self._previewed >= self._min_new and self._show_live:
+        elif (seg.open_has_speech and self._show_live and self._heard - self._previewed >= self._min_new
+              and seg.silence_s < self._settle_s / 2 and self._monotonic() - self._idle_since >= self._gap_s):
             self._previewed = self._heard
             start = seg.open_start
             text = await self._pass(self._stt.preview, self._mic.peek(start))
             if not self._closing and seg.open_start == start:
                 self._preview = text
                 self._show()
-        else:
-            return False
-        return True
 
     async def _commit_next(self, clip: Callable[[int, int], Audio]) -> None:
         """Commit the oldest closed phrase; `clip(start, end)` gives its audio. A guess still standing for
@@ -333,6 +333,7 @@ class LiveTranscript:
             text = await asyncio.get_running_loop().run_in_executor(self._executor, fn, *args)
         finally:
             self._passing = False
+            self._idle_since = self._monotonic()
         log.debug("%s %.1fs audio in %.2fs: %s", getattr(fn, "__name__", "pass"), len(audio) / STT_SAMPLE_RATE,
                   self._monotonic() - started, private(text))
         return text.strip()

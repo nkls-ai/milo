@@ -105,8 +105,10 @@ output_device = ""
 [dictation]
 use = "fillers"                   # fillers | plain
 keep_history = true               # log dictations to dictation-history.jsonl
-# While you speak: "off" transcribes on release. "preview" shows the words next to Milo and pastes one
-# final pass on release. "type" pastes each phrase at the pause after it (earlier phrases stay as typed).
+# What happens while you speak, for dictation and for talking to Milo. Menu bar > Dictation style switches it.
+#   "preview": the words show next to Milo; the text is pasted the moment you let go.
+#   "type":    each phrase is typed into the app at the pause after it (talking to Milo works like preview).
+#   "off":     nothing while you speak; the whole recording is transcribed when you let go (slower).
 stream = "preview"
 
 [dictation.fillers]
