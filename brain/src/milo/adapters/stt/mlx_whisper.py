@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 import threading
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -77,6 +78,15 @@ class MlxWhisper:
             log.info("loading %s", name)
             self._whisper(name).warm(self.language, self.prompt)
         log.info("stt ready")
+
+    def wake(self) -> None:
+        """A short pass over a second of silence on each loaded model touches all their weights."""
+        started = time.monotonic()
+        for name in dict.fromkeys((self.model, self.preview_model)):
+            if (whisper := self._models.get(name)) is not None:
+                whisper.wake(self.language)
+        if (took := time.monotonic() - started) > 0.5:
+            log.info("woke the speech models in %.2fs (paged out while idle)", took)
 
     def transcribe(self, audio: Audio, before: str = "", *, quick: bool = False) -> str:
         language = self.language
@@ -168,6 +178,10 @@ class _Whisper:
         model, silence = self._load(), np.zeros(STT_SAMPLE_RATE, dtype=np.float32)
         self._run_short(model, silence, language, prompt)
         self._run_full(model, silence, language, prompt)
+
+    def wake(self, language: str | None) -> None:
+        if self._model is not None:
+            self._run_short(self._model, np.zeros(STT_SAMPLE_RATE, dtype=np.float32), language or "en", None)
 
     def run(self, audio: Audio, language: str | None, prompt: str | None, *, quick: bool = False) -> str:
         audio = audio.astype(np.float32)

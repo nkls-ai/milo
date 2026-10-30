@@ -61,6 +61,12 @@ class Transcriber(Protocol):
         """Load models so the first call is fast. Blocking; called on a worker thread."""
         ...
 
+    def wake(self) -> None:
+        """The user pressed a key to speak. Bring loaded models back into memory, which macOS pages out
+        while the brain idles, so the passes that follow aren't slowed by that. Blocking and cheap; runs
+        on the STT thread ahead of them. An engine with nothing to page in does nothing."""
+        ...
+
     def transcribe(self, audio: Audio, before: str = "", *, quick: bool = False) -> str:
         """16 kHz mono audio to text. Returns "" for silence or noise. Blocking.
 

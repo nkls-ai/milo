@@ -76,8 +76,17 @@ class Listening:
             return
         self._mode = mode
         self._shown = False
+        self._wake()
         if not tentative:
             self._show()
+
+    def _wake(self) -> None:
+        """Page the model in while the user starts talking (see Transcriber.wake)."""
+        def failed(woken: asyncio.Future) -> None:
+            if not woken.cancelled() and woken.exception() is not None:
+                log.warning("waking the speech model failed: %s", woken.exception())
+
+        asyncio.get_running_loop().run_in_executor(self._executor, self._transcriber.wake).add_done_callback(failed)
 
     def confirm(self) -> None:
         """Show a tentative recording: the key is held, or a double tap locked it on."""

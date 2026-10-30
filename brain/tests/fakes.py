@@ -140,6 +140,9 @@ class FakeTranscriber:
     def warm(self) -> None:
         self.warmed = True
 
+    def wake(self) -> None:
+        pass
+
     def transcribe(self, audio: Audio, before: str = "", *, quick: bool = False) -> str:
         self.calls.append(audio)
         return self.texts.popleft() if self.texts else ""
