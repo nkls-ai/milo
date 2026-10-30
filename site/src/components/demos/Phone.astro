@@ -56,7 +56,8 @@ import Replay from '../Replay.astro';
   }
   .chat-head > span:last-child { display: grid; }
   .chat-avatar { width: 2.4rem; height: 2.4rem; border-radius: 50%; background: var(--lavender-wash); display: grid; place-items: center; overflow: hidden; }
-  .chat-avatar :global(milo-character) { width: 2.5rem; margin-top: 0.4rem; }
+  /* his face in the middle of the circle, tuft to feet inside it */
+  .chat-avatar :global(milo-character) { width: 2.8rem; margin-top: -0.3rem; }
   .chat-sub { font-size: 0.78rem; color: var(--ink-3); }
   .chat { list-style: none; margin: 0; padding: 0.9rem 0.75rem; display: flex; flex-direction: column; justify-content: end; gap: 0.4rem; overflow: hidden; }
   .chat :global(.msg) {

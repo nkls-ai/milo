@@ -60,7 +60,8 @@ Every section at 390, 1440 and 2560 px, light and dark, with reduced motion so d
 
 - `p1-before/`: the first full build.
 - `p2/`: after the first round of fixes.
-- `p3-after/`: after the second round. The best shots are listed in `site/README.md`.
+- `p3-after/`: after the second round, with wren v4.
+- `p4/`: the cuter wren from track 12. The best shots are listed in `site/README.md`.
 
 ### Pass 1, against the details list
 
@@ -87,3 +88,15 @@ Every section at 390, 1440 and 2560 px, light and dark, with reduced motion so d
 - "Ask us. A person answers." had nowhere to write to. It's a link now.
 - Plus's corners on phones, plan headers aligned to the top, a bigger hero headline on large screens.
 - Copy: removed mid-sentence colons and the one pair of brackets (unslop pass).
+
+### Pass 4, the cuter wren
+
+The app's wren changed after track 12: a fluffy three-feather tuft, soft lavender brows instead of white stripes, big low eyes with two catchlights and a sparkle, pink cheeks, a rounder body and a slimmer, shorter scarf. The JS rig in `docs/design` was still v4, so `src/character/wren.js` is now a port of `WrenRig.swift`, and the motion follows `WrenMotion.swift`: a spring per number, the app's moves (hop, happy wiggle, fluff-up, perk, flinch, double take, ruffle...) played on pose changes, and the scarf, tail, head and tuft thrown about by his motion. The tuft perks up when he listens, lies flat when he sleeps and fluffs up when he's surprised.
+
+- The wave first used his right wing, which opens over his tail and got lost. It uses the left one now, clear of the tail.
+- Halfway through the wave his eyes sat between open and smiling. The wave now closes them all the way into smile arches.
+- The yawn left his lids 0.4 lower when it ended, which popped. Every move now ends at rest.
+- The phone's chat avatar showed him sunk into the bottom of the circle. His face is in the middle now, tuft to feet inside.
+- The icon crop is wider so the tuft and tail fit (`30 34 152 152`); the share card shows him bright-eyed, tuft up.
+- An idle Milo stops redrawing once he settles, as before. Only the hero Milo, who talks in a loop, keeps animating.
+

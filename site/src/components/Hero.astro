@@ -158,10 +158,12 @@ import Character from './Character.astro';
   .milo-free.is-aside .milo-bubble { opacity: 0; }
   :root:not([data-milo='hero']) .said { opacity: 0 !important; }
   @media (prefers-reduced-motion: no-preference) {
-    .milo-hit milo-character { animation: breathe 4.2s ease-in-out infinite; }
-    .milo-free[data-state='sleeping'] .milo-hit milo-character { animation-duration: 6.4s; }
+    .milo-hit milo-character { animation: breathe 3.6s ease-in-out infinite; }
+    .milo-free[data-state='sleeping'] .milo-hit milo-character { animation: breathe-deep 5.2s ease-in-out infinite; }
   }
-  @keyframes breathe { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(1.012, 0.99); } }
+  /* the app's breath: out, then a slow fill that lifts him a little; deeper and slower asleep */
+  @keyframes breathe { 0%, 100% { transform: scale(1.0036, 0.9952); } 42% { transform: scale(0.9964, 1.012); } }
+  @keyframes breathe-deep { 0%, 100% { transform: scale(1.0066, 0.9912); } 42% { transform: scale(0.9934, 1.022); } }
 
   .milo-bubble {
     position: absolute; right: 52%; bottom: 84%;
