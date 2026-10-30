@@ -14,6 +14,7 @@ BUILTIN = (
     "harness.claude_live",
     "stt.mlx_whisper",
     "stt.elevenlabs_scribe",
+    "stt.tones",
     "tts.say",
     "tts.omnivoice",
     "tts.elevenlabs",

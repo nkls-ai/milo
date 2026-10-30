@@ -60,7 +60,7 @@ class PauseSegmenter:
 
     def __init__(self, sample_rate: int = STT_SAMPLE_RATE, *, pause_s: float = 0.7, long_s: float = 6.0,
                  long_pause_s: float = 0.3, max_s: float = 12.0, min_speech_s: float = 0.2, lead_s: float = 0.3,
-                 min_rms: float = 0.008, max_rms: float = 0.03, noise_ratio: float = 3.0, frame_s: float = 0.03):
+                 min_rms: float = 0.004, max_rms: float = 0.03, noise_ratio: float = 2.5, frame_s: float = 0.03):
         self._frame = int(sample_rate * frame_s)
         self._pause = max(2, round(pause_s / frame_s))
         self._long = round(long_s / frame_s)
@@ -236,8 +236,9 @@ class LiveTranscript:
     GPU before it, which leaves room for speech synthesis, and none starts once the open phrase has gone
     quiet: the guess is about to come.
 
-    finish() is the release: it interrupts a commit or preview in flight (a guess is let finish, it may be the
-    end), commits what is left in quick passes and returns the whole text. A quick pass that hears nothing
+    finish() is the release: it interrupts a commit or preview in flight (a guess is let finish if nothing was
+    said after it: it may be the end), transcribes everything left in one quick pass and returns the whole
+    text. A quick pass that hears nothing
     in voiced audio is done again at full accuracy, and if the text is still short for the speech (fewer
     than `min_words_per_s` words per second of it), one full pass over the whole recording decides.
     """
@@ -272,6 +273,7 @@ class LiveTranscript:
         self._interruptible = False
         self._idle_since = float("-inf")  # when the last pass ended
         self._closing = False
+        self._guessing: int | None = None  # the end of the guess in flight
         self._task: asyncio.Task | None = None
 
     @property
@@ -284,21 +286,22 @@ class LiveTranscript:
 
     async def finish(self, audio: Audio) -> str:
         """The rest of `audio` (the whole recording) transcribed after the phrases already committed.
-        Returns all of it. Everything left runs in quick passes: the user is waiting now."""
-        await self._stop()
+        Returns all of it. Whatever is left, closed phrases and the open one, goes in one quick pass: the
+        user is waiting now. None if a guess holds all of it."""
+        await self._stop(audio)
         self._listen(audio[self._heard:])
-        while self._pending:
-            await self._commit_next(lambda start, end: audio[start:end], quick=True)
         guess, self._guess, self._preview = self._guess, None, ""
-        tail = audio[self._covered:]
-        start = self._voice_start(tail)
+        rest = audio[self._covered:]
+        start = self._voice_start(rest)
         if start is None:
             self._show()
-        elif guess is not None and self._guess_covers(guess, tail, len(audio)):
-            log.debug("release: the guess covers the last phrase")
+        elif guess is not None and self._guess_covers(guess, rest, len(audio)):
+            log.debug("release: the guess covers the rest")
             self._commit(guess.text)
         else:
-            self._commit(await self._sure(tail[start:]))
+            self._commit(await self._sure(rest[start:]))
+        self._pending.clear()
+        self._covered = len(audio)
         await self._check_length(audio)
         return self.text
 
@@ -308,14 +311,17 @@ class LiveTranscript:
         if self._task is not None:
             self._task.cancel()
 
-    async def _stop(self) -> None:
+    async def _stop(self, audio: Audio) -> None:
+        """End the live passes. A guess in flight is let finish if nothing voiced came after it: it may be the
+        end. Anything else in flight is interrupted."""
         self._closing = True
         task = self._task
         if task is None:
             return
+        guessing = self._guessing
         if not self._passing:
             task.cancel()
-        elif self._interruptible:
+        elif self._interruptible or (guessing is not None and self._has_voice(audio[guessing:])):
             self._stt.interrupt()
         await asyncio.wait({task})
 
@@ -345,14 +351,18 @@ class LiveTranscript:
         """Run the most urgent pass, if any."""
         seg = self._segmenter
         if self._pending:
-            await self._commit_next(lambda start, end: self._mic.peek(start)[:end - start], quick=False)
+            await self._commit_next()
         elif seg.open_has_speech and seg.silence_s >= self._settle_s and self._guess is None:
             covered, end, open_start = self._covered, self._heard, seg.open_start
             audio = self._mic.peek(covered)[:end - covered]
             voice = self._voice_start(audio)
             start = covered + (voice if voice is not None else open_start - covered)
-            text = await self._pass(self._stt.transcribe, audio[start - covered:], self.text,
-                                    quick=True, interruptible=False)
+            self._guessing = end
+            try:
+                text = await self._pass(self._stt.transcribe, audio[start - covered:], self.text,
+                                        quick=True, interruptible=False)
+            finally:
+                self._guessing = None
             if seg.open_start == open_start and seg.speech_end <= end:  # kept on release too: it may be the end
                 self._guess = _Guess(start, end, text)
                 self._show()
@@ -365,20 +375,13 @@ class LiveTranscript:
                 self._preview = text
                 self._show()
 
-    async def _commit_next(self, clip: Callable[[int, int], Audio], *, quick: bool) -> None:
-        """Commit the oldest closed phrase; `clip(start, end)` gives audio of the recording. The phrase runs
-        from the end of the last one, less silence. A quick commit takes a guess still standing for it as
-        its text if nothing voiced lies outside the guess. A full one does the phrase again at full accuracy."""
+    async def _commit_next(self) -> None:
+        """Commit the oldest closed phrase at full accuracy. It runs from the end of the last one, less silence."""
         cut = self._pending[0]
-        audio = clip(self._covered, cut.end)
+        audio = self._mic.peek(self._covered)[:cut.end - self._covered]
         voice = self._voice_start(audio)
         start = self._covered + voice if voice is not None else cut.start
-        guess = self._guess
-        if quick and guess is not None and self._guess_covers(guess, audio, cut.end):
-            text = guess.text
-        else:
-            audio = audio[start - self._covered:]
-            text = await self._sure(audio) if quick else await self._pass(self._stt.transcribe, audio, self.text)
+        text = await self._pass(self._stt.transcribe, audio[start - self._covered:], self.text)
         self._pending.pop(0)
         self._covered = cut.end
         if self._guess is not None and self._guess.start < cut.end:

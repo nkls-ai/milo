@@ -12,6 +12,8 @@ public final class MiloController {
         public var bindings: HotkeyBindings
         /// Presses shorter than this are taps: one alone does nothing, two lock hands-free.
         public var minHold: TimeInterval
+        /// A press shows the listening state after this long (a tap shorter than that shows nothing).
+        public var showAfter: TimeInterval
         /// The second tap must start within this long of the first.
         public var doubleTap: TimeInterval
         /// A hands-free recording stops by itself after this long, until `ui_config` says otherwise.
@@ -20,13 +22,14 @@ public final class MiloController {
         public var promptForAccessibility: Bool
 
         public init(contextInterval: TimeInterval = 15, drowsyAfter: TimeInterval = 600,
-                    bindings: HotkeyBindings = .default, minHold: TimeInterval = 0.25,
+                    bindings: HotkeyBindings = .default, minHold: TimeInterval = 0.25, showAfter: TimeInterval = 0.08,
                     doubleTap: TimeInterval = 0.35, handsFreeMax: TimeInterval = 300,
                     promptForAccessibility: Bool = true) {
             self.contextInterval = contextInterval
             self.drowsyAfter = drowsyAfter
             self.bindings = bindings
             self.minHold = minHold
+            self.showAfter = showAfter
             self.doubleTap = doubleTap
             self.handsFreeMax = handsFreeMax
             self.promptForAccessibility = promptForAccessibility
@@ -81,7 +84,8 @@ public final class MiloController {
         self.scheduler = scheduler
         self.settings = settings
         self.pushToTalk = PushToTalk(bindings: settings.bindings, minHold: settings.minHold,
-                                     doubleTap: settings.doubleTap, maxLocked: settings.handsFreeMax)
+                                     showAfter: settings.showAfter, doubleTap: settings.doubleTap,
+                                     maxLocked: settings.handsFreeMax)
     }
 
     public func start() {

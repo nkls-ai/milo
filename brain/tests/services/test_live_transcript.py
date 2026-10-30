@@ -15,7 +15,7 @@ from tests.services.stack import InlineExecutor, settle
 SR = STT_SAMPLE_RATE
 # Each word is a tone with its own loudness, so the fake transcriber can tell what audio it got. "echo" is
 # spoken softly: below the segmenter's speech threshold, but well above a quiet room, so Whisper hears it.
-WORDS = {0.006: "echo", 0.10: "alpha", 0.14: "bravo", 0.18: "charlie", 0.22: "delta"}
+WORDS = {0.0035: "echo", 0.10: "alpha", 0.14: "bravo", 0.18: "charlie", 0.22: "delta"}
 
 
 def tone(word: str, seconds: float) -> Audio:
@@ -126,6 +126,23 @@ def test_the_segmenter_knows_where_speech_ended_and_how_long_it_has_been_quiet()
     assert 1.45 * SR <= seg.speech_end <= 1.53 * SR
     assert 0.35 <= seg.silence_s <= 0.42
     assert feed_in_blocks(seg, tone("bravo", 0.3)) == [] and seg.silence_s == 0
+
+
+def test_a_soft_voice_in_a_pause_is_never_cut_through():
+    seg = PauseSegmenter(pause_s=0.7)
+    # Loud, then trailing off below the speech threshold, then truly quiet: the cut lies in the quiet part.
+    audio = np.concatenate([quiet(0.3), tone("alpha", 1), tone("echo", 0.8), quiet(1), tone("bravo", 1)])
+    cuts = feed_in_blocks(seg, audio)
+    assert len(cuts) == 1
+    assert cuts[0].end >= 2.1 * SR, "after the soft words"
+    assert hear(audio[cuts[0].start:cuts[0].end]) == "alpha echo"
+
+
+def test_a_quiet_voice_is_still_speech_to_the_segmenter():
+    seg = PauseSegmenter()
+    level = 0.006 / 0.10  # a voice at 0.006 RMS, a microphone far away
+    feed_in_blocks(seg, np.concatenate([quiet(0.5, 0.0015), tone("alpha", 1) * level]))
+    assert seg.open_has_speech and seg.speech_s > 0.8
 
 
 def test_a_long_phrase_closes_at_a_shorter_pause():
@@ -425,7 +442,7 @@ def test_previews_leave_the_gpu_idle_for_a_gap_but_commits_do_not_wait():
     assert [kind for kind, _, _ in stt.log] == ["preview", "full"]
 
 
-def test_the_release_interrupts_a_commit_in_flight_and_does_the_rest_quickly_in_order():
+def test_the_release_interrupts_a_commit_in_flight_and_does_all_the_rest_in_one_quick_pass():
     mic, stt, sink = GrowingMic(), HearingStt(block=True), RecordingSink()
     executor = ThreadPoolExecutor(1)
     phrases: list[str] = []
@@ -441,9 +458,28 @@ def test_the_release_interrupts_a_commit_in_flight_and_does_the_rest_quickly_in_
 
     assert asyncio.run(run()) == "ALPHA BRAVO"
     executor.shutdown()
-    assert phrases == ["ALPHA", "BRAVO"]
-    assert stt.kinds() == ["full", "quick", "quick"], "the commit in flight was interrupted and done again quickly"
+    assert phrases == ["ALPHA BRAVO"]
+    assert stt.kinds() == ["full", "quick"], "the commit in flight was interrupted; one pass does everything left"
     assert stt.interrupted == 1
+
+
+def test_a_guess_in_flight_is_interrupted_when_the_user_said_more_after_it():
+    mic, stt, sink = GrowingMic(), HearingStt(block=True), RecordingSink()
+    executor = ThreadPoolExecutor(1)
+    lt = live(mic, stt, sink, executor=executor, poll_s=0.01, settle_s=0.3, show=False)
+
+    async def run():
+        lt.start()
+        mic.say(tone("alpha", 1), quiet(0.4))
+        while not stt.entered.is_set():
+            await asyncio.sleep(0.01)
+        mic.say(tone("bravo", 0.5))
+        stt.block = False
+        return await lt.finish(mic.stop())
+
+    assert asyncio.run(run()) == "ALPHA BRAVO"
+    executor.shutdown()
+    assert stt.interrupted == 1 and stt.kinds() == ["quick", "quick"], "the useless guess didn't run to its end"
 
 
 def test_never_more_than_one_pass_in_flight():

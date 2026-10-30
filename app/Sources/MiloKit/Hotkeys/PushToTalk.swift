@@ -4,9 +4,11 @@ import Foundation
 /// act on what it returns.
 ///
 /// Holding a bound key records while it is held. Recording starts the moment the key goes down, but
-/// tentatively: the brain records without showing anything until the hold passes `minHold` (`confirm`),
-/// so a stray tap never makes Milo flicker. Any other key or modifier during a hold cancels, so normal
-/// shortcuts (⌥-letter, fn-arrows) still work. Pressing the other bound key during a hold is ignored.
+/// tentatively: the brain records without showing anything until the key has been down for `showAfter`
+/// (`confirm`), so the quickest taps never make Milo flicker, and the listening state still shows
+/// within 100 ms. A press shorter than `minHold` is a tap, even if it was shown. Any other key or modifier
+/// during a hold cancels, so normal shortcuts (⌥-letter, fn-arrows) still work. Pressing the other bound
+/// key during a hold is ignored.
 ///
 /// Two short taps of the same key within `doubleTap` lock the mode on, hands-free (`lock`). The
 /// recording that the first tap started simply continues. A further press of that key stops, `esc`
@@ -26,7 +28,7 @@ public struct PushToTalk: Sendable {
 
     private enum Phase: Equatable, Sendable {
         case idle
-        /// The key is down since `since`. `second`: this press may complete a double tap.
+        /// The key is down since `since`. `second`: this press may complete a double tap. `confirmed`: shown.
         case holding(ListenMode, since: TimeInterval, second: Bool, confirmed: Bool)
         /// One short tap; a second press before `until` makes it a double tap.
         case tapped(ListenMode, until: TimeInterval)
@@ -35,14 +37,16 @@ public struct PushToTalk: Sendable {
 
     public private(set) var bindings: HotkeyBindings
     public let minHold: TimeInterval
+    public let showAfter: TimeInterval
     public let doubleTap: TimeInterval
     public var maxLocked: TimeInterval
     private var phase: Phase = .idle
 
-    public init(bindings: HotkeyBindings = .default, minHold: TimeInterval = 0.25, doubleTap: TimeInterval = 0.35,
-                maxLocked: TimeInterval = 300) {
+    public init(bindings: HotkeyBindings = .default, minHold: TimeInterval = 0.25, showAfter: TimeInterval = 0.08,
+                doubleTap: TimeInterval = 0.35, maxLocked: TimeInterval = 300) {
         self.bindings = bindings
         self.minHold = minHold
+        self.showAfter = min(showAfter, minHold)
         self.doubleTap = doubleTap
         self.maxLocked = maxLocked
     }
@@ -64,7 +68,7 @@ public struct PushToTalk: Sendable {
     public var deadline: TimeInterval? {
         switch phase {
         case .idle, .holding(_, _, _, confirmed: true): nil
-        case let .holding(_, since, _, _): since + minHold
+        case let .holding(_, since, _, _): since + showAfter
         case let .tapped(_, until), let .locked(_, until): until
         }
     }
@@ -138,8 +142,8 @@ public struct PushToTalk: Sendable {
     }
 
     private mutating func release(_ mode: ListenMode, at time: TimeInterval) -> [Output] {
-        guard case let .holding(current, since, second, confirmed) = phase, current == mode else { return [] }
-        if confirmed || time - since >= minHold {
+        guard case let .holding(current, since, second, _) = phase, current == mode else { return [] }
+        if time - since >= minHold {
             phase = .idle
             return [.stop(mode)]
         }
