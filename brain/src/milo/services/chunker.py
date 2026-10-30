@@ -57,6 +57,11 @@ class SpeechChunker:
         self._first = False
         return chunk or self.next(budget, final=final)
 
+    def flush_raw(self) -> str:
+        """Everything not yet returned, as it came in. Empties the chunker."""
+        rest, self._buf = self._buf, ""
+        return rest
+
     def flush(self) -> str:
         """Everything not yet returned, ready to speak. "" if nothing is left."""
         rest, self._buf = _tidy(self._buf), ""

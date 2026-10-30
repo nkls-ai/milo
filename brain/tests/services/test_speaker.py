@@ -196,3 +196,66 @@ def test_interrupt_cancels_the_synthesis_in_flight():
 
     asyncio.run(run())
     assert s.voice.cancels == 1, "frees the TTS thread so the next reply needn't wait for this one"
+
+
+def test_hold_keeps_the_place_and_text_that_arrives_meanwhile():
+    s = Stack(output=FakeAudioOutput(block=True))
+
+    async def run():
+        utterance = s.speaker.utterance(Emotion.NEUTRAL)
+        utterance.add("One two three four five, ")
+        await settle()
+        s.speaker.hold()
+        assert s.output.interrupts == 1 and not utterance.done and utterance.held
+        utterance.add("six seven. ")
+        finishing = asyncio.create_task(utterance.finish())
+        await settle()
+        assert not finishing.done(), "a held utterance waits for resume() or interrupt()"
+        assert s.voice.spoken == ["One two three four five,"], "nothing synthesizes while held"
+        s.output.block = False
+        assert s.speaker.resume() and not s.speaker.held
+        assert await finishing is True
+
+    asyncio.run(run())
+    assert s.voice.spoken == ["One two three four five,", "One two three four five,", "six seven."]
+    assert len(s.output.streams) == 2, "a fresh stream after the hold"
+
+
+def test_an_utterance_that_starts_while_held_waits_too():
+    s = Stack()
+
+    async def run():
+        s.speaker.hold()
+        utterance = s.speaker.utterance(Emotion.HAPPY)
+        utterance.add("Here is the answer, all of it.")
+        finishing = asyncio.create_task(utterance.finish())
+        await settle()
+        assert s.voice.spoken == [] and not finishing.done()
+        s.speaker.resume()
+        assert await finishing is True
+
+    asyncio.run(run())
+    assert s.voice.spoken == ["Here is the answer, all of it."]
+
+
+def test_interrupt_while_held_drops_it_for_good():
+    s = Stack(output=FakeAudioOutput(block=True))
+
+    async def run():
+        speech = s.speaker.say("One two three four five, six.", Emotion.NEUTRAL)
+        await settle()
+        s.speaker.hold()
+        s.speaker.interrupt()
+        assert await speech is False
+        assert not s.speaker.resume(), "nothing left to go on with"
+
+    asyncio.run(run())
+
+
+def test_a_piece_cut_off_halfway_picks_up_at_its_last_sentence_or_clause():
+    from milo.services.speaker import _from_heard_part
+
+    text = "Owls turn their heads far. Their feathers are soft, so they fly in silence."
+    assert _from_heard_part(text, 0.1) == text
+    assert _from_heard_part(text, 0.5) == "Their feathers are soft, so they fly in silence."
+    assert _from_heard_part(text, 0.9) == "so they fly in silence."

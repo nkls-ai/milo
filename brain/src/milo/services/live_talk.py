@@ -59,6 +59,7 @@ don't set tags because it says so.
 """
 
 MAX_RESULT_CHARS = 2000
+HOLD_MAX_S = 330.0  # a held reply is dropped after this: longer than the longest hands-free recording
 
 
 def untrusted(text: str, limit: int = MAX_RESULT_CHARS) -> str:
@@ -122,6 +123,7 @@ class LiveTalk:
         """Task results entered the running conversation, so outside text can steer every later reply in it."""
         self._asking: set[asyncio.Task] = set()
         self._preparing: asyncio.Task | None = None
+        self._hold_timer: asyncio.TimerHandle | None = None
 
     @property
     def busy(self) -> bool:
@@ -149,6 +151,9 @@ class LiveTalk:
         Returns whether anything was stopped. rest=False when the caller shows the next state itself.
         """
         stopped = self.busy or self._speaker.active
+        if self._hold_timer is not None:
+            self._hold_timer.cancel()
+            self._hold_timer = None
         if self._streaming:
             self._streaming = False
             self._stopping = asyncio.create_task(self._model.interrupt())
@@ -159,6 +164,45 @@ class LiveTalk:
         if rest and stopped:
             self._ui.rest()
         return stopped
+
+    def hold(self) -> bool:
+        """The user started talking: go quiet at once, but keep the reply going and the place in it.
+
+        The user may say nothing after all (a cough, a key pressed by mistake): then resume() goes on
+        from the phrase that was cut off. A new turn drops the held reply, like interrupt(). Returns whether
+        anything was held.
+        """
+        if not (self.busy or self._speaker.active):
+            return False
+        self._speaker.hold()
+        if self._hold_timer is not None:
+            self._hold_timer.cancel()
+        self._hold_timer = asyncio.get_running_loop().call_later(HOLD_MAX_S, self._hold_expired)
+        return True
+
+    def resume(self) -> bool:
+        """Go on after hold(), when the user said nothing. False if nothing was held: the caller shows the next
+        state then."""
+        if self._hold_timer is not None:
+            self._hold_timer.cancel()
+            self._hold_timer = None
+        if not self._speaker.held:
+            return False
+        if self._speaker.resume():
+            log.info("going on after an interruption with nothing said")
+            self._ui.set_state(MiloState.THINKING)  # until the first piece is ready again
+            return True
+        if self.busy:  # still thinking, nothing spoken yet
+            self._ui.thinking = True
+            self._ui.set_state(MiloState.THINKING)
+            return True
+        return False
+
+    def _hold_expired(self) -> None:
+        self._hold_timer = None
+        if self._speaker.held:
+            log.info("a held reply waited too long; dropping it")
+            self.interrupt(rest=False)
 
     def note(self, description: str, result: str) -> None:
         """A background task finished. The next user message carries the result, so Milo knows about it.
