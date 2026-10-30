@@ -114,14 +114,16 @@ class Updates:
     def mode(self) -> UpdateMode:
         return self._mode()
 
-    def milestone(self, helper: Helper, text: str) -> None:
+    def milestone(self, helper: Helper, text: str, plain: str | None = None) -> None:
+        """`text` goes in the bubble. `plain` is the same news without outside text (helpers.plain_step), for
+        the chat model to phrase; defaults to `text` when that has none (e.g. plan progress)."""
         mode = self._mode()
         if mode is UpdateMode.QUIET or self._busy():
             return
         now = self._clock.monotonic()
         line = f"{helper.title}: {text}"
         if mode is UpdateMode.CHATTY and self.speak is not None and now - self._spoken_at >= self._spoken_gap_s:
-            if self.speak(line):
+            if self.speak(f"{helper.title}: {plain if plain is not None else text}"):
                 self._spoken_at = self._noted_at = now
                 return
         if now - self._noted_at < self._note_gap_s:

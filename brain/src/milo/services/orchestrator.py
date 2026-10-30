@@ -23,7 +23,7 @@ from milo.core.ports import Clock, EventSink
 from milo.core.types import ActionLevel, Decision, Emotion, HarnessError, Reply, Step
 
 from . import helpers as board_text
-from .helpers import Helper, HelperStatus, short_title
+from .helpers import Helper, HelperStatus, plain_step, short_title
 from .quiet import POLL_S
 from .speaker import Speaker
 from .task_runner import NEEDS_SCREEN, TASK_FAILED, TaskRunner, follow_up_prompt, steer_prompt
@@ -321,7 +321,7 @@ class Orchestrator:
         if helper.record(step) and self.updates is not None:
             text = self._milestones.step(helper, step, self._clock.monotonic())
             if text is not None:
-                self.updates.milestone(helper, text)
+                self.updates.milestone(helper, text, plain_step(step))
         self._changed()
 
     def _plan(self, helper: Helper, done: int, total: int) -> None:

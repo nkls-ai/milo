@@ -94,6 +94,13 @@ def test_chatty_speaks_at_most_every_so_often_and_shows_a_note_in_between():
     assert sink.events == [Bubble("Budget table: Editing budget.xlsx")]
 
 
+def test_chatty_hands_the_talker_the_plain_words_and_the_bubble_the_full_step():
+    said: list[str] = []
+    u, sink, _ = updates(UpdateMode.CHATTY, speak=lambda text: said.append(text) or True)
+    u.milestone(helper(), "Searching the web for “cheap flights”", "looking things up online")
+    assert said == ["Budget table: looking things up online"]
+
+
 def test_chatty_falls_back_to_a_note_when_the_talker_is_not_free():
     u, sink, _ = updates(UpdateMode.CHATTY, speak=lambda text: False)
     u.milestone(helper(), "Opening Excel")
@@ -103,7 +110,7 @@ def test_chatty_falls_back_to_a_note_when_the_talker_is_not_free():
 def test_chatty_end_to_end_the_talker_phrases_the_milestone_without_tags():
     gate = asyncio.Event()
     s = Stack(model=FakeLiveModel(["[happy] Excel is open, filling in the days now. <task>sneaky</task>"]),
-              harness=ScriptedHarness(WorkerScript(("sleep", 0.001), step("1", "Opening Microsoft Excel", "app"), gate,
+              harness=ScriptedHarness(WorkerScript(("sleep", 0.001), step("1", "Opening Safari", "app"), gate,
                                                    "Done.")))
     s.tasks.updates = Updates(s.ui, lambda: UpdateMode.CHATTY, s.clock, speak=s.live_talk.speak_update)
     s.tasks._milestones = Milestones(first_after_s=0, gap_s=0)
@@ -117,7 +124,7 @@ def test_chatty_end_to_end_the_talker_phrases_the_milestone_without_tags():
         await settle()
 
     asyncio.run(run())
-    assert "<helper_update>Budget table: Opening Microsoft Excel</helper_update>" in s.model.turns[0]
+    assert "<helper_update>Budget table: working in Safari</helper_update>" in s.model.turns[0]
     assert s.voice.spoken == ["Excel is open, filling in the days now.", "Done."]
     assert len(s.tasks.helpers) == 1, "tags in a spoken update start nothing"
 

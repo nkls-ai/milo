@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from enum import StrEnum
+from functools import lru_cache
+from pathlib import Path
 
 from milo.core.types import Step, StepStatus
 
@@ -19,9 +21,14 @@ RECENT_STEPS = 3
 BOARD_FINISHED_S = 600.0
 """How long a finished helper stays on the talker's board, so "how did the Excel thing go?" still works."""
 BOARD_MAX = 6
-MAX_BOARD_TEXT = 60
-"""Outside text (step titles name files, apps and buttons) is cut to this many characters on the board."""
+KIND_WORDS = {"read": "reading", "edit": "making changes", "search": "searching", "web": "looking things up online",
+              "command": "running a command", "tool": "using a tool", "app": "working in an app"}
+"""What a step of each kind is doing, in words that carry no outside text."""
+APP_FOLDERS = (Path("/Applications"), Path("/System/Applications"), Path("/System/Applications/Utilities"),
+               Path.home() / "Applications")
 
+_APP_IN_TITLE = re.compile(r"^Opening (.+)$|^(?:Working in|Controlling) (.+)$| in ([^“”]+)$")
+_APP_NAME = re.compile(r"^[\w .&+-]{1,40}$", re.UNICODE)
 _WORDS = re.compile(r"[\w’'-]+", re.UNICODE)
 _LEAD = re.compile(r"^(please|can you|could you|go and|then)\s+", re.IGNORECASE)
 
@@ -116,12 +123,36 @@ def short_title(description: str, title: str = "") -> str:
     return text if len(text) <= MAX_TITLE else text[:MAX_TITLE - 1].rstrip() + "…"
 
 
-def board(helpers: list[Helper], now: float, inert) -> str:
+def plain_step(step: Step, installed=None) -> str:
+    """A step in words with no outside text in them, for the talker: "working in Microsoft Excel", "reading".
+
+    Step titles name files, web pages, buttons and typed text, any of which a web page or an email could
+    have chosen, so the talker never sees them. Only the kind of step goes through, and the app's name when
+    it is an app installed on this Mac.
+    """
+    if step.kind == "app":
+        match = _APP_IN_TITLE.search(step.title)
+        app = next((g for g in match.groups() if g), "") if match else ""
+        if app and (installed or is_installed_app)(app.strip()):
+            return f"working in {app.strip()}"
+    return KIND_WORDS.get(step.kind, "working")
+
+
+@lru_cache(maxsize=64)
+def is_installed_app(name: str) -> bool:
+    """A real app on this Mac by that name, so the name is no outside text."""
+    if not _APP_NAME.match(name) or name.startswith("."):
+        return False
+    return any((folder / f"{name}.app").is_dir() for folder in APP_FOLDERS)
+
+
+def board(helpers: list[Helper], now: float, inert, installed=None) -> str:
     """The helpers as the talker sees them before each message: who does what, how far, what came of it.
 
-    `inert` makes outside text harmless (live_talk.untrusted). Titles and descriptions are the talker's own
-    words; step titles are Milo's wording but name files, apps and buttons, so they are cut short and
-    escaped. Results are not repeated here: they arrive once, as <task_result> data.
+    Nothing here is outside text, so it doesn't make the conversation untrusted (ADR 0010): titles,
+    descriptions and changes are the talker's own words (still passed through `inert`, live_talk.untrusted),
+    steps are reduced to their kind (plain_step), progress is a number. Results are not repeated here: they
+    arrive once, as <task_result> data.
     """
     shown = [h for h in helpers if h.active or (h.finished_at is not None and now - h.finished_at < BOARD_FINISHED_S)]
     if not shown:
@@ -131,8 +162,9 @@ def board(helpers: list[Helper], now: float, inert) -> str:
     for h in shown:
         head = f"- helper {h.number} “{inert(h.title, MAX_TITLE)}”: {_state(h, now)}"
         if h.active and h.status is not HelperStatus.QUEUED and h.steps:
-            recent = "; ".join(inert(s.title, MAX_BOARD_TEXT) for s in h.steps[-RECENT_STEPS:])
-            head += f". {h.step_count} step{'s' if h.step_count != 1 else ''} so far, latest: {recent}"
+            recent = list(dict.fromkeys(plain_step(s, installed) for s in reversed(h.steps[-RECENT_STEPS:])))
+            steps = f"{h.step_count} step{'s' if h.step_count != 1 else ''}"
+            head += f". {steps} so far, now {', before that '.join(recent)}"
         if h.amendments:
             head += f". Changed by the user: {inert('; '.join(h.amendments), 200)}"
         lines.append(head)
