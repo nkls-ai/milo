@@ -91,6 +91,10 @@ class Reply:
         return Reply(Emotion.parse(emotion), say, usage, session_id)
 
 
+class ToolError(Exception):
+    """An app connection couldn't do what was asked. The message is plain language, fit for the user."""
+
+
 class HarnessError(Exception):
     """A harness call failed. `transient` says whether retrying later can help."""
 
@@ -125,6 +129,36 @@ class Reminder:
     due: datetime
     text: str
     done: bool
+
+
+class ActionLevel(StrEnum):
+    """What Milo does before an action of some kind (see milo.services.approvals)."""
+
+    READ = "read"  # just do it: reading, searching, drafting
+    CHANGE = "change"  # do it, it shows in the activity list and can be undone
+    ASK_FIRST = "ask_first"  # ask a yes-or-no question first; no answer means no
+    NEVER = "never"  # refuse
+
+
+@dataclass(frozen=True)
+class Decision:
+    """The outcome of an approval. `answer`: "auto" (no question needed), "yes", "no", "timeout" or "refused"."""
+
+    allowed: bool
+    level: ActionLevel
+    answer: str
+
+    def to_dict(self) -> dict:
+        return {"allowed": self.allowed, "level": self.level.value, "answer": self.answer}
+
+
+@dataclass(frozen=True)
+class ToolServer:
+    """An MCP stdio server the worker CLI starts and gives its agent as tools."""
+
+    name: str
+    command: tuple[str, ...]
+    env: tuple[tuple[str, str], ...] = ()
 
 
 class StepStatus(StrEnum):

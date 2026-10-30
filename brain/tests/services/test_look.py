@@ -3,7 +3,7 @@
 import asyncio
 from pathlib import Path
 
-from milo.core.events import Level, Looking, StateChanged
+from milo.core.events import Confirm, Level, Looking, StateChanged
 from milo.core.types import MiloState, ScreenCapture
 from milo.services.live_talk import LOOK_RULES
 from milo.services.screen import NOTE, checked, look_prompt, screen_data
@@ -137,29 +137,36 @@ def test_only_screenshots_in_the_screens_folder_count(tmp_path):
     assert checked(ScreenCapture(image=str(ok)), None).image == ""
 
 
+def answering(s: Stack, yes: bool, *texts: str) -> list[str]:
+    """Talk, answer every question Milo asks with `yes`, and return the questions."""
+    async def run():
+        for text in texts:
+            await s.live_talk.start(text)
+            await settle()
+            for asked in s.sink.of(Confirm):
+                s.approvals.answer(asked.id, yes)
+            await settle()
+        await s.tasks.idle()
+
+    asyncio.run(run())
+    return [asked.question for asked in s.sink.of(Confirm)]
+
+
 def test_a_task_from_a_screen_turn_needs_the_users_yes():
     s = Stack(eyes=FakeEyes(EXCEL), model=FakeLiveModel(
         ["[thinking] Let me look. <look/>"], ["[happy] I'll fill it in. <task>Fill column C in Budget.xlsx</task>"]))
-    s.confirm.answers.append(False)
-    talk(s, "look at this and fill it in")
-    assert s.confirm.asked == ["Shall I go ahead: Fill column C in Budget.xlsx?"]
+    asked = answering(s, False, "look at this and fill it in")
+    assert asked == ["Should I go ahead with this: Fill column C in Budget.xlsx?"]
     assert s.harness.calls == []
     s2 = Stack(eyes=FakeEyes(EXCEL), model=FakeLiveModel(
         ["[thinking] <look/>"], ["[happy] On it. <task>Fill column C</task>"]))
-    s2.confirm.answers.append(True)
-    talk(s2, "fill this in")
-
-    async def done():
-        await s2.tasks.idle()
-
-    asyncio.run(done())
+    answering(s2, True, "fill this in")
     assert len(s2.harness.calls) == 1
 
 
 def test_after_a_look_every_task_in_that_conversation_needs_a_yes():
     s = Stack(eyes=FakeEyes(EXCEL), model=FakeLiveModel(
         ["[thinking] <look/>"], ["[neutral] It's a budget."], ["[happy] On it. <task>Email the budget</task>"]))
-    talk(s, "look at this")
-    talk(s, "now email it to Anna")
-    assert s.confirm.asked == ["Shall I go ahead: Email the budget?"]
+    assert answering(s, False, "look at this", "now email it to Anna") == [
+        "Should I go ahead with this: Email the budget?"]
     assert s.harness.calls == []

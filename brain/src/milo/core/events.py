@@ -186,20 +186,34 @@ class FlyTo(Event):
 
 
 @dataclass(frozen=True)
-class ConfirmRequest(Event):
-    """Ask the user a yes-or-no question before an action that can't be undone. Answered by confirm_result."""
+class Confirm(Event):
+    """Milo asks a yes-or-no question before an action. Shown with Yes and No until `confirm_done` for this id."""
 
-    type: ClassVar[str] = "confirm_request"
+    type: ClassVar[str] = "confirm"
     id: str
-    text: str
+    question: str
 
 
 @dataclass(frozen=True)
-class ConfirmEnd(Event):
-    """The question `id` is settled (answered or timed out): take the buttons away."""
+class ConfirmDone(Event):
+    """The question `id` is over. answer: "yes", "no" or "timeout" (which counts as no)."""
 
-    type: ClassVar[str] = "confirm_end"
+    type: ClassVar[str] = "confirm_done"
     id: str
+    answer: str
+
+
+@dataclass(frozen=True)
+class AppRequest(Event):
+    """Work only the app has permission for, such as Calendar and Reminders through EventKit.
+
+    The app answers with `app_response` and the same id. Ops are listed in docs/ARCHITECTURE.md.
+    """
+
+    type: ClassVar[str] = "app_request"
+    id: str
+    op: str
+    args: dict
 
 
 # ---- app -> brain
@@ -307,10 +321,23 @@ class HandsStop(Command):
 
 
 @dataclass(frozen=True)
-class ConfirmResult(Command):
-    type: ClassVar[str] = "confirm_result"
+class ConfirmAnswer(Command):
+    """The user clicked Yes or No on the question `id`."""
+
+    type: ClassVar[str] = "confirm_answer"
     id: str
     yes: bool
+
+
+@dataclass(frozen=True)
+class AppResponse(Command):
+    """The answer to `app_request` `id`: `result` when ok, else a plain `error`."""
+
+    type: ClassVar[str] = "app_response"
+    id: str
+    ok: bool
+    result: Any = None
+    error: str = ""
 
 
 def parse_command(raw: object) -> Command:
@@ -351,8 +378,12 @@ def parse_command(raw: object) -> Command:
                 return HandsResult(str(raw["id"]), bool(raw["ok"]), result, str(raw.get("error") or ""))
             case "hands_stop":
                 return HandsStop(str(raw.get("reason") or "user"))
-            case "confirm_result":
-                return ConfirmResult(str(raw["id"]), bool(raw["yes"]))
+            case "confirm_answer":
+                if not isinstance(raw["yes"], bool):
+                    raise ProtocolError("yes must be true or false")
+                return ConfirmAnswer(str(raw["id"]), raw["yes"])
+            case "app_response":
+                return AppResponse(str(raw["id"]), raw["ok"] is True, raw.get("result"), str(raw.get("error") or ""))
     except (KeyError, TypeError, ValueError) as e:
         raise ProtocolError(f"bad {kind} message: {e}") from None
     raise ProtocolError(f"unknown message type {kind!r}")

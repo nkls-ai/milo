@@ -4,6 +4,7 @@ import logging
 import re
 from datetime import datetime
 
+from milo.core.logtext import private
 from milo.core.types import Emotion
 
 log = logging.getLogger("milo.reply")
@@ -167,7 +168,7 @@ class ReplyParser:
         else:
             reminder = parse_reminder(content)
             if reminder is None:
-                log.warning("ignoring malformed reminder tag: %r", content)
+                log.warning("ignoring malformed reminder tag: %s", private(content))
             else:
                 self.reminders.append(reminder)
 

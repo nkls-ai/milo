@@ -18,8 +18,8 @@ public final class OverlayPanel: NSPanel {
     private let host: DraggableHostingView<OverlayView>
     private var flight: FlightDriver?
 
-    public init(model: MiloModel, answer: @escaping (Bool) -> Void = { _ in }) {
-        host = DraggableHostingView(rootView: OverlayView(model: model, answer: answer))
+    public init(model: MiloModel) {
+        host = DraggableHostingView(rootView: OverlayView(model: model))
         super.init(contentRect: NSRect(origin: .zero, size: Self.size),
                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isOpaque = false

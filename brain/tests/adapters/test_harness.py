@@ -10,7 +10,7 @@ from milo.adapters.harness import _binary
 from milo.adapters.harness.claude import ClaudeHarness, parse_result
 from milo.adapters.harness.codex import CodexHarness, parse_events
 from milo.core.registry import HARNESSES, ConfigError
-from milo.core.types import Emotion, HarnessError, Reply, Usage
+from milo.core.types import Emotion, HarnessError, Reply, ToolServer, Usage
 
 # Captured from `codex exec --json --output-schema` (codex-cli 0.164).
 CODEX_EVENTS = """\
@@ -251,3 +251,18 @@ def test_codex_gets_milo_mac_through_config_overrides(tmp_path):
         assert 'mcp_servers.milo-mac.command="/py"' in cmd
         assert 'mcp_servers.milo-mac.args=["-m", "milo.mcp_server"]' in cmd
         assert 'mcp_servers.milo-mac.default_tools_approval_mode="approve"' in cmd
+
+
+def test_the_worker_gets_milo_mac_and_the_app_connections_together(tmp_path):
+    mac_tools = ("/py", "-m", "milo.mcp_server")
+    connections = (ToolServer("milo", ("/py", "-m", "milo.connect"), (("MILO_HOME", "/h"),)),)
+    claude = ClaudeHarness("claude", tmp_path, mac_tools=mac_tools, tool_servers=connections,
+                           mcp_config=tmp_path / "mcp-servers.json")
+    cmd = claude.command("hi", None)
+    assert cmd[cmd.index("--mcp-config") + 1] == str(tmp_path / "mcp-servers.json") and "--strict-mcp-config" in cmd
+    assert cmd[cmd.index("--allowedTools") + 1:][:2] == ["mcp__milo-mac", "mcp__milo"]
+    servers = json.loads((tmp_path / "mcp-servers.json").read_text())["mcpServers"]
+    assert set(servers) == {"milo-mac", "milo"} and servers["milo"]["env"] == {"MILO_HOME": "/h"}
+    cmd = CodexHarness("codex", tmp_path, tmp_path / "s.json", mac_tools=mac_tools, tool_servers=connections).command(
+        "hi", None)
+    assert 'mcp_servers.milo-mac.command="/py"' in cmd and 'mcp_servers.milo.args=["-m", "milo.connect"]' in cmd

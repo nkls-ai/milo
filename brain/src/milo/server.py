@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import logging.handlers
 import os
 import signal
+import sys
 from collections.abc import Awaitable, Callable
 from concurrent.futures import Executor
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .config import Config, LoggingSettings
+from .core.logtext import log_content
 from .core.registry import ConfigError
 from .transport import instance_lock
 
@@ -33,7 +37,11 @@ def main() -> None:
     home = Path(os.environ.get("MILO_HOME", DEFAULT_HOME)).expanduser()
     workspace = Workspace(home)
     workspace.ensure()
-    _setup_logging(workspace.log_dir / "brain.log")
+    try:
+        settings = Config.load(workspace.config_path).logging
+    except (ConfigError, OSError):
+        settings = LoggingSettings()  # compose.build reports the error once logging is up
+    _setup_logging(workspace.log_dir / "brain.log", settings)
     # Before anything heavy loads. Held until the process is gone, models and all.
     try:
         instance_lock.acquire(workspace.lock_path)
@@ -59,12 +67,17 @@ def main() -> None:
     os._exit(0)
 
 
-def _setup_logging(log_file: Path) -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        handlers=[logging.StreamHandler(), logging.FileHandler(log_file)],
-    )
+def _setup_logging(log_file: Path, settings: LoggingSettings) -> None:
+    """brain.log rotates at max_mb. A terminal also gets the lines; the app's stdout log only gets crashes."""
+    handlers: list[logging.Handler] = [logging.handlers.RotatingFileHandler(
+        log_file, maxBytes=int(settings.max_mb * 1024 * 1024), backupCount=max(0, settings.keep), encoding="utf-8")]
+    if sys.stderr.isatty():
+        handlers.append(logging.StreamHandler())
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+                        handlers=handlers)
+    log_content(settings.content)
+    if settings.content:
+        log.warning("content logging is on: brain.log keeps what you say ([logging] content in config.toml)")
     for name in NOISY_LOGGERS:
         logging.getLogger(name).setLevel(logging.ERROR)
 
@@ -73,6 +86,7 @@ async def _serve(runtime: Runtime) -> None:
     # The app stops its brain with SIGTERM (uv passes that on, not SIGINT). Shut down as for Ctrl-C.
     asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, asyncio.current_task().cancel)
     await runtime.server.start()
+    await runtime.tool_server.start()
     if runtime.hands_server is not None:
         await runtime.hands_server.start()
     log.info("brain up (chat=%s, harness=%s)", runtime.live_model.name, runtime.harness.name)
@@ -90,6 +104,7 @@ async def _serve(runtime: Runtime) -> None:
             task.cancel()
         runtime.stt_executor.shutdown(wait=False, cancel_futures=True)
         runtime.tts_executor.shutdown(wait=False, cancel_futures=True)
+        await runtime.tool_server.close()
         await _close(runtime)
 
 

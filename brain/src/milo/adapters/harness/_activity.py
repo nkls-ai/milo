@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from milo.core import wording
 from milo.core.hands import SERVER_NAME
 from milo.core.ports import StepCallback
 from milo.core.types import Step, StepStatus
@@ -77,8 +78,15 @@ def describe_fetch(url: str) -> tuple[str, str]:
     return "web", f"Reading {host.removeprefix('www.')}" if host else "Reading a web page"
 
 
-def describe_tool(tool: str) -> tuple[str, str]:
-    """An MCP or other named tool. Known tools get a sentence, others their name made readable."""
+def describe_tool(tool: str, args: object = None, server: str = "milo") -> tuple[str, str]:
+    """An MCP or other named tool. Known tools get a sentence, others their name made readable.
+
+    Milo's own connection tools are worded from their arguments: "Writing a draft to Anna".
+    """
+    if server == "milo":
+        title = wording.title(tool, args if isinstance(args, dict) else {})
+        if title is not None:
+            return wording.kind(tool), title
     if tool in _KNOWN_TOOLS:
         return "tool", _KNOWN_TOOLS[tool]
     words = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", tool).replace("_", " ").replace("-", " ").strip()
@@ -247,7 +255,7 @@ def codex_step(item: dict, completed: bool, workdir: Path) -> Step | None:
         if item.get("error"):
             status = StepStatus.FAILED
             detail += "\n\n" + _tail(item["error"])
-        return _step(sid, *describe_tool(tool), detail, status)
+        return _step(sid, *describe_tool(tool, item.get("arguments"), str(item.get("server", ""))), detail, status)
     if kind == "web_search":
         action = item.get("action") if isinstance(item.get("action"), dict) else {}
         query = str(item.get("query") or action.get("query") or "")
@@ -341,8 +349,9 @@ def claude_step(id: str, name: str, args: dict, workdir: Path) -> Step | None:
         kind, title = "other", f"Asking a helper: {what}" if what else "Asking a helper"
         detail = str(args.get("prompt", what))
     else:
-        tool = name.split("__")[-1] if name.startswith("mcp__") else name
-        (kind, title), detail = describe_tool(tool), f"{name} {json.dumps(args, ensure_ascii=False)}"
+        parts = name.split("__")
+        server, tool = (parts[1], parts[-1]) if name.startswith("mcp__") and len(parts) >= 3 else ("", name)
+        (kind, title), detail = describe_tool(tool, args, server), f"{name} {json.dumps(args, ensure_ascii=False)}"
     return _step(id, kind, title, detail, StepStatus.RUNNING)
 
 

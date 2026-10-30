@@ -8,11 +8,10 @@ import pytest
 
 from milo.brain import Brain
 from milo.config import UiSettings
-from milo.core.events import (Bubble, ConfirmEnd, ConfirmRequest, Dictation, EmotionChanged, HandsSession, Heard,
-                              Level, ListenStart, ListenStop, Looking, Mute, StateChanged, Status, TextInput, UiConfig,
-                              parse_command)
+from milo.core.events import (Bubble, Dictation, EmotionChanged, HandsSession, Heard, Level, ListenStart, ListenStop,
+                              Looking, Mute, StateChanged, Status, TextInput, UiConfig, parse_command)
 from milo.core.types import Emotion, HandsError, ListenMode, MiloState, Nudge, ScreenCapture
-from milo.services.app_bridge import AppEyes, AppHands, BubbleConfirm
+from milo.services.app_bridge import AppEyes, AppHands
 from tests.fakes import FakeEyes, FakeHands, FakeLiveModel, FakeTranscriber
 from tests.services.stack import Stack, settle
 
@@ -139,12 +138,30 @@ def check_hands_stop(s: Stack, msg: dict) -> None:
     assert s.hands_port.cancels == 1
 
 
-def check_confirm_result(s: Stack, msg: dict) -> None:
-    for _ in range(2):
-        next(s.bridge._ids)
-    yes = answered(s, msg, lambda: BubbleConfirm(s.bridge, s.ui).confirm("Send it?"))
-    assert yes is False
-    assert s.sink.events == [ConfirmRequest("confirm-3", "Send it?"), ConfirmEnd("confirm-3")]
+def check_confirm_answer(s: Stack, msg: dict) -> None:
+    async def go():
+        asking = asyncio.create_task(s.approvals.confirm("Send it?"))
+        await settle()
+        s.approvals._pending = (msg["id"], *s.approvals._pending[1:])  # the fixture's id
+        await s.brain.handle(parse_command(msg))
+        return await asking
+
+    assert asyncio.run(go()) is msg["yes"]
+
+
+def check_app_response(s: Stack, msg: dict) -> None:
+    async def go():
+        calling = asyncio.create_task(s.bridge.call("calendar.events", {}))
+        await settle()
+        [waiting] = s.bridge._pending
+        s.bridge._pending[msg["id"]] = s.bridge._pending.pop(waiting)
+        await s.brain.handle(parse_command(msg))
+        try:
+            return await calling
+        except Exception as e:
+            return str(e)
+
+    assert asyncio.run(go()) == (msg["result"] if msg["ok"] else msg["error"])
 
 
 CHECKS = {
@@ -152,7 +169,8 @@ CHECKS = {
     "whats_this": check_whats_this,
     "hands_result": check_hands_result,
     "hands_stop": check_hands_stop,
-    "confirm_result": check_confirm_result,
+    "confirm_answer": check_confirm_answer,
+    "app_response": check_app_response,
     "listen_start": check_listen_start,
     "listen_stop": check_listen_stop,
     "listen_cancel": check_listen_cancel,

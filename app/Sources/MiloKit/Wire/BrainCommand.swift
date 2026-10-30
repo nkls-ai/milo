@@ -23,7 +23,16 @@ public enum BrainCommand: Equatable, Sendable {
     case handsResult(id: String, ok: Bool, result: [String: JSONValue], error: String = "")
     /// The user took over the mouse or keyboard ("user") or pressed esc ("escape").
     case handsStop(reason: String)
-    case confirmResult(id: String, yes: Bool)
+    /// The user clicked Yes or No on the question `id`.
+    case confirmAnswer(id: String, yes: Bool)
+    /// The answer to `app_request` `id`.
+    case appResponse(id: String, outcome: AppOutcome)
+}
+
+/// What the app did with an `app_request`: a JSON result, or a plain-language error for the user.
+public enum AppOutcome: Equatable, Sendable {
+    case success(JSONValue)
+    case failure(String)
 }
 
 extension BrainCommand: Encodable {
@@ -74,10 +83,21 @@ extension BrainCommand: Encodable {
         case let .handsStop(reason):
             try c.encode("hands_stop", forKey: .type)
             try c.encode(reason, forKey: .reason)
-        case let .confirmResult(id, yes):
-            try c.encode("confirm_result", forKey: .type)
+        case let .confirmAnswer(id, yes):
+            try c.encode("confirm_answer", forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(yes, forKey: .yes)
+        case let .appResponse(id, outcome):
+            try c.encode("app_response", forKey: .type)
+            try c.encode(id, forKey: .id)
+            switch outcome {
+            case let .success(result):
+                try c.encode(true, forKey: .ok)
+                try c.encode(result, forKey: .result)
+            case let .failure(message):
+                try c.encode(false, forKey: .ok)
+                try c.encode(message, forKey: .error)
+            }
         }
     }
 }

@@ -31,6 +31,43 @@ model = ""
 permission_mode = "acceptEdits"
 timeout_s = 180
 
+[connections]
+# Lets Milo's helper use your calendar, reminders, mail, notes, shortcuts and files.
+# Mail is only ever drafted, never sent. Switch off anything he shouldn't touch.
+enabled = true
+use = "mac"                       # mac | fake (made-up data in ~/Milo/fake, for trying things out)
+calendar = true
+reminders = true
+mail = true
+notes = true
+shortcuts = true
+files = true
+
+[connections.mac]
+files_scope = "~"                 # files outside this folder are never searched or read
+
+[approvals]
+# How long Milo waits for your yes. No answer means no.
+timeout_s = 60
+speak = true                      # say the question out loud, besides showing it
+
+[approvals.levels]
+# read: just do it. change: do it, it shows in the Milo window. ask_first: ask yes or no first. never: refuse.
+read = "read"                     # looking things up
+draft = "read"                    # mail drafts: nothing leaves your Mac
+change = "change"                 # calendar entries, reminders, notes
+send = "ask_first"
+share = "ask_first"               # anything going to another person
+delete = "ask_first"
+buy = "ask_first"
+shortcut = "ask_first"            # your own shortcuts can do any of the above
+# password, money and security are always "never".
+
+[logging]
+content = false                   # true puts what you say and Milo's answers in brain.log. Debugging only.
+max_mb = 2
+keep = 3
+
 [stt]
 use = "mlx_whisper"
 
@@ -114,6 +151,6 @@ whats_this_key = "ctrl+option+m"
 [hands]
 # Let the worker agent use the Mac: read windows, press buttons, type and click. Needs Accessibility,
 # and Screen Recording for screenshots. Touching the mouse or keyboard, or esc, stops it at once.
+# Risky steps (Send, Delete, every script) ask first, like [approvals], and wait its timeout_s.
 enabled = true
-applescript = true                # let it drive scriptable apps (Mail, Numbers, Finder) with AppleScript
-confirm_timeout_s = 60            # how long "Send it?" waits for your answer; no answer means no
+applescript = true                # let it drive scriptable apps (Finder, Numbers, Safari) with AppleScript

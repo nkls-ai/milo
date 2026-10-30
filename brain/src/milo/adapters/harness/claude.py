@@ -8,10 +8,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from milo.core.hands import SERVER_NAME
+from milo.core.hands import mac_server
 from milo.core.ports import StepCallback
 from milo.core.registry import HARNESSES, AdapterContext, options_from
-from milo.core.types import REPLY_SCHEMA, HarnessError, Reply, Usage
+from milo.core.types import REPLY_SCHEMA, HarnessError, Reply, ToolServer, Usage
 
 from ._activity import ClaudeActivity
 from ._binary import find_binary
@@ -24,19 +24,31 @@ class ClaudeOptions:
     model: str = ""
     permission_mode: str = "acceptEdits"
     timeout_s: float = 180
+    disallowed_tools: tuple[str, ...] = ()
+    """Built-in tools the agent may not use, e.g. ["Bash", "WebFetch"]."""
 
 
 class ClaudeHarness:
     name = "claude"
 
     def __init__(self, binary: str, workdir: Path, *, model: str = "", permission_mode: str = "acceptEdits",
-                 timeout_s: float = 180, mac_tools: Sequence[str] = ()):
+                 timeout_s: float = 180, mac_tools: Sequence[str] = (), tool_servers: tuple[ToolServer, ...] = (),
+                 mcp_config: Path | None = None, disallowed_tools: tuple[str, ...] = ()):
+        """`mac_tools` starts the milo-mac server, `tool_servers` are Milo's app connections. Both go into
+        `mcp_config` if given, else inline on the command line."""
         self.binary = binary
         self.workdir = workdir
         self.model = model
         self.permission_mode = permission_mode
         self.timeout_s = timeout_s
         self.mac_tools = tuple(mac_tools)
+        self.tool_servers = tool_servers
+        self.mcp_config = mcp_config
+        self.disallowed_tools = disallowed_tools
+        self.servers = (*mac_server(self.mac_tools), *tool_servers)
+        if self.servers and mcp_config is not None:
+            mcp_config.parent.mkdir(parents=True, exist_ok=True)
+            mcp_config.write_text(json.dumps(mcp_servers(self.servers)))
 
     def command(self, prompt: str, session_id: str | None) -> list[str]:
         cmd = [self.binary, "-p", "--output-format", "stream-json", "--verbose",
@@ -45,11 +57,15 @@ class ClaudeHarness:
             cmd += ["--resume", session_id]
         if self.model:
             cmd += ["--model", self.model]
-        if self.mac_tools:
-            server = {"type": "stdio", "command": self.mac_tools[0], "args": list(self.mac_tools[1:])}
-            # -p can't ask for permission, so the Mac tools are allowed up front; the brain gates each call.
-            cmd += ["--mcp-config", json.dumps({"mcpServers": {SERVER_NAME: server}}),
-                    "--allowedTools", f"mcp__{SERVER_NAME}"]
+        if self.servers:
+            # -p can't ask for permission, so Milo's tools are allowed up front: the brain checks each call and
+            # asks the user when it matters. Strict: the worker gets Milo's tools only, not whatever else
+            # Claude Code has configured.
+            config = str(self.mcp_config) if self.mcp_config is not None else json.dumps(mcp_servers(self.servers))
+            cmd += ["--mcp-config", config, "--strict-mcp-config",
+                    "--allowedTools", *(f"mcp__{s.name}" for s in self.servers)]
+        if self.disallowed_tools:
+            cmd += ["--disallowedTools", *self.disallowed_tools]
         return cmd + ["--", prompt]
 
     async def reply(self, prompt: str, session_id: str | None, *, on_step: StepCallback | None = None) -> Reply:
@@ -57,6 +73,12 @@ class ClaudeHarness:
         code, out, err = await run(self.command(prompt, session_id), cwd=self.workdir, timeout_s=self.timeout_s,
                                    on_line=on_line)
         return parse_result(result_line(out), code, err, session_id)
+
+
+def mcp_servers(servers: tuple[ToolServer, ...]) -> dict:
+    """The --mcp-config file for Claude Code."""
+    return {"mcpServers": {s.name: {"type": "stdio", "command": s.command[0], "args": list(s.command[1:]),
+                                    **({"env": dict(s.env)} if s.env else {})} for s in servers}}
 
 
 def result_line(out: str) -> str:
@@ -104,4 +126,7 @@ def _claude(options: Mapping[str, Any], ctx: AdapterContext) -> ClaudeHarness:
         permission_mode=o.permission_mode,
         timeout_s=o.timeout_s,
         mac_tools=ctx.mac_tools,
+        tool_servers=ctx.tool_servers,
+        mcp_config=ctx.state_dir / "mcp-servers.json",
+        disallowed_tools=o.disallowed_tools,
     )

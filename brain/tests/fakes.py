@@ -364,7 +364,7 @@ class FakeHands:
 
 
 class FakeConfirm:
-    """ConfirmGate that answers from a script (default no) and keeps the questions."""
+    """Confirmer that answers from a script (default no) and keeps the questions."""
 
     def __init__(self, *answers: bool):
         self.answers = deque(answers)

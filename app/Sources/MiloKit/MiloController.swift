@@ -45,6 +45,7 @@ public final class MiloController {
     private let keys: KeyEventSource
     private let context: ContextProvider
     private let accessibility: AccessibilityPermission
+    private let connections: AppConnections?
     private let scheduler: Scheduler
     private let settings: Settings
     private var pushToTalk: PushToTalk
@@ -53,7 +54,8 @@ public final class MiloController {
 
     public init(model: MiloModel, brain: BrainClient, launcher: BrainLauncher, inserter: TextInserter,
                 keys: KeyEventSource, context: ContextProvider, accessibility: AccessibilityPermission,
-                scheduler: Scheduler, settings: Settings = Settings(), screen: ScreenController? = nil) {
+                scheduler: Scheduler, connections: AppConnections? = nil, settings: Settings = Settings(),
+                screen: ScreenController? = nil) {
         self.model = model
         self.screen = screen
         self.brain = brain
@@ -62,6 +64,7 @@ public final class MiloController {
         self.keys = keys
         self.context = context
         self.accessibility = accessibility
+        self.connections = connections
         self.scheduler = scheduler
         self.settings = settings
         self.pushToTalk = PushToTalk(bindings: settings.bindings, minHold: settings.minHold,
@@ -69,6 +72,7 @@ public final class MiloController {
     }
 
     public func start() {
+        model.onAnswer = { [weak self] question, yes in self?.brain.send(.confirmAnswer(id: question.id, yes: yes)) }
         brain.onEvent = { [weak self] in self?.received($0) }
         brain.onConnectionChange = { [weak self] in self?.connectionChanged($0) }
         // Development brains are started by hand; only launch one if nothing answers.
@@ -103,6 +107,8 @@ public final class MiloController {
         launcher.restart()
     }
 
+    static let noConnections = "This version of Milo can't reach your calendar or reminders."
+
     static let pasteBlocked = "I can't paste: macOS turned off my Accessibility permission. Your text is on the clipboard, press ⌘V. To fix it, remove Milo in System Settings › Privacy & Security › Accessibility and add him again."
 
     private func received(_ event: BrainEvent) {
@@ -128,6 +134,14 @@ public final class MiloController {
             onBindingsChange?(next)
         case .history, .entry, .replyDelta, .activity:
             transcript.apply(event)
+        case let .appRequest(id, op, args):
+            guard let connections else {
+                brain.send(.appResponse(id: id, outcome: .failure(Self.noConnections)))
+                return
+            }
+            connections.handle(op: op, args: args) { [weak self] outcome in
+                self?.brain.send(.appResponse(id: id, outcome: outcome))
+            }
         default:
             model.apply(event)
         }

@@ -1,6 +1,17 @@
 import Foundation
 import Combine
 
+/// A yes-or-no question Milo waits on before an action.
+public struct PendingQuestion: Equatable, Sendable {
+    public let id: String
+    public let text: String
+
+    public init(id: String, text: String) {
+        self.id = id
+        self.text = text
+    }
+}
+
 /// Everything the character view draws. Updated on the main queue.
 public final class MiloModel: ObservableObject {
     @Published public var state: MiloState = .idle
@@ -25,18 +36,10 @@ public final class MiloModel: ObservableObject {
     @Published public var flyTarget: CGPoint?
     /// Where he is on the way, set by the overlay panel that moves him.
     @Published public internal(set) var flight: Flight = .perched
-    /// A yes-or-no question waiting in the bubble.
-    @Published public var question: Question?
-
-    public struct Question: Equatable, Identifiable, Sendable {
-        public let id: String
-        public let text: String
-
-        public init(id: String, text: String) {
-            self.id = id
-            self.text = text
-        }
-    }
+    /// Shown with Yes and No in the bubble and the Milo window until answered or over.
+    @Published public private(set) var question: PendingQuestion?
+    /// Called with the user's click on Yes (true) or No. Set by the controller.
+    public var onAnswer: ((PendingQuestion, Bool) -> Void)?
 
     private let scheduler: Scheduler
     private var hideBubble: ScheduledTask?
@@ -76,10 +79,25 @@ public final class MiloModel: ObservableObject {
             partial = text.isEmpty ? nil : text
         case let .looking(on):
             looking = on
+        case let .confirm(id, text):
+            question = PendingQuestion(id: id, text: text)
+            scheduleBubbleHide()
+        case let .confirmDone(id, _):
+            guard question?.id == id else { return }
+            question = nil
+            scheduleBubbleHide()
         case .dictation, .uiConfig, .history, .entry, .replyDelta, .activity, .lookRequest, .handsRequest,
-             .handsSession, .flyTo, .confirmRequest, .confirmEnd, .unknown:
+             .handsSession, .flyTo, .appRequest, .unknown:
             break
         }
+    }
+
+    /// The user clicked Yes or No. The question goes away at once; `confirm_done` confirms it.
+    public func answer(_ yes: Bool) {
+        guard let question else { return }
+        self.question = nil
+        onAnswer?(question, yes)
+        scheduleBubbleHide()
     }
 
     /// Shows text in the bubble for a while. Empty text hides it.
@@ -91,7 +109,8 @@ public final class MiloModel: ObservableObject {
     private func scheduleBubbleHide() {
         hideBubble?.cancel()
         hideBubble = nil
-        guard let text = bubble, state != .speaking else { return }
+        // A question stays up until it is answered or over.
+        guard let text = bubble, state != .speaking, question == nil else { return }
         hideBubble = scheduler.after(Self.bubbleDuration(for: text)) { [weak self] in
             guard let self else { return }
             bubble = nil

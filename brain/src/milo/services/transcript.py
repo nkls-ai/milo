@@ -6,6 +6,7 @@ from collections import deque
 
 from milo.core.clock import SystemClock
 from milo.core.events import Activity, EntryChanged, History, ReplyDelta
+from milo.core.logtext import private
 from milo.core.ports import Clock, EventSink, TranscriptStore
 from milo.core.types import Emotion, EntryKind, Step, StepStatus, TranscriptEntry
 
@@ -122,7 +123,7 @@ class Transcript:
                 try:
                     self._recent.append(TranscriptEntry.from_dict(data))
                 except (KeyError, TypeError, ValueError):
-                    log.warning("skipping a malformed transcript entry: %r", data)
+                    log.warning("skipping a malformed transcript entry: %s", private(data))
         return self._recent
 
 

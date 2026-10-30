@@ -15,11 +15,12 @@ public struct ScreenPorts {
     }
 }
 
-/// Looking at the screen, "What's this?", the worker's actions on screen and the questions before risky ones.
+/// Looking at the screen, "What's this?" and the worker's actions on screen.
 ///
 /// While the worker acts (hands_session on), real mouse or keyboard input stops it at once: the app tells
 /// the brain (hands_stop), cancels what is running and refuses actions until the brain ends the session.
-/// Input is ignored while a question waits, since answering it means using the mouse.
+/// Input is ignored while a question waits (`confirm` until `confirm_done`), since answering it means using
+/// the mouse or the talk key. The question itself is MiloModel's, answered with `confirm_answer`.
 public final class ScreenController {
     private let model: MiloModel
     private let brain: BrainClient
@@ -61,14 +62,8 @@ public final class ScreenController {
         }
     }
 
-    /// The Yes or No button of the question in the bubble.
-    public func answer(yes: Bool) {
-        guard let question = model.question else { return }
-        brain.send(.confirmResult(id: question.id, yes: yes))
-        settle(question.id)
-    }
-
-    /// Handles the screen events; false for anything else.
+    /// Handles the screen events; false for anything else. Questions only pause the takeover check and
+    /// return false, so the model still shows them.
     public func apply(_ event: BrainEvent) -> Bool {
         switch event {
         case let .lookRequest(id, mode):
@@ -81,11 +76,13 @@ public final class ScreenController {
             session(on)
         case let .flyTo(point):
             model.flyTarget = point.map(toAppKit)
-        case let .confirmRequest(id, text):
+        case .confirm:
             detector.disarm()
-            model.question = MiloModel.Question(id: id, text: text)
-        case let .confirmEnd(id):
-            settle(id)
+            return false
+        case let .confirmDone(id, _):
+            // A click already took the question away; another question still waiting keeps the check off.
+            if model.handsActive && (model.question == nil || model.question?.id == id) { detector.arm() }
+            return false
         default:
             return false
         }
@@ -119,12 +116,6 @@ public final class ScreenController {
             ports.input.stop()
             model.flyTarget = nil
         }
-    }
-
-    private func settle(_ id: String) {
-        guard model.question?.id == id else { return }
-        model.question = nil
-        if model.handsActive { detector.arm() }
     }
 
     private func handle(_ input: UserInput) {

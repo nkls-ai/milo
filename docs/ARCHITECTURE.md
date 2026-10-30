@@ -16,13 +16,19 @@ Only one brain runs per workspace. It takes an `flock` on `~/Milo/run/brain.lock
 ```
 brain/src/milo/
   core/           types, ports (Protocols), wire events, registries, clock, hands (the milo-mac tools and
-                  their schemas). Depends on nothing.
+                  their schemas), wording (plain titles and questions for app actions), logtext (what the log
+                  may say). Depends on nothing.
   adapters/       concrete engines, each registering itself by name
     harness/      codex, claude (agent harnesses), claude_live (the streaming chat model)
     stt/          mlx_whisper
     tts/          omnivoice, say
     audio/        sounddevice (mic in, speaker out)
     text/         fillers, plain (dictation cleanup)
+    connect/      mac (Calendar and Reminders through the app, Mail and Notes through AppleScript,
+                  Shortcuts, Spotlight files), fake (a made-up world in ~/Milo/fake)
+    headless/     none: no microphone, no voice, no speaker, for tests and the eval
+  connect/        the MCP tool server the worker loads (python -m milo.connect)
+  eval/           the 30-task eval (python -m milo.eval)
   memory/         Workspace paths and bootstrap, profile.md, reminders.md, usage ledger, dictation history,
                   transcript (the Milo window's conversation)
   proactive/      heartbeat engine, daily LLM budget, rules (one class per rule, registered by name)
@@ -30,12 +36,14 @@ brain/src/milo/
                   live_transcript (pause segmenter and partial passes while recording),
                   live_talk (user turns on the chat model), reply_stream (tags out of the reply stream),
                   chunker + speaker (streaming TTS), task_runner + conversation (delegated work on the
-                  harness), transcript (what the Milo window shows), heartbeat_runner, app_bridge (requests to the app
-                  and their answers: AppEyes, AppHands, BubbleConfirm), screen (screen data for the
-                  chat model), hands + risk (checking and logging the worker's Mac actions), plus
-                  small shared pieces: ui_state, context (latest app/idle report), levels (throttled
-                  meters), quiet (wait for a turn to end), fallback_voice
-  transport/      Unix socket JSONL servers: brain.sock (an EventSink) and hands.sock
+                  harness), transcript (what the Milo window shows), heartbeat_runner, approvals
+                  (action levels and yes-or-no questions), app_bridge (requests to the app and their answers:
+                  AppEyes, AppHands, Calendar and Reminders work), tool_requests (what the tool socket may do),
+                  screen (screen data for the chat model), hands + risk (checking and logging the worker's Mac
+                  actions), plus small shared pieces: ui_state, context (latest app/idle report), levels
+                  (throttled meters), quiet (wait for a turn to end), fallback_voice
+  transport/      Unix socket JSONL servers: brain.sock (an EventSink), hands.sock, and the tool socket and its
+                  client
   mcp_server.py   the milo-mac MCP stdio server the worker CLI starts; forwards calls to hands.sock
   brain.py        routes inbound commands to services
   config.py       reads config.toml into sections
@@ -58,12 +66,14 @@ Beyond `milo.core.ports`, these entry points are fixed:
 | Function / class | Owner | Contract |
 |---|---|---|
 | `milo.adapters.load_builtin() -> None` | adapters | Imports every built-in adapter module so it registers. Idempotent. Heavy imports (torch, mlx) stay inside methods, never at module import. |
-| `milo.memory.workspace.Workspace(home)` | memory | `.ensure()` copies the template without overwriting, and creates dirs. Path properties: `config_path`, `reminders_path`, `profile_path`, `persona_path`, `state_dir`, `log_dir`, `socket_path`, `lock_path`, `usage_path`, `dictation_history_path`, `transcript_path`, `heartbeat_state_path`, `hands_socket_path`, `screens_dir`. |
+| `milo.memory.workspace.Workspace(home)` | memory | `.ensure()` copies the template without overwriting, and creates dirs. Path properties: `config_path`, `reminders_path`, `profile_path`, `persona_path`, `state_dir`, `log_dir`, `socket_path`, `lock_path`, `usage_path`, `dictation_history_path`, `transcript_path`, `heartbeat_state_path`, `hands_socket_path`, `screens_dir`, `tools_socket_path`. |
 | `milo.memory.reminders.MarkdownReminders(path)` | memory | `ReminderBook`. Re-parses only when mtime changes. `add(due, text)` appends a line. Shared by the heartbeat and LiveTalk. |
 | `milo.memory.profile.MarkdownProfile(path)` | memory | `ProfileMemory` over `memory/profile.md`. |
 | `milo.memory.ledger.JsonlUsageLedger(path, clock)` | memory | `UsageLedger`. Appends one JSON line per harness call. |
 | `milo.memory.history.JsonlDictationHistory(path, clock)` | memory | `DictationHistory`. |
 | `milo.memory.transcript.JsonlTranscript(path)` | memory | `TranscriptStore` over `state/transcript.jsonl`. `tail(n)` reads the file backwards block by block, so its cost doesn't grow with the file. |
+| `milo.services.approvals.Approvals` | services | `approve(kind, summary) -> Decision` applies the action level and asks if needed. `confirm(summary) -> bool` always asks (the `Confirmer` port). |
+| `milo.transport.tool_client.BrainClient(path)` | transport | `request(body) -> dict` on `run/tools.sock`; `approve(kind, summary) -> Decision`. Used by the MCP server, and by any helper process that needs a yes. |
 | `milo.proactive.build_engine(section, ctx, reminders) -> ProactiveEngine` | proactive | `section` is the whole `[heartbeat]` table including sub-tables. Ignores `enabled` (compose.py decides whether to run it). |
 
 ## A user turn
@@ -79,14 +89,42 @@ Typed and spoken turns take the same path through `LiveTalk`:
 
 The chat model has no tools. Work that needs files, research or several steps comes out of a reply as a `<task>`. `TaskRunner` runs tasks one at a time in the background on the agent harness (`[harness]`, Codex by default) through `Conversation`, which resumes one harness session so the agent keeps context across tasks. The agent works in its `~/Milo` sandbox under `AGENTS.md`. When it finishes, Milo speaks its `say`, and the next chat message carries the result so the chat model knows about it. A result that finishes during a live turn waits up to 30 s for the turn to end, then shows silently. Heartbeat nudges wait the same way, and a silent bubble never cuts off speech.
 
+Task results reach the chat model as `<task_result>` blocks with `<` and `>` escaped, and the reply rules say they are data. Once a result is in the conversation, LiveTalk asks before it acts on any later tag in it, until the conversation resets. See [ADR 10](adr/0010-untrusted-results-and-a-private-log.md).
+
 ## Looking and computer use
 
 See [ADR 6](adr/0006-looking-at-the-screen.md) and [ADR 7](adr/0007-computer-use-through-the-brain.md).
 
 - **Looking.** The chat model writes `<look/>` when it needs to see the screen. LiveTalk asks through the `ScreenEyes` port (`AppEyes` sends `look_request`), the app answers `look_result` with the front window's text and a screenshot path, and LiveTalk sends both to the model as a second message with an image block. `looking` turns the eye badge next to Milo on and off. "What's this?" (the shortcut or the menu item) sends `whats_this` with a capture, and the brain starts a turn with it. Screen text sits between `<screen_data>` markers (`services/screen.py`), and a conversation that has seen it asks before handing off a task.
-- **Computer use.** Workers get the milo-mac tools (`core/hands.py`) through `AdapterContext.mac_tools`, which compose.py fills when `[hands] enabled`. Codex and Claude start `python -m milo.mcp_server`, which sends each call to `~/Milo/run/hands.sock`. `HandsService` validates it, asks the app to describe the target, classifies it with `services/risk.py`, asks through the `ConfirmGate` port when needed, logs a step, and then has the app run it (`hands_request`, `hands_result`). It only answers while `TaskRunner` runs a task.
-- **On screen.** `hands_session` shows the "Milo is working" frame (`AppKit/WorkingFrame`). `fly_to` sets `MiloModel.flyTarget` in AppKit coordinates, and `AppKit/FlightDriver` flies Pip there to point at it. `confirm_request` puts a Yes and No question in the bubble (`MiloModel.question`).
-- **Stopping.** `Screen/ScreenController` watches real input during a session through `UserInputSource`. `TakeoverDetector` is pure: it gets timestamps and tells real input from Milo's own events. On a stop the app sends `hands_stop` and the brain fails every later call in that task.
+- **Computer use.** Workers get the milo-mac tools (`core/hands.py`) through `AdapterContext.mac_tools`, which compose.py fills when `[hands] enabled`. Codex and Claude start `python -m milo.mcp_server`, next to the app connections server, and it sends each call to `~/Milo/run/hands.sock`. `HandsService` validates it, asks the app to describe the target, classifies it with `services/risk.py`, asks through the `Confirmer` port (`Approvals`, see below) when needed, logs a step, and then has the app run it (`hands_request`, `hands_result`). It only answers while `TaskRunner` runs a task.
+- **On screen.** `hands_session` shows the "Milo is working" frame (`AppKit/WorkingFrame`). `fly_to` sets `MiloModel.flyTarget` in AppKit coordinates, and `AppKit/FlightDriver` flies Pip there to point at it. A risky step's question shows like any other (`confirm`, see Approvals).
+- **Stopping.** `Screen/ScreenController` watches real input during a session through `UserInputSource`. `TakeoverDetector` is pure: it gets timestamps and tells real input from Milo's own events. Input doesn't count while a question waits (`confirm` until `confirm_done`). On a stop the app sends `hands_stop` and the brain fails every later call in that task.
+
+## App connections
+
+The worker reaches the user's apps through one MCP stdio server, `python -m milo.connect`, which `compose.py` passes to the harness as a `ToolServer`: Claude Code gets `--mcp-config state/mcp-servers.json --strict-mcp-config --allowedTools mcp__milo-mac mcp__milo` (milo-mac only when `[hands] enabled`), Codex gets `-c mcp_servers.milo.*` and `-c mcp_servers.milo-mac.*`. The server's 18 tools sit on the connection ports in `milo.core.ports` (`Calendar`, `Reminders`, `Mail`, `Notes`, `Shortcuts`, `Files`). `[connections] use` picks the adapter set (`CONNECTIONS` registry): `mac` or `fake`. Each connection has its own switch.
+
+```
+worker CLI ──stdio──▶ milo.connect ──run/tools.sock──▶ brain ──brain.sock──▶ Milo.app (EventKit)
+                         │                               │
+                         ├─ AppleScript (Mail, Notes)    └─ Approvals: bubble, window, voice
+                         ├─ shortcuts CLI
+                         └─ mdfind, textutil, PDFKit
+```
+
+- **Before any change** the server asks the brain over `run/tools.sock` (0600, peer UID checked, one JSON object per line, `id` echoed): `{"op": "approve", "kind": "send", "summary": "Write a draft to Anna?"}` returns `{"ok": true, "result": {"allowed": true, "level": "ask_first", "answer": "yes"}}`. `{"op": "confirm", "summary": ...}` returns `{"result": {"yes": bool}}`. If the brain can't be reached, reads go ahead and everything else is refused.
+- **Calendar and Reminders** run in the app: `{"op": "app", "name": "calendar.add_event", "args": {...}}` on the tool socket. The brain checks the connection switch, asks if the level says so, then sends `app_request` to the app and waits up to 90 s for `app_response`. Ops: `calendar.events` (start, end, query), `calendar.add_event` (title, start, end, location, notes, calendar), `reminders.list` (query, include_done), `reminders.add` (title, due, notes, list), `reminders.complete` (id). Times are local, `2026-11-05T15:00`.
+- **Kinds.** Reading is `read`, a mail draft is `draft`, passing an email on is `share`, a new event, reminder or note is `change`, running a shortcut is `shortcut`. See [ADR 8](adr/0008-app-connections-as-an-mcp-server.md) and [ADR 9](adr/0009-approvals-and-action-levels.md).
+- **Unknown arguments** are refused, and a tool whose question needs facts (whose email is being passed on) looks them up with a read before asking.
+- **Step titles** for the window come from `milo.core.wording.title(tool, args)`, so a task shows "Looking in your calendar" and not `mcp__milo__calendar_events`.
+
+## Approvals
+
+`Approvals` owns the one open question. `approve(kind, summary)` looks up the level in `[approvals.levels]`: `read` and `change` go ahead, `never` is refused, `ask_first` asks. Asking sends `confirm` (the bubble and the window show Yes and No), speaks the question unless a turn is running, and waits for `confirm_answer`, a short spoken or typed yes or no while the bubble still shows the question, or `[approvals] timeout_s`, which counts as no. `confirm_done` tells the app it is over. Computer use asks through the same flow with `confirm(summary)`; its own classifier decides when, so the levels don't loosen it.
+
+## Logs
+
+`logs/brain.log` rotates at `[logging] max_mb` and keeps `keep` old files. It holds sizes and timings, never what the user said, Milo's replies or file contents: services log `milo.core.logtext.private(text)`, which is `<42 chars>` unless `[logging] content = true`. `logs/connect.log` is the MCP server's.
 
 ## The Milo window
 
@@ -95,6 +133,7 @@ The window shows the conversation as text and lets the user type to Milo. Clicki
 - **Transcript.** `services/transcript.py` keeps the last 50 entries in memory: user turns (`via` voice or typed), Milo's replies and tasks with their steps. LiveTalk adds the user turn and streams the reply into it (`entry`, then `reply_delta` events, then the finished `entry`). TaskRunner adds a task entry and its steps (`activity` events). Finished entries are appended to `state/transcript.jsonl`. At the first need after a start the brain reads the last 50 lines from the end of that file, never the whole file.
 - **History.** The brain sends `history` with those entries when the app connects and when the window opens (`get_history`). Both read memory only and call no model.
 - **Activity.** `Harness.reply` takes an optional `on_step` callback. The worker adapters read the CLI's stdout line by line while it runs: `codex exec --json` reports `item.started`/`item.completed` for `command_execution`, `file_change`, `mcp_tool_call` and `web_search` (reasoning, messages and todo lists are skipped), and `claude -p --output-format stream-json --verbose` reports `tool_use` blocks with their `tool_result`. `adapters/harness/_activity.py` turns each into a `Step` with a plain title ("Reading your Downloads folder", "Opening Microsoft Excel", "Searching the web for ...") and keeps the raw command or tool payload as `detail`, shown only when the row is expanded. Callers without a callback get the same `Reply` as before.
+- **Questions.** While Milo waits for a yes or no, the bubble shows the question with Yes and No buttons and stays up, and a bar above the text field shows it too.
 - **Typing.** The text field sends `text`. The window's "speak replies" toggle (off by default, kept in UserDefaults) adds `"speak": false`, and Milo then answers in the bubble and the window without audio.
 
 ## Heartbeat cost model
@@ -111,7 +150,8 @@ app/
                      The Milo window: TranscriptModel, Views/ConversationView + ActivityView,
                      AppKit/ConversationWindow. Screen/: ScreenController and TakeoverDetector.
                      Hotkeys/KeyCombo. Adapters/: Accessibility, SystemScreenReader, ScreenShots,
-                     MacHands, NSEventInputMonitor, CarbonHotkey. The character: Views/PipFigure (the bird, default) or
+                     MacHands, NSEventInputMonitor, CarbonHotkey, EventKitConnections (answers app_request
+                     for Calendar and Reminders). The character: Views/PipFigure (the bird, default) or
                      Views/CharacterView's CharacterFigure (the robot, [ui] character = "classic"), both
                      posed by CharacterLife. Flight.swift + AppKit/FlightDriver fly the overlay panel to
                      MiloModel.flyTarget (AppKit global screen coordinates) and back

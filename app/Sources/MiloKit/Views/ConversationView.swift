@@ -44,6 +44,9 @@ public struct ConversationView: View {
                     .onChange(of: scrollKey) { proxy.scrollTo(Self.bottom, anchor: .bottom) }
                 }
             }
+            if let question = model.question {
+                QuestionBar(question: question, talkKey: settings.talkKey, answer: model.answer)
+            }
             InputBar(speakReplies: $speakReplies) { send($0, speakReplies) }
         }
         .background(WindowColors.paper)
@@ -237,6 +240,35 @@ struct EmptyConversation: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(24)
+    }
+}
+
+/// Milo's waiting question, pinned above the text field until it is answered.
+struct QuestionBar: View {
+    let question: PendingQuestion
+    let talkKey: String
+    let answer: (Bool) -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(question.text)
+                    .font(.system(size: 13.5, weight: .medium, design: .rounded))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                Text("Or hold \(talkKey) and say yes or no.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            AnswerButtons(answer: answer)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(WindowColors.inset)
+        .overlay(alignment: .top) { Rectangle().fill(WindowColors.rule).frame(height: 1) }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Milo asks: \(question.text)")
     }
 }
 

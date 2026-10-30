@@ -63,8 +63,11 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .handsSession(true),
             .flyTo(ScreenPoint(x: 812, y: 430.5)),
             .flyTo(nil),
-            .confirmRequest(id: "confirm-3", text: "I'm about to click “Send” in Mail. Go ahead?"),
-            .confirmEnd(id: "confirm-3"),
+            .confirm(id: "3b9e7a01c4d2", question: "I'm about to run your shortcut “Text Anna I'm late”. Go ahead?"),
+            .confirmDone(id: "3b9e7a01c4d2", answer: "yes"),
+            .appRequest(id: "a41f", op: "calendar.add_event", args: .object([
+                "title": .string("Doctor"), "start": .string("2026-11-05T15:00:00"), "end": .string("2026-11-05T16:00:00"),
+            ])),
         ])
     }
 
@@ -88,7 +91,13 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .handsResult(id: "hands-2", ok: true, result: ["text": "Clicked."]),
             .handsResult(id: "hands-5", ok: false, result: [:], error: "There is no element e99. Call ax_tree again."),
             .handsStop(reason: "escape"),
-            .confirmResult(id: "confirm-3", yes: false),
+            .confirmAnswer(id: "3b9e7a01c4d2", yes: true),
+            .appResponse(id: "a41f", outcome: .success(.object([
+                "id": .string("E1F2-77"), "title": .string("Doctor"), "start": .string("2026-11-05T15:00:00"),
+                "end": .string("2026-11-05T16:00:00"), "calendar": .string("Home"),
+            ]))),
+            .appResponse(id: "a42f", outcome: .failure(
+                "Milo isn't allowed to use your calendar. Turn it on in System Settings › Privacy & Security › Calendars.")),
         ]
         let encoder = JSONEncoder()
         let encoded = try commands.map { command in

@@ -32,8 +32,9 @@ OUTBOUND = {
     "hands_request": lambda m: ev.HandsRequest(m["id"], m["tool"], m["args"]),
     "hands_session": lambda m: ev.HandsSession(m["on"]),
     "fly_to": lambda m: ev.FlyTo(m["point"]),
-    "confirm_request": lambda m: ev.ConfirmRequest(m["id"], m["text"]),
-    "confirm_end": lambda m: ev.ConfirmEnd(m["id"]),
+    "confirm": lambda m: ev.Confirm(m["id"], m["question"]),
+    "confirm_done": lambda m: ev.ConfirmDone(m["id"], m["answer"]),
+    "app_request": lambda m: ev.AppRequest(m["id"], m["op"], m["args"]),
 }
 
 
@@ -66,19 +67,24 @@ def test_screen_commands_parse_into_their_values():
     assert ev.parse_command({"type": "hands_result", "id": "h", "ok": False, "error": "nope"}) == \
         ev.HandsResult("h", False, {}, "nope")
     assert ev.parse_command({"type": "hands_stop"}) == ev.HandsStop("user")
-    assert ev.parse_command({"type": "confirm_result", "id": "c", "yes": True}) == ev.ConfirmResult("c", True)
 
 
 def test_parsed_values():
     assert ev.parse_command({"type": "listen_start", "mode": "dictate"}) == ev.ListenStart(ListenMode.DICTATE)
     assert ev.parse_command({"type": "context", "app": "", "idle_s": -3}) == ev.ContextUpdate(None, 0.0)
+    assert ev.parse_command({"type": "confirm_answer", "id": "q1", "yes": False}) == ev.ConfirmAnswer("q1", False)
+    assert ev.parse_command({"type": "app_response", "id": "a1", "ok": True, "result": [1]}) == \
+        ev.AppResponse("a1", True, [1])
+    assert ev.parse_command({"type": "app_response", "id": "a1", "ok": "yes"}).ok is False
 
 
 @pytest.mark.parametrize("raw", [
     [], {"type": "nope"}, {"type": "listen_start", "mode": "shout"}, {"type": "text", "text": "  "},
     {"type": "text"}, {"type": "mute"}, {"type": "context", "idle_s": "soon"},
     {"type": "whats_this"}, {"type": "whats_this", "capture": "screen"}, {"type": "hands_result", "id": "h"},
-    {"type": "hands_result", "id": "h", "ok": True, "result": []}, {"type": "confirm_result", "id": "c"},
+    {"type": "hands_result", "id": "h", "ok": True, "result": []},
+    {"type": "confirm_answer", "id": "q1", "yes": "no"}, {"type": "confirm_answer", "yes": True},
+    {"type": "app_response", "ok": True},
 ])
 def test_bad_commands_raise_protocol_error(raw):
     with pytest.raises(ev.ProtocolError):
@@ -94,7 +100,7 @@ def test_bad_commands_raise_protocol_error(raw):
     (fakes.MemoryHistory(), ports.DictationHistory), (fakes.CountingBudget(), ports.LlmBudget),
     (fakes.ScriptedEngine(), ports.ProactiveEngine),
     (fakes.FakeLiveModel(), ports.LiveModel), (fakes.MemoryProfile(), ports.ProfileMemory),
-    (fakes.ListReminders(), ports.ReminderBook),
+    (fakes.ListReminders(), ports.ReminderBook), (fakes.FakeConfirm(), ports.Confirmer),
 ])
 def test_fakes_satisfy_their_ports(fake, port):
     assert isinstance(fake, port)

@@ -41,16 +41,18 @@ public enum BrainEvent: Equatable, Sendable {
     case handsSession(Bool)
     /// Where Milo is about to act; nil sends him home.
     case flyTo(ScreenPoint?)
-    /// A yes-or-no question before an action that can't be undone.
-    case confirmRequest(id: String, text: String)
-    /// The question `id` is settled; take the buttons away.
-    case confirmEnd(id: String)
+    /// Milo asks a yes-or-no question before an action; shown with Yes and No until `confirmDone`.
+    case confirm(id: String, question: String)
+    /// The question `id` is over: "yes", "no" or "timeout".
+    case confirmDone(id: String, answer: String)
+    /// Work only the app may do (EventKit). Answered with `BrainCommand.appResponse` and the same id.
+    case appRequest(id: String, op: String, args: JSONValue)
     case unknown(String)
 }
 
 extension BrainEvent: Decodable {
     private enum Key: String, CodingKey {
-        case type, state, emotion, text, value, entries, entry, id, step, mode, on, tool, args, point
+        case type, state, emotion, text, value, entries, entry, id, step, mode, on, tool, args, point, question, answer, op
         case taskID = "task_id"
         case whatsThisKey = "whats_this_key"
         case dictateKey = "dictate_key"
@@ -94,9 +96,13 @@ extension BrainEvent: Decodable {
                                  args: try c.decodeIfPresent([String: JSONValue].self, forKey: .args) ?? [:])
         case "hands_session": self = .handsSession(try c.decode(Bool.self, forKey: .on))
         case "fly_to": self = .flyTo(try c.decodeIfPresent(ScreenPoint.self, forKey: .point))
-        case "confirm_request":
-            self = .confirmRequest(id: try c.decode(String.self, forKey: .id), text: try text())
-        case "confirm_end": self = .confirmEnd(id: try c.decode(String.self, forKey: .id))
+        case "confirm": self = .confirm(id: try c.decode(String.self, forKey: .id),
+                                        question: try c.decode(String.self, forKey: .question))
+        case "confirm_done": self = .confirmDone(id: try c.decode(String.self, forKey: .id),
+                                                 answer: try c.decode(String.self, forKey: .answer))
+        case "app_request":
+            self = .appRequest(id: try c.decode(String.self, forKey: .id), op: try c.decode(String.self, forKey: .op),
+                               args: try c.decodeIfPresent(JSONValue.self, forKey: .args) ?? .object([:]))
         default: self = .unknown(type)
         }
     }

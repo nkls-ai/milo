@@ -135,25 +135,31 @@ private final class Rig {
     @Test func answeringAQuestionWithTheMouseDoesntStopTheSession() {
         let r = Rig()
         r.startSession()
-        r.brain.emit(.confirmRequest(id: "confirm-1", text: "Send it?"))
-        #expect(r.model.question == MiloModel.Question(id: "confirm-1", text: "Send it?"))
+        r.brain.emit(.confirm(id: "q1", question: "Send it?"))
+        #expect(r.model.question == PendingQuestion(id: "q1", text: "Send it?"))
         r.input.send(UserInput(.mouseMoved(x: 900, y: 900), at: r.clock))
         r.input.send(UserInput(.mouseDown, at: r.clock))
-        r.controller.screen?.answer(yes: true)
-        #expect(r.sent == [.confirmResult(id: "confirm-1", yes: true)])
+        r.model.answer(true)
+        #expect(r.sent == [.confirmAnswer(id: "q1", yes: true)])
         #expect(r.model.question == nil && r.model.handsActive)
+        r.input.send(UserInput(.key, at: r.clock))
+        #expect(r.sent.count == 1, "still not watching until the brain says the question is over")
+        r.brain.emit(.confirmDone(id: "q1", answer: "yes"))
         r.input.send(UserInput(.key, at: r.clock + 1))
         #expect(r.sent.last == .handsStop(reason: "user"), "watching again after the answer")
     }
 
-    @Test func aTimedOutQuestionGoesAway() {
+    @Test func aSpokenAnswerDoesntStopTheSessionEither() {
         let r = Rig()
-        r.brain.emit(.confirmRequest(id: "confirm-1", text: "Send it?"))
-        r.brain.emit(.confirmEnd(id: "confirm-0"))
-        #expect(r.model.question != nil, "another question's end leaves this one")
-        r.brain.emit(.confirmEnd(id: "confirm-1"))
-        #expect(r.model.question == nil)
-        r.controller.screen?.answer(yes: true)
-        #expect(r.sent.isEmpty, "nothing to answer any more")
+        r.startSession()
+        r.brain.emit(.confirm(id: "q1", question: "Send it?"))
+        r.input.send(UserInput(.key, at: r.clock))  // the talk key, to say "yes"
+        r.brain.emit(.confirmDone(id: "q0", answer: "no"))
+        r.input.send(UserInput(.key, at: r.clock))
+        #expect(r.model.question != nil && r.sent.isEmpty, "another question's end leaves this one waiting")
+        r.brain.emit(.confirmDone(id: "q1", answer: "yes"))
+        #expect(r.model.question == nil && r.model.handsActive)
+        r.input.send(UserInput(.key, at: r.clock + 1))
+        #expect(r.sent.last == .handsStop(reason: "user"))
     }
 }

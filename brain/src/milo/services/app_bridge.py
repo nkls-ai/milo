@@ -1,8 +1,9 @@
-"""Requests to the app that need an answer: a look at the screen, a computer-use action, a yes-or-no question.
+"""Requests to the app that need an answer: a look at the screen, a computer-use action, Calendar and Reminders work.
 
 Each goes out as an event with a fresh id; the app's reply command (look_result, hands_result,
-confirm_result) resolves it through Brain. A request nobody answers in time fails, so a missing or
-older app never leaves the brain waiting forever.
+app_response) resolves it through Brain. A request nobody answers in time fails, so a missing or
+older app never leaves the brain waiting forever. Yes-or-no questions are not here: they belong to
+Approvals (services/approvals.py).
 """
 
 from __future__ import annotations
@@ -11,8 +12,9 @@ import asyncio
 import itertools
 import logging
 from collections.abc import Callable
+from typing import Any
 
-from milo.core.events import ConfirmEnd, ConfirmRequest, Event, HandsRequest, LookRequest
+from milo.core.events import AppRequest, AppResponse, Event, HandsRequest, LookRequest
 from milo.core.ports import EventSink
 from milo.core.types import HandsError, ScreenCapture
 
@@ -20,20 +22,33 @@ log = logging.getLogger("milo.app_bridge")
 
 LOOK_TIMEOUT_S = 10.0
 HANDS_TIMEOUT_S = 40.0  # an AppleScript may run up to 30 s in the app
-CONFIRM_TIMEOUT_S = 60.0
+APP_TIMEOUT_S = 90.0  # the first call may wait for the user to answer a macOS permission prompt
 
 NO_APP = "Milo's window isn't connected, so I can't reach the screen."
 LOOK_TIMED_OUT = "Looking at the screen took too long."
+NOT_RUNNING = "Milo's app isn't running, so I can't reach your calendar or reminders."
 
 
 class AppGone(Exception):
     """No app is connected, or it didn't answer in time."""
 
 
+class AppError(Exception):
+    """The app couldn't do it. The message is plain language for the user."""
+
+
 class AppBridge:
-    def __init__(self, sink: EventSink, connected: Callable[[], bool] = lambda: True):
+    """Requests waiting for the app, each under an id like `look-1`, `hands-2` or `app-3`.
+
+    `ask` is the general form; `call` runs one Calendar or Reminders op (`app_request`) and turns failures
+    into AppError with plain words. `timeout_s` is how long `call` waits for its `app_response`.
+    """
+
+    def __init__(self, sink: EventSink, connected: Callable[[], bool] = lambda: True, *,
+                 timeout_s: float = APP_TIMEOUT_S):
         self._sink = sink
         self._connected = connected
+        self._timeout_s = timeout_s
         self._ids = itertools.count(1)
         self._pending: dict[str, asyncio.Future] = {}
 
@@ -64,6 +79,22 @@ class AppBridge:
         for id, future in list(self._pending.items()):
             if id.startswith(f"{kind}-") and not future.done():
                 future.cancel()
+
+    async def call(self, op: str, args: dict) -> Any:
+        """The app's result for app_request `op` (Calendar and Reminders through EventKit). Raises AppError."""
+        if not self._connected():
+            raise AppError(NOT_RUNNING)
+        try:
+            response = await self.ask("app", lambda id: AppRequest(id, op, args), self._timeout_s)
+        except AppGone:
+            log.warning("the app didn't answer %s in %.0fs", op, self._timeout_s)
+            raise AppError("Milo's app didn't answer in time.") from None
+        if not isinstance(response, AppResponse) or not response.ok:
+            raise AppError(getattr(response, "error", "") or "Milo's app couldn't do that.")
+        return response.result
+
+    def resolve(self, response: AppResponse) -> None:
+        self.answer(response.id, response)
 
 
 class AppEyes:
@@ -105,33 +136,3 @@ class AppHands:
 
     def cancel(self) -> None:
         self._bridge.cancel("hands")
-
-
-class BubbleConfirm:
-    """ConfirmGate: a Yes/No question in Milo's bubble. No answer within `timeout_s` counts as no.
-
-    Stands in for the shared approval flow until it exists; anything that asks goes through ConfirmGate.
-    """
-
-    def __init__(self, bridge: AppBridge, sink: EventSink, *, timeout_s: float = CONFIRM_TIMEOUT_S):
-        self._bridge = bridge
-        self._sink = sink
-        self._timeout_s = timeout_s
-
-    async def confirm(self, summary: str) -> bool:
-        asked: list[str] = []
-
-        def request(id: str) -> Event:
-            asked.append(id)
-            return ConfirmRequest(id, summary)
-
-        try:
-            yes = await self._bridge.ask("confirm", request, self._timeout_s)
-        except AppGone as e:
-            log.info("no answer to %r: %s", summary, e)
-            yes = False
-        finally:
-            for id in asked:
-                self._sink.emit(ConfirmEnd(id))
-        log.info("asked %r: %s", summary, "yes" if yes else "no")
-        return yes is True

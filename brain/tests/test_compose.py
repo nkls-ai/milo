@@ -138,9 +138,9 @@ def test_heartbeat_disabled_builds_no_runner(build):
 @pytest.mark.parametrize("section, available", [
     ("chat", "claude_live"),
     ("harness", "claude, codex"),
-    ("stt", "mlx_whisper"),
-    ("tts", "omnivoice, say"),
-    ("audio", "sounddevice"),
+    ("stt", "mlx_whisper, none"),
+    ("tts", "none, omnivoice, say"),
+    ("audio", "none, sounddevice"),
     ("dictation", "fillers, plain"),
 ])
 def test_a_bogus_use_name_lists_the_available_ones(build, section, available):
@@ -149,7 +149,7 @@ def test_a_bogus_use_name_lists_the_available_ones(build, section, available):
 
 
 def test_a_bogus_fallback_voice_fails_at_build_not_when_the_primary_breaks(build):
-    with pytest.raises(ConfigError, match=r"fallback.*'sya'; available: omnivoice, say"):
+    with pytest.raises(ConfigError, match=r"fallback.*'sya'; available: none, omnivoice, say"):
         build(cheap(**{"tts.fallback": "sya"}))
 
 

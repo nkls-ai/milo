@@ -1,6 +1,7 @@
 import Foundation
 
-/// Any JSON value, for the free-form arguments and results of computer-use actions.
+/// Any JSON value, for free-form arguments and results: computer-use actions (`hands_request`,
+/// `hands_result`) and app work (`app_request`, `app_response`).
 public enum JSONValue: Equatable, Sendable {
     case null
     case bool(Bool)
@@ -8,6 +9,12 @@ public enum JSONValue: Equatable, Sendable {
     case string(String)
     case array([JSONValue])
     case object([String: JSONValue])
+
+    /// The field `key` of an object; nil for anything else.
+    public subscript(key: String) -> JSONValue? {
+        if case let .object(fields) = self { return fields[key] }
+        return nil
+    }
 
     public var string: String? { if case let .string(s) = self { s } else { nil } }
     public var number: Double? { if case let .number(n) = self { n } else { nil } }

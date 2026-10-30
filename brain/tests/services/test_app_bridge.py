@@ -2,9 +2,9 @@ import asyncio
 
 import pytest
 
-from milo.core.events import ConfirmEnd, ConfirmRequest, HandsRequest, LookRequest
+from milo.core.events import AppRequest, AppResponse, HandsRequest, LookRequest
 from milo.core.types import HandsError
-from milo.services.app_bridge import NO_APP, AppBridge, AppEyes, AppHands, BubbleConfirm
+from milo.services.app_bridge import NO_APP, NOT_RUNNING, AppBridge, AppError, AppEyes, AppHands
 from tests.fakes import RecordingSink
 
 
@@ -21,7 +21,8 @@ def test_without_an_app_nothing_is_sent():
     assert asyncio.run(AppEyes(bridge).look()).error == NO_APP
     with pytest.raises(HandsError, match="isn't connected"):
         asyncio.run(AppHands(bridge).act("list_apps", {}))
-    assert asyncio.run(BubbleConfirm(bridge, sink).confirm("Send it?")) is False
+    with pytest.raises(AppError, match=NOT_RUNNING):
+        asyncio.run(bridge.call("reminders.list", {}))
     assert sink.events == []
 
 
@@ -53,10 +54,20 @@ def test_cancel_ends_waiting_actions_with_an_error():
         asyncio.run(run())
 
 
-def test_an_unanswered_question_is_a_no_and_its_buttons_go_away():
+def test_app_work_and_mac_actions_wait_side_by_side_without_crossing():
     sink = RecordingSink()
-    assert asyncio.run(BubbleConfirm(AppBridge(sink), sink, timeout_s=0.01).confirm("Send it?")) is False
-    assert sink.events == [ConfirmRequest("confirm-1", "Send it?"), ConfirmEnd("confirm-1")]
+    bridge = AppBridge(sink)
+
+    async def run():
+        acting = asyncio.create_task(AppHands(bridge).act("list_apps", {}))
+        listing = asyncio.create_task(bridge.call("reminders.list", {}))
+        await asyncio.sleep(0)
+        bridge.resolve(AppResponse("app-2", True, [{"title": "Milk"}]))
+        bridge.answer("hands-1", (True, {"text": "Mail"}, ""))
+        return await acting, await listing
+
+    assert asyncio.run(run()) == ({"text": "Mail"}, [{"title": "Milk"}])
+    assert sink.events == [HandsRequest("hands-1", "list_apps", {}), AppRequest("app-2", "reminders.list", {})]
 
 
 def test_late_or_unknown_answers_are_dropped():

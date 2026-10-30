@@ -7,6 +7,7 @@ milo.core.registry and are picked by name from config.toml in milo.compose.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable, Sequence
+from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 from typing import Protocol, runtime_checkable
@@ -165,11 +166,14 @@ class AppHands(Protocol):
 
 
 @runtime_checkable
-class ConfirmGate(Protocol):
-    """Asks the user before an action that can't be undone."""
+class Confirmer(Protocol):
+    """Asks the user before an action. Any tool or service that is about to do something it can't undo uses it."""
 
     async def confirm(self, summary: str) -> bool:
-        """True only on a clear yes. No, a timeout or nobody there to answer is False."""
+        """Ask `summary`, a plain yes-or-no question naming the thing and the consequence.
+
+        True only for a yes. No, no answer before the timeout, or an error mean False.
+        """
         ...
 
 
@@ -266,3 +270,96 @@ class ProactiveEngine(Protocol):
     budget: LlmBudget
 
     def tick(self, signals: Signals) -> list[Nudge]: ...
+
+
+# ---- app connections: what the worker reaches through Milo's MCP server (milo.connect)
+#
+# Every method blocks and raises ToolError with a plain-language message. Dates are naive local time.
+# Results are JSON-ready dicts for the agent.
+
+
+@runtime_checkable
+class Calendar(Protocol):
+    def events(self, start: datetime, end: datetime, query: str = "") -> list[dict]:
+        """Events overlapping [start, end), optionally only those whose title, place or notes contain `query`."""
+        ...
+
+    def add_event(self, title: str, start: datetime, end: datetime, location: str = "", notes: str = "",
+                  calendar: str = "") -> dict: ...
+
+
+@runtime_checkable
+class Reminders(Protocol):
+    def list(self, query: str = "", include_done: bool = False) -> list[dict]: ...
+
+    def add(self, title: str, due: datetime | None = None, notes: str = "", list_name: str = "") -> dict: ...
+
+    def complete(self, id: str) -> dict: ...
+
+
+@runtime_checkable
+class Mail(Protocol):
+    """Mail.app. There is deliberately no send: Milo writes drafts, the user sends them."""
+
+    def search(self, query: str, limit: int = 20) -> list[dict]:
+        """Newest first: id, from, subject, date, mailbox."""
+        ...
+
+    def read(self, id: str) -> dict: ...
+
+    def draft(self, to: list[str], subject: str, body: str, reply_to: str = "") -> dict:
+        """Save a draft and open it in Mail for the user to check. `reply_to` is a message id."""
+        ...
+
+    def forward(self, id: str, to: list[str]) -> dict:
+        """Save a draft passing email `id` on to `to`, attachments and all, and open it in Mail."""
+        ...
+
+
+@runtime_checkable
+class Notes(Protocol):
+    def search(self, query: str, limit: int = 20) -> list[dict]: ...
+
+    def read(self, id: str) -> dict: ...
+
+    def create(self, title: str, body: str, folder: str = "") -> dict: ...
+
+    def append(self, id: str, text: str) -> dict: ...
+
+
+@runtime_checkable
+class Shortcuts(Protocol):
+    def list(self) -> list[str]: ...
+
+    def run(self, name: str, input_text: str = "") -> str:
+        """Run the user's shortcut and return its text output."""
+        ...
+
+
+@runtime_checkable
+class Files(Protocol):
+    """The user's files inside one folder (home by default). ~/Library and hidden folders are out of reach."""
+
+    def find(self, name: str, limit: int = 20) -> list[dict]:
+        """Files whose name contains `name`, newest first: path, name, modified, size."""
+        ...
+
+    def search(self, text: str, limit: int = 20) -> list[dict]:
+        """Files whose contents contain `text`."""
+        ...
+
+    def read(self, path: str, max_chars: int = 20000) -> dict:
+        """The text of a file (txt, md, csv, pdf, docx, rtf, xlsx, ...): path, text, truncated."""
+        ...
+
+
+@dataclass(frozen=True)
+class Connections:
+    """One implementation of each connection. None: switched off in config.toml or not available."""
+
+    calendar: Calendar | None = None
+    reminders: Reminders | None = None
+    mail: Mail | None = None
+    notes: Notes | None = None
+    shortcuts: Shortcuts | None = None
+    files: Files | None = None

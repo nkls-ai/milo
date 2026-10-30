@@ -6,10 +6,11 @@ import logging
 from pathlib import Path
 
 from .config import UiSettings
-from .core.events import (Command, ConfirmResult, ContextUpdate, EmotionChanged, Event, GetHistory, HandsResult,
-                          HandsStop, ListenCancel, ListenConfirm, ListenStart, ListenStop, LookResult, Mute,
-                          StateChanged, TextInput, UiConfig, WhatsThis)
+from .core.events import (AppResponse, Command, ConfirmAnswer, ContextUpdate, EmotionChanged, Event, GetHistory,
+                          HandsResult, HandsStop, ListenCancel, ListenConfirm, ListenStart, ListenStop, LookResult,
+                          Mute, StateChanged, TextInput, UiConfig, WhatsThis)
 from .services.app_bridge import AppBridge
+from .services.approvals import Approvals
 from .services.context import UserContext
 from .services.hands import HandsService
 from .services.heartbeat_runner import HeartbeatRunner
@@ -25,16 +26,18 @@ WHATS_THIS = "What's this?"
 
 
 class Brain:
-    """`bridge` resolves the app's answers to looks, Mac actions and questions. `screens` is state/screens:
-    an image path from the app counts only if it points in there."""
+    """`bridge` resolves the app's answers to looks, Mac actions and app work; `approvals` takes the answers
+    to Milo's questions. `screens` is state/screens: an image path from the app counts only if it points in there."""
 
     def __init__(self, ui: UiState, listening: Listening, live_talk: LiveTalk, context: UserContext,
                  heartbeat: HeartbeatRunner | None, ui_settings: UiSettings, transcript: Transcript | None = None,
-                 *, bridge: AppBridge | None = None, hands: HandsService | None = None, screens: Path | None = None):
-        self._bridge = bridge
+                 *, approvals: Approvals | None = None, bridge: AppBridge | None = None,
+                 hands: HandsService | None = None, screens: Path | None = None):
         self._hands = hands
         self._screens = screens
         self._ui = ui
+        self._approvals = approvals
+        self._bridge = bridge
         self._transcript = transcript
         self._listening = listening
         self._live_talk = live_talk
@@ -81,12 +84,16 @@ class Brain:
             case HandsStop(reason):
                 if self._hands is not None:
                     self._hands.stop(reason)
-            case ConfirmResult(id, yes):
-                self._answer(id, yes)
             case Mute(on):
                 log.info("proactive nudges %s", "muted" if on else "on")
                 if self._heartbeat is not None:
                     self._heartbeat.muted = on
+            case ConfirmAnswer(id, yes):
+                if self._approvals is not None and not self._approvals.answer(id, yes):
+                    log.info("an answer came for a question that is over")
+            case AppResponse():
+                if self._bridge is not None:
+                    self._bridge.resolve(command)
             case _:
                 log.warning("no handler for %s", command.type)
 

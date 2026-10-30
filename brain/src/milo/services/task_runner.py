@@ -5,6 +5,7 @@ import logging
 from collections import deque
 from collections.abc import Callable
 
+from milo.core.logtext import private
 from milo.core.types import Emotion, HarnessError
 
 from .context import UserContext
@@ -65,7 +66,7 @@ class TaskRunner:
             await self._run(self._queue.popleft())
 
     async def _run(self, description: str) -> None:
-        log.info("task started: %s", description)
+        log.info("task started, %s", private(description))
         task_id = self._transcript.task_started(description)
         try:
             reply = await self._chat(description, task_id)
@@ -79,7 +80,7 @@ class TaskRunner:
             self._transcript.task_finished(task_id, False, TASK_FAILED)
             await self._report(TASK_FAILED, Emotion.CONFUSED, speak=False)
             return
-        log.info("task done: %s", reply.say)
+        log.info("task done, said %s", private(reply.say))
         self._transcript.task_finished(task_id, True, reply.say)
         if self.on_result is not None:
             self.on_result(description, reply.say)

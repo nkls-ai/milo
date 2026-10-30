@@ -69,6 +69,11 @@ class Workspace:
         return self.home / "run" / "brain.lock"
 
     @property
+    def tools_socket_path(self) -> Path:
+        """Where helper processes (the app-connections server) ask the brain for approvals and app work."""
+        return self.home / "run" / "tools.sock"
+
+    @property
     def usage_path(self) -> Path:
         return self.state_dir / "usage.jsonl"
 

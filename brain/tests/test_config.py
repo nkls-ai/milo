@@ -87,6 +87,13 @@ def test_the_old_harness_idle_reset_is_ignored_with_a_warning(caplog):
     assert "conversation_idle_reset_s" in caplog.text and "[chat]" in caplog.text
 
 
+def test_the_old_hands_confirm_timeout_is_ignored_with_a_warning(caplog):
+    caplog.set_level(logging.WARNING, logger="milo.config")
+    config = Config.parse(MINIMAL + "[hands]\nconfirm_timeout_s = 30\n")
+    assert config.hands.enabled
+    assert "confirm_timeout_s" in caplog.text and "[approvals] timeout_s" in caplog.text
+
+
 def with_chat(text: str, body: str) -> str:
     return text.replace("[harness]", f"[chat]\n{body}\n[harness]", 1)
 
@@ -166,7 +173,7 @@ def test_invalid_toml_names_the_file():
 
 def test_hands_and_the_whats_this_key_have_defaults_and_can_be_changed():
     config = Config.parse(MINIMAL)
-    assert config.hands.enabled and config.hands.applescript and config.hands.confirm_timeout_s == 60
+    assert config.hands.enabled and config.hands.applescript
     assert config.ui.whats_this_key == "ctrl+option+m"
     changed = Config.parse(MINIMAL + "[ui]\nwhats_this_key = \"cmd+shift+F12\"\n[hands]\napplescript = false\n")
     assert changed.ui.whats_this_key == "cmd+shift+F12" and not changed.hands.applescript

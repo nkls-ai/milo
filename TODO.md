@@ -2,7 +2,12 @@
 
 ## Next
 - Fast path for small talk: a local model (mlx-lm, Qwen3 1.7B or so) answers chit-chat in under a second. Codex only gets real tasks. Needs a router port.
-- Calendar signal (EventKit in the app, sent as context) and a "meeting in 5 minutes" rule.
+- Calendar signal (EventKit is in the app now, for the worker's tools; send upcoming events as context too) and a "meeting in 5 minutes" rule.
+- Take the shell away from the Codex worker, or route its `osascript` through the approvals, so it can't script Mail around Milo's tools and their questions.
+- Live-test the Mail and Notes AppleScript on a real account: saving a draft, reply quoting, a new note without a folder.
+- Mail: delete and move with `ask_first`; Reminders: change a due date; Calendar: move and delete an event.
+- Let the brain ask the app whether a question still shows, instead of trusting its own record of the bubble, so a spoken yes can't land on a question already gone.
+- Run the eval on Codex as the worker too, and on a few German phrasings.
 - Thumbs up/down on unprompted nudges, stored in memory, so rules learn what you care about.
 - Context-aware dictation formatting by frontmost app (casual in Slack, formal in Mail), via a local model `TextCleaner`.
 - A stable signing identity so macOS permissions survive rebuilds.
@@ -12,10 +17,11 @@
 - Pip: a fold or flap animation when he takes off and lands, instead of starting mid-flap.
 
 - Milo window: show heartbeat nudges and reminders in the transcript too (only turns and tasks are recorded now).
-- Milo window: a stop button for a running task. The confirm question lives in the bubble now (`ConfirmGate`); merge it with the shared approval flow.
+- Milo window: a stop button for a running task.
 - Computer use: the character flies to `MiloModel.flyTarget` instead of the ring from `FlyFallback`.
 - Computer use: try it on real apps (Excel, Mail, Safari) and tune the tool descriptions, the risk words and the takeover slop.
-- Computer use: a stop key that works while a question waits (input is ignored then, so the user can click Yes or No).
+- Computer use: a stop key that works while a question waits (input is ignored then, so the user can click Yes or No, or say yes on the talk key).
+- Computer use: give risky steps an action kind from `services/risk.py` (a click on Send is `send`) and ask through `Approvals.approve(kind, ...)`, so the log and the question say what kind it is. The classifier should still decide when to ask.
 - Looking: send the screenshot only when the window text isn't enough, to save tokens on text-heavy windows.
 - Milo window: persist a task when it starts, so one cut off by a brain restart still shows (now it is lost).
 

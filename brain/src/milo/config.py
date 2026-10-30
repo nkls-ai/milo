@@ -18,15 +18,16 @@ log = logging.getLogger("milo.config")
 
 KEY_NAMES = ("fn", "right_option", "right_command", "right_control")
 CHARACTERS = ("pip", "classic")
-PLUGGABLE = ("chat", "harness", "stt", "tts", "audio", "dictation")
-SECTIONS = (*PLUGGABLE, "ui", "heartbeat", "hands")
+PLUGGABLE = ("chat", "harness", "stt", "tts", "audio", "dictation", "connections")
+SECTIONS = (*PLUGGABLE, "ui", "heartbeat", "hands", "approvals", "logging")
 _COMBO = re.compile(r"^((ctrl|control|option|alt|shift|cmd|command)\+)+[a-z0-9]+$|^f([1-9]|1[0-9])$")
 
-# `use` when a section leaves it out. Lets configs written before [chat] existed keep working.
-DEFAULT_USE = {"chat": "claude_live"}
+# `use` when a section leaves it out. Lets configs written before a section existed keep working.
+DEFAULT_USE = {"chat": "claude_live", "connections": "mac"}
 
 # Keys older templates had. ~/Milo/config.toml is never overwritten, so they are skipped with a warning.
-RETIRED = {("harness", "conversation_idle_reset_s"): "it moved to [chat]"}
+RETIRED = {("harness", "conversation_idle_reset_s"): "it moved to [chat]",
+           ("hands", "confirm_timeout_s"): "questions wait [approvals] timeout_s"}
 
 
 @dataclass(frozen=True)
@@ -87,13 +88,41 @@ class HandsSettings:
     enabled: bool = True
     """Give the worker agent the milo-mac tools: read windows, press buttons, type, click."""
     applescript: bool = True
-    confirm_timeout_s: float = 60.0
-    """How long a yes-or-no question waits. No answer counts as no."""
 
 
 @dataclass(frozen=True)
 class HeartbeatSettings:
     enabled: bool = True
+
+
+@dataclass(frozen=True)
+class ConnectionSettings:
+    """What the worker may reach through Milo's app connections. Each switch turns one off."""
+
+    enabled: bool = True
+    calendar: bool = True
+    reminders: bool = True
+    mail: bool = True
+    notes: bool = True
+    shortcuts: bool = True
+    files: bool = True
+
+
+@dataclass(frozen=True)
+class ApprovalSettings:
+    timeout_s: float = 60.0
+    """How long Milo waits for a yes. No answer means no."""
+    speak: bool = True
+    """Say the question aloud, besides showing it."""
+
+
+@dataclass(frozen=True)
+class LoggingSettings:
+    content: bool = False
+    """Put what was said, replies, facts and reminder texts in brain.log. For debugging only."""
+    max_mb: float = 2.0
+    keep: int = 3
+    """Old logs kept besides brain.log, each up to max_mb."""
 
 
 @dataclass(frozen=True)
@@ -108,7 +137,7 @@ class AudioSettings:
 
 _PLUGGABLE_SETTINGS: dict[str, type] = {
     "chat": ChatSettings, "harness": HarnessSettings, "stt": SttSettings, "tts": TtsSettings,
-    "audio": AudioSettings, "dictation": DictationSettings,
+    "audio": AudioSettings, "dictation": DictationSettings, "connections": ConnectionSettings,
 }
 
 
@@ -127,10 +156,17 @@ class Config:
         self.harness: HarnessSettings = settings["harness"]
         self.tts: TtsSettings = settings["tts"]
         self.dictation: DictationSettings = settings["dictation"]
+        self.connections: ConnectionSettings = settings["connections"]
+        approvals = raw.get("approvals", {})
+        self.approvals = _pluggable_settings(ApprovalSettings, approvals, "approvals")
+        if not isinstance(approvals.get("levels", {}), dict):
+            raise ConfigError("[approvals.levels] must be a table")
+        self.approval_levels: dict[str, Any] = dict(approvals.get("levels", {}))
+        self.logging = _typed(options_from(LoggingSettings, raw.get("logging", {}), "logging"), "logging")
         self.ui = _typed(options_from(UiSettings, raw.get("ui", {}), "ui"), "ui")
         heartbeat = {k: v for k, v in raw.get("heartbeat", {}).items() if k == "enabled"}
         self.heartbeat = _typed(HeartbeatSettings(**heartbeat), "heartbeat")
-        self.hands = _typed(options_from(HandsSettings, raw.get("hands", {}), "hands"), "hands")
+        self.hands = _typed(options_from(HandsSettings, _current(raw.get("hands", {}), "hands"), "hands"), "hands")
 
     @classmethod
     def load(cls, path: Path) -> Config:
@@ -161,10 +197,16 @@ class Config:
 def _pluggable_settings(cls: type, table: Mapping[str, Any], section: str):
     """Top-level keys other than `use` and implementation tables belong to the settings dataclass."""
     own = {k: v for k, v in table.items() if k != "use" and not isinstance(v, dict)}
-    for key in [k for k in own if (section, k) in RETIRED]:
+    return _typed(options_from(cls, _current(own, section), section), section)
+
+
+def _current(table: Mapping[str, Any], section: str) -> dict[str, Any]:
+    """`table` without RETIRED keys, each skipped with a warning."""
+    current = dict(table)
+    for key in [k for k in current if (section, k) in RETIRED]:
         log.warning("ignoring [%s] %s in config.toml: %s", section, key, RETIRED[section, key])
-        del own[key]
-    return _typed(options_from(cls, own, section), section)
+        del current[key]
+    return current
 
 
 def _typed(settings, section: str):

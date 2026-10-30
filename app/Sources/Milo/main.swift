@@ -31,6 +31,7 @@ let controller = MiloController(
     context: WorkspaceContextProvider(),
     accessibility: SystemAccessibilityPermission(),
     scheduler: scheduler,
+    connections: EventKitConnections(),
     screen: screen)
 
 // Windows and the status item are created once the app has finished launching.
@@ -41,7 +42,7 @@ var workingFrame: WorkingFrame?
 
 let lifecycle = AppLifecycle(
     onLaunch: {
-        let overlay = OverlayPanel(model: model, answer: { screen.answer(yes: $0) })
+        let overlay = OverlayPanel(model: model)
         overlay.placeBottomRight()
         overlay.orderFrontRegardless()
         workingFrame = WorkingFrame(model: model)

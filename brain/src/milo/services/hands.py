@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 from milo.core.events import FlyTo, HandsSession, Status
 from milo.core.hands import validate
-from milo.core.ports import AppHands, ConfirmGate, EventSink
+from milo.core.ports import AppHands, Confirmer, EventSink
 from milo.core.types import HandsError, Step, StepStatus
 
 from .risk import Risk, classify, normalize_combo
@@ -37,8 +37,8 @@ class HandsService:
     """Computer use for the worker agent, one action at a time.
 
     Every call is checked against its schema, then the app describes what it would touch (the element under
-    a click, the focused field before typing). Risky actions wait for the user's yes through `confirm`;
-    password fields and security settings never run. Each action is a step of the running task in the
+    a click, the focused field before typing). Risky actions wait for the user's yes through `confirm`
+    (Approvals); password fields and security settings never run. Each action is a step of the running task in the
     Milo window. The first action that changes the screen starts the session: the app shows the "Milo is
     working" frame and stops everything when the user touches the mouse or keyboard (stop()).
 
@@ -46,7 +46,7 @@ class HandsService:
     through the hands socket in between.
     """
 
-    def __init__(self, hands: AppHands, confirm: ConfirmGate, sink: EventSink, *,
+    def __init__(self, hands: AppHands, confirm: Confirmer, sink: EventSink, *,
                  transcript: Transcript | None = None, applescript: bool = True):
         self._hands = hands
         self._confirm = confirm

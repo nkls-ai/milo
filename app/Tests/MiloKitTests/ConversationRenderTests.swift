@@ -19,14 +19,17 @@ struct ConversationRenderTests {
         defer { TaskBlock.openDetails = [] }
         for (name, entries, state) in Samples.all {
             for dark in [false, true] {
-                try render(entries: entries, state: state, name: "\(name)-\(dark ? "dark" : "light")", dark: dark)
+                try render(entries: entries, state: state, name: "\(name)-\(dark ? "dark" : "light")", dark: dark,
+                           question: name == "asking" ? Samples.question : nil)
             }
         }
     }
 
-    private func render(entries: [TranscriptEntry], state: MiloState, name: String, dark: Bool) throws {
+    private func render(entries: [TranscriptEntry], state: MiloState, name: String, dark: Bool,
+                        question: String? = nil) throws {
         let model = MiloModel(scheduler: ManualScheduler())
         model.state = state
+        if let question { model.apply(.confirm(id: "q1", question: question)) }
         let view = ConversationView(transcript: TranscriptModel(entries: entries), model: model,
                                     settings: ConversationSettings(talkKey: "right ⌥"), send: { _, _ in })
             .frame(width: Self.size.width, height: Self.size.height)
@@ -106,11 +109,28 @@ enum Samples {
         TranscriptEntry(id: "u2", date: at(70), kind: .user, text: "yes please", via: .typed),
     ]
 
+    static let question = "I'm about to run your shortcut “Text Anna I'm late”. Go ahead?"
+
+    static let asking: [TranscriptEntry] = [
+        TranscriptEntry(id: "u1", date: at(0), kind: .user, text: "tell Anna I'm running late", via: .voice),
+        TranscriptEntry(id: "m1", date: at(2), kind: .milo, text: "On it.", emotion: .happy),
+        TranscriptEntry(id: "t1", date: at(3), kind: .task, text: "Tell Anna the user is running late",
+                        status: .running, steps: [
+                            ActivityStep(id: "1", kind: "app", title: "Checking your shortcuts",
+                                         detail: "milo.shortcuts_list {}", status: .done),
+                            ActivityStep(id: "2", kind: "app", title: "Running your shortcut “Text Anna I'm late”",
+                                         detail: "milo.shortcuts_run {\"name\": \"Text Anna I'm late\"}",
+                                         status: .running),
+                        ]),
+        TranscriptEntry(id: "m2", date: at(4), kind: .milo, text: question, emotion: .thinking),
+    ]
+
     static let all: [(String, [TranscriptEntry], MiloState)] = [
         ("empty", [], .idle),
         ("one-turn", oneTurn, .idle),
         ("long-reply", longReply, .speaking),
         ("running-task", runningTask, .idle),
         ("failed-step", failedStep, .thinking),
+        ("asking", asking, .idle),
     ]
 }

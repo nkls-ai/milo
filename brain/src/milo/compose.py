@@ -14,8 +14,9 @@ from .core.clock import SystemClock
 from .core.ports import Harness, LiveModel, Transcriber, Voice
 from .core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, HARNESSES, LIVE_MODELS, TEXT_CLEANERS, TRANSCRIBERS,
                             VOICES, AdapterContext, ConfigError, Registry)
-from .core.types import LiveMode
-from .services.app_bridge import AppBridge, AppEyes, AppHands, BubbleConfirm
+from .core.types import LiveMode, ToolServer
+from .services.app_bridge import AppBridge, AppEyes, AppHands
+from .services.approvals import ActionPolicy, Approvals
 from .services.context import UserContext
 from .services.conversation import Conversation
 from .services.dictation import DictationService
@@ -26,9 +27,11 @@ from .services.listening import Listening
 from .services.live_talk import LiveTalk
 from .services.speaker import Speaker
 from .services.task_runner import TaskRunner
+from .services.tool_requests import ToolRequests
 from .services.transcript import Transcript
 from .services.ui_state import UiState
 from .transport.hands_socket import HandsSocketServer
+from .transport.tool_socket import ToolSocketServer
 from .transport.unix_socket import UnixSocketServer
 
 log = logging.getLogger("milo.compose")
@@ -48,6 +51,7 @@ class Runtime:
     harness: Harness
     live_model: LiveModel
     live_talk: LiveTalk
+    tool_server: ToolSocketServer
     hands_server: HandsSocketServer | None = None
 
 
@@ -69,7 +73,7 @@ def build(home: Path) -> Runtime:
     hands_socket = workspace.hands_socket_path
     # The worker CLI starts the MCP server with the brain's own interpreter, so it needs no install step.
     mac_tools = (sys.executable, "-m", "milo.mcp_server", "--socket", str(hands_socket)) if config.hands.enabled else ()
-    ctx = AdapterContext(home, workspace.state_dir, clock, mac_tools)
+    ctx = AdapterContext(home, workspace.state_dir, clock, mac_tools, _tool_servers(config, home))
 
     def create(registry: Registry, section: str):
         name, options = config.pluggable(section)
@@ -97,18 +101,23 @@ def build(home: Path) -> Runtime:
     conversation = Conversation(harness, ledger, clock, idle_reset_s)
     speaker = Speaker(voice, output, ui, tts_executor)
     transcript = Transcript(ui, JsonlTranscript(workspace.transcript_path), clock)
+    approvals = Approvals(ui, speaker, ActionPolicy(config.approval_levels), timeout_s=config.approvals.timeout_s,
+                          speak=config.approvals.speak, quiet=lambda: live_talk.busy or mic.active,
+                          transcript=transcript)
     bridge = AppBridge(ui, connected=server.connected)
-    confirm = BubbleConfirm(bridge, ui, timeout_s=config.hands.confirm_timeout_s)
     hands = hands_server = None
     if config.hands.enabled:
-        hands = HandsService(AppHands(bridge), confirm, ui, transcript=transcript,
+        hands = HandsService(AppHands(bridge), approvals, ui, transcript=transcript,
                              applescript=config.hands.applescript)
         hands_server = HandsSocketServer(hands_socket, hands.call)
+    switches = config.connections
+    enabled = [name for name in ("calendar", "reminders") if switches.enabled and getattr(switches, name)]
+    tool_server = ToolSocketServer(workspace.tools_socket_path, ToolRequests(approvals, bridge, enabled).handle)
     tasks = TaskRunner(conversation, speaker, context, quiet=lambda: live_talk.busy or mic.active,
                        transcript=transcript, hands=hands)
     live_talk = LiveTalk(live_model, speaker, ui, context, clock, profile, reminders, ledger,
                          _persona(workspace.persona_path), idle_reset_s, tasks, transcript, eyes=AppEyes(bridge),
-                         confirm=confirm)
+                         approvals=approvals)
     tasks.on_result = live_talk.note
     listening = Listening(mic, transcriber, stt_executor, ui, DictationService(cleaner, history, ui),
                           live_talk, context, LiveMode(config.dictation.stream))
@@ -121,10 +130,17 @@ def build(home: Path) -> Runtime:
         heartbeat = HeartbeatRunner(engine, context, conversation, speaker, ui, mic, clock,
                                     busy=lambda: live_talk.busy)
 
-    brain = Brain(ui, listening, live_talk, context, heartbeat, config.ui, transcript, bridge=bridge, hands=hands,
-                  screens=workspace.screens_dir)
+    brain = Brain(ui, listening, live_talk, context, heartbeat, config.ui, transcript, approvals=approvals,
+                  bridge=bridge, hands=hands, screens=workspace.screens_dir)
     return Runtime(brain, server, heartbeat, transcriber, voice, stt_executor, tts_executor, harness,
-                   live_model, live_talk, hands_server)
+                   live_model, live_talk, tool_server, hands_server)
+
+
+def _tool_servers(config: Config, home: Path) -> tuple[ToolServer, ...]:
+    """Milo's app connections as an MCP server for the worker: this Python, so no `uv run` on every task."""
+    if not config.connections.enabled:
+        return ()
+    return (ToolServer("milo", (sys.executable, "-m", "milo.connect"), (("MILO_HOME", str(home)),)),)
 
 
 def _persona(path: Path):

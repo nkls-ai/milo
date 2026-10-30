@@ -11,9 +11,10 @@ from milo.brain import Brain
 from milo.config import UiSettings
 from milo.core.events import Bubble, StateChanged
 from milo.core.types import MiloState
+from milo.services.app_bridge import AppBridge
+from milo.services.approvals import Approvals
 from milo.services.context import UserContext
 from milo.services.conversation import Conversation
-from milo.services.app_bridge import AppBridge
 from milo.services.dictation import DictationService
 from milo.services.hands import HandsService
 from milo.services.heartbeat_runner import HeartbeatRunner
@@ -22,7 +23,7 @@ from milo.services.live_talk import LiveTalk
 from milo.services.speaker import Speaker
 from milo.services.task_runner import TaskRunner
 from milo.services.ui_state import UiState
-from tests.fakes import (FakeAudioInput, FakeAudioOutput, FakeClock, FakeConfirm, FakeEyes, FakeHands, FakeHarness,
+from tests.fakes import (FakeAudioInput, FakeAudioOutput, FakeClock, FakeEyes, FakeHands, FakeHarness,
                          FakeLiveModel, FakeTranscriber, FakeVoice, ListReminders, MemoryHistory, MemoryLedger,
                          MemoryProfile, RecordingSink, ScriptedEngine, UpperCleaner)
 
@@ -61,8 +62,8 @@ class Stack:
     wait_s: float = 0.05  # how long task results and nudges wait for a live turn to end
     eyes: FakeEyes | None = None  # None: Milo can't look, and his prompt says nothing about looking
     hands_port: FakeHands = field(default_factory=FakeHands)
-    confirm: FakeConfirm = field(default_factory=FakeConfirm)
     screens: Path | None = None
+    confirm_timeout_s: float = 1.0
 
     def __post_init__(self):
         executor = InlineExecutor()
@@ -70,14 +71,16 @@ class Stack:
         self.context = UserContext(self.clock)
         self.conversation = Conversation(self.harness, self.ledger, self.clock, self.idle_reset_s)
         self.speaker = Speaker(self.voice, self.output, self.ui, executor)
-        self.bridge = AppBridge(self.ui)
-        self.hands = HandsService(self.hands_port, self.confirm, self.ui)
+        self.approvals = Approvals(self.ui, self.speaker, timeout_s=self.confirm_timeout_s,
+                                   quiet=lambda: self.live_talk.busy)
+        self.bridge = AppBridge(self.ui, timeout_s=self.confirm_timeout_s)
+        self.hands = HandsService(self.hands_port, self.approvals, self.ui)
         self.tasks = TaskRunner(self.conversation, self.speaker, self.context,
                                 quiet=lambda: self.live_talk.busy or self.mic.active, wait_s=self.wait_s,
                                 poll_s=0.005, hands=self.hands)
         self.live_talk = LiveTalk(self.model, self.speaker, self.ui, self.context, self.clock, self.profile,
                                   self.reminders, self.ledger, lambda: self.persona, self.idle_reset_s, self.tasks,
-                                  eyes=self.eyes, confirm=self.confirm)
+                                  eyes=self.eyes, approvals=self.approvals)
         self.tasks.on_result = self.live_talk.note
         self.dictation = DictationService(UpperCleaner(), self.history, self.ui)
         self.listening = Listening(self.mic, self.transcriber, executor, self.ui, self.dictation, self.live_talk,
@@ -86,7 +89,7 @@ class Stack:
                                          self.mic, self.clock, busy=lambda: self.live_talk.busy,
                                          wait_s=self.wait_s, poll_s=0.005)
         self.brain = Brain(self.ui, self.listening, self.live_talk, self.context, self.heartbeat, UiSettings(),
-                           bridge=self.bridge, hands=self.hands, screens=self.screens)
+                           approvals=self.approvals, bridge=self.bridge, hands=self.hands, screens=self.screens)
 
     def states(self) -> list[MiloState]:
         return [e.state for e in self.sink.of(StateChanged)]

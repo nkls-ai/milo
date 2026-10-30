@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from milo.core.events import EmotionChanged, Event, StateChanged
+from milo.core.events import Bubble, EmotionChanged, Event, StateChanged
 from milo.core.ports import EventSink
 from milo.core.types import Emotion, MiloState
 
@@ -18,12 +18,16 @@ class UiState:
         self.emotion = Emotion.NEUTRAL
         self.speaking = False
         self.thinking = False
+        self.bubble = ""
+        """The text in the speech bubble: the last thing Milo said or showed."""
 
     def emit(self, event: Event) -> None:
         if isinstance(event, StateChanged):
             self.state = event.state
         elif isinstance(event, EmotionChanged):
             self.emotion = event.emotion
+        elif isinstance(event, Bubble):
+            self.bubble = event.text
         self._sink.emit(event)
 
     def set_state(self, state: MiloState) -> None:
