@@ -11,11 +11,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .brain import Brain
-from .config import Config
+from .config import Config, brief_time
 from .core.clock import SystemClock
 from .core.ports import Harness, LiveModel, PlaybackTap, Transcriber, Voice
-from .core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, EMBEDDERS, HARNESSES, LIVE_MODELS, STREAMING_TRANSCRIBERS,
-                            TEXT_CLEANERS, TRANSCRIBERS, VOICES, AdapterContext, ConfigError, Registry)
+from .core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, CHANNELS, EMBEDDERS, HARNESSES, LIVE_MODELS,
+                            STREAMING_TRANSCRIBERS, TEXT_CLEANERS, TRANSCRIBERS, VOICES, AdapterContext, ConfigError,
+                            Registry)
 from .core.types import Emotion, LiveMode, ToolServer
 from .services.app_bridge import AppBridge, AppEyes, AppHands
 from .services.approvals import ActionPolicy, Approvals
@@ -33,11 +34,13 @@ from .services.heartbeat_runner import HeartbeatRunner
 from .services.episode_stubs import EpisodeDictations, EpisodeEyes, EpisodeTranscript, RoutineEpisodes
 from .services.listening import Listening
 from .services.live_talk import LiveTalk, untrusted
+from .services.messages import MessageService, MessageSettings
 from .services.orchestrator import HelperQuestions, Orchestrator
 from .services.memory import Memory, MemoryParts, TurnMemory
 from .services.memory_requests import MemoryRequests
 from .services.sleep import SleepRunner
 from .services.routines import Routines
+from .services.settings_guard import SettingsGuard
 from .services.speaker import Speaker
 from .services.task_runner import TaskRunner
 from .services.tool_requests import ToolRequests
@@ -75,6 +78,7 @@ class Runtime:
     memory: MemoryRuntime | None = None
     barge_in: BargeIn | None = None
     backchannel: Backchannel | None = None
+    messages: MessageService | None = None
     notices: tuple[VoiceNotice, ...] = ()
     """Said when the voice or the hearing falls back to the Mac; they need the event loop once it runs."""
 
@@ -99,6 +103,7 @@ def build(home: Path) -> Runtime:
     from .memory.profile import MarkdownProfile
     from .memory.reminders import MarkdownReminders
     from .memory.routines import JsonStateFile, MarkdownRoutineBook
+    from .memory.remote import JsonRemoteState
     from .memory.transcript import JsonlTranscript
     from .memory.workspace import Workspace
 
@@ -186,9 +191,6 @@ def build(home: Path) -> Runtime:
     eyes = AppEyes(bridge)
     if mem is not None:
         eyes = EpisodeEyes(eyes, mem.memory.record, now=clock.now)
-    tool_server = ToolSocketServer(workspace.tools_socket_path,
-                                   ToolRequests(HelperQuestions(approvals, lambda: helpers, screen=False), bridge,
-                                                enabled, memory_requests).handle)
     runner = TaskRunner(harness, ledger, clock, context, background=background, hands=hands)
     helpers = Orchestrator(runner, speaker, ui, clock, transcript=transcript, max_helpers=live_settings.max_helpers,
                            quiet=lambda: live_talk.busy or mic.active, updates=updates, milestones=Milestones(),
@@ -219,6 +221,29 @@ def build(home: Path) -> Runtime:
                                speaker, mic_busy=lambda: mic.active)
         else:
             log.warning("[chat] voice_barge_in needs an audio output that reports what it played; it is off")
+    messages = None
+    if config.messages.enabled:
+        name, options = config.pluggable("messages")
+        channel = CHANNELS.create(name, options, ctx)
+
+        def show(text: str) -> None:
+            transcript.say(text, Emotion.CONCERNED)
+            speaker.say(text, Emotion.CONCERNED, speak=False)
+
+        m = config.messages
+        messages = MessageService(
+            channel, live_talk, approvals, JsonRemoteState(workspace.remote_state_path), speaker, ui, context, clock,
+            settings=MessageSettings(m.max_per_minute, m.away_after_min * 60, m.question_timeout_s,
+                                     brief_time(m.brief_at), m.max_file_mb, "calendar" in enabled,
+                                     "reminders" in enabled),
+            helpers=lambda: helpers.helpers, board=helpers.board, reminders=reminders, app=bridge.call,
+            guard=SettingsGuard([workspace.config_path, workspace.remote_state_path], [workspace.secrets_dir], show),
+            transcript=transcript, home=Path.home(), milo=home)
+        approvals.relays.append(messages)
+        helpers.watchers.append(messages.helper_changed)
+    tool_server = ToolSocketServer(workspace.tools_socket_path,
+                                   ToolRequests(HelperQuestions(approvals, lambda: helpers, screen=False), bridge,
+                                                enabled, memory_requests, phone=messages).handle)
 
     heartbeat = None
     if config.heartbeat.enabled:
@@ -229,6 +254,8 @@ def build(home: Path) -> Runtime:
                                     busy=lambda: live_talk.busy)
         if routines is not None:
             heartbeat.on_tick.append(routines.tick)
+        if messages is not None:
+            heartbeat.after_tick.append(messages.tick)
 
     def use_ui(changed: Config) -> None:
         brain.use_ui(changed.ui)
@@ -248,9 +275,10 @@ def build(home: Path) -> Runtime:
     settings = Settings(TomlConfigFile(workspace.config_path), config, ui, live)
     brain = Brain(ui, listening, live_talk, context, heartbeat, config.ui, transcript, approvals=approvals,
                   bridge=bridge, hands=hands, screens=workspace.screens_dir, helpers=helpers,
-                  memory=mem.memory if mem is not None else None, routines=routines, settings=settings)
+                  memory=mem.memory if mem is not None else None, routines=routines, settings=settings,
+                  messages=messages)
     return Runtime(brain, server, heartbeat, transcriber, voice, stt_executor, tts_executor, harness,
-                   live_model, live_talk, tool_server, hands_server, helpers, mem, barge_in, backchannel,
+                   live_model, live_talk, tool_server, hands_server, helpers, mem, barge_in, backchannel, messages,
                    notices)
 
 

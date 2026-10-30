@@ -43,6 +43,10 @@ public enum BrainCommand: Equatable, Sendable {
     case getSettings
     /// Change one setting, e.g. section "ui", key "character", value "dragon".
     case setSetting(section: String, key: String, value: JSONValue)
+    /// The menu's "Pause messages from your phone".
+    case remotePause(Bool)
+    /// The menu's "Disconnect phone": a new connection needs a new code shown on the Mac.
+    case remoteForget
 }
 
 /// What the app did with an `app_request`: a JSON result, or a plain-language error for the user.
@@ -142,6 +146,11 @@ extension BrainCommand: Encodable {
             try c.encode(section, forKey: .section)
             try c.encode(key, forKey: .key)
             try c.encode(value, forKey: .value)
+        case let .remotePause(on):
+            try c.encode("remote_pause", forKey: .type)
+            try c.encode(on, forKey: .on)
+        case .remoteForget:
+            try c.encode("remote_forget", forKey: .type)
         }
     }
 }

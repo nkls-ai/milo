@@ -27,12 +27,14 @@ brain/src/milo/
     text/         fillers, plain (dictation cleanup)
     connect/      mac (Calendar and Reminders through the app, Mail and Notes through AppleScript,
                   Shortcuts, Spotlight files), fake (a made-up world in ~/Milo/fake)
+    channel/      telegram (Bot API long polling), imessage (experimental: chat.db and Messages AppleScript)
     headless/     none: no microphone, no voice, no speaker, for tests and the eval
     embed/        mlx_e5 (multilingual-e5-small in MLX), hash (hashed words, no model; tests and CI)
   connect/        the MCP tool server the worker loads (python -m milo.connect)
   eval/           the 30-task eval (python -m milo.eval) and the on-screen eval (python -m milo.eval.screen)
   memory/         Workspace paths and bootstrap, profile.md, reminders.md, usage ledger, dictation history,
-                  transcript (the Milo window's conversation), routines (the recipe folder and its state), and
+                  transcript (the Milo window's conversation), routines (the recipe folder and its state),
+                  remote (state/messages.json: the paired phone), and
                   long-term memory: episodes and facts (append-only JSONL), fact_profile (profile.md as a view of
                   the facts), index (FTS5 and vectors in state/memory.sqlite), recall, when (time phrases),
                   consolidate (the night), recall_eval
@@ -50,6 +52,7 @@ brain/src/milo/
                   actions), sheets + documents (the AppleScript behind sheet_write and write_document), memory (recall for each turn, search, forget, edit), episode_stubs (episodes
                   of turns, tasks, routine runs, looks and dictations), memory_requests (the worker's memory tools), sleep
                   (when the night's consolidation runs), routines (writing, running and scheduling recipes, see ADR 16),
+                  messages + pairing + sharing + brief + settings_guard (Milo by message, ADR 17),
                   plus small shared pieces: ui_state, context (latest app/idle report), levels
                   (throttled meters), quiet (wait for a turn to end), fallback_voice
   transport/      Unix socket JSONL servers: brain.sock (an EventSink), hands.sock, and the tool socket and its
@@ -92,6 +95,7 @@ Beyond `milo.core.ports`, these entry points are fixed:
 | `milo.memory.transcript.JsonlTranscript(path)` | memory | `TranscriptStore` over `state/transcript.jsonl`. `tail(n)` reads the file backwards block by block, so its cost doesn't grow with the file. |
 | `milo.services.approvals.Approvals` | services | `approve(kind, summary) -> Decision` applies the action level and asks if needed. `confirm(summary) -> bool` always asks (the `Confirmer` port). |
 | `milo.transport.tool_client.BrainClient(path)` | transport | `request(body) -> dict` on `run/tools.sock`; `approve(kind, summary) -> Decision`. Used by the MCP server, and by any helper process that needs a yes. |
+| `milo.services.messages.MessageService` | services | Milo by message. `run()` polls the `Channel` until cancelled, `tick()` runs on the heartbeat. A `QuestionRelay` for `Approvals` (`asked`, `closed`), an `Orchestrator` watcher (`helper_changed`), and the `Phone` behind the tool socket's `send_to_phone` (`check`, `question`, `send_file`). `pause(on)`, `forget()`, `status() -> Remote`. |
 | `milo.proactive.build_engine(section, ctx, reminders) -> ProactiveEngine` | proactive | `section` is the whole `[heartbeat]` table including sub-tables. Ignores `enabled` (compose.py decides whether to run it). |
 
 ## Listening
@@ -192,6 +196,28 @@ worker CLI ──stdio──▶ milo.connect ──run/tools.sock──▶ brain
 
 `Approvals` owns the one open question. `approve(kind, summary)` looks up the level in `[approvals.levels]`: `read` and `change` go ahead, `never` is refused, `ask_first` asks. Asking sends `confirm` (the bubble and the window show Yes and No), speaks the question unless a turn is running, and waits for `confirm_answer`, a short spoken or typed yes or no while the bubble still shows the question, or `[approvals] timeout_s`, which counts as no. `confirm_done` tells the app it is over. Computer use asks through the same flow with `confirm(summary)`; its own classifier decides when, so the levels don't loosen it. `approve(kind, summary, careful=True)`, for a careful helper (see Delegated tasks), asks before `change` actions as well.
 
+## Milo by message
+
+The owner reaches Milo from their phone through a chat app (`[messages]`, off by default). See [ADR 17](adr/0017-milo-by-message.md) and the [setup guide](setup/messages.md).
+
+```
+phone ──Telegram──▶ api.telegram.org ◀──HTTPS long poll── brain: TelegramChannel ──▶ MessageService
+                                                                                       │
+             pairing code ◀── bubble and window on the Mac ◀────────────────────────────┤
+             LiveTalk.message (text turn, same conversation) ◀──────────────────────────┤
+             Approvals questions while away ──▶ Yes/No buttons in the chat ─────────────┤
+             helpers started from the phone ──▶ milestones and results in the chat ─────┤
+             worker's send_to_phone ──tools.sock──▶ check, ask "share", send the bytes ─┘
+```
+
+- **Channels** (`CHANNELS` registry, `core/ports.Channel`) only move messages. Telegram uses the Bot API over HTTPS with the standard library, so nothing on the Mac listens for the network. The token comes from `~/Milo/secrets/telegram-token` (0600, never logged). iMessage reads chat.db read-only (Full Disk Access) and sends with AppleScript to the owner's own handle only.
+- **Pairing** (`services/pairing.py`): the first message from an unknown private chat makes a 6-digit code that shows on the Mac only; sending it back makes that chat the owner (`state/messages.json`, 0600). Codes are tied to their chat, last 10 minutes and 5 tries. After pairing everything but the owner's private chat is dropped and logged without its text.
+- **Turns.** `LiveTalk.message` runs a text turn on the live model: same persona, memory and helpers, no speech, no looking. Forwarded, quoted and long (pasted) text goes in as escaped `<forwarded>`, `<quoted>`, `<pasted>` data and makes later tags ask first.
+- **Questions.** `Approvals.relays` holds the MessageService. While the Mac has been idle for `away_after_min`, a question goes to the chat and only the chat may answer (`Relayed.only`); while the owner writes from the phone and the Mac is in use, both may.
+- **Files.** The connections server lists `send_to_phone` when messages are on. `ToolRequests` asks `services/sharing.py` whether the file may go (no private folders, case-insensitive, links resolved, at most `max_file_mb`), asks `share`, then sends the bytes read through one descriptor opened without following links, if it is still the same file.
+- **Safety while away.** `services/settings_guard.py` puts `config.toml`, `state/messages.json` and `secrets/` back if they change while the owner is away (Milo's own saves excepted). `/pause` works from the phone; resuming, pairing and disconnecting only at the Mac (the menu sends `remote_pause` and `remote_forget`).
+- **Morning brief** (`services/brief.py`, `brief_at`): today's events and Apple Reminders through the app, `reminders.md`, helpers at work. Templates only, zero tokens, on the heartbeat's tick (`HeartbeatRunner.on_tick`).
+
 ## Logs
 
 `logs/brain.log` rotates at `[logging] max_mb` and keeps `keep` old files. It holds sizes and timings, never what the user said, Milo's replies or file contents: services log `milo.core.logtext.private(text)`, which is `<42 chars>` unless `[logging] content = true`. `logs/connect.log` is the MCP server's.
@@ -254,7 +280,8 @@ A chat turn costs one message to the running chat model: about 600 tokens, with 
 
 ```
 app/
-  Sources/MiloKit/   protocols, wire types, controller, hotkey state machine, views (all testable).
+  Sources/MiloKit/   protocols, wire types (Wire/RemoteStatus: Milo by message for the menu), controller, hotkey
+                     state machine, views (all testable).
                      The Milo window: TranscriptModel, Views/ConversationView + ActivityView,
                      Views/HelperViews (the birds next to Milo and the helpers list, Wire/Helper),
                      Views/RoutineViews (the Routines section and the recipe draft card, Wire/Routine),

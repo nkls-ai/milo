@@ -82,6 +82,7 @@ class MlxWhisper:
     def wake(self) -> None:
         """A short pass over a second of silence on each loaded model touches all their weights."""
         started = time.monotonic()
+        self._stop.clear()  # an interrupt left over from the last recording's release
         for name in dict.fromkeys((self.model, self.preview_model)):
             if (whisper := self._models.get(name)) is not None:
                 whisper.wake(self.language)

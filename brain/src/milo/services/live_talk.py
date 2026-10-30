@@ -292,6 +292,37 @@ class LiveTalk:
         await self._settle_interrupt()
         await self._reply(update_prompt(untrusted(update, 300)), (), True, screen=False, tags=False)
 
+    # ---- text turns from a chat channel (the owner's phone, see messages.py)
+
+    def message(self, text: str, prompt: str, *, data: Sequence[str] = ()) -> asyncio.Task[str | None]:
+        """A message from the owner's phone, answered in text: the same conversation, persona and memory as
+        a spoken turn, without speech and without looking at the screen.
+
+        `text` is what the user wrote, for the transcript; `prompt` is what the model gets (messages.py adds
+        how to answer by message). `data` are blocks of outside text (forwarded, quoted, pasted), already
+        made inert: like task results they make every later tag in this conversation wait for a yes. The
+        task's result is what Milo answered, or None if the model failed. It is a turn like any other, so
+        a turn at the Mac interrupts it.
+        """
+        self.interrupt(rest=False)
+        self._turn = asyncio.create_task(self._message_turn(text, prompt, list(data)))
+        return self._turn
+
+    async def _message_turn(self, text: str, prompt: str, data: list[str]) -> str | None:
+        self._ui.emit(Heard(text))
+        self._transcript.user(text, "message")
+        await self._settle_interrupt()
+        self._notes.extend(data)
+        try:
+            parser = await self._reply(prompt, (), False, screen=False)
+        finally:
+            if self._look_started is not None:  # no looking at the screen from afar
+                self._look_started.cancel()
+                self._look_started = None
+                self._looking(False)
+                self._ui.thinking = False
+        return None if parser is None else parser.spoken
+
     async def warm(self) -> None:
         """Start the conversation ahead of the first turn. Raises HarnessError."""
         await self._ensure_conversation()

@@ -40,6 +40,7 @@ OUTBOUND = {
     "facts": lambda m: ev.Facts(m["facts"]),
     "routines": lambda m: ev.Routines(m["routines"], m["drafts"]),
     "settings": lambda m: ev.SettingsReport(m["settings"], m["restart"], m["error"]),
+    "remote": lambda m: ev.Remote(m["channel"], m["label"], m["state"], m["paused"], m["detail"]),
 }
 
 
@@ -81,6 +82,10 @@ def test_parsed_values():
     assert ev.parse_command({"type": "app_response", "id": "a1", "ok": True, "result": [1]}) == \
         ev.AppResponse("a1", True, [1])
     assert ev.parse_command({"type": "app_response", "id": "a1", "ok": "yes"}).ok is False
+    assert ev.parse_command({"type": "remote_pause", "on": True}) == ev.RemotePause(True)
+    assert ev.parse_command({"type": "remote_forget"}) == ev.RemoteForget()
+    with pytest.raises(ev.ProtocolError):
+        ev.parse_command({"type": "remote_pause", "on": "yes"})
     assert ev.parse_command({"type": "stop_helper", "id": "c0ffee12ab34"}) == ev.StopHelper("c0ffee12ab34")
     with pytest.raises(ev.ProtocolError):
         ev.parse_command({"type": "stop_helper", "id": " "})

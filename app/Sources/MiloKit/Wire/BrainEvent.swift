@@ -58,6 +58,8 @@ public enum BrainEvent: Equatable, Sendable {
     case routines([RoutineInfo], drafts: [RoutineDraft])
     /// The settings and their choices, after `getSettings` and after every `setSetting`.
     case settings(SettingsReport)
+    /// Milo by message: which chat app, whether a phone is connected, paused.
+    case remote(RemoteStatus)
     case unknown(String)
 }
 
@@ -130,6 +132,7 @@ extension BrainEvent: Decodable {
             self = .settings(SettingsReport(settings: try c.decode([Setting].self, forKey: .settings),
                                             restart: try c.decodeIfPresent(Bool.self, forKey: .restart) ?? false,
                                             error: try c.decodeIfPresent(String.self, forKey: .error) ?? ""))
+        case "remote": self = .remote(try RemoteStatus(from: decoder))
         default: self = .unknown(type)
         }
     }
