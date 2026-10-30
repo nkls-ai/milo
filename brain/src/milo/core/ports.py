@@ -6,7 +6,7 @@ milo.core.registry and are picked by name from config.toml in milo.compose.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Callable, Collection, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
@@ -16,7 +16,9 @@ import numpy as np
 
 from .events import Event
 from .meetings import Chunk, MeetingInfo, MeetingNotes, TimedWord, Track, TranscriptLine, Turn
-from .types import Audio, Nudge, Reminder, Reply, ScreenCapture, Signals, Step, Usage
+from .memory import ConsolidationReport, Document, Episode, Fact, Hit, IndexItem, Recall, TurnContext
+from .routines import Routine
+from .types import Audio, Inbound, Nudge, Reminder, Reply, ScreenCapture, Signals, Step, Usage
 
 LevelCallback = Callable[[float], None]
 """Receives loudness in 0..1. May be called from an audio thread."""
@@ -60,13 +62,28 @@ class Transcriber(Protocol):
         """Load models so the first call is fast. Blocking; called on a worker thread."""
         ...
 
-    def transcribe(self, audio: Audio) -> str:
-        """16 kHz mono audio to text. Returns "" for silence or noise. Blocking."""
+    def wake(self) -> None:
+        """The user pressed a key to speak. Bring loaded models back into memory, which macOS pages out
+        while the brain idles, so the passes that follow aren't slowed by that. Blocking and cheap; runs
+        on the STT thread ahead of them. An engine with nothing to page in does nothing."""
+        ...
+
+    def transcribe(self, audio: Audio, before: str = "", *, quick: bool = False) -> str:
+        """16 kHz mono audio to text. Returns "" for silence or noise. Blocking.
+
+        `before` is what the user said just before this audio in the same recording, when it is one
+        phrase of a longer one; the engine may keep that phrase's language. `quick`: someone is waiting,
+        so trade a little accuracy for speed. Raises Interrupted if interrupt() ended it."""
         ...
 
     def preview(self, audio: Audio) -> str:
         """Like transcribe(), but fast and rougher: live words while the user still speaks. Never pasted.
         An engine without a fast mode returns transcribe(audio)."""
+        ...
+
+    def interrupt(self) -> None:
+        """End the pass running now as soon as possible, with Interrupted. Safe from any thread; does
+        nothing if no pass runs or the engine can't stop one."""
         ...
 
 
@@ -125,6 +142,17 @@ class AudioOutput(Protocol):
 
     def interrupt(self) -> None:
         """Stop now and drop queued audio. A pending drain() returns False."""
+        ...
+
+
+@runtime_checkable
+class PlaybackTap(Protocol):
+    """What an AudioOutput has actually played, with timestamps, so a listener can tell Milo's own voice in the
+    microphone from the user's (barge-in). Optional: outputs that can't say leave voice barge-in off."""
+
+    def played(self, since: float) -> tuple[int, list[tuple[float, Audio]]]:
+        """(sample rate, blocks) played from `since` on: each block is the time its first sample reached the
+        speaker, on the clock of AudioInput.started_at, and its samples."""
         ...
 
 
@@ -190,6 +218,79 @@ class Confirmer(Protocol):
 
 
 @runtime_checkable
+class Channel(Protocol):
+    """A chat app the owner reaches Milo through from their phone (Telegram, iMessage). It only moves
+    messages: who counts as the owner, what Milo answers and what may be sent is the MessageService's job."""
+
+    name: str
+    """The registry name, e.g. "telegram"."""
+    label: str
+    """What the user calls it, e.g. "Telegram"."""
+
+    async def start(self) -> None:
+        """Check the token or permissions and get ready. Raises ChannelError with plain words."""
+        ...
+
+    async def receive(self) -> list[Inbound]:
+        """Wait for what arrived since the last call, for up to a poll's length. [] when nothing came.
+        Raises ChannelError when the channel stopped working; the caller waits and tries again."""
+        ...
+
+    async def send(self, chat: str, text: str) -> None:
+        """Send a text message to `chat`. Raises ChannelError."""
+        ...
+
+    async def ask(self, chat: str, id: str, question: str) -> None:
+        """Send a yes-or-no question. Buttons, where the app has them, answer with `yes:<id>` or `no:<id>`."""
+        ...
+
+    async def typing(self, chat: str) -> None:
+        """Show that Milo is writing, for a few seconds. Never raises."""
+        ...
+
+    async def send_file(self, chat: str, name: str, data: bytes, caption: str = "") -> None:
+        """Send one file's bytes under `name`. The caller has read and checked them. Raises ChannelError."""
+        ...
+
+    async def acknowledge(self, inbound: Inbound, text: str = "") -> None:
+        """Confirm a button press, with a short note the app may show. Never raises."""
+        ...
+
+    async def close(self) -> None: ...
+
+
+@runtime_checkable
+class QuestionRelay(Protocol):
+    """Somewhere else Approvals can ask its questions, like the owner's phone."""
+
+    def asked(self, id: str, question: str, detail: str) -> Relayed | None:
+        """A question started. None: not passed on. Never raises."""
+        ...
+
+    def closed(self, id: str, answer: str) -> None:
+        """The question is over: "yes", "no" or "timeout"."""
+        ...
+
+
+@dataclass(frozen=True)
+class Relayed:
+    """A question was passed on. `wait_s`: how long to wait for its answer at most. `only`: only the relay may
+    answer it (the user is away, so whoever sits at the Mac must not)."""
+
+    wait_s: float
+    only: bool = False
+
+
+@runtime_checkable
+class RemoteState(Protocol):
+    """Where the MessageService keeps whose phone is paired and whether remote is paused."""
+
+    def load(self) -> dict: ...
+
+    def save(self, data: dict) -> None: ...
+
+
+@runtime_checkable
 class ProfileMemory(Protocol):
     """Durable facts about the user, kept as Markdown the user can read and edit."""
 
@@ -242,6 +343,65 @@ class TranscriptStore(Protocol):
     def tail(self, n: int) -> list[dict]:
         """The last `n` entries, oldest first. Reads only the end of the file."""
         ...
+
+
+@runtime_checkable
+class RoutineBook(Protocol):
+    """The user's routines, one Markdown recipe each (milo.core.routines), plus a short log of their runs."""
+
+    def all(self) -> list[Routine]:
+        """Every routine that reads, by name. Re-reads only files that changed."""
+        ...
+
+    def problems(self) -> dict[str, str]:
+        """Files that don't read, by slug, with what is wrong in plain words."""
+        ...
+
+    def get(self, slug: str) -> Routine | None: ...
+
+    def save(self, routine: Routine) -> Routine:
+        """Write the routine to its file, whole or not at all."""
+        ...
+
+    def rename(self, slug: str, name: str) -> Routine:
+        """Give it a new name and the file a matching slug. Raises ValueError if that name is taken."""
+        ...
+
+    def update(self, slug: str, fields: dict[str, str]) -> Routine:
+        """Set front matter fields (`paused`, `schedule`, `last_run`) in place, keeping the rest of the file as
+        the user wrote it. Raises ValueError if there is no such routine or the result wouldn't read."""
+        ...
+
+    def delete(self, slug: str) -> bool:
+        """Move the file aside (not gone: it can be put back by hand). False if there was none."""
+        ...
+
+    def draft_path(self, draft: str) -> Path:
+        """Where a worker writes the recipe draft `draft` for the user to look at."""
+        ...
+
+    def read_draft(self, draft: str) -> str | None: ...
+
+    def write_draft(self, draft: str, text: str) -> None: ...
+
+    def drop_draft(self, draft: str) -> None: ...
+
+    def record_run(self, slug: str, run: dict) -> None:
+        """Append one run ({"at", "outcome", "inputs", "result", ...}) to the run log."""
+        ...
+
+    def runs(self, slug: str, n: int = 5) -> list[dict]:
+        """The last `n` runs of a routine, oldest first."""
+        ...
+
+
+@runtime_checkable
+class StateFile(Protocol):
+    """A small JSON object kept across restarts, for a service's own bookkeeping."""
+
+    def load(self) -> dict: ...
+
+    def save(self, data: dict) -> None: ...
 
 
 @runtime_checkable
@@ -373,6 +533,15 @@ class Files(Protocol):
         ...
 
 
+@runtime_checkable
+class Phone(Protocol):
+    """The owner's phone, reached by message through the brain (Milo by message, ADR 17)."""
+
+    def send(self, path: str, caption: str = "") -> dict:
+        """Send one file. The brain checks it and asks the user first. Raises ToolError."""
+        ...
+
+
 @dataclass(frozen=True)
 class Connections:
     """One implementation of each connection. None: switched off in config.toml or not available."""
@@ -383,6 +552,113 @@ class Connections:
     notes: Notes | None = None
     shortcuts: Shortcuts | None = None
     files: Files | None = None
+    phone: Phone | None = None
+
+
+# ---- memory: episodes, facts and the user's things (docs/design/memory.md)
+#
+# Files are the truth and the index is a cache: EpisodeLog and FactStore append JSON lines, MemoryIndex can be
+# deleted and rebuilt from them. Everything here blocks; the brain calls it on its memory thread.
+
+
+@runtime_checkable
+class EpisodeLog(Protocol):
+    def append(self, episode: Episode) -> None:
+        """Add an episode, or a newer version of one with the same id (a summary replacing a stub)."""
+        ...
+
+    def between(self, start: datetime, end: datetime) -> list[Episode]:
+        """Episodes with start <= at < end, oldest first, latest version of each, forgotten ones left out."""
+        ...
+
+    def forget(self, id: str, reason: str) -> None:
+        """Leave the episode out from now on. The old lines stay, so it can be brought back."""
+        ...
+
+
+@runtime_checkable
+class FactStore(Protocol):
+    def current(self) -> list[Fact]:
+        """Facts that are neither retired nor replaced."""
+        ...
+
+    def add(self, fact: Fact) -> None: ...
+
+    def retire(self, id: str, reason: str) -> None: ...
+
+    def restore(self, id: str, reason: str) -> None:
+        """Undo a retire."""
+        ...
+
+    def get(self, id: str) -> Fact | None:
+        """Any fact ever added, current or not, with `retired` as it is now."""
+        ...
+
+    def forgotten(self) -> list[Fact]:
+        """Facts the user had Milo forget (themselves, or through the worker after a yes), still retired, newest
+        first. The night must not learn them again from the day's episodes."""
+        ...
+
+
+@runtime_checkable
+class Embedder(Protocol):
+    """Turns text into vectors for search. Local, runs on its own single-thread executor like STT and TTS."""
+
+    dimensions: int
+    key: str
+    """Names the vector space (engine and model). The index re-embeds everything when it changes."""
+    relevant_margin: float
+    """How far above unrelated text (Hit.margin) a match must be to count without a shared word. Each model
+    spreads differently."""
+
+    def warm(self) -> None: ...
+
+    def embed(self, texts: Sequence[str], *, query: bool = False) -> np.ndarray:
+        """One unit-length float32 row per text. `query`: the text is a search, not something to be found."""
+        ...
+
+
+@runtime_checkable
+class MemoryIndex(Protocol):
+    """Search over facts, episodes and knowledge. A cache: rebuild() recreates it from the logs."""
+
+    def upsert(self, items: Sequence[IndexItem]) -> None: ...
+
+    def remove(self, ids: Collection[str]) -> None: ...
+
+    def search(self, query: str, *, kinds: Collection[str] = (), since: datetime | None = None,
+               until: datetime | None = None, limit: int = 20) -> list[Hit]:
+        """Best first. Text and vector matches fused, so something comes back even for a vague query."""
+        ...
+
+    def rebuild(self) -> None: ...
+
+    def refresh(self, limit: int | None = None) -> int:
+        """Catch up with the logs, at most `limit` items at a time. Returns how many changed; 0: up to date."""
+        ...
+
+
+@runtime_checkable
+class Recaller(Protocol):
+    """Picks what memory a turn needs, within a token budget. No LLM call."""
+
+    def recall(self, turn: str, context: TurnContext, budget_tokens: int) -> Recall: ...
+
+
+@runtime_checkable
+class Consolidator(Protocol):
+    """The nightly "sleep": turns the day's raw records into episodes and facts."""
+
+    async def consolidate(self, day: date) -> ConsolidationReport: ...
+
+
+@runtime_checkable
+class KnowledgeSource(Protocol):
+    """One place the user's things live: a folder, Notes, Mail, meeting notes."""
+
+    name: str
+
+    def changed_since(self, since: datetime) -> Iterable[Document]: ...
 
 
 # ---- meeting notes (docs/design/meetings.md)

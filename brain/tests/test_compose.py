@@ -152,7 +152,7 @@ def test_heartbeat_disabled_builds_no_runner(build):
     ("harness", "claude, codex"),
     ("stt", "mlx_whisper, none"),
     ("tts", "none, omnivoice, say"),
-    ("audio", "none, sounddevice"),
+    ("audio", "none, sounddevice, wav"),
     ("dictation", "fillers, plain"),
 ])
 def test_a_bogus_use_name_lists_the_available_ones(build, section, available):
@@ -178,3 +178,67 @@ def test_an_unknown_heartbeat_key_fails_at_build(build):
 def test_an_unknown_adapter_option_names_its_table(build):
     with pytest.raises(ConfigError, match=r"\[tts.say\].*pitch"):
         build(cheap().replace('[tts.say]\nvoice = ""', '[tts.say]\nvoice = ""\npitch = 3'))
+
+
+def test_memory_is_wired_and_the_old_profile_moves_into_facts(build, tmp_path):
+    from milo.adapters.embed.mlx_e5 import MlxE5
+    from milo.memory.fact_profile import BACKUP
+
+    home = tmp_path / "Milo"
+    (home / "memory").mkdir(parents=True)
+    (home / "memory" / "profile.md").write_text("# About the user\n\n## People\n- Anna is the user's sister.\n")
+    runtime, home = build(cheap(**{"memory.recall_tokens": 500}))
+    memory = runtime.memory
+    assert memory is not None and memory.memory.recall_tokens == 500
+    assert isinstance(memory.memory._embedder, MlxE5) and memory.memory._embedder._net is None, "loads on warm"
+    assert [f.text for f in memory.memory.facts.current()] == ["Anna is the user's sister."]
+    assert (home / "memory" / BACKUP).exists() and "facts.jsonl" in (home / "memory" / "profile.md").read_text()
+    assert runtime.live_talk._memory is memory.turns and runtime.live_talk._profile is memory.profile
+    assert memory.sleep is not None and memory.sleep.calls_per_day == 2
+    assert not (home / "state" / "memory.sqlite").exists(), "the index opens on the memory thread"
+    memory.executor.shutdown(wait=False)
+
+
+def test_memory_can_be_switched_off_and_keeps_the_tools_server_for_it(build):
+    runtime, _ = build(cheap(**{"memory.enabled": False}))
+    assert runtime.memory is None and runtime.live_talk._memory is None
+    runtime, _ = build(cheap(**{"connections.enabled": False, "memory.consolidate": False}))
+    assert [s.name for s in runtime.harness.tool_servers] == ["milo"], "the memory tools still need it"
+    assert runtime.memory.sleep is None
+    runtime.memory.executor.shutdown(wait=False)
+
+
+def test_a_bad_memory_setting_fails_at_build(build):
+    with pytest.raises(ConfigError, match="recall_tokens"):
+        build(cheap(**{"memory.recall_tokens": 99999}))
+    with pytest.raises(ConfigError, match="embedder"):
+        build(cheap(**{"memory.embedder": "nope"}))
+
+
+def test_messages_are_off_until_switched_on(build):
+    runtime, _ = build(cheap())
+    assert runtime.messages is None and runtime.brain._messages is None
+
+
+def test_messages_switched_on_wire_the_channel_relay_and_watchers(build):
+    from milo.adapters.channel.telegram import TelegramChannel
+    from milo.services.messages import MessageService
+
+    runtime, home = build(cheap(**{"messages.enabled": True, "messages.brief_at": "07:30",
+                                   "messages.away_after_min": 2}))
+    messages = runtime.messages
+    assert isinstance(messages, MessageService) and isinstance(messages._channel, TelegramChannel)
+    assert messages._channel._token_path == home / "secrets" / "telegram-token"
+    assert (home / "secrets").stat().st_mode & 0o777 == 0o700
+    assert messages.settings.away_after_s == 120 and str(messages.settings.brief_at) == "07:30:00"
+    assert messages in runtime.brain._approvals.relays
+    assert messages.helper_changed in runtime.helpers.watchers
+    assert messages.tick in runtime.heartbeat.after_tick
+    assert runtime.brain.greeting()[-1].type == "remote"
+
+
+def test_a_bad_messages_setting_names_the_key(build):
+    with pytest.raises(ConfigError, match="brief_at"):
+        build(cheap(**{"messages.enabled": True, "messages.brief_at": "7.30am"}))
+    with pytest.raises(ConfigError, match=r"messages\.telegram.*tokn_file"):
+        build(cheap(**{"messages.enabled": True}).replace("token_file =", "tokn_file ="))

@@ -5,7 +5,8 @@ import SwiftUI
 
 /// Milo's cursor as a click-through overlay panel, above everything and on every space. It never touches the
 /// system cursor. `glide` animates the panel along `CursorGlide` 60 times a second while moving and not at all
-/// at rest. Implements `CursorDisplay`, called on the main queue.
+/// at rest. Implements `CursorDisplay`, called on the main queue. With a model it wears the skin's colours and
+/// changes with `[ui] character`.
 public final class CursorOverlay: CursorDisplay {
     private let panel: NSPanel
     private let hosted: NSHostingView<MiloCursorView>
@@ -14,10 +15,12 @@ public final class CursorOverlay: CursorDisplay {
     private var gesture: MiloCursorView.Gesture = .none { didSet { render() } }
     private var presence = 0.0 { didSet { render() } }
     private var clickTick = 0 { didSet { render() } }
+    private var theme = Theme.for(.pip) { didSet { render() } }
+    private var restyle: AnyCancellable?
     private var timer: Timer?
     private var restTimer: Timer?
 
-    public init() {
+    public init(model: MiloModel? = nil) {
         hosted = NSHostingView(rootView: MiloCursorView(gesture: .none, presence: 0, clickTick: 0))
         panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 72, height: 96),
                         styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -28,6 +31,7 @@ public final class CursorOverlay: CursorDisplay {
         panel.level = .screenSaver
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         panel.contentView = hosted
+        restyle = model?.$character.removeDuplicates().sink { [weak self] in self?.theme = Theme.for($0) }
     }
 
     public func glide(to point: CGPoint, arrived: @escaping () -> Void) {
@@ -87,7 +91,7 @@ public final class CursorOverlay: CursorDisplay {
     }
 
     private func render() {
-        hosted.rootView = MiloCursorView(gesture: gesture, presence: presence, clickTick: clickTick)
+        hosted.rootView = MiloCursorView(gesture: gesture, presence: presence, clickTick: clickTick, theme: theme)
     }
 
     @discardableResult

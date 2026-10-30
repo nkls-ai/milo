@@ -8,36 +8,50 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .brain import Brain
-from .config import Config
+from .config import Config, brief_time
 from .core.clock import SystemClock
-from .core.ports import Harness, LiveModel, TimedTranscriber, Transcriber, Voice
-from .core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, DIARIZERS, HARNESSES, LIVE_MODELS, TEXT_CLEANERS,
-                            TRANSCRIBERS, VOICES, AdapterContext, ConfigError, Registry)
-from .core.types import LiveMode, MiloState, ToolServer
+from .core.ports import Harness, LiveModel, PlaybackTap, TimedTranscriber, Transcriber, Voice
+from .core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, CHANNELS, DIARIZERS, EMBEDDERS, HARNESSES, LIVE_MODELS,
+                            TEXT_CLEANERS, TRANSCRIBERS, VOICES, AdapterContext, ConfigError, Registry)
+from .core.types import Emotion, LiveMode, MiloState, ToolServer
 from .services.app_bridge import AppBridge, AppEyes, AppHands
 from .services.approvals import ActionPolicy, Approvals
+from .services.backchannel import Backchannel
 from .services.background_stt import BackgroundStt
+from .services.barge_in import BargeIn
 from .services.context import UserContext
 from .services.conversation import Conversation
 from .services.dictation import DictationService
 from .services.fallback_voice import FallbackVoice
 from .services.hands import HandsService
 from .services.heartbeat_runner import HeartbeatRunner
+from .services.episode_stubs import EpisodeDictations, EpisodeEyes, EpisodeTranscript, RoutineEpisodes
 from .services.listening import Listening
 from .services.live_talk import LiveTalk, untrusted
 from .services.meetings import MeetingOptions, MeetingService
+from .services.messages import MessageService, MessageSettings
 from .services.orchestrator import HelperQuestions, Orchestrator
+from .services.memory import Memory, MemoryParts, TurnMemory
+from .services.memory_requests import MemoryRequests
+from .services.sleep import SleepRunner
+from .services.routines import Routines
+from .services.settings_guard import SettingsGuard
 from .services.speaker import Speaker
 from .services.task_runner import TaskRunner
 from .services.tool_requests import ToolRequests
 from .services.transcript import Transcript
 from .services.ui_state import UiState
 from .services.updates import LiveSettings, Milestones, Updates
+from .settings import Settings
 from .transport.hands_socket import HandsSocketServer
 from .transport.tool_socket import ToolSocketServer
 from .transport.unix_socket import UnixSocketServer
+
+if TYPE_CHECKING:
+    from .memory.fact_profile import FactProfile
 
 log = logging.getLogger("milo.compose")
 
@@ -59,18 +73,36 @@ class Runtime:
     tool_server: ToolSocketServer
     hands_server: HandsSocketServer | None = None
     helpers: Orchestrator | None = None
+    memory: MemoryRuntime | None = None
+    barge_in: BargeIn | None = None
+    backchannel: Backchannel | None = None
+    messages: MessageService | None = None
     meetings: MeetingService | None = None
     diarize_executor: ThreadPoolExecutor | None = None
+
+
+@dataclass
+class MemoryRuntime:
+    """Memory's parts: the service, the live chat's hook, profile.md as a view, its thread and the nightly sleep."""
+
+    memory: Memory
+    turns: TurnMemory
+    profile: FactProfile
+    executor: ThreadPoolExecutor
+    sleep: SleepRunner | None
 
 
 def build(home: Path) -> Runtime:
     # Lazy, so importing compose neither registers adapters nor touches the workspace.
     from . import adapters
+    from .config_file import TomlConfigFile
     from .memory.history import JsonlDictationHistory
     from .memory.ledger import JsonlUsageLedger
     from .memory.meetings import FileMeetingStore, JsonVoiceBook
     from .memory.profile import MarkdownProfile
     from .memory.reminders import MarkdownReminders
+    from .memory.routines import JsonStateFile, MarkdownRoutineBook
+    from .memory.remote import JsonRemoteState
     from .memory.transcript import JsonlTranscript
     from .memory.workspace import Workspace
 
@@ -113,16 +145,32 @@ def build(home: Path) -> Runtime:
                               on_connect=lambda: brain.greeting())
     ui = UiState(server)
     context = UserContext(clock)
+    mem = _memory(config, workspace, ctx, clock, ui, harness, ledger, context,
+                  busy=lambda: live_talk.busy or helpers.busy) if config.memory.enabled else None
+    if mem is not None:
+        profile = mem.profile
+        if config.memory.dictations:
+            history = EpisodeDictations(history, mem.memory.record, now=clock.now)
     idle_reset_s = config.chat.conversation_idle_reset_s
     conversation = Conversation(harness, ledger, clock, idle_reset_s)
     speaker = Speaker(voice, output, ui, tts_executor)
-    transcript = Transcript(ui, JsonlTranscript(workspace.transcript_path), clock)
+    speaker.silent = not config.ui.voice
+    backchannel = Backchannel(speaker, enabled=config.chat.backchannels)
+    transcript_store = JsonlTranscript(workspace.transcript_path)
+    routines: Routines | None = None  # built below, once the helpers are
+    if mem is not None:
+        transcript_store = EpisodeTranscript(transcript_store, mem.memory.record, now=clock.now,
+                                             app=lambda: context.app, people=mem.memory.people_in,
+                                             outside=lambda: mem.turns.outside,
+                                             elsewhere=lambda id: routines is not None and routines.is_run(id))
+    transcript = Transcript(ui, transcript_store, clock)
     approvals = Approvals(ui, speaker, ActionPolicy(config.approval_levels), timeout_s=config.approvals.timeout_s,
                           speak=config.approvals.speak, quiet=lambda: live_talk.busy or mic.active,
                           transcript=transcript)
     bridge = AppBridge(ui, connected=server.connected)
-    settings = LiveSettings(workspace.config_path, _live_settings, config.chat.updates, config.harness.max_helpers)
-    updates = Updates(ui, settings.updates, clock,
+    live_settings = LiveSettings(workspace.config_path, _live_settings, config.chat.updates,
+                                 config.harness.max_helpers)
+    updates = Updates(ui, live_settings.updates, clock,
                       busy=lambda: live_talk.busy or mic.active or speaker.active or approvals.pending)
     hands = hands_server = None
     helpers: Orchestrator  # built below; the questions only reach it once a helper runs
@@ -132,14 +180,24 @@ def build(home: Path) -> Runtime:
         hands_server = HandsSocketServer(hands_socket, hands.call)
     switches = config.connections
     enabled = [name for name in ("calendar", "reminders") if switches.enabled and getattr(switches, name)]
-    tool_server = ToolSocketServer(workspace.tools_socket_path,
-                                   ToolRequests(HelperQuestions(approvals, lambda: helpers, screen=False), bridge,
-                                                enabled).handle)
+    memory_requests = MemoryRequests(mem.memory, approvals, mem.profile.remember) if mem is not None else None
+    eyes = AppEyes(bridge)
+    if mem is not None:
+        eyes = EpisodeEyes(eyes, mem.memory.record, now=clock.now)
     runner = TaskRunner(harness, ledger, clock, context, background=background, hands=hands)
-    helpers = Orchestrator(runner, speaker, ui, clock, transcript=transcript, max_helpers=settings.max_helpers,
+    helpers = Orchestrator(runner, speaker, ui, clock, transcript=transcript, max_helpers=live_settings.max_helpers,
                            quiet=lambda: live_talk.busy or mic.active, updates=updates, milestones=Milestones(),
                            inert=untrusted)
-    meetings = diarize_executor = None
+    if config.routines.enabled:
+        book = MarkdownRoutineBook(workspace.routines_dir, workspace.routine_runs_path, workspace.routine_drafts_dir)
+        routines = Routines(book, JsonStateFile(workspace.routine_state_path), helpers, speaker, ui, clock,
+                            transcript=transcript, approvals=approvals, quiet=lambda: live_talk.busy or mic.active,
+                            max_runs_per_day=lambda: config.routines.max_runs_per_day,
+                            grace_s=config.routines.grace_hours * 3600, inert=untrusted)
+        helpers.on_done.append(routines.seen)
+        if mem is not None:  # a run's episode names the routine; the transcript's task stub skips it
+            routines.on_episode = RoutineEpisodes(mem.memory.record, people=mem.memory.people_in)
+    meetings = diarize_executor = background_stt = None
     if isinstance(transcriber, TimedTranscriber):
         m = config.meetings
         diarizer = DIARIZERS.create(m.diarizer, config.section("meetings").get(m.diarizer, {}), ctx) \
@@ -155,10 +213,12 @@ def build(home: Path) -> Runtime:
             return await bridge.call("reminders.add", {"title": title, "notes": notes})
 
         live = (MiloState.LISTENING, MiloState.DICTATING, MiloState.TRANSCRIBING)
+        # Meeting passes wait while the user dictates or talks, and give way when a key goes down (Listening),
+        # so the user's words stay instant during a call.
+        background_stt = BackgroundStt(stt_executor, busy=lambda: mic.active or ui.state in live,
+                                       interrupt=transcriber.interrupt)
         meetings = MeetingService(
-            FileMeetingStore(workspace.meetings_dir), ui, clock,
-            # Meeting passes wait while the user dictates or talks, so their words stay instant during a call.
-            BackgroundStt(stt_executor, busy=lambda: mic.active or ui.state in live), transcriber,
+            FileMeetingStore(workspace.meetings_dir), ui, clock, background_stt, transcriber,
             approvals=approvals, speaker=speaker, transcript=transcript, diarizer=diarizer,
             diarize_executor=diarize_executor,
             voices=JsonVoiceBook(workspace.meetings_dir / "voices.json", diarizer.model) if diarizer else None,
@@ -171,15 +231,49 @@ def build(home: Path) -> Runtime:
             options=MeetingOptions(m.auto, m.keep_audio, m.offer_reminders, m.offer_mail, m.end_after_s),
             connected=server.connected, private=lambda: mic.active or speaker.active,
             quiet=lambda: live_talk.busy or mic.active,
-            on_episode=None,  # memory wires EpisodeLog.append here (docs/design/memory.md)
+            on_episode=mem.memory.record if mem is not None else None,
             match=diarizer.match if diarizer else 0.6)
     live_talk = LiveTalk(live_model, speaker, ui, context, clock, profile, reminders, ledger,
-                         _persona(workspace.persona_path), idle_reset_s, helpers, transcript, eyes=AppEyes(bridge),
-                         approvals=approvals, meetings=meetings)
+                         _persona(workspace.persona_path), idle_reset_s, helpers, transcript, eyes=eyes,
+                         approvals=approvals, memory=mem.turns if mem is not None else None,
+                         backchannel=backchannel, routines=routines, meetings=meetings)
     helpers.on_result = live_talk.note
     updates.speak = live_talk.speak_update
     listening = Listening(mic, transcriber, stt_executor, ui, DictationService(cleaner, history, ui),
-                          live_talk, context, LiveMode(config.dictation.stream))
+                          live_talk, context, LiveMode(config.dictation.stream),
+                          yield_stt=background_stt.yield_now if background_stt is not None else lambda: None)
+
+    barge_in = None
+    if config.chat.voice_barge_in:
+        if isinstance(output, PlaybackTap):
+            # A mic of its own, so the talk key's recording never has to wait for it.
+            barge_in = BargeIn(create(AUDIO_INPUTS, "audio"), output, transcriber, stt_executor, ui, live_talk,
+                               speaker, mic_busy=lambda: mic.active)
+        else:
+            log.warning("[chat] voice_barge_in needs an audio output that reports what it played; it is off")
+    messages = None
+    if config.messages.enabled:
+        name, options = config.pluggable("messages")
+        channel = CHANNELS.create(name, options, ctx)
+
+        def show(text: str) -> None:
+            transcript.say(text, Emotion.CONCERNED)
+            speaker.say(text, Emotion.CONCERNED, speak=False)
+
+        m = config.messages
+        messages = MessageService(
+            channel, live_talk, approvals, JsonRemoteState(workspace.remote_state_path), speaker, ui, context, clock,
+            settings=MessageSettings(m.max_per_minute, m.away_after_min * 60, m.question_timeout_s,
+                                     brief_time(m.brief_at), m.max_file_mb, "calendar" in enabled,
+                                     "reminders" in enabled),
+            helpers=lambda: helpers.helpers, board=helpers.board, reminders=reminders, app=bridge.call,
+            guard=SettingsGuard([workspace.config_path, workspace.remote_state_path], [workspace.secrets_dir], show),
+            transcript=transcript, home=Path.home(), milo=home)
+        approvals.relays.append(messages)
+        helpers.watchers.append(messages.helper_changed)
+    tool_server = ToolSocketServer(workspace.tools_socket_path,
+                                   ToolRequests(HelperQuestions(approvals, lambda: helpers, screen=False), bridge,
+                                                enabled, memory_requests, phone=messages).handle)
 
     heartbeat = None
     if config.heartbeat.enabled:
@@ -188,16 +282,76 @@ def build(home: Path) -> Runtime:
         engine = build_engine(config.section("heartbeat"), ctx, reminders)
         heartbeat = HeartbeatRunner(engine, context, conversation, speaker, ui, mic, clock,
                                     busy=lambda: live_talk.busy)
+        if routines is not None:
+            heartbeat.on_tick.append(routines.tick)
+        if messages is not None:
+            heartbeat.after_tick.append(messages.tick)
 
+    def use_ui(changed: Config) -> None:
+        brain.use_ui(changed.ui)
+
+    def use_voice(changed: Config) -> None:
+        speaker.silent = not changed.ui.voice
+
+    def use_stream(changed: Config) -> None:
+        listening.live_mode = LiveMode(changed.dictation.stream)
+
+    def use_updates(changed: Config) -> None:
+        live_settings.use(changed.chat.updates, changed.harness.max_helpers)
+
+    live = {("ui", "character"): use_ui, ("ui", "dictate_key"): use_ui, ("ui", "talk_key"): use_ui,
+            ("ui", "whats_this_key"): use_ui, ("ui", "voice"): use_voice, ("dictation", "stream"): use_stream,
+            ("chat", "updates"): use_updates}
+    settings = Settings(TomlConfigFile(workspace.config_path), config, ui, live)
     brain = Brain(ui, listening, live_talk, context, heartbeat, config.ui, transcript, approvals=approvals,
-                  bridge=bridge, hands=hands, screens=workspace.screens_dir, helpers=helpers, meetings=meetings)
+                  bridge=bridge, hands=hands, screens=workspace.screens_dir, helpers=helpers,
+                  memory=mem.memory if mem is not None else None, routines=routines, settings=settings,
+                  messages=messages, meetings=meetings)
     return Runtime(brain, server, heartbeat, transcriber, voice, stt_executor, tts_executor, harness,
-                   live_model, live_talk, tool_server, hands_server, helpers, meetings, diarize_executor)
+                   live_model, live_talk, tool_server, hands_server, helpers, mem, barge_in, backchannel, messages,
+                   meetings=meetings, diarize_executor=diarize_executor)
+
+
+def _memory(config: Config, workspace, ctx: AdapterContext, clock, ui: UiState, harness: Harness, ledger,
+            context: UserContext, *, busy) -> MemoryRuntime:
+    from .adapters.power import on_ac_power
+    from .memory.consolidate import NightlyConsolidator
+    from .memory.episodes import JsonlEpisodeLog
+    from .memory.fact_profile import FactProfile, migrate
+    from .memory.facts import JsonlFactStore
+    from .memory.index import SqliteMemoryIndex
+    from .memory.recall import HybridRecaller, RecallTuning, render
+    from .memory.state import JsonState
+
+    settings = config.memory
+    name, options = config.embedder()
+    embedder = EMBEDDERS.create(name, options, ctx)
+    facts = JsonlFactStore(workspace.facts_path, clock)
+    episodes = JsonlEpisodeLog(workspace.episodes_dir, clock)
+    migrate(workspace.profile_path, facts, clock)
+    index = SqliteMemoryIndex(workspace.memory_index_path, embedder, facts, episodes)
+    recaller = HybridRecaller(index, facts, RecallTuning(min_margin=embedder.relevant_margin))
+    executor = ThreadPoolExecutor(1, thread_name_prefix="memory")
+    profile = FactProfile(facts, workspace.profile_path, workspace.profile_snapshot_path, clock, pinned_only=True)
+    memory = Memory(MemoryParts(facts, episodes, index, recaller, embedder, render), executor, ui, clock,
+                    recall_tokens=settings.recall_tokens, on_facts_changed=profile.write)
+    profile.on_change = memory.facts_changed
+    profile.write()
+    sleep = None
+    if settings.consolidate and settings.consolidate_calls_per_day > 0:
+        sleeper = NightlyConsolidator(harness, episodes, facts, workspace.journal_dir, workspace.state_dir / "sleep",
+                                      clock, ledger)
+
+        sleep = SleepRunner(sleeper, context, clock, JsonState(workspace.sleep_state_path),
+                            calls_per_day=settings.consolidate_calls_per_day, on_power=on_ac_power, busy=busy,
+                            after=memory.notice_changes)
+    return MemoryRuntime(memory, TurnMemory(memory), profile, executor, sleep)
 
 
 def _tool_servers(config: Config, home: Path) -> tuple[ToolServer, ...]:
-    """Milo's app connections as an MCP server for the worker: this Python, so no `uv run` on every task."""
-    if not config.connections.enabled:
+    """Milo's app connections (and memory tools) as an MCP server for the worker: this Python, so no `uv run`
+    on every task."""
+    if not config.connections.enabled and not config.memory.enabled:
         return ()
     return (ToolServer("milo", (sys.executable, "-m", "milo.connect"), (("MILO_HOME", str(home)),)),)
 

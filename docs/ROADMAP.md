@@ -48,7 +48,7 @@ Milo already runs Claude Code and Codex as his worker. The cheapest first versio
 - Hands-free: double-tap the dictate key to lock recording on, tap it again to stop and paste, `esc` to cancel. Holding still works as before. The talk key gets the same lock.
 - Live transcription while you speak, with a setting:
   - `off`: transcribe on release (today's behaviour).
-  - `preview`: words appear next to Milo as you speak. On release a final pass over the whole recording gets pasted. Same accuracy as today, and you can see it working.
+  - `preview`: words appear next to Milo as you speak. The full model transcribes each phrase at the pause after it, so on release only the last words are left. Same accuracy as one pass over everything, and talking to Milo works the same way.
   - `type`: text lands in the focused app at each pause while you are still talking. Feels fastest. Earlier segments don't get corrected later.
 - A short mic pre-roll so the first syllable is never clipped.
 
@@ -65,7 +65,7 @@ Milo already runs Claude Code and Codex as his worker. The cheapest first versio
 2. Milo flies to the element he is about to act on and points at it. The overlay panel already floats over everything, so this is animation plus a coordinate from the tool call.
 3. Confirmation gate in the app for irreversible actions, and a stop key. Built: a Yes and No question in the bubble, and `esc` or any real input stops the worker.
 4. Demo tasks used as tests: fill an Excel column from a formula description, file a PDF from Downloads, reply to the newest Mail message as a draft.
-5. Routines. After Milo does a task, the user says "remember how to do this, call it the Monday report". Milo writes the steps as a plain recipe in `~/Milo/routines/monday-report.md`: what to open, what to fill in, what to check. "Do the Monday report" or a schedule ("every Monday at 9", through the existing zero-token heartbeat) runs it again. The agent follows the recipe rather than replaying recorded clicks, so a moved button doesn't break it, and it asks when something looks different from last time. The user can list routines, rename them and delete them by voice or in the Milo window.
+5. Routines. After Milo does a task, the user says "remember how to do this, call it the Monday report". Milo writes the steps as a plain recipe in `~/Milo/routines/monday-report.md`: what to open, what to fill in, what to check. "Do the Monday report" or a schedule ("every Monday at 9", through the existing zero-token heartbeat) runs it again. The agent follows the recipe rather than replaying recorded clicks, so a moved button doesn't break it, and it asks when something looks different from last time. The user can list routines, rename them and delete them by voice or in the Milo window. Built: recipes with inputs, Checks and approvals, schedules on the heartbeat with missed runs and a daily cap, and the Routines section and draft card in the window ([ADR 16](adr/0016-routines.md)). The third task of the same kind gets one offer to keep it as a routine.
 6. Calendar. Read events through EventKit in the app (one permission prompt), "you have the dentist in 30 minutes" as a local heartbeat rule, and "put lunch with Anna on Friday at 1" as a write.
 7. Conversation mode: open mic with end-of-turn detection and barge-in (talk over Milo to interrupt him), building on Phase 1's lock.
 8. Answer small talk with a local model in under a second (already in TODO) and hand real tasks to the worker.

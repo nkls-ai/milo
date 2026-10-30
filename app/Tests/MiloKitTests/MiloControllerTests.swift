@@ -92,6 +92,15 @@ private final class Harness {
         #expect(h.brain.sent == [.context(app: "Xcode", idleSeconds: 3.5), .mute(false)])
     }
 
+    @Test func theRemoteMenuItemsSendTheirCommands() {
+        let h = Harness()
+        h.brain.connect()
+        h.brain.clearSent()
+        h.controller.setRemotePaused(true)
+        h.controller.forgetPhone()
+        #expect(h.brain.sent == [.remotePause(true), .remoteForget])
+    }
+
     @Test func toggleMuteSendsAndReconnectResendsIt() {
         let h = Harness()
         h.brain.connect()
@@ -112,6 +121,57 @@ private final class Harness {
         h.controller.toggleMute()
         #expect(!h.controller.muted)
         #expect(h.brain.sent == [.mute(false)])
+    }
+
+    // MARK: Settings
+
+    private static let look = Setting(section: "ui", key: "character", value: "pip",
+                                      options: ["pip", "dragon"], labels: ["Pip", "Dragon"])
+
+    @Test func settingsComeFromTheBrainAndChangesGoBack() {
+        let h = Harness()
+        h.brain.connect()
+        h.brain.clearSent()
+        h.controller.settingsModel.refresh()
+        #expect(h.brain.sent == [.getSettings])
+        h.brain.emit(.settings(SettingsReport(settings: [Self.look])))
+        #expect(h.controller.settingsModel.value("ui", "character") == "pip")
+
+        h.controller.settingsModel.change("ui", "character", to: "dragon")
+        #expect(h.controller.settingsModel.value("ui", "character") == "dragon", "shown before the brain answers")
+        h.controller.settingsModel.change("ui", "character", to: "dragon")
+        h.controller.settingsModel.change("ui", "nothing", to: "x")
+        #expect(h.brain.sent == [.getSettings, .setSetting(section: "ui", key: "character", value: "dragon")])
+
+        h.brain.emit(.settings(SettingsReport(settings: [], error: "Milo couldn't use that.")))
+        #expect(h.controller.settingsModel.report?.error == "Milo couldn't use that.")
+        #expect(h.controller.settingsModel.value("ui", "character") == "dragon", "an error alone keeps the values")
+    }
+
+    private static func stream(_ value: String) -> SettingsReport {
+        SettingsReport(settings: [Setting(section: "dictation", key: "stream", value: .string(value),
+                                          options: ["off", "preview", "type"])])
+    }
+
+    @Test func theDictationStyleComesFromTheSettingsAndTheMenuChangesItLikeTheWindow() {
+        let h = Harness()
+        h.brain.connect()
+        #expect(h.controller.dictationStyle == nil)
+        h.brain.emit(.settings(Self.stream("preview")))  // part of the brain's greeting
+        #expect(h.controller.dictationStyle == .preview)
+
+        h.brain.clearSent()
+        h.controller.setDictationStyle(.type)
+        #expect(h.brain.sent == [.setSetting(section: "dictation", key: "stream", value: "type")])
+        #expect(h.controller.dictationStyle == .type, "the checkmark moves at once, like the window's choice")
+        h.brain.emit(.settings(Self.stream("preview")))
+        #expect(h.controller.dictationStyle == .preview, "the brain couldn't save it: the old style is back")
+
+        h.brain.emit(.settings(Self.stream("telepathy")))
+        #expect(h.controller.dictationStyle == nil, "a style this app doesn't know ticks nothing")
+        h.brain.emit(.settings(Self.stream("off")))
+        h.brain.connect(false)
+        #expect(h.controller.dictationStyle == nil, "no brain, nothing to switch")
     }
 
     @Test func losingTheBrainMidAnswerReturnsMiloToIdle() {

@@ -16,11 +16,16 @@ BUILTIN = (
     "tts.say",
     "tts.omnivoice",
     "audio.sounddevice_io",
+    "audio.wav_file",
     "text.fillers",
     "text.plain",
     "connect.mac",
     "connect.fake",
     "headless.none",
+    "embed.mlx_e5",
+    "embed.hashing",
+    "channel.telegram",
+    "channel.imessage",
     "diarize.sherpa",
 )
 

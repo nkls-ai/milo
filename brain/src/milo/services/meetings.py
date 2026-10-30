@@ -10,6 +10,7 @@ brain picks up where the last one stopped. See docs/design/meetings.md.
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 from collections import Counter
 from collections.abc import Awaitable, Callable
@@ -24,7 +25,8 @@ from milo.core.events import (CallEnded, CallStarted, MeetingChunk, MeetingRecor
 from milo.core.logtext import private
 from milo.core.meetings import ME, MeetingInfo, MeetingNotes, Track, TranscriptLine, clock
 from milo.core.ports import Clock, Diarizer, LiveModel, MeetingStore, TimedTranscriber, VoiceBook
-from milo.core.types import STT_SAMPLE_RATE, Emotion
+from milo.core.memory import Episode, new_id
+from milo.core.types import STT_SAMPLE_RATE, Emotion, Interrupted
 
 from .approvals import Approvals
 from .background_stt import BackgroundStt
@@ -120,7 +122,7 @@ class MeetingService:
                  add_reminder: AddReminder | None = None, draft_mail: Callable[[str], object] | None = None,
                  options: MeetingOptions = MeetingOptions(), connected: Callable[[], bool] = lambda: True,
                  private: Callable[[], bool] = lambda: False, quiet: Callable[[], bool] = lambda: False,
-                 on_episode: Callable[[dict], None] | None = None, match: float = 0.6):
+                 on_episode: Callable[[Episode], None] | None = None, match: float = 0.6):
         self._store = store
         self._ui = ui
         self._clock = clock
@@ -347,12 +349,23 @@ class MeetingService:
     # ---- transcribing
 
     async def _work(self, m: _Meeting) -> None:
+        again = None
         try:
             while True:
                 m.wake.clear()
-                ready = self._ready(m)
+                ready = again or self._ready(m)
+                again = None
                 if ready is not None:
-                    await self._pass(m, *ready)
+                    tracker = copy.deepcopy(m.tracker)
+                    try:
+                        await self._pass(m, *ready)
+                    except Interrupted:
+                        # The user pressed a key: their passes go first, then this one again, from the start.
+                        # Nothing of it was written; the voices it taught the tracker are taken back.
+                        m.tracker = tracker
+                        again = ready
+                        log.info("meeting %s: gave way to the user, %s %s again next", m.id, ready[0].value,
+                                 clock(ready[1]))
                     continue
                 if m.stopped:
                     break
@@ -416,6 +429,8 @@ class MeetingService:
         for attempt in range(STT_TRIES):
             try:
                 return await self._stt.run(self._timed.words, audio, language)
+            except Interrupted:
+                raise
             except Exception:
                 log.exception("meeting transcription failed (try %d)", attempt + 1)
         return []
@@ -449,6 +464,8 @@ class MeetingService:
             glued, _ = _glue(audio, spans)
             try:
                 languages[speaker] = await self._stt.run(self._timed.spoken_language, glued)
+            except Interrupted:
+                raise
             except Exception:
                 log.exception("telling a speaker's language failed")
                 languages[speaker] = heard[0][0]
@@ -738,12 +755,12 @@ class MeetingService:
             task.cancel()
 
 
-def episode(id: str, info: MeetingInfo, notes: MeetingNotes, speakers: list[str]) -> dict:
-    """A memory episode stub for the meeting (docs/design/memory.md). Untrusted: it's other people's words."""
-    people = list(dict.fromkeys([*speakers, *info.attendees]))
-    return {"id": f"meeting-{id}", "at": info.started.isoformat(timespec="seconds"), "kind": "meeting",
-            "summary": (notes.summary or info.title)[:400], "people": people, "apps": [info.app] if info.app else [],
-            "source": f"meeting:{id}", "trusted": False}
+def episode(id: str, info: MeetingInfo, notes: MeetingNotes, speakers: list[str]) -> Episode:
+    """The meeting's memory episode (docs/design/memory.md). Untrusted: it's other people's words."""
+    people = tuple(dict.fromkeys(p for p in [*speakers, *info.attendees] if p and not p.startswith("Speaker ")))
+    summary = f"Meeting “{info.title}”: {notes.summary}" if notes.summary else f"Meeting “{info.title}”."
+    return Episode(new_id(info.started), info.started, "meeting", summary[:400], people,
+                   (info.app,) if info.app else (), f"meeting:{id}", trusted=False)
 
 
 def followup_task(info: MeetingInfo, people: list[str], text: str) -> str:

@@ -261,12 +261,16 @@ struct CharacterLife {
         return pose
     }
 
-    /// Eyes point toward the cursor and reach the edge of the eye once it's 160 pt away.
+    /// Eyes point toward the cursor and reach the edge of the eye once it's 160 pt away. The direction comes in
+    /// 16 steps and the reach in quarters, so a cursor moving about the screen turns his eyes a few times,
+    /// not on every poll: each turn redraws him.
     static func gaze(toward cursor: CGPoint) -> CGVector {
         let distance = hypot(cursor.x, cursor.y)
         guard distance > 1 else { return .zero }
-        let reach = min(1, distance / 160)
-        return quantized(CGVector(dx: cursor.x / distance * reach, dy: -cursor.y / distance * reach))
+        let reach = max(0.25, (min(1, distance / 160) * 4).rounded() / 4)
+        let step = Double.pi / 8
+        let angle = (atan2(-cursor.y, cursor.x) / step).rounded() * step
+        return quantized(CGVector(dx: cos(angle) * reach, dy: sin(angle) * reach))
     }
 
     /// Tenths, so small cursor moves don't redraw the face.

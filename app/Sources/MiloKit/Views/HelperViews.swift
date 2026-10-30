@@ -3,6 +3,7 @@ import SwiftUI
 /// The small birds next to Milo, one per helper at work, each with its title and how far it is.
 /// A click opens that helper in the Milo window. Still figures: they redraw only when a helper changes.
 struct HelperFlock: View {
+    @Environment(\.miloTheme) private var theme
     @ObservedObject var model: MiloModel
     /// More birds than this make a "+2" instead; the corner left of Milo has room for three.
     static let shown = 3
@@ -38,11 +39,11 @@ struct HelperFlock: View {
                         .fixedSize()
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
-                        .background(Capsule().fill(Color(nsColor: .windowBackgroundColor).opacity(0.92)))
+                        .background(Capsule().fill(theme.card))
                         .help("\(helpers.count - birds.count) more in the Milo window")
                 }
             }
-            .animation(.spring(response: 0.35, dampingFraction: 0.75), value: helpers.map(\.id))
+            .animation(theme.motion.spring, value: helpers.map(\.id))
         }
     }
 }
@@ -50,6 +51,7 @@ struct HelperFlock: View {
 /// One helper: Milo's own figure (whatever `character` draws, so skins carry over), small and still,
 /// with a mark for how it is doing, its title, and a thin bar for how far through its plan it is.
 struct HelperBird: View {
+    @Environment(\.miloTheme) private var theme
     let helper: HelperInfo
     let character: CharacterStyle
     @StateObject private var figure: MiloModel
@@ -75,8 +77,7 @@ struct HelperBird: View {
                 .frame(width: Self.width - 4, height: 24)
                 .padding(.horizontal, 2)
                 .padding(.vertical, 2)
-                .background(RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .fill(Color(nsColor: .windowBackgroundColor).opacity(0.9)))
+                .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(theme.card))
             ProgressLine(progress: helper.progress, status: helper.status)
                 .frame(width: Self.width - 14, height: 3)
         }
@@ -140,6 +141,7 @@ struct HelperFigure: View {
 /// A small mark on a helper's corner: a question when it needs you, a check when done, a cross when it
 /// couldn't finish, "z" while it waits its turn. Nothing while it works: the thinking figure says that.
 struct HelperMark: View {
+    @Environment(\.miloTheme) private var theme
     let status: HelperInfo.Status
 
     var body: some View {
@@ -147,7 +149,7 @@ struct HelperMark: View {
         case .working:
             EmptyView()
         case .queued:
-            mark("z", Palette.idle.opacity(0.95), text: Palette.bodyBottom)
+            mark("z", theme.tint, text: theme.primary)
         case .needsYou:
             mark("?", Palette.think, text: Palette.face)
         case .done:
@@ -180,13 +182,14 @@ struct HelperMark: View {
 
 /// How far through its plan a helper is: an empty track while it has no plan, full once it is done.
 struct ProgressLine: View {
+    @Environment(\.miloTheme) private var theme
     let progress: Double?
     let status: HelperInfo.Status
 
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                Capsule().fill(Color.black.opacity(0.12))
+                Capsule().fill(theme.ink.opacity(0.12))
                 if let fraction {
                     Capsule().fill(color).frame(width: max(3, geo.size.width * fraction))
                 }
@@ -213,6 +216,7 @@ struct ProgressLine: View {
 /// The helpers at the top of the Milo window: each one's figure, title, what it does now, its last steps,
 /// and a Stop button. A click on a helper shows its task further down.
 struct HelpersPanel: View {
+    @Environment(\.miloTheme) private var theme
     let helpers: [HelperInfo]
     let entries: [TranscriptEntry]
     let character: CharacterStyle
@@ -247,8 +251,8 @@ struct HelpersPanel: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(WindowColors.inset)
-        .overlay(alignment: .bottom) { Rectangle().fill(WindowColors.rule).frame(height: 1) }
+        .background(theme.ink.opacity(0.05))
+        .overlay(alignment: .bottom) { Rectangle().fill(theme.rule).frame(height: 1) }
     }
 
     private func steps(of helper: HelperInfo) -> [ActivityStep] {

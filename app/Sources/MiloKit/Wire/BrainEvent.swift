@@ -52,6 +52,14 @@ public enum BrainEvent: Equatable, Sendable {
     /// The user lent Milo one real device ("mouse" or "keyboard") for an action that can't be done in the
     /// background. The app hands it back on its own a while after the last such action, or when the session ends.
     case handsBorrow(on: Bool, what: String)
+    /// Everything Milo knows about the user, for the "What Milo knows" window; sent after get_facts and each change.
+    case facts([MemoryFact])
+    /// The user's routines by name, and the recipe drafts waiting for a look.
+    case routines([RoutineInfo], drafts: [RoutineDraft])
+    /// The settings and their choices, after `getSettings` and after every `setSetting`.
+    case settings(SettingsReport)
+    /// Milo by message: which chat app, whether a phone is connected, paused.
+    case remote(RemoteStatus)
     /// Record meeting `id` into `dir` (two tracks in 30 s chunks), or stop recording it.
     case meetingRecord(id: String, dir: String, on: Bool)
     case unknown(String)
@@ -60,6 +68,7 @@ public enum BrainEvent: Equatable, Sendable {
 extension BrainEvent: Decodable {
     private enum Key: String, CodingKey {
         case type, state, emotion, text, value, entries, entry, id, step, mode, on, tool, args, point, question, answer, op, what
+        case facts
         case dir
         case taskID = "task_id"
         case whatsThisKey = "whats_this_key"
@@ -68,6 +77,8 @@ extension BrainEvent: Decodable {
         case handsFreeMaxSeconds = "hands_free_max_s"
         case character
         case helpers
+        case routines, drafts
+        case settings, restart, error
     }
 
     public init(from decoder: Decoder) throws {
@@ -116,6 +127,15 @@ extension BrainEvent: Decodable {
         case "hands_borrow":
             self = .handsBorrow(on: try c.decode(Bool.self, forKey: .on),
                                 what: try c.decodeIfPresent(String.self, forKey: .what) ?? "")
+        case "facts": self = .facts(try c.decode([MemoryFact].self, forKey: .facts))
+        case "routines":
+            self = .routines(try c.decodeIfPresent([RoutineInfo].self, forKey: .routines) ?? [],
+                             drafts: try c.decodeIfPresent([RoutineDraft].self, forKey: .drafts) ?? [])
+        case "settings":
+            self = .settings(SettingsReport(settings: try c.decode([Setting].self, forKey: .settings),
+                                            restart: try c.decodeIfPresent(Bool.self, forKey: .restart) ?? false,
+                                            error: try c.decodeIfPresent(String.self, forKey: .error) ?? ""))
+        case "remote": self = .remote(try RemoteStatus(from: decoder))
         case "meeting_record":
             self = .meetingRecord(id: try c.decode(String.self, forKey: .id),
                                   dir: try c.decodeIfPresent(String.self, forKey: .dir) ?? "",

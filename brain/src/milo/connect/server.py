@@ -8,6 +8,8 @@ from milo.core.types import ToolError
 from milo.transport.tool_client import BrainClient, refusal
 
 from .mcp import McpServer
+from .memory_tools import INSTRUCTIONS as MEMORY_INSTRUCTIONS
+from .memory_tools import MEMORY_TOOLS, RemoteMemory
 from .tools import INSTRUCTIONS, Tool, by_name
 
 log = logging.getLogger("milo.connect")
@@ -19,14 +21,15 @@ class Toolbox:
     """Runs a tool after its approval. A connection that asks the brain itself (Calendar and Reminders
     through Milo.app, where the brain applies the level) has `approves_itself` set."""
 
-    def __init__(self, connections: Connections, brain: BrainClient):
+    def __init__(self, connections: Connections, brain: BrainClient, memory: RemoteMemory | None = None):
         self._connections = connections
         self._brain = brain
-        self.tools = by_name(connections)
+        self._memory = memory
+        self.tools = by_name(connections) | ({t.name: t for t in MEMORY_TOOLS} if memory is not None else {})
 
     def call(self, name: str, args: dict) -> Any:
         tool = self.tools[name]
-        backend = getattr(self._connections, tool.connection)
+        backend = self._memory if tool.connection == "memory" else getattr(self._connections, tool.connection)
         unknown = sorted(set(args) - set(tool.properties))
         if unknown:
             raise ToolError(f"{name} doesn't take {', '.join(unknown)}")
@@ -38,6 +41,22 @@ class Toolbox:
         log.info("%s: %s", tool.connection, name)
         return tool.run(backend, args)
 
+    @property
+    def has_memory(self) -> bool:
+        return self._memory is not None
+
+
+class BrainPhone:
+    """The send_to_phone tool's connection: the brain checks the file, asks the user and sends it."""
+
+    approves_itself = True
+
+    def __init__(self, brain: BrainClient):
+        self._brain = brain
+
+    def send(self, path: str, caption: str = "") -> dict:
+        return self._brain.request({"op": "send_to_phone", "path": path, "caption": caption})
+
 
 def listing(tool: Tool) -> dict:
     read_only = tool.kind == "read"
@@ -46,4 +65,5 @@ def listing(tool: Tool) -> dict:
 
 
 def mcp_server(toolbox: Toolbox) -> McpServer:
-    return McpServer("milo", VERSION, [listing(t) for t in toolbox.tools.values()], toolbox.call, INSTRUCTIONS)
+    instructions = INSTRUCTIONS + (MEMORY_INSTRUCTIONS if toolbox.has_memory else "")
+    return McpServer("milo", VERSION, [listing(t) for t in toolbox.tools.values()], toolbox.call, instructions)

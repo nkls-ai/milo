@@ -10,13 +10,14 @@ from milo.core.types import Emotion
 
 log = logging.getLogger("milo.reply")
 
-TAGS = ("remember", "reminder", "task", "look", "steer", "stop")
+TAGS = ("remember", "reminder", "task", "look", "steer", "stop", "routine")
 _SELF_CLOSING = ("<look/>", "<look />")
 _MARKERS = tuple(f"<{name}>" for name in TAGS) + tuple(f"</{name}>" for name in TAGS) + _SELF_CLOSING
-# Tags that may carry attributes: <task title="..." screen="yes">, <steer helper="2">, <stop helper="all"/>.
-_OPENER = re.compile(r"<(task|steer|stop)((?:\s+[a-z_]+\s*=\s*(?:\"[^\"<>]*\"|'[^'<>]*'|[^\s<>/\"']+))*)\s*(/?)>",
+# Tags that may carry attributes: <task title="..." screen="yes">, <steer helper="2">, <stop helper="all"/>,
+# <routine do="run" name="...">.
+_OPENER = re.compile(r"<(task|steer|stop|routine)((?:\s+[a-z_]+\s*=\s*(?:\"[^\"<>]*\"|'[^'<>]*'|[^\s<>/\"']+))*)\s*(/?)>",
                      re.IGNORECASE)
-_OPENING = re.compile(r"<(task|steer|stop)\s[^<>]*$", re.IGNORECASE)
+_OPENING = re.compile(r"<(task|steer|stop|routine)\s[^<>]*$", re.IGNORECASE)
 _ATTR = re.compile(r"([a-z_]+)\s*=\s*(?:\"([^\"]*)\"|'([^']*)'|([^\s>/]+))", re.IGNORECASE)
 _MAX_OPENER = 300
 _LONGEST_MARKER = max(map(len, _MARKERS))
@@ -34,6 +35,20 @@ class TaskRequest:
     description: str
     title: str = ""
     screen: bool | None = None
+
+
+@dataclass(frozen=True)
+class RoutineRequest:
+    """A <routine> tag: `do` (create, save, change, run, schedule, rename, pause, resume, delete), the
+    routine's `name`, its other attributes, and the text inside (inputs for a run, the change for a change)."""
+
+    do: str
+    name: str
+    text: str = ""
+    helper: str = ""
+    schedule: str | None = None
+    """None when the tag has no schedule attribute; "" when it says to drop the schedule."""
+    to: str = ""
 
 
 class ReplyParser:
@@ -57,6 +72,8 @@ class ReplyParser:
         """(which helper, what changed) for each <steer> tag."""
         self.stops: list[str] = []
         """Which helper each <stop> tag means: a number, "all", or "" for the only one."""
+        self.routines: list[RoutineRequest] = []
+        """Each <routine> tag: save, run, schedule or manage a routine (services/routines.py)."""
         self.look: str | None = None
         """Set when the model asked to see the screen: what it wants to look at, often ""."""
         self.spoken = ""
@@ -197,6 +214,13 @@ class ReplyParser:
             return
         if tag == "stop":
             self.stops.append(attrs.get("helper") or content)
+            return
+        if tag == "routine":
+            do = attrs.get("do", "").strip().lower()
+            if do:
+                self.routines.append(RoutineRequest(do, " ".join(attrs.get("name", "").split()), content,
+                                                    attrs.get("helper", "").strip(), attrs.get("schedule"),
+                                                    " ".join(attrs.get("to", "").split())))
             return
         if not content:
             return

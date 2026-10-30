@@ -8,6 +8,7 @@ from collections.abc import Callable, Mapping
 
 from milo.core.events import Confirm, ConfirmDone
 from milo.core.logtext import private
+from milo.core.ports import QuestionRelay, Relayed
 from milo.core.registry import ConfigError
 from milo.core.types import ActionLevel, Decision, Emotion
 
@@ -19,6 +20,8 @@ log = logging.getLogger("milo.approvals")
 
 DEFAULT_TIMEOUT_S = 60.0
 NO_ANSWER = "No answer, so I left it."
+REMOTE = "message"
+"""`via` for answers from the owner's phone (a relay)."""
 
 # What each kind of action gets unless config.toml says otherwise ([approvals.levels]).
 DEFAULT_LEVELS: dict[str, ActionLevel] = {
@@ -86,6 +89,10 @@ class Approvals:
     still the last thing Milo said: once the bubble shows anything else (a reply, a task result, a
     nudge), a bare "yes" could mean that, so only the buttons count. No answer within `timeout_s` means no. One question at a time;
     later ones wait their turn.
+
+    `relays` pass questions on, like to the owner's phone when they are away (messages.py). A relayed
+    question waits as long as the relay asks; one the relay takes `only` can't be answered at the Mac at
+    all, since whoever sits there now isn't the user who asked for the work.
     """
 
     def __init__(self, ui: UiState, speaker: Speaker, policy: ActionPolicy | None = None, *,
@@ -100,6 +107,8 @@ class Approvals:
         self._transcript = transcript or unrecorded()
         self._one_at_a_time = asyncio.Lock()
         self._pending: tuple[str, str, asyncio.Future[bool]] | None = None
+        self._remote_only = False
+        self.relays: list[QuestionRelay] = []
 
     @property
     def pending(self) -> bool:
@@ -131,6 +140,9 @@ class Approvals:
         """Answer the waiting question `id`. False if it isn't the one waiting (already answered, timed out)."""
         if self._pending is None or self._pending[0] != id or self._pending[2].done():
             return False
+        if self._remote_only and via != REMOTE:
+            log.info("an answer at the Mac to a question only the phone may answer")
+            return False
         self._transcript.user("Yes" if yes else "No", via)
         self._pending[2].set_result(yes)
         return True
@@ -138,7 +150,7 @@ class Approvals:
     def answer_text(self, text: str, *, via: str = "voice") -> bool:
         """Treat a turn as the answer if the waiting question is the last thing Milo said and the turn is
         a plain yes or no."""
-        if self._pending is None or not self._still_showing(self._pending[1]):
+        if self._pending is None or self._remote_only or not self._still_showing(self._pending[1]):
             return False
         yes = yes_or_no(text)
         if yes is None:
@@ -157,17 +169,45 @@ class Approvals:
             future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
             self._pending = (id, question, future)
             log.info("asking before an action: %s", private(question))
-            self._ui.emit(Confirm(id, question))
-            self._transcript.say(f"{question}\n\n{detail}" if detail else question, Emotion.THINKING)
-            self._speaker.say(question, Emotion.THINKING, speak=speak and self._speak and not self._quiet())
+            relayed = self._relay(id, question, detail)
+            self._remote_only = any(r.only for r in relayed)
+            timeout_s = max([self._timeout_s, *(r.wait_s for r in relayed)])
+            text = f"{question}\n\n{detail}" if detail else question
+            if self._remote_only:
+                # The user is away: the Mac only shows that a question went to the phone, without buttons.
+                self._transcript.say(f"Asked on your phone: {text}", Emotion.THINKING)
+                self._speaker.say(f"Asked on your phone: {question}", Emotion.THINKING, speak=False)
+            else:
+                self._ui.emit(Confirm(id, question))
+                self._transcript.say(text, Emotion.THINKING)
+                self._speaker.say(question, Emotion.THINKING, speak=speak and self._speak and not self._quiet())
             answer = "no"
             try:
-                answer = "yes" if await asyncio.wait_for(future, self._timeout_s) else "no"
+                answer = "yes" if await asyncio.wait_for(future, timeout_s) else "no"
             except TimeoutError:
                 answer = "timeout"
                 self._transcript.say(NO_ANSWER, Emotion.NEUTRAL)
             finally:
                 self._pending = None
-                self._ui.emit(ConfirmDone(id, answer))
+                if not self._remote_only:
+                    self._ui.emit(ConfirmDone(id, answer))
+                self._remote_only = False
+                for relay in self.relays:
+                    try:
+                        relay.closed(id, answer)
+                    except Exception:
+                        log.exception("a question relay failed")
             log.info("the answer was %s", answer)
             return answer
+
+    def _relay(self, id: str, question: str, detail: str) -> list[Relayed]:
+        relayed = []
+        for relay in self.relays:
+            try:
+                taken = relay.asked(id, question, detail)
+            except Exception:
+                log.exception("a question relay failed")
+                continue
+            if taken is not None:
+                relayed.append(taken)
+        return relayed

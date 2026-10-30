@@ -19,8 +19,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 if TYPE_CHECKING:
-    from .ports import (AudioInput, AudioOutput, Clock, Connections, Diarizer, Harness, LiveModel, ProactiveRule,
-                        TextCleaner, Transcriber, Voice)
+    from .ports import (AudioInput, AudioOutput, Channel, Clock, Connections, Diarizer, Embedder, Harness, LiveModel,
+                        ProactiveRule, TextCleaner, Transcriber, Voice)
     from .types import ToolServer
 
 T = TypeVar("T")
@@ -94,4 +94,6 @@ AUDIO_OUTPUTS: Registry[AudioOutput] = Registry("audio output")
 TEXT_CLEANERS: Registry[TextCleaner] = Registry("dictation cleaner")
 RULES: Registry[ProactiveRule] = Registry("heartbeat rule")
 CONNECTIONS: Registry[Connections] = Registry("connections")
+EMBEDDERS: Registry[Embedder] = Registry("embedder")
+CHANNELS: Registry[Channel] = Registry("message channel")
 DIARIZERS: Registry[Diarizer] = Registry("diarizer")

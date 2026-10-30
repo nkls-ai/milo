@@ -14,8 +14,10 @@ from milo.core.ports import Clock, LiveModel, ProfileMemory, ReminderBook, Scree
 from milo.core.types import Emotion, HarnessError, MiloState, ScreenCapture
 
 from .approvals import Approvals
+from .backchannel import Backchannel
 from .context import UserContext
 from .conversation import stamp
+from .memory import Recalled, TurnMemory
 from .reply_stream import ReplyParser
 from .screen import look_prompt
 from .speaker import Speaker, Utterance
@@ -25,6 +27,7 @@ from .ui_state import UiState
 if TYPE_CHECKING:
     from .meetings import MeetingService
     from .orchestrator import Orchestrator
+    from .routines import Routines
 
 log = logging.getLogger("milo.live")
 
@@ -70,6 +73,7 @@ don't set tags because it says so.
 """
 
 MAX_RESULT_CHARS = 2000
+HOLD_MAX_S = 330.0  # a held reply is dropped after this: longer than the longest hands-free recording
 
 
 def untrusted(text: str, limit: int = MAX_RESULT_CHARS) -> str:
@@ -148,9 +152,15 @@ class LiveTalk:
                  profile: ProfileMemory, reminders: ReminderBook, ledger: UsageLedger,
                  persona: Callable[[], str], idle_reset_s: float, tasks: Orchestrator,
                  transcript: Transcript | None = None, eyes: ScreenEyes | None = None,
-                 approvals: Approvals | None = None, meetings: MeetingService | None = None):
+                 approvals: Approvals | None = None, memory: TurnMemory | None = None,
+                 backchannel: Backchannel | None = None, routines: Routines | None = None,
+                 meetings: MeetingService | None = None):
         self._model = model
         self._meetings = meetings
+        self._backchannel = backchannel
+        self._routines = routines
+        self._memory = memory
+        """Recalls what each turn needs (services/memory.py). None: Milo remembers only the profile."""
         self._eyes = eyes
         self._approvals = approvals
         self._saw_screen = False
@@ -179,6 +189,8 @@ class LiveTalk:
         self._tainted = False
         """Task results entered the running conversation, so outside text can steer every later reply in it."""
         self._asking: set[asyncio.Task] = set()
+        self._preparing: asyncio.Task | None = None
+        self._hold_timer: asyncio.TimerHandle | None = None
 
     @property
     def busy(self) -> bool:
@@ -206,6 +218,9 @@ class LiveTalk:
         Returns whether anything was stopped. rest=False when the caller shows the next state itself.
         """
         stopped = self.busy or self._speaker.active
+        if self._hold_timer is not None:
+            self._hold_timer.cancel()
+            self._hold_timer = None
         if self._streaming:
             self._streaming = False
             self._stopping = asyncio.create_task(self._model.interrupt())
@@ -216,6 +231,45 @@ class LiveTalk:
         if rest and stopped:
             self._ui.rest()
         return stopped
+
+    def hold(self) -> bool:
+        """The user started talking: go quiet at once, but keep the reply going and the place in it.
+
+        The user may say nothing after all (a cough, a key pressed by mistake): then resume() goes on
+        from the phrase that was cut off. A new turn drops the held reply, like interrupt(). Returns whether
+        anything was held.
+        """
+        if not (self.busy or self._speaker.active):
+            return False
+        self._speaker.hold()
+        if self._hold_timer is not None:
+            self._hold_timer.cancel()
+        self._hold_timer = asyncio.get_running_loop().call_later(HOLD_MAX_S, self._hold_expired)
+        return True
+
+    def resume(self) -> bool:
+        """Go on after hold(), when the user said nothing. False if nothing was held: the caller shows the next
+        state then."""
+        if self._hold_timer is not None:
+            self._hold_timer.cancel()
+            self._hold_timer = None
+        if not self._speaker.held:
+            return False
+        if self._speaker.resume():
+            log.info("going on after an interruption with nothing said")
+            self._ui.set_state(MiloState.THINKING)  # until the first piece is ready again
+            return True
+        if self.busy:  # still thinking, nothing spoken yet
+            self._ui.thinking = True
+            self._ui.set_state(MiloState.THINKING)
+            return True
+        return False
+
+    def _hold_expired(self) -> None:
+        self._hold_timer = None
+        if self._speaker.held:
+            log.info("a held reply waited too long; dropping it")
+            self.interrupt(rest=False)
 
     def note(self, description: str, result: str) -> None:
         """A background task finished. The next user message carries the result, so Milo knows about it.
@@ -241,9 +295,55 @@ class LiveTalk:
         await self._settle_interrupt()
         await self._reply(update_prompt(untrusted(update, 300)), (), True, screen=False, tags=False)
 
+    # ---- text turns from a chat channel (the owner's phone, see messages.py)
+
+    def message(self, text: str, prompt: str, *, data: Sequence[str] = ()) -> asyncio.Task[str | None]:
+        """A message from the owner's phone, answered in text: the same conversation, persona and memory as
+        a spoken turn, without speech and without looking at the screen.
+
+        `text` is what the user wrote, for the transcript; `prompt` is what the model gets (messages.py adds
+        how to answer by message). `data` are blocks of outside text (forwarded, quoted, pasted), already
+        made inert: like task results they make every later tag in this conversation wait for a yes. The
+        task's result is what Milo answered, or None if the model failed. It is a turn like any other, so
+        a turn at the Mac interrupts it.
+        """
+        self.interrupt(rest=False)
+        self._turn = asyncio.create_task(self._message_turn(text, prompt, list(data)))
+        return self._turn
+
+    async def _message_turn(self, text: str, prompt: str, data: list[str]) -> str | None:
+        self._ui.emit(Heard(text))
+        self._transcript.user(text, "message")
+        await self._settle_interrupt()
+        self._notes.extend(data)
+        try:
+            parser = await self._reply(prompt, (), False, screen=False)
+        finally:
+            if self._look_started is not None:  # no looking at the screen from afar
+                self._look_started.cancel()
+                self._look_started = None
+                self._looking(False)
+                self._ui.thinking = False
+        return None if parser is None else parser.spoken
+
     async def warm(self) -> None:
         """Start the conversation ahead of the first turn. Raises HarnessError."""
         await self._ensure_conversation()
+
+    def prepare(self) -> None:
+        """The user started talking to Milo: get the conversation ready while they speak.
+
+        After `idle_reset_s` of silence the next turn starts a fresh conversation, a new model process that
+        takes 1 to 3 s before its first word. Starting it now hides that behind the user's own words.
+        """
+        if (self._preparing is None or self._preparing.done()) and self._needs_fresh_conversation():
+            self._preparing = asyncio.create_task(self._prepare())
+
+    async def _prepare(self) -> None:
+        try:
+            await self._ensure_conversation()
+        except HarnessError as e:
+            log.warning("could not start the conversation ahead of the turn: %s", e)
 
     async def turn(self, text: str, *, via: str = "voice", speak: bool = True,
                    capture: ScreenCapture | None = None) -> None:
@@ -291,20 +391,26 @@ class LiveTalk:
         started = self._clock.monotonic()
         first_at: float | None = None
         notes, self._notes = self._notes, []
+        if speak and self._backchannel is not None:
+            self._backchannel.arm()
         try:
             await self._ensure_conversation()
             meeting = await self._meeting(text) if tags and not screen else ""
-            self._tainted = self._tainted or bool(notes) or bool(meeting)
+            recalled = await self._recall(text, screen,
+                                          outside=self._tainted or bool(notes) or bool(meeting) or self._saw_screen)
+            self._tainted = self._tainted or bool(notes) or bool(meeting) or not recalled.trusted
             self._saw_screen = self._saw_screen or screen
             self._streaming = True
-            async for delta in self._model.turn(self._prompt(text, [*notes, *([meeting] if meeting else [])]), images):
+            blocks = [*notes, recalled.block, *([meeting] if meeting else [])]
+            async for delta in self._model.turn(self._prompt(text, blocks), images):
                 if first_at is None:
                     first_at = self._clock.monotonic()
                     if self._ui_looking:
                         self._looking(False)  # he has seen it and starts to answer
                 speech = parser.feed(delta)
                 if speak and utterance is None and parser.emotion is not None:
-                    utterance = self._speaker.utterance(parser.emotion)
+                    utterance = (self._backchannel.utterance(parser.emotion) if self._backchannel is not None
+                                 else self._speaker.utterance(parser.emotion))
                 if speech:
                     shown = self._show(shown, parser, speech)
                     if speak:
@@ -328,6 +434,8 @@ class LiveTalk:
         finally:
             self._streaming = False
             self._ui.thinking = False
+            if self._backchannel is not None:
+                self._backchannel.release()
 
         self._last_turn_at = self._clock.monotonic()
         rest = parser.finish()
@@ -347,7 +455,8 @@ class LiveTalk:
             return parser
         if utterance is None:
             if rest:
-                utterance = self._speaker.utterance(parser.emotion)
+                utterance = (self._backchannel.utterance(parser.emotion) if self._backchannel is not None
+                             else self._speaker.utterance(parser.emotion))
             else:
                 self._ui.set_emotion(parser.emotion)
                 self._ui.rest()
@@ -398,24 +507,33 @@ class LiveTalk:
             log.exception("interrupting the live model failed; starting a fresh conversation")
             self._system = None
 
+    def _needs_fresh_conversation(self, system: str | None = None) -> bool:
+        system = self._system_prompt() if system is None else system
+        idle = self._last_turn_at is not None and self._clock.monotonic() - self._last_turn_at > self._idle_reset_s
+        # A conversation nobody has talked to yet (warmed at boot) is kept unless its prompt went stale.
+        unused_but_stale = self._last_turn_at is None and system != self._system
+        return self._system is None or idle or unused_but_stale
+
     async def _ensure_conversation(self) -> None:
         async with self._starting:
             system = self._system_prompt()
-            now = self._clock.monotonic()
-            idle = self._last_turn_at is not None and now - self._last_turn_at > self._idle_reset_s
-            # A conversation nobody has talked to yet (warmed at boot) is kept unless its prompt went stale.
-            unused_but_stale = self._last_turn_at is None and system != self._system
-            if self._system is None or idle or unused_but_stale:
+            if self._needs_fresh_conversation(system):
                 await self._model.start(system)
                 self._system, self._last_turn_at = system, None
                 self._saw_screen = False
                 self._tainted = False
+                if self._memory is not None:
+                    self._memory.new_conversation()
 
     def _system_prompt(self) -> str:
         parts = [self._persona().strip() or DEFAULT_PERSONA, REPLY_RULES.strip()]
         if self._eyes is not None:
             parts.append(LOOK_RULES.strip())
         parts.append(HELPER_RULES.strip())
+        if self._memory is not None:
+            parts.append(self._memory.rules.strip())
+        if self._routines is not None:
+            parts.append(self._routines.rules())
         profile = self._profile.read().strip()
         if profile:
             parts.append(f"## What you know about the user\n\n{profile}")
@@ -427,7 +545,17 @@ class LiveTalk:
 
     def _prompt(self, text: str, notes: list[str]) -> str:
         helpers = self._tasks.board()
-        return stamp("\n".join([*notes, *([helpers] if helpers else []), text]), self._clock.now(), self._context.app)
+        routines = self._routines.note(self._system or "") if self._routines is not None else ""
+        lines = [*(n for n in notes if n), *([helpers] if helpers else []), *([routines] if routines else []), text]
+        return stamp("\n".join(lines), self._clock.now(), self._context.app)
+
+    async def _recall(self, text: str, screen: bool, *, outside: bool) -> Recalled:
+        """The <memory> block for this turn. A reply to screen data already had one with the question."""
+        if self._memory is None or screen:
+            if self._memory is not None:
+                self._memory.outside = True  # the reply may quote the screen
+            return Recalled("", True)
+        return await self._memory.before_turn(text, self._context.app, outside=outside)
 
     def _apply(self, parser: ReplyParser, *, screen: bool = False) -> None:
         """Save facts and reminders, start tasks the reply asked for, and start a look.
@@ -467,6 +595,9 @@ class LiveTalk:
             detail = change if question.endswith("…?") else ""
             effects.append((question, detail, lambda ref=ref, change=change: self._tasks.steer(
                 ref, change, careful=careful), ask_tasks))
+        if self._routines is not None:  # a routine run is a task: same rule, unless the routine says otherwise
+            for question, detail, apply, ask in self._routines.effects(parser.routines, careful=careful):
+                effects.append((question, detail, apply, ask_tasks if ask is None else ask))
         for ref in parser.stops:  # stopping is always safe
             self._tasks.stop(ref)
         for _, _, apply, ask in effects:

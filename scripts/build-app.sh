@@ -42,4 +42,13 @@ else
   codesign --force --sign - "$APP"
 fi
 echo "built $APP"
+# A running brain keeps its old code: the app joins whatever brain holds the lock. Stop the one this
+# checkout started, so the next launch loads the new code. MILO_KEEP_BRAIN=1 leaves it running.
+LOCK="${MILO_HOME:-$HOME/Milo}/run/brain.lock"
+if [ "${MILO_KEEP_BRAIN:-}" != 1 ] && [ -f "$LOCK" ]; then
+  PID=$(cat "$LOCK" 2>/dev/null || true)
+  if [ -n "$PID" ] && ps -o command= -p "$PID" 2>/dev/null | grep -q "$ROOT/brain/"; then
+    kill -TERM "$PID" && echo "stopped the running brain ($PID) so the next launch loads the new code"
+  fi
+fi
 if [ "${1:-}" = "--open" ]; then open "$APP"; fi

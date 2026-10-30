@@ -243,6 +243,62 @@ class HandsBorrow(Event):
 
 
 @dataclass(frozen=True)
+class Facts(Event):
+    """What Milo knows, for the "What Milo knows" screen: every current fact as {id, text, topic, since, pinned}.
+
+    Sent on `get_facts` and whenever a fact is added, edited or forgotten.
+    """
+
+    type: ClassVar[str] = "facts"
+    facts: list[dict]
+
+
+@dataclass(frozen=True)
+class Routines(Event):
+    """The user's routines for the Milo window, by name, and the recipe drafts waiting for a look.
+
+    Each routine: {id, name, description, schedule, paused, last_run, next_run?, inputs, problem?}. `id` is the
+    file name without .md; `next_run` is a local time like "2026-11-02T09:00" while a schedule is on; a file
+    that doesn't read has only id, name and `problem`. Each draft: {id, name, recipe, schedule}, where `recipe`
+    is the whole file the user can save or ask to change. Sent on connect, on get_history and on every change.
+    """
+
+    type: ClassVar[str] = "routines"
+    routines: list[dict]
+    drafts: list[dict]
+
+
+@dataclass(frozen=True)
+class SettingsReport(Event):
+    """What the Settings window shows. Sent on `get_settings` and after every `set_setting`.
+
+    Each setting is {section, key, value, options, labels, live}: `options` lists the allowed values (empty
+    for free text or a switch) and `labels` names them in plain words. `live` false: a change applies after
+    a restart. `restart`: a saved change is waiting for one. `error`: why the last change was not saved.
+    """
+
+    type: ClassVar[str] = "settings"
+    settings: list[dict]
+    restart: bool = False
+    error: str = ""
+
+
+@dataclass(frozen=True)
+class Remote(Event):
+    """Milo by message, for the menu. `channel` is the chat app's name ("telegram"), `label` what the user calls
+    it. state: "starting", "unpaired" (no phone yet; `detail` says how to connect), "paired" (`detail`: the
+    owner's name in the chat app) or "error" (`detail`: what is wrong, in plain words). Sent on connect when
+    messages are on, and on every change."""
+
+    type: ClassVar[str] = "remote"
+    channel: str
+    label: str
+    state: str
+    paused: bool = False
+    detail: str = ""
+
+
+@dataclass(frozen=True)
 class MeetingRecord(Event):
     """Record the meeting `id`: the microphone and the call's audio, each in 30 s WAV chunks (16 kHz mono) into
     `dir`, named `me-0001.wav` and `them-0001.wav`. on=false stops it. A red dot shows while the app records."""
@@ -385,6 +441,82 @@ class StopHelper(Command):
     id: str
 
 
+class GetFacts(Command):
+    """The "What Milo knows" screen opened: send `facts`."""
+
+    type: ClassVar[str] = "get_facts"
+
+
+@dataclass(frozen=True)
+class ForgetFact(Command):
+    """The user pressed Forget on fact `id`."""
+
+    type: ClassVar[str] = "forget_fact"
+    id: str
+
+
+@dataclass(frozen=True)
+class EditFact(Command):
+    """The user rewrote fact `id` as `text`."""
+
+    type: ClassVar[str] = "edit_fact"
+    id: str
+    text: str
+
+
+ROUTINE_ACTIONS = ("run", "pause", "resume", "delete")
+
+
+@dataclass(frozen=True)
+class RoutineAction(Command):
+    """A button in the Routines section of the Milo window: run, pause, resume or delete the routine `id`."""
+
+    type: ClassVar[str] = "routine"
+    id: str
+    action: str
+
+
+@dataclass(frozen=True)
+class RoutineDraftAnswer(Command):
+    """Save on a recipe draft (`save` true), or throw it away (false)."""
+
+    type: ClassVar[str] = "routine_draft_answer"
+    id: str
+    save: bool
+
+
+@dataclass(frozen=True)
+class GetSettings(Command):
+    """The Settings window opened: send `settings`."""
+
+    type: ClassVar[str] = "get_settings"
+
+
+@dataclass(frozen=True)
+class SetSetting(Command):
+    """Change one setting in config.toml, e.g. section "ui", key "character", value "dragon"."""
+
+    type: ClassVar[str] = "set_setting"
+    section: str
+    key: str
+    value: Any
+
+
+@dataclass(frozen=True)
+class RemotePause(Command):
+    """The menu's "Pause messages from your phone": Milo ignores the phone until it is switched off again."""
+
+    type: ClassVar[str] = "remote_pause"
+    on: bool
+
+
+@dataclass(frozen=True)
+class RemoteForget(Command):
+    """The menu's "Disconnect phone": unpair it. Connecting again needs a new code shown on the Mac."""
+
+    type: ClassVar[str] = "remote_forget"
+
+
 @dataclass(frozen=True)
 class CallStarted(Command):
     """The app saw a call start: a call app or a browser tab with a call uses the microphone."""
@@ -481,11 +613,39 @@ def parse_command(raw: object) -> Command:
                 return ConfirmAnswer(str(raw["id"]), raw["yes"])
             case "app_response":
                 return AppResponse(str(raw["id"]), raw["ok"] is True, raw.get("result"), str(raw.get("error") or ""))
+            case "remote_pause":
+                if not isinstance(raw["on"], bool):
+                    raise ProtocolError("on must be true or false")
+                return RemotePause(raw["on"])
+            case "remote_forget":
+                return RemoteForget()
             case "stop_helper":
                 id = str(raw["id"]).strip()
                 if not id:
                     raise ProtocolError("id must not be empty")
                 return StopHelper(id)
+            case "get_facts":
+                return GetFacts()
+            case "forget_fact":
+                return ForgetFact(_required(raw, "id"))
+            case "edit_fact":
+                return EditFact(_required(raw, "id"), _required(raw, "text"))
+            case "routine":
+                action = str(raw["action"])
+                if action not in ROUTINE_ACTIONS:
+                    raise ProtocolError(f"action must be one of {', '.join(ROUTINE_ACTIONS)}")
+                return RoutineAction(str(raw["id"]), action)
+            case "routine_draft_answer":
+                if not isinstance(raw["save"], bool):
+                    raise ProtocolError("save must be true or false")
+                return RoutineDraftAnswer(str(raw["id"]), raw["save"])
+            case "get_settings":
+                return GetSettings()
+            case "set_setting":
+                value = raw["value"]
+                if not isinstance(value, str | bool | int | float):
+                    raise ProtocolError("value must be text, a number or true/false")
+                return SetSetting(str(raw["section"]), str(raw["key"]), value)
             case "call_started":
                 return CallStarted(str(raw.get("app") or ""), str(raw.get("bundle") or ""), str(raw.get("title") or ""))
             case "call_ended":
@@ -510,3 +670,10 @@ def parse_command(raw: object) -> Command:
     except (KeyError, TypeError, ValueError) as e:
         raise ProtocolError(f"bad {kind} message: {e}") from None
     raise ProtocolError(f"unknown message type {kind!r}")
+
+
+def _required(raw: dict, key: str) -> str:
+    value = " ".join(str(raw[key]).split())
+    if not value:
+        raise ProtocolError(f"{key} must not be empty")
+    return value

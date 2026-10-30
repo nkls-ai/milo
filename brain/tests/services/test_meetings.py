@@ -9,7 +9,9 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -18,11 +20,14 @@ import pytest
 from milo.core.events import (CallEnded, CallStarted, Confirm, MeetingChunk, MeetingRecord, MeetingRecording,
                               MeetingToggle, Status)
 from milo.core.meetings import Track
+from milo.core.memory import Episode
+from milo.core.types import Interrupted, ListenMode, MiloState
 from milo.memory.meetings import FileMeetingStore
 from milo.services.background_stt import BackgroundStt
+from milo.services.listening import Listening
 from milo.services.meetings import QUESTION, MeetingOptions, MeetingService, followup_task
-from tests.meeting_fakes import (FakeVoiceBook, LineVoices, Script, SummaryModel, WordReader, line_of_word, word,
-                                 write_chunks)
+from tests.meeting_fakes import (FakeVoiceBook, GivingWay, LineVoices, Script, SummaryModel, WordReader, line_of_word,
+                                 word, write_chunks)
 from tests.services.stack import InlineExecutor, Stack, settle
 
 SUMMARY = json.dumps({"summary": "We moved the release by a week.", "decisions": ["Release on the 21st"],
@@ -34,7 +39,7 @@ SUMMARY = json.dumps({"summary": "We moved the release by a week.", "decisions":
 class Rig:
     def __init__(self, tmp_path: Path, script: Script, *, auto="ask", reader=None, voices=None, events=None,
                  summary=SUMMARY, stack=None, end_after_s=0.05, busy=lambda: False, connected=lambda: True,
-                 offers=False):
+                 offers=False, stt=None):
         self.s = stack or Stack(confirm_timeout_s=2.0)
         self.script = script
         self.store = FileMeetingStore(tmp_path / "meetings")
@@ -44,7 +49,7 @@ class Rig:
         self.models: list[SummaryModel] = []
         self.reminders: list[tuple[str, str]] = []
         self.drafts: list[str] = []
-        self.episodes: list[dict] = []
+        self.episodes: list[Episode] = []
         self.events = events
         self.answered = 0
 
@@ -59,7 +64,8 @@ class Rig:
             return self.models[-1]
 
         self.service = MeetingService(
-            self.store, self.s.ui, self.s.clock, BackgroundStt(InlineExecutor(), busy, poll_s=0.01), self.reader,
+            self.store, self.s.ui, self.s.clock, stt or BackgroundStt(InlineExecutor(), busy, poll_s=0.01),
+            self.reader,
             approvals=self.s.approvals, speaker=self.s.speaker, diarizer=self.diarizer,
             diarize_executor=InlineExecutor(), voices=self.voices, summarizer=summarizer, calendar=calendar,
             add_reminder=add_reminder, draft_mail=self.drafts.append,
@@ -156,8 +162,10 @@ def test_a_call_asks_once_records_and_ends_with_notes_reminders_and_a_mail(tmp_p
     assert rig.reminders == [("Write to the customer", "From the meeting “Zoom call”, due Friday")]
     assert len(rig.drafts) == 1 and "‹" not in rig.drafts[0] and "Hi all, thanks for today." in rig.drafts[0]
     assert rig.models[0].closed and "<meeting_transcript>" in rig.models[0].prompts[0]
-    assert rig.episodes[0]["kind"] == "meeting" and rig.episodes[0]["trusted"] is False
-    assert rig.episodes[0]["source"] == f"meeting:{rig.id}"
+    [episode] = rig.episodes
+    assert episode.kind == "meeting" and episode.trusted is False and episode.source == f"meeting:{rig.id}"
+    assert episode.summary == "Meeting “Zoom call”: We moved the release by a week."
+    assert episode.apps == ("Zoom",) and not any(p.startswith("Speaker ") for p in episode.people)
 
 
 def test_the_question_is_shown_not_spoken_during_a_call(tmp_path):
@@ -378,6 +386,65 @@ def test_passes_wait_while_the_user_dictates(tmp_path):
         await until(lambda: rig.reader.calls)
 
     asyncio.run(go())
+
+
+def test_a_key_going_down_interrupts_the_meeting_pass_and_the_pass_runs_again_after_the_user(tmp_path):
+    s = Stack()
+    whisper = GivingWay("note this down")
+    stt_thread = ThreadPoolExecutor(1)
+    live = (MiloState.LISTENING, MiloState.DICTATING, MiloState.TRANSCRIBING)
+    stt = BackgroundStt(stt_thread, busy=lambda: s.mic.active or s.ui.state in live, interrupt=whisper.interrupt,
+                        poll_s=0.01)
+    script = Script.conversation(["Anna", "me"], lines=12)
+    rig = Rig(tmp_path, script, stack=s, reader=whisper, stt=stt)
+    listening = Listening(s.mic, whisper, stt_thread, s.ui, s.dictation, s.live_talk, s.context, yield_stt=stt.yield_now)
+
+    async def go():
+        await rig.service.toggle(True)
+        rig.deliver()
+        await asyncio.to_thread(whisper.holding.wait, 5)
+        pressed = time.monotonic()
+        listening.start(ListenMode.DICTATE)
+        await listening.stop()
+        heard = time.monotonic() - pressed
+        await rig.finish()
+        return heard
+
+    try:
+        heard = asyncio.run(go())
+    finally:
+        stt_thread.shutdown()
+    # The held pass would have kept the thread for 5 s: the user's words came at once instead.
+    assert heard < 1.0
+    assert whisper.log[:4] == ["meeting pass", "gave way", "wake", "dictation"]
+    assert whisper.log.count("dictation") == 1 and whisper.log[4] == "meeting pass"
+    assert s.history.entries[-1][0] == "NOTE THIS DOWN"
+    # The pass ran again: every word once, none lost, none twice.
+    said = said_lines(rig, rig.lines())
+    assert {n: len(v) for n, v in said.items()} == {s.line: s.words for s in script.said}
+
+
+def test_a_meeting_call_still_waiting_for_the_thread_never_starts_once_the_user_needs_it():
+    stt_thread = ThreadPoolExecutor(1)
+    ran, interrupts = [], []
+    stt = BackgroundStt(stt_thread, interrupt=lambda: interrupts.append(1))
+    users_pass = threading.Event()
+
+    async def go():
+        stt_thread.submit(users_pass.wait, 5)  # something else holds the thread
+        meeting = asyncio.ensure_future(stt.run(ran.append, "meeting"))
+        await asyncio.sleep(0.05)
+        stt.yield_now()
+        users_pass.set()
+        with pytest.raises(Interrupted):
+            await meeting
+        assert await stt.run(ran.append, "again") is None  # the next pass runs as usual
+
+    try:
+        asyncio.run(go())
+    finally:
+        stt_thread.shutdown()
+    assert ran == ["again"] and interrupts == []
 
 
 def test_speech_whisper_skipped_is_heard_on_a_second_pass(tmp_path):

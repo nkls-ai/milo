@@ -12,7 +12,8 @@ public struct TranscriptEntry: Equatable, Sendable, Identifiable {
     }
 
     public enum Via: String, Sendable {
-        case voice, typed
+        /// `message`: sent from the user's phone through a chat app.
+        case voice, typed, message
     }
 
     public let id: String

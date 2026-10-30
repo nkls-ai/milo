@@ -29,6 +29,24 @@ public enum BrainCommand: Equatable, Sendable {
     case appResponse(id: String, outcome: AppOutcome)
     /// The user clicked Stop on the helper `id`.
     case stopHelper(id: String)
+    /// The "What Milo knows" window opened: send the facts.
+    case getFacts
+    /// The user clicked Forget on fact `id`.
+    case forgetFact(id: String)
+    /// The user changed fact `id` to `text`.
+    case editFact(id: String, text: String)
+    /// A button in the Routines section: run, pause, resume or delete the routine `id`.
+    case routine(id: String, action: RoutineAction)
+    /// Save on the recipe draft `id` (true), or throw it away (false).
+    case routineDraftAnswer(id: String, save: Bool)
+    /// The Settings window opened: send the settings.
+    case getSettings
+    /// Change one setting, e.g. section "ui", key "character", value "dragon".
+    case setSetting(section: String, key: String, value: JSONValue)
+    /// The menu's "Pause messages from your phone".
+    case remotePause(Bool)
+    /// The menu's "Disconnect phone": a new connection needs a new code shown on the Mac.
+    case remoteForget
     /// A call app started using the microphone. `title` is its window or tab title, "" if unknown.
     case callStarted(app: String, bundle: String, title: String)
     /// That call app let go of the microphone.
@@ -69,7 +87,8 @@ public enum AppOutcome: Equatable, Sendable {
 
 extension BrainCommand: Encodable {
     private enum Key: String, CodingKey {
-        case type, mode, text, app, on, tentative, speak, id, capture, ok, result, error, reason, yes
+        case type, mode, text, app, on, tentative, speak, id, capture, ok, result, error, reason, yes, action, save
+        case section, key, value
         case bundle, title, track, index, path, start, seconds, tracks
         case idleSeconds = "idle_s"
     }
@@ -134,6 +153,35 @@ extension BrainCommand: Encodable {
         case let .stopHelper(id):
             try c.encode("stop_helper", forKey: .type)
             try c.encode(id, forKey: .id)
+        case .getFacts:
+            try c.encode("get_facts", forKey: .type)
+        case let .forgetFact(id):
+            try c.encode("forget_fact", forKey: .type)
+            try c.encode(id, forKey: .id)
+        case let .editFact(id, text):
+            try c.encode("edit_fact", forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(text, forKey: .text)
+        case let .routine(id, action):
+            try c.encode("routine", forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(action, forKey: .action)
+        case let .routineDraftAnswer(id, save):
+            try c.encode("routine_draft_answer", forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(save, forKey: .save)
+        case .getSettings:
+            try c.encode("get_settings", forKey: .type)
+        case let .setSetting(section, key, value):
+            try c.encode("set_setting", forKey: .type)
+            try c.encode(section, forKey: .section)
+            try c.encode(key, forKey: .key)
+            try c.encode(value, forKey: .value)
+        case let .remotePause(on):
+            try c.encode("remote_pause", forKey: .type)
+            try c.encode(on, forKey: .on)
+        case .remoteForget:
+            try c.encode("remote_forget", forKey: .type)
         case let .callStarted(app, bundle, title):
             try c.encode("call_started", forKey: .type)
             try c.encode(app, forKey: .app)

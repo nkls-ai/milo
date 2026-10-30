@@ -140,13 +140,19 @@ class FakeTranscriber:
     def warm(self) -> None:
         self.warmed = True
 
-    def transcribe(self, audio: Audio) -> str:
+    def wake(self) -> None:
+        pass
+
+    def transcribe(self, audio: Audio, before: str = "", *, quick: bool = False) -> str:
         self.calls.append(audio)
         return self.texts.popleft() if self.texts else ""
 
     def preview(self, audio: Audio) -> str:
         self.previews.append(audio)
         return ""
+
+    def interrupt(self) -> None:
+        pass
 
 
 class FakeVoice:
@@ -449,3 +455,305 @@ class FakeConfirm:
     async def confirm(self, summary: str) -> bool:
         self.asked.append(summary)
         return self.answers.popleft() if self.answers else False
+
+
+class MemoryEpisodeLog:
+    """EpisodeLog in a list. Same rules as the file: a newer line with the same id wins, forget hides."""
+
+    def __init__(self):
+        self.lines: list = []
+        self.forgotten: set[str] = set()
+
+    def append(self, episode) -> None:
+        self.lines.append(episode)
+
+    def between(self, start, end) -> list:
+        latest = {e.id: e for e in self.lines}
+        return sorted((e for e in latest.values() if start <= e.at < end and e.id not in self.forgotten),
+                      key=lambda e: (e.at, e.id))
+
+    def forget(self, id: str, reason: str) -> None:
+        if not any(e.id == id for e in self.lines):
+            raise KeyError(id)
+        self.forgotten.add(id)
+
+
+class MemoryFactStore:
+    """FactStore in a dict."""
+
+    def __init__(self, *facts):
+        self.facts: dict = {}
+        self.log: list[tuple[str, str, str]] = []
+        for fact in facts:
+            self.add(fact)
+
+    def current(self) -> list:
+        replaced = {f.replaces for f in self.facts.values() if f.replaces and not f.retired}
+        return [f for f in self.facts.values() if not f.retired and f.id not in replaced]
+
+    def add(self, fact, *, by: str = "") -> None:
+        self.facts[fact.id] = fact
+        self.log.append(("add", fact.id, by))
+
+    def retire(self, id: str, reason: str, *, by: str = "") -> None:
+        from dataclasses import replace
+        self.facts[id] = replace(self.facts[id], retired=True)
+        self.log.append(("retire", id, by))
+
+    def restore(self, id: str, reason: str, *, by: str = "") -> None:
+        from dataclasses import replace
+        self.facts[id] = replace(self.facts[id], retired=False)
+        self.log.append(("restore", id, by))
+
+    def get(self, id: str):
+        return self.facts.get(id)
+
+    def forgotten(self) -> list:
+        ids = [id for op, id, by in reversed(self.log) if op == "retire" and by in ("you", "worker")]
+        return [self.facts[id] for id in dict.fromkeys(ids) if self.facts[id].retired]
+
+
+class FakeMemoryIndex:
+    """MemoryIndex over a dict: words shared with the query make a hit. refresh() follows the fake logs."""
+
+    def __init__(self, facts=None, episodes=None):
+        self.items: dict = {}
+        self.facts = facts
+        self.episodes = episodes
+        self.searches: list[str] = []
+
+    def upsert(self, items) -> None:
+        for item in items:
+            self.items[item.id] = item
+
+    def remove(self, ids) -> None:
+        for id in ids:
+            self.items.pop(id, None)
+
+    def search(self, query, *, kinds=(), since=None, until=None, limit=20) -> list:
+        from milo.core.memory import Hit
+        from milo.memory.index import terms
+
+        self.searches.append(query)
+        words = set(terms(query))
+        found = []
+        for item in self.items.values():
+            if (kinds and item.kind not in kinds) or (since and item.at < since) or (until and item.at >= until):
+                continue
+            shared = len(words & set(terms(item.text)))
+            if shared or since is not None:
+                found.append((shared, item))
+        found.sort(key=lambda x: -x[0])
+        return [Hit(item, 1 / (60 + rank), rank if shared else None, None, 0.0)
+                for rank, (shared, item) in enumerate(found[:limit])]
+
+    def rebuild(self) -> None:
+        self.items.clear()
+        self.refresh()
+
+    def refresh(self, limit=None) -> int:
+        from datetime import datetime
+
+        from milo.core.memory import IndexItem
+
+        want = {}
+        if self.facts is not None:
+            want |= {f.id: IndexItem.of_fact(f) for f in self.facts.current()}
+        if self.episodes is not None:
+            want |= {e.id: IndexItem.of_episode(e) for e in self.episodes.between(datetime.min, datetime.max)}
+        self.items = want
+        return 0  # all at once, so it is up to date after one call
+
+
+class MemoryRoutineBook:
+    """RoutineBook in memory. `drafts` holds what a worker "wrote" to each draft path."""
+
+    def __init__(self, *routines):
+        from milo.core.routines import Routine  # noqa: F401  for the type of what is stored
+
+        self.routines = {r.slug: r for r in routines}
+        self.broken: dict[str, str] = {}
+        self.drafts: dict[str, str] = {}
+        self.log: list[dict] = []
+        self.deleted: list[str] = []
+
+    def all(self):
+        return sorted(self.routines.values(), key=lambda r: r.name.lower())
+
+    def problems(self) -> dict[str, str]:
+        return dict(self.broken)
+
+    def get(self, slug):
+        return self.routines.get(slug)
+
+    def save(self, routine):
+        self.routines[routine.slug] = routine
+        return routine
+
+    def rename(self, slug, name):
+        from dataclasses import replace
+
+        from milo.core.routines import slugify
+
+        new = slugify(name)
+        if new != slug and new in self.routines:
+            raise ValueError(f"there is a routine called {name} already")
+        renamed = replace(self.routines.pop(slug), slug=new, name=name)
+        self.routines[new] = renamed
+        return renamed
+
+    def update(self, slug, fields):
+        from dataclasses import replace
+
+        if slug not in self.routines:
+            raise ValueError("there is no such routine")
+        if fields.get("paused", "no") not in ("yes", "no"):
+            raise ValueError("paused: must be yes or no")
+        values = {k: (v == "yes" if k == "paused" else v) for k, v in fields.items()}
+        self.routines[slug] = replace(self.routines[slug], **values)
+        return self.routines[slug]
+
+    def delete(self, slug):
+        if self.routines.pop(slug, None) is None:
+            return False
+        self.deleted.append(slug)
+        return True
+
+    def record_run(self, slug, run):
+        self.log.append({**run, "slug": slug})
+
+    def runs(self, slug, n=5):
+        return [r for r in self.log if r["slug"] == slug][-n:]
+
+    def draft_path(self, draft):
+        from pathlib import Path
+
+        return Path("/drafts") / f"{draft}.md"
+
+    def read_draft(self, draft):
+        return self.drafts.get(draft)
+
+    def write_draft(self, draft, text):
+        self.drafts[draft] = text
+
+    def drop_draft(self, draft):
+        self.drafts.pop(draft, None)
+
+
+class MemoryState:
+    """StateFile in memory; `saves` counts the writes."""
+
+    def __init__(self, data: dict | None = None):
+        self.data = data or {}
+        self.saves = 0
+
+    def load(self) -> dict:
+        import copy
+
+        return copy.deepcopy(self.data)
+
+    def save(self, data: dict) -> None:
+        import copy
+
+        self.data = copy.deepcopy(data)
+        self.saves += 1
+
+
+class MemoryConfigFile:
+    """config.toml as a dict. A write that makes it invalid raises and keeps the old one, like the real file."""
+
+    def __init__(self, raw: dict | None = None):
+        self.raw = raw if raw is not None else {}
+        self.writes: list[tuple[str, str, object]] = []
+
+    def read(self):
+        from milo.config import Config
+
+        return Config(self.raw)
+
+    def write(self, section, key, value):
+        from milo.config import Config
+
+        raw = {**self.raw, section: {**self.raw.get(section, {}), key: value}}
+        config = Config(raw)
+        self.raw = raw
+        self.writes.append((section, key, value))
+        return config
+
+
+class FakeChannel:
+    """A chat app in memory: push() what the phone sends, read what Milo sent back from `sent`."""
+
+    name = "fake"
+    label = "Chat"
+
+    def __init__(self):
+        self.inbox: asyncio.Queue = asyncio.Queue()
+        self.sent: list[tuple[str, str]] = []
+        self.questions: list[tuple[str, str, str]] = []
+        self.files: list[tuple[str, str, str]] = []
+        self.file_data: list[bytes] = []
+        self.acks: list[tuple[str, str]] = []
+        self.typing_count = 0
+        self.starts = 0
+        self.closed = False
+        self.fail_start: list[Exception] = []
+        self.fail_send: Exception | None = None
+
+    def push(self, *items) -> None:
+        for item in items:
+            self.inbox.put_nowait(item)
+
+    def texts(self, chat: str | None = None) -> list[str]:
+        return [text for to, text in self.sent if chat is None or to == chat]
+
+    async def start(self) -> None:
+        self.starts += 1
+        if self.fail_start:
+            raise self.fail_start.pop(0)
+
+    async def receive(self) -> list:
+        batch = [await self.inbox.get()]
+        while not self.inbox.empty():
+            batch.append(self.inbox.get_nowait())
+        return batch
+
+    async def send(self, chat: str, text: str) -> None:
+        if self.fail_send is not None:
+            raise self.fail_send
+        self.sent.append((chat, text))
+
+    async def ask(self, chat: str, id: str, question: str) -> None:
+        self.questions.append((chat, id, question))
+
+    async def typing(self, chat: str) -> None:
+        self.typing_count += 1
+
+    async def send_file(self, chat: str, name: str, data: bytes, caption: str = "") -> None:
+        self.files.append((chat, name, caption))
+        self.file_data.append(data)
+
+    async def acknowledge(self, inbound, text: str = "") -> None:
+        self.acks.append((inbound.answer, text))
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+class MemoryRemoteState:
+    def __init__(self, data: dict | None = None):
+        self.data = dict(data or {})
+        self.saves = 0
+
+    def load(self) -> dict:
+        return json_copy(self.data)
+
+    def save(self, data: dict) -> None:
+        self.data = json_copy(data)
+        self.saves += 1
+
+
+def json_copy(data: dict) -> dict:
+    import json
+
+    return json.loads(json.dumps(data))

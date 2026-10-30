@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import random
 import string
+import threading
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -14,7 +15,7 @@ from pathlib import Path
 import numpy as np
 
 from milo.core.meetings import CHUNK_S, TimedWord, Track, Turn
-from milo.core.types import STT_SAMPLE_RATE
+from milo.core.types import STT_SAMPLE_RATE, Interrupted
 from milo.memory.meetings import write_wav
 
 SR = STT_SAMPLE_RATE
@@ -141,6 +142,49 @@ class WordReader:
 
     def spoken_language(self, audio) -> str:
         return "en"
+
+
+class GivingWay(WordReader):
+    """Whisper for dictation and meetings on one thread, like MlxWhisper. It holds its first meeting pass until
+    interrupt() (or 5 s), then raises Interrupted, and logs what ran in which order."""
+
+    def __init__(self, dictated: str):
+        super().__init__()
+        self.dictated = dictated
+        self.log: list[str] = []
+        self.holding = threading.Event()
+        self._stop = threading.Event()
+
+    def words(self, audio, language=None) -> list[TimedWord]:
+        self._stop.clear()  # as the adapter does: an interrupt left over from before isn't for this pass
+        self.log.append("meeting pass")
+        if not self.holding.is_set():
+            self.holding.set()
+            if self._stop.wait(5):
+                self.log.append("gave way")
+                raise Interrupted()
+        return super().words(audio, language)
+
+    def spoken_language(self, audio) -> str:
+        return "en"
+
+    def warm(self) -> None:
+        pass
+
+    def wake(self) -> None:
+        self._stop.clear()
+        self.log.append("wake")
+
+    def transcribe(self, audio, before: str = "", *, quick: bool = False) -> str:
+        self._stop.clear()
+        self.log.append("dictation")
+        return self.dictated
+
+    def preview(self, audio) -> str:
+        return ""
+
+    def interrupt(self) -> None:
+        self._stop.set()
 
 
 class LineVoices:

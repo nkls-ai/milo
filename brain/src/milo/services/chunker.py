@@ -22,7 +22,8 @@ class SpeechChunker:
     The first piece goes early so Milo starts talking: at the first clause or sentence end once there are
     FIRST_MIN_WORDS words, or after FIRST_MAX_WORDS words if no punctuation comes. Every later piece gets a
     budget, the characters the voice can synthesize while the queued audio plays, and ends at the furthest
-    sentence or clause boundary that fits it.
+    sentence or clause boundary that fits it. Without one it waits for the next boundary, up to MAX_CHARS,
+    instead of cutting mid-clause.
     """
 
     def __init__(self):
@@ -56,6 +57,11 @@ class SpeechChunker:
         self._first = False
         return chunk or self.next(budget, final=final)
 
+    def flush_raw(self) -> str:
+        """Everything not yet returned, as it came in. Empties the chunker."""
+        rest, self._buf = self._buf, ""
+        return rest
+
     def flush(self) -> str:
         """Everything not yet returned, ready to speak. "" if nothing is left."""
         rest, self._buf = _tidy(self._buf), ""
@@ -80,7 +86,12 @@ class SpeechChunker:
         near = [e for e in ends if e <= budget * OVERSHOOT]
         if near:
             return near[0]
-        if len(text) > budget:
+        # Even far past the budget, a boundary beats a cut mid-clause: the voice ends a piece as if the sentence
+        # were over, so a mid-clause cut sounds like being cut off. A late piece only means a pause where one fits.
+        later = [e for e in ends if e <= MAX_CHARS]
+        if later:
+            return later[0]
+        if len(text) > MAX_CHARS:
             return _hard_cut(text, budget)
         return None
 

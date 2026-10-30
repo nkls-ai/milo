@@ -6,7 +6,8 @@ from importlib import resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
 
-_DIRS = ("run", "state", "logs", "memory/journal")
+_DIRS = ("run", "state", "logs", "memory/journal", "memory/episodes", "routines")
+_PRIVATE_DIRS = ("secrets",)
 
 
 class Workspace:
@@ -20,6 +21,8 @@ class Workspace:
         _copy_missing(resources.files("milo") / "workspace_template", self.home)
         for sub in _DIRS:
             (self.home / sub).mkdir(parents=True, exist_ok=True)
+        for sub in _PRIVATE_DIRS:
+            (self.home / sub).mkdir(mode=0o700, parents=True, exist_ok=True)
 
     @property
     def config_path(self) -> Path:
@@ -86,6 +89,24 @@ class Workspace:
         return self.state_dir / "transcript.jsonl"
 
     @property
+    def routines_dir(self) -> Path:
+        """One Markdown recipe per routine, readable and editable by hand."""
+        return self.home / "routines"
+
+    @property
+    def routine_runs_path(self) -> Path:
+        return self.state_dir / "routine-runs.jsonl"
+
+    @property
+    def routine_state_path(self) -> Path:
+        """Which recipe versions the user saw, schedule bookkeeping, drafts waiting for a look."""
+        return self.state_dir / "routines.json"
+
+    @property
+    def routine_drafts_dir(self) -> Path:
+        return self.state_dir / "routine-drafts"
+
+    @property
     def meetings_dir(self) -> Path:
         """One folder per meeting: audio chunks, transcript and notes. See memory/meetings.py."""
         return self.home / "meetings"
@@ -93,6 +114,45 @@ class Workspace:
     @property
     def heartbeat_state_path(self) -> Path:
         return self.state_dir / "heartbeat.json"
+
+    @property
+    def episodes_dir(self) -> Path:
+        """memory/episodes/YYYY-MM.jsonl: what happened, append-only."""
+        return self.memory_dir / "episodes"
+
+    @property
+    def facts_path(self) -> Path:
+        """memory/facts.jsonl: every change to what Milo knows, append-only. profile.md is rendered from it."""
+        return self.memory_dir / "facts.jsonl"
+
+    @property
+    def journal_dir(self) -> Path:
+        return self.memory_dir / "journal"
+
+    @property
+    def memory_index_path(self) -> Path:
+        """The search index over memory. A cache: deleting it is safe, Milo builds it again."""
+        return self.state_dir / "memory.sqlite"
+
+    @property
+    def profile_snapshot_path(self) -> Path:
+        """profile.md as Milo last wrote it, to tell the user's edits from his own."""
+        return self.state_dir / "profile.written.md"
+
+    @property
+    def sleep_state_path(self) -> Path:
+        """Which days the nightly consolidation has done, and its call budget."""
+        return self.state_dir / "sleep.json"
+
+    @property
+    def secrets_dir(self) -> Path:
+        """Tokens like the Telegram bot's, readable by the user only. Never sent anywhere, never shared."""
+        return self.home / "secrets"
+
+    @property
+    def remote_state_path(self) -> Path:
+        """Whose phone may reach Milo by message, and whether that is paused (0600)."""
+        return self.state_dir / "messages.json"
 
 
 def _copy_missing(src: Traversable, dst: Path) -> None:

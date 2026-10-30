@@ -17,6 +17,9 @@ class NoTranscriber:
     def warm(self) -> None:
         pass
 
+    def wake(self) -> None:
+        pass
+
     def transcribe(self, audio: Audio) -> str:
         return ""
 

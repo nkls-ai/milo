@@ -89,6 +89,9 @@ def title(tool: str, args: dict) -> str | None:
             paths = args.get("paths") if isinstance(args.get("paths"), list) else []
             what = _quoted(Path(str(paths[0])).name, 40) if len(paths) == 1 else f"{len(paths)} files"
             return f"Putting {what} into {_folder(args.get('folder'))}"
+        case "send_to_phone":
+            name = Path(str(args.get("path") or "")).name
+            return f"Sending {_quoted(name, 40)} to your phone" if name else "Sending a file to your phone"
     return None
 
 
@@ -101,7 +104,7 @@ def _folder(path: object) -> str:
 
 
 KINDS = {"calendar": "app", "reminders": "app", "mail": "app", "notes": "app", "shortcuts": "app",
-         "files": "search"}
+         "files": "search", "send": "app"}
 
 
 def kind(tool: str) -> str:

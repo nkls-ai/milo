@@ -229,6 +229,27 @@ def test_player_streams_chunks_back_to_back_with_silence_on_underrun(fake_sd):
     asyncio.run(main())
 
 
+def test_player_plays_the_device_latency_in_silence_before_it_stops(fake_sd, monkeypatch):
+    monkeypatch.setattr(FakeOutputStream, "latency", 0.001, raising=False)  # 16 samples at 16 kHz
+
+    async def main():
+        player = Player()
+        player.begin(16_000, lambda level: None)
+        [stream] = fake_sd.streams
+        player.feed(np.full(4, 0.5, dtype=np.float32))
+        drain = asyncio.create_task(player.drain())
+        await asyncio.sleep(0)
+        stream.pump()
+        pumps = 0
+        while not stream.stopped:
+            assert stream.pump().tolist() == [0, 0, 0, 0]
+            pumps += 1
+        assert pumps == 4, "16 samples of silence, so the last word reaches the ear before the stream closes"
+        assert await drain is True
+
+    asyncio.run(main())
+
+
 def test_player_interrupt_drops_audio_and_drain_returns_false(fake_sd):
     async def main():
         levels = []
@@ -287,3 +308,52 @@ def test_level_of():
     assert level_of(np.zeros(0, dtype=np.float32)) == 0.0
     assert level_of(np.full(10, 0.5, dtype=np.float32)) == 1.0
     assert 0 < level_of(np.full(10, 0.01, dtype=np.float32)) < 1
+
+
+def test_gpu_decoding_in_windows_matches_one_long_decode():
+    torch = pytest.importorskip("torch")
+    from milo.adapters.tts._gpu_decode import WindowedDecoder, decode_on_gpu
+
+    spf = 960
+
+    class Tokenizer:
+        """Each frame's audio depends on the frames around it, like a convolutional decoder. Like MPS, it
+        gets calls producing more than 65,536 samples wrong."""
+
+        device = "cpu"
+
+        def __init__(self, limit=None):
+            self.limit = limit
+            self.moved = False
+
+        def to(self, device):
+            self.device, self.moved = device, True
+
+        def decode(self, codes):
+            c = codes[0, 0].double()
+            near = torch.stack([torch.roll(c, k) for k in range(-3, 4)]).mean(0)
+            near[:3], near[-3:] = c[:3], c[-3:]
+            audio = (torch.sin(near[:, None] * torch.arange(spf) / 50)).reshape(1, 1, -1)
+            if self.moved and self.limit and audio.shape[-1] > self.limit:
+                audio = audio * 0
+            return types.SimpleNamespace(audio_values=audio)
+
+    codes = torch.randint(0, 1000, (1, 8, 150))
+    whole = Tokenizer().decode(codes).audio_values
+    gpu = Tokenizer(limit=65_536)
+    gpu.to("gpu")
+    assert not torch.allclose(gpu.decode(codes).audio_values, whole), "the fake gets long calls wrong"
+    windowed = WindowedDecoder(gpu.decode, torch, spf)(codes).audio_values
+    assert windowed.shape == whole.shape
+    inner = slice(3 * spf, -3 * spf)  # the fake's own edges aren't convolutional
+    assert torch.allclose(windowed[..., inner].double(), whole[..., inner])
+
+    # "cpu" stands in for the GPU here, so the test runs anywhere; the limit is what makes it MPS-like.
+    model = types.SimpleNamespace(audio_tokenizer=Tokenizer(limit=65_536))
+    assert decode_on_gpu(model, codes[0, :, :49], torch, "cpu")
+    assert isinstance(model.audio_tokenizer.decode, WindowedDecoder)
+
+    broken = types.SimpleNamespace(audio_tokenizer=Tokenizer())
+    broken.audio_tokenizer.decode = lambda c: types.SimpleNamespace(audio_values=torch.rand(1, 1, c.shape[-1] * spf))
+    assert not decode_on_gpu(broken, codes[0, :, :49], torch, "cpu"), "a decoder that disagrees stays on the CPU"
+    assert not isinstance(broken.audio_tokenizer.decode, WindowedDecoder)

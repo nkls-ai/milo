@@ -162,3 +162,13 @@ def test_live_settings_follow_config_toml_without_a_restart(tmp_path):
     os.utime(path, (2, 2))
     now[0] = 6
     assert live.updates() is UpdateMode.QUIET, "a broken file keeps the last good value"
+
+
+def test_a_change_from_the_settings_window_applies_at_once(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text('[chat]\nupdates = "bubble"\n')
+    live = LiveSettings(path, lambda text: ("bubble", 3), "bubble", 3, check_s=2, monotonic=lambda: 0.0)
+    path.write_text('[chat]\nupdates = "chatty"\n')
+    os.utime(path, (5, 5))
+    live.use("chatty", 2)
+    assert (live.updates(), live.max_helpers()) == (UpdateMode.CHATTY, 2)

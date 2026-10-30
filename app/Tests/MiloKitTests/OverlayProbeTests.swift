@@ -25,11 +25,19 @@ struct OverlayProbeTests {
         pump(1)
         report.append("visible: \(panel.occlusionState.contains(.visible))")
 
-        for style in [CharacterStyle.pip, .classic, .pip] {
+        for style in CharacterStyle.allCases + [.pip] {
             model.character = style
             pump(3)
             report.append("\(style) idle cpu: \(String(format: "%.2f", cpu(over: 20)))%")
         }
+        model.drowsy = true
+        for style in CharacterStyle.allCases {
+            model.character = style
+            pump(3)
+            report.append("\(style) asleep cpu: \(String(format: "%.2f", cpu(over: 15)))%")
+        }
+        model.drowsy = false
+        model.character = .pip
 
         let home = panel.frame.origin
         let primary = NSScreen.screens[0].frame
@@ -76,15 +84,34 @@ struct OverlayProbeTests {
             for i in 0..<300 { host.rootView = make(i); host.cacheDisplay(in: host.bounds, to: rep) }
             return Date().timeIntervalSince(began) / 300 * 1000
         }
-        let pip = measure { i in
-            AnyView(PipFigure(state: .idle, emotion: .neutral, asleep: false, level: 0, connected: true,
-                              pose: LifePose(), time: Double(i) / 15))
+        let costs = CharacterStyle.allCases.map { style in
+            let ms = measure { i in AnyView(CharacterFigure(for: style, pose: LifePose(lean: i % 2 == 0 ? 0 : 0.01), time: 0)) }
+            return String(format: "%@ %.2f ms", style.rawValue, ms)
         }
-        let classic = measure { i in
-            AnyView(CharacterFigure(state: .idle, emotion: .neutral, asleep: false, level: 0, connected: true,
-                                    pose: LifePose(lean: i % 2 == 0 ? 0 : 0.01), floating: false))
+        // Live: loops in their own hosting views, as on screen. A pose change re-lays out and redraws.
+        func live(_ make: (Int) -> AnyView) -> Double {
+            let host = NSHostingView(rootView: make(0))
+            host.frame = NSRect(x: 0, y: 0, width: 132, height: 132)
+            let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            window.contentView = host
+            window.orderFrontRegardless()
+            defer { window.orderOut(nil) }
+            func step(_ i: Int) {
+                host.rootView = make(i)
+                host.layoutSubtreeIfNeeded()
+                host.display()
+                CATransaction.flush()
+            }
+            for i in 0..<20 { step(i) }
+            let began = Date()
+            for i in 0..<300 { step(i) }
+            return Date().timeIntervalSince(began) / 300 * 1000
         }
-        let line = String(format: "frame cost: pip %.2f ms, classic %.2f ms", pip, classic)
+        let liveCosts = CharacterStyle.allCases.map { style in
+            let ms = live { i in AnyView(CharacterFigure(for: style, pose: LifePose(blink: i % 2 == 0), size: 120)) }
+            return String(format: "%@ %.2f ms", style.rawValue, ms)
+        }
+        let line = "frame cost: " + costs.joined(separator: ", ") + "\nlive blink cost: " + liveCosts.joined(separator: ", ")
         try line.write(to: dir.appendingPathComponent("frame-cost.txt"), atomically: true, encoding: .utf8)
     }
 

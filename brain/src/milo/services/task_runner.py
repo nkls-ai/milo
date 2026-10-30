@@ -24,7 +24,7 @@ NO_SCREEN = (f"(You have no milo-mac tools for this task. If it can only be done
 
 def first_prompt(helper: Helper, *, no_screen: bool) -> str:
     """The task as the talker wrote it, plus whatever the user changed since. Self-contained."""
-    parts = [helper.description]
+    parts = [helper.instructions or helper.description]
     if helper.amendments:
         changes = "\n".join(f"- {a}" for a in helper.amendments)
         parts.append(f"The user changed the task since:\n{changes}\nAn earlier try may have done part of it "
