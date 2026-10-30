@@ -7,6 +7,8 @@ Milo is two processes on one Mac:
 
 They talk over a Unix socket at `~/Milo/run/brain.sock` (mode 0600) using JSON objects, one per line. Every message is listed in [`protocol/messages.json`](../protocol/messages.json) and defined in `brain/src/milo/core/events.py`. Both test suites decode that file, so the two sides can't drift apart silently.
 
+Events that only draw (state, bubble, levels) go to every connected app. Requests that need one app to act and answer (`look_request`, `hands_request`, `app_request`) go to the newest connection only (`AppLink`), and if that app hangs up, what it still owed fails at once.
+
 Only one brain runs per workspace. It takes an `flock` on `~/Milo/run/brain.lock` before it loads anything and holds it until the process ends, and a second brain exits at once. The app starts a brain only while nobody holds that lock: after a restart it waits for the old brain to let go, and it leaves a brain started by hand alone. It stops its brain with SIGTERM, since `uv run` passes that on and swallows SIGINT. Two brains would each load Whisper and OmniVoice, which on 16 GB fills swap and makes every Whisper pass several times slower.
 
 `~/Milo/` is the workspace. It holds `config.toml`, Milo's persona for the chat model (`persona.md`), the agent's instructions (`AGENTS.md`, `CLAUDE.md`), `memory/`, `reminders.md`, `state/` and `logs/`. The harness runs with this folder as its working directory, so the agent reads and edits its own memory with ordinary file tools.

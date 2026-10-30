@@ -416,11 +416,19 @@ class UpperCleaner:
 
 
 class RecordingSink:
-    def __init__(self):
+    """An EventSink, and an AppLink to one app on connection `app` (None: no app is connected)."""
+
+    def __init__(self, app: int | None = 1):
         self.events: list[Event] = []
+        self.app = app
 
     def emit(self, event: Event) -> None:
         self.events.append(event)
+
+    def request(self, event: Event) -> int | None:
+        if self.app is not None:
+            self.events.append(event)
+        return self.app
 
     def of(self, cls: type) -> list:
         return [e for e in self.events if isinstance(e, cls)]

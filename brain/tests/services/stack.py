@@ -96,7 +96,7 @@ class Stack:
         self.speaker = Speaker(self.voice, self.output, self.ui, executor)
         self.approvals = Approvals(self.ui, self.speaker, timeout_s=self.confirm_timeout_s,
                                    quiet=lambda: self.live_talk.busy)
-        self.bridge = AppBridge(self.ui, timeout_s=self.confirm_timeout_s)
+        self.bridge = AppBridge(self.sink, timeout_s=self.confirm_timeout_s)
         self.hands = HandsService(self.hands_port, self.approvals, self.ui)
         self.runner = TaskRunner(self.harness, self.ledger, self.clock, self.context, background=self.background,
                                  hands=self.hands)

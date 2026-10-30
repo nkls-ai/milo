@@ -310,3 +310,34 @@ def test_an_app_that_stops_reading_gets_no_more_levels_and_is_cut_off_when_it_ha
             await server.close()
 
     asyncio.run(run())
+
+
+def test_a_request_goes_to_the_newest_app_only_and_its_hanging_up_is_reported(sock_path):
+    # M2 in docs/review/2026-10-30.md: requests were broadcast, so two apps would both click, type and add
+    # the reminder.
+    gone: list[int] = []
+
+    async def run():
+        server = UnixSocketServer(sock_path, lambda c: asyncio.sleep(0), lambda: list(GREETING))
+        server.on_client_gone.append(gone.append)
+        await server.start()
+        try:
+            old, new = await Client.connect(sock_path), await Client.connect(sock_path)
+            await old.read_greeting()
+            await new.read_greeting()
+            assert server.request(Bubble("only one of you")) == 2
+            assert await new.read() == {"type": "bubble", "text": "only one of you"}
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(old.reader.readline(), 0.1)
+            await new.close()
+            await asyncio.sleep(0.05)
+            assert gone == [2]
+            assert server.request(Bubble("now you")) == 1, "the app still here answers from now on"
+            assert await old.read() == {"type": "bubble", "text": "now you"}
+            await old.close()
+            await asyncio.sleep(0.05)
+            assert server.request(Bubble("nobody")) is None
+        finally:
+            await server.close()
+
+    asyncio.run(run())

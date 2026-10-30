@@ -41,7 +41,11 @@ class UnixSocketServer:
         self._on_connect = on_connect
         self._on_disconnect = on_disconnect
         self._clients: set[asyncio.StreamWriter] = set()
+        self._ids: dict[asyncio.StreamWriter, int] = {}
+        self._next_id = 0
         self._server: asyncio.Server | None = None
+        self.on_client_gone: list[Callable[[int], None]] = []
+        """Called with a connection id when that app hangs up, so requests sent to it fail at once."""
 
     def connected(self) -> bool:
         """Some app is connected and would see an event."""
@@ -67,6 +71,19 @@ class UnixSocketServer:
                 writer.write(line)
             except (ConnectionError, RuntimeError):
                 self._clients.discard(writer)
+
+    def request(self, event: Event) -> int | None:
+        """AppLink: send `event` to the newest connected app only. Its connection id, or None if there is none.
+        An older connection is usually an app on its way out (a restart) or a second copy that shouldn't act."""
+        live = [w for w in self._clients if not w.is_closing()]
+        if not live:
+            return None
+        writer = max(live, key=lambda w: self._ids[w])
+        try:
+            writer.write(_encode(event))
+        except (ConnectionError, RuntimeError):
+            return None
+        return self._ids[writer]
 
     async def start(self) -> None:
         claim_socket(self.path)
@@ -109,6 +126,8 @@ class UnixSocketServer:
         try:
             for event in self._on_connect():
                 writer.write(_encode(event))
+            self._next_id += 1
+            self._ids[writer] = self._next_id
             self._clients.add(writer)
             while True:
                 try:
@@ -123,7 +142,14 @@ class UnixSocketServer:
             pass
         finally:
             self._clients.discard(writer)
+            id = self._ids.pop(writer, None)
             writer.close()
+            if self._server is not None and id is not None:
+                for gone in self.on_client_gone:
+                    try:
+                        gone(id)
+                    except Exception:
+                        log.exception("handling an app's disconnect failed")
             if self._server is not None and not self.connected():
                 try:
                     self._on_disconnect()

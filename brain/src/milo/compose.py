@@ -179,7 +179,8 @@ def build(home: Path) -> Runtime:
     approvals = Approvals(ui, speaker, ActionPolicy(config.approval_levels), timeout_s=config.approvals.timeout_s,
                           speak=config.approvals.speak, quiet=lambda: live_talk.busy or mic.active,
                           transcript=transcript)
-    bridge = AppBridge(ui, connected=server.connected)
+    bridge = AppBridge(server)  # each request to one app; one that hangs up fails what it owed at once
+    server.on_client_gone.append(bridge.app_gone)
     live_settings = LiveSettings(workspace.config_path, _live_settings, config.chat.updates,
                                  config.harness.max_helpers)
     updates = Updates(ui, live_settings.updates, clock,

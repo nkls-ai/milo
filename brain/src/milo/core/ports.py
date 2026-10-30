@@ -388,6 +388,16 @@ class EventSink(Protocol):
     def emit(self, event: Event) -> None: ...
 
 
+class AppLink(Protocol):
+    """Requests that exactly one app must carry out and answer: a look, a Mac action, Calendar work."""
+
+    def request(self, event: Event) -> int | None:
+        """Send `event` to the app that answers requests (the newest connected one, if several are). Returns
+        that app's connection id, or None if no app is connected. The transport reports a connection that
+        closes, so whoever waits on it can stop waiting (AppBridge.app_gone)."""
+        ...
+
+
 @runtime_checkable
 class ReminderSource(Protocol):
     def all(self) -> list[Reminder]: ...

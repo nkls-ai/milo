@@ -9,7 +9,7 @@ from milo.services.app_bridge import NOT_RUNNING, AppBridge
 from milo.services.approvals import NO_ANSWER, ActionPolicy, Approvals, yes_or_no
 from milo.services.tool_requests import ToolRequests
 from milo.services.transcript import Transcript
-from tests.fakes import FakeHands, MemoryTranscript
+from tests.fakes import FakeHands, MemoryTranscript, RecordingSink
 from tests.services.stack import Stack, settle
 
 
@@ -184,10 +184,10 @@ def test_the_app_bridge_reports_app_errors_and_a_missing_app_plainly():
         s.bridge.resolve(AppResponse(req.id, False, error="Milo isn't allowed to use your reminders."))
         with pytest.raises(Exception, match="isn't allowed"):
             await failing
-        offline = AppBridge(s.ui, connected=lambda: False)
+        offline = AppBridge(RecordingSink(app=None))
         with pytest.raises(Exception, match=NOT_RUNNING):
             await offline.call("reminders.list", {})
-        silent = AppBridge(s.ui, timeout_s=0.01)
+        silent = AppBridge(s.sink, timeout_s=0.01)
         with pytest.raises(Exception, match="didn't answer"):
             await silent.call("reminders.list", {})
 
