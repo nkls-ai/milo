@@ -6,6 +6,7 @@ import logging
 import os
 import socket
 import struct
+import sys
 from collections.abc import Awaitable, Callable, Iterable
 from pathlib import Path
 
@@ -119,7 +120,7 @@ class UnixSocketServer:
         self.path.unlink(missing_ok=True)
 
     async def _client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        if peer_uid(writer.get_extra_info("socket")) not in (os.getuid(), None):
+        if not same_user(writer.get_extra_info("socket")):
             log.warning("refusing a connection from another user")
             writer.close()
             return
@@ -177,6 +178,13 @@ def _encode(event: Event) -> bytes:
 
 
 _SOL_LOCAL, _LOCAL_PEERCRED = 0, 0x001  # macOS <sys/un.h>
+
+
+def same_user(sock: socket.socket | None) -> bool:
+    """Whether the process on the other end runs as this user. On macOS LOCAL_PEERCRED always answers, so
+    no answer is refused there; elsewhere the 0700 run/ folder is the check."""
+    uid = peer_uid(sock)
+    return uid == os.getuid() if uid is not None or sys.platform == "darwin" else True
 
 
 def peer_uid(sock: socket.socket | None) -> int | None:

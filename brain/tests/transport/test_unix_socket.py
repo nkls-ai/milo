@@ -341,3 +341,18 @@ def test_a_request_goes_to_the_newest_app_only_and_its_hanging_up_is_reported(so
             await server.close()
 
     asyncio.run(run())
+
+
+def test_a_peer_whose_user_the_mac_cant_tell_is_refused(monkeypatch):
+    # L3: macOS always answers LOCAL_PEERCRED, so no answer there means something is off: refuse.
+    import sys
+
+    from milo.transport import unix_socket
+
+    monkeypatch.setattr(unix_socket, "peer_uid", lambda sock: None)
+    monkeypatch.setattr(sys, "platform", "darwin")
+    assert not unix_socket.same_user(None)
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert unix_socket.same_user(None), "elsewhere the 0700 run/ folder is the check"
+    monkeypatch.setattr(unix_socket, "peer_uid", lambda sock: os.getuid() + 1)
+    assert not unix_socket.same_user(None)

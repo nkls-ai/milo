@@ -7,7 +7,7 @@ import os
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
-from .unix_socket import claim_socket, peer_uid
+from .unix_socket import claim_socket, same_user
 
 log = logging.getLogger("milo.transport.tools")
 
@@ -50,7 +50,7 @@ class ToolSocketServer:
         self.path.unlink(missing_ok=True)
 
     async def _client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        if peer_uid(writer.get_extra_info("socket")) not in (os.getuid(), None):
+        if not same_user(writer.get_extra_info("socket")):
             log.warning("refusing a tool connection from another user")
             writer.close()
             return
