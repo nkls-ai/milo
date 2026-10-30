@@ -70,7 +70,7 @@ def test_a_risky_click_waits_for_yes_and_no_means_it_never_runs():
     assert t.confirm.asked == ["I'm about to click “Send” in Mail. Go ahead?"]
     assert "The user said no" in error
     assert t.port.actions == []
-    assert t.steps() == [("Clicking “Send” in Mail", "failed")]
+    assert t.steps() == [("Clicking “Send” in Mail", "running"), ("Clicking “Send” in Mail", "failed")]
     assert t.sink.of(HandsSession) == [], "nothing happened on screen"
 
 
@@ -86,11 +86,16 @@ def test_password_fields_are_never_typed_into():
     assert t.confirm.asked == [] and t.port.actions == []
 
 
-def test_a_risky_script_names_the_app_in_its_question():
+def test_a_script_question_shows_the_script_and_names_its_apps():
     t = Setup(confirm=FakeConfirm(False))
     t.fails("run_applescript", {"script": 'tell application "Mail" to send m'})
-    assert t.confirm.asked == ["I'm about to run a script in Mail that can send. The script is in my window. "
-                              "Go ahead?"]
+    assert t.confirm.asked == ['I\'m about to run a script for Mail that can send:\n\ntell application "Mail" to send m'
+                               '\n\nGo ahead?']
+    assert t.steps() == [("Controlling Mail", "running"), ("Controlling Mail", "failed")], "shown before asking"
+    long = 'tell application "Numbers" to activate\n' + "-- x\n" * 100 + 'tell application "System Events" to beep'
+    t.fails("run_applescript", {"script": long})
+    assert t.confirm.asked[1] == ("I'm about to run a script for Numbers, System Events that can run other programs "
+                                  "or type for you. The whole script is in my window. Go ahead?")
 
 
 def test_applescript_can_be_turned_off():

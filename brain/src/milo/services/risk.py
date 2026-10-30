@@ -44,6 +44,10 @@ _RISKY_WORDS = (
 _RISKY = re.compile(r"(?<!\w)(" + "|".join(re.escape(w) for w in sorted(_RISKY_WORDS, key=len, reverse=True))
                     + r")(?!\w)", re.IGNORECASE)
 _SECRET = re.compile(r"(?<!\w)(password|passwort|kennwort|passcode|keychain|schlüsselbund)(?!\w)", re.IGNORECASE)
+# Only for wording the question; every script asks anyway.
+_CODE = re.compile(r"\b(do\s+shell\s+script|do\s+script|do\s+javascript|run\s+script|load\s+script|osascript"
+                   r"|use\s+framework|current\s+application|system\s+events|keystroke|key\s+code)\b|«",
+                   re.IGNORECASE)
 _SETTINGS_APPS = ("system settings", "system preferences", "systemeinstellungen", "com.apple.systempreferences")
 _SECRET_APPS = ("keychain access", "schlüsselbundverwaltung", "passwords", "passwörter", "com.apple.keychainaccess",
                 "com.apple.passwords")
@@ -120,6 +124,8 @@ def classify(tool: str, args: dict, target: dict) -> Verdict:
         script = str(args.get("script", ""))
         if _SECRET.search(script):
             return Verdict(Risk.NEVER, "passwords")
+        if _CODE.search(script):
+            return Verdict(Risk.ASK, "run other programs or type for you")
         risky = _words(script)
         return risky if risky.risk is Risk.ASK else Verdict(Risk.ASK, "run a script")
     return OK

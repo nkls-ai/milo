@@ -42,6 +42,8 @@ from milo.services.risk import Risk, classify, normalize_combo
     ("run_applescript", {"script": 'tell application "Finder" to empty trash'}, {}, Risk.ASK, "empty trash"),
     ("run_applescript", {"script": 'tell application "Numbers" to activate'}, {}, Risk.ASK, "run a script"),
     ("run_applescript", {"script": 'tell application ("System " & "Events") to keystroke "x"'}, {}, Risk.ASK,
+     "run other programs or type for you"),
+    ("run_applescript", {"script": 'set x to "Ev"\ntell application ("System " & x) to beep'}, {}, Risk.ASK,
      "run a script"),
     ("run_applescript", {"script": 'tell application "Keychain Access" to activate'}, {}, Risk.NEVER, "passwords"),
     ("run_applescript", {"script": 'set value of text field "Password" to "x"'}, {}, Risk.NEVER, "passwords"),

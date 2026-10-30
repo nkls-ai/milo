@@ -103,6 +103,7 @@ class HandsService:
                 self._step(task_id, step, StepStatus.FAILED)
                 raise HandsError(f"Not allowed: Milo never touches {verdict.reason}. Ask the user to do this part.")
             if verdict.risk is Risk.ASK:
+                self._transcript.task_step(task_id, step)  # the user can read the whole thing before answering
                 question = confirm_question(tool, args, target, verdict.reason)
                 if not await self._confirm.confirm(question):
                     self._step(task_id, step, StepStatus.FAILED)
@@ -197,10 +198,12 @@ def confirm_question(tool: str, args: dict, target: dict, reason: str) -> str:
     if tool == "key":
         return f"I'm about to press {_pretty_combo(str(args['combo']))}{in_app}, which may {reason}. Go ahead?"
     if tool == "run_applescript":
-        told = _TELL.search(str(args["script"]))
-        where = f" in {told.group(1)}" if told else ""
+        script = str(args["script"]).strip()
+        apps = list(dict.fromkeys(_TELL.findall(script)))
+        where = f" for {', '.join(apps)}" if apps else ""
         can = "" if reason == "run a script" else f" that can {reason}"
-        return f"I'm about to run a script{where}{can}. The script is in my window. Go ahead?"
+        shown = f"\n\n{script}\n\n" if len(script) <= 300 else " The whole script is in my window. "
+        return f"I'm about to run a script{where}{can}.{shown}Go ahead?".replace(".\n", ":\n", 1)
     return f"I'm about to {reason}{in_app}. Go ahead?"
 
 
