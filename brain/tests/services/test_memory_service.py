@@ -7,11 +7,13 @@ from datetime import datetime, timedelta
 
 from milo.core.events import Confirm, Facts
 from milo.core.memory import Episode, Fact, TurnContext, new_id
+from milo.core.routines import Routine, RoutineInput
 from milo.core.types import ScreenCapture
-from milo.services.episode_stubs import EpisodeDictations, EpisodeEyes, EpisodeTranscript
+from milo.services.episode_stubs import EpisodeDictations, EpisodeEyes, EpisodeTranscript, RoutineEpisodes
 from milo.services.memory import MEMORY_RULES
 from milo.services.memory_requests import MemoryRequests
-from tests.fakes import FakeEyes, FakeLiveModel, MemoryTranscript
+from milo.services.transcript import Transcript
+from tests.fakes import FakeEyes, FakeHarness, FakeLiveModel, MemoryRoutineBook, MemoryTranscript
 from tests.services.stack import Stack, settle
 
 ANNA = "Anna is the user's sister. Her birthday is March 3."
@@ -116,6 +118,40 @@ def test_turns_and_tasks_become_episode_stubs():
     assert first.summary == "The user said: “Call Anna about dinner” Milo answered: “I'll remind you.”"
     assert first.people == ("Anna",) and first.apps == ("Mail",)
     assert episodes[2].summary == "Task: Read Anna's email Result: She asks to move dinner."
+
+
+def test_a_routine_run_is_one_task_episode_named_after_the_routine():
+    report = Routine("monday-report", "Monday report", inputs=(RoutineInput("month", "Which month?"),),
+                     apps=("Numbers",), body="1. Sum the sales.\n   Check: one total.")
+    s = stack(routine_book=MemoryRoutineBook(report), harness=FakeHarness("Sent Anna the October total."))
+    s.routines._state = {"approved": {report.slug: report.fingerprint()}}
+    # Wired as compose.py does: the transcript's task stub leaves routine runs to RoutineEpisodes.
+    store = EpisodeTranscript(MemoryTranscript(), s.memory.record, now=s.clock.now, people=s.memory.people_in,
+                              elsewhere=s.routines.is_run)
+    s.tasks._transcript = Transcript(s.ui, store, s.clock)
+    s.routines.on_episode = RoutineEpisodes(s.memory.record, people=s.memory.people_in)
+
+    async def go():
+        assert s.routines.run("Monday report", "October")
+        await settle()
+        await s.routines.idle()
+        await s.tasks.idle()
+
+    asyncio.run(go())
+    [helper] = s.tasks.helpers
+    [episode] = s.episodes.between(datetime(2026, 10, 29), datetime(2026, 10, 30))
+    assert episode.kind == "task" and not episode.trusted and episode.source == f"transcript:{helper.id}"
+    assert episode.summary == "Routine “Monday report” for month October. Result: Sent Anna the October total."
+    assert episode.apps == ("Numbers",) and episode.people == ("Anna",)
+    assert not s.routines.is_run(helper.id)
+
+    async def task():
+        s.tasks.submit("Tidy the desktop")  # an ordinary task still gets the transcript's stub
+        await s.tasks.idle()
+
+    asyncio.run(task())
+    episodes = s.episodes.between(datetime(2026, 10, 29), datetime(2026, 10, 30))
+    assert sorted(e.summary for e in episodes) == [episode.summary, "Task: Tidy the desktop Result: ok"]
 
 
 def test_dictations_into_one_app_make_one_episode():

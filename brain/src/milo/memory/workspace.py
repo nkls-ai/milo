@@ -6,7 +6,7 @@ from importlib import resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
 
-_DIRS = ("run", "state", "logs", "memory/journal", "memory/episodes")
+_DIRS = ("run", "state", "logs", "memory/journal", "memory/episodes", "routines")
 
 
 class Workspace:
@@ -84,6 +84,24 @@ class Workspace:
     @property
     def transcript_path(self) -> Path:
         return self.state_dir / "transcript.jsonl"
+
+    @property
+    def routines_dir(self) -> Path:
+        """One Markdown recipe per routine, readable and editable by hand."""
+        return self.home / "routines"
+
+    @property
+    def routine_runs_path(self) -> Path:
+        return self.state_dir / "routine-runs.jsonl"
+
+    @property
+    def routine_state_path(self) -> Path:
+        """Which recipe versions the user saw, schedule bookkeeping, drafts waiting for a look."""
+        return self.state_dir / "routines.json"
+
+    @property
+    def routine_drafts_dir(self) -> Path:
+        return self.state_dir / "routine-drafts"
 
     @property
     def heartbeat_state_path(self) -> Path:

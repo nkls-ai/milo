@@ -56,6 +56,8 @@ public enum BrainEvent: Equatable, Sendable {
     case facts([MemoryFact])
     /// The dictation style in use, on connect and after a change.
     case dictationStream(DictationStyle)
+    /// The user's routines by name, and the recipe drafts waiting for a look.
+    case routines([RoutineInfo], drafts: [RoutineDraft])
     case unknown(String)
 }
 
@@ -70,6 +72,7 @@ extension BrainEvent: Decodable {
         case handsFreeMaxSeconds = "hands_free_max_s"
         case character
         case helpers
+        case routines, drafts
     }
 
     public init(from decoder: Decoder) throws {
@@ -123,6 +126,9 @@ extension BrainEvent: Decodable {
             // A style this app doesn't know yet: ignore the message rather than show a wrong checkmark.
             self = DictationStyle(rawValue: try c.decode(String.self, forKey: .stream)).map { .dictationStream($0) }
                 ?? .unknown(type)
+        case "routines":
+            self = .routines(try c.decodeIfPresent([RoutineInfo].self, forKey: .routines) ?? [],
+                             drafts: try c.decodeIfPresent([RoutineDraft].self, forKey: .drafts) ?? [])
         default: self = .unknown(type)
         }
     }

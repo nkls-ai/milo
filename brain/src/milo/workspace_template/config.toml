@@ -161,6 +161,13 @@ character = "pip"                 # pip (the bird) | classic (the purple robot)
 # Ask Milo about the selection, or the front window if nothing is selected. "" turns it off.
 whats_this_key = "ctrl+option+m"
 
+[routines]
+# Recipes for work you want done again ("remember how to do this, call it the Monday report"), kept as
+# Markdown in ~/Milo/routines. Schedules run on the heartbeat, without a model call to decide.
+enabled = true
+max_runs_per_day = 6              # scheduled runs a day, all routines together; asking yourself isn't capped
+grace_hours = 4                   # a run the Mac slept through runs at wake if at most this late, else he tells you
+
 [hands]
 # Let the worker agent use the Mac: read windows, press buttons, type and click. Needs Accessibility,
 # and Screen Recording for screenshots. Touching the mouse or keyboard, or esc, stops it at once.

@@ -11,7 +11,9 @@ from milo.config import UiSettings
 from milo.core.events import (Bubble, Dictation, DictationStream, EmotionChanged, Facts, HandsSession, Heard, Level,
                               ListenStart, ListenStop, Looking, Mute, Partial, SetDictationStream, StateChanged, Status,
                               TextInput, UiConfig, parse_command)
+from milo.core.events import Routines
 from milo.core.memory import Fact
+from milo.core.routines import Routine
 from milo.core.types import Emotion, HandsError, ListenMode, LiveMode, MiloState, Nudge, ScreenCapture
 from milo.services.app_bridge import AppEyes, AppHands
 from tests.fakes import FakeEyes, FakeHands, FakeLiveModel, FakeTranscriber
@@ -80,7 +82,8 @@ def check_listen_confirm(s: Stack, msg: dict) -> None:
 
 def check_get_history(s: Stack, msg: dict) -> None:
     run(s, parse_command(msg))
-    assert s.sink.events == []  # the stack has no transcript, so there is nothing to send
+    # The stack has no transcript, so only the routines go out: the window lists them.
+    assert s.sink.events == [Routines([], [])]
 
 
 def check_context(s: Stack, msg: dict) -> None:
@@ -234,7 +237,46 @@ def check_set_dictation_stream(s: Stack, msg: dict) -> None:
     assert s.sink.events == [DictationStream(msg["stream"])]
 
 
+def check_routine(s: Stack, msg: dict) -> None:
+    report = Routine("monday-report", "Monday report", body="1. Add up the sales.\n   Check: one total.")
+    s.routine_book.save(report)
+    s.routine_book.save(Routine("tidy-downloads", "Tidy downloads", paused=True, body="Tidy."))
+    s.routine_state.data = {"approved": {"monday-report": report.fingerprint()}}
+    s.routines._state = s.routine_state.load()
+
+    async def go():
+        await s.brain.handle(parse_command(msg))
+        await s.routines.idle()
+        await s.tasks.idle()
+
+    asyncio.run(go())
+    if msg["action"] == "run":
+        assert [h.title for h in s.tasks.helpers] == ["Monday report"]
+        assert "Add up the sales." in s.harness.calls[0][0]
+    else:
+        assert not s.routine_book.get("tidy-downloads").paused
+
+
+def check_routine_draft_answer(s: Stack, msg: dict) -> None:
+    text = "---\nname: Invoice folder\n---\n\n1. Move the invoices.\n"
+    s.routine_state.data = {"drafts": {msg["id"]: {"name": "Invoice folder", "base": "invoice-folder",
+                                                   "schedule": None, "ready": True, "text": text}}}
+    s.routines._state = s.routine_state.load()
+    s.routine_book.drafts[msg["id"]] = text
+
+    async def go():
+        await s.brain.handle(parse_command(msg))
+        await s.routines.idle()
+
+    asyncio.run(go())
+    saved = s.routine_book.get("invoice-folder")
+    assert (saved is not None) is msg["save"] and not s.routine_book.drafts
+    assert s.routine_state.data["approved"]["invoice-folder"] == saved.fingerprint()
+
+
 CHECKS = {
+    "routine": check_routine,
+    "routine_draft_answer": check_routine_draft_answer,
     "stop_helper": check_stop_helper,
     "get_facts": check_get_facts,
     "forget_fact": check_forget_fact,

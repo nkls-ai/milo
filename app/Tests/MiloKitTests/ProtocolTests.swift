@@ -83,6 +83,29 @@ private func entries(_ key: String) throws -> [[String: Any]] {
                            topic: "people", since: "2026-10-30T18:05:41"),
             ]),
             .dictationStream(.preview),
+            .routines([
+                RoutineInfo(id: "monday-report", name: "Monday report",
+                            description: "Sums last week's sales into a one-page report.",
+                            schedule: "every Monday at 09:00", lastRun: "2026-10-26 09:00, done",
+                            nextRun: try #require(RoutineInfo.parseTime("2026-11-02T09:00")), inputs: ["month"]),
+                RoutineInfo(id: "tidy-downloads", name: "Tidy downloads", paused: true),
+                RoutineInfo(id: "broken", name: "broken", problem: "it must start with a line of three dashes (---)"),
+            ], drafts: [
+                RoutineDraft(id: "d4e5f6a7", name: "Invoice folder", recipe: """
+                    ---
+                    name: Invoice folder
+                    schedule:
+                    paused: no
+                    version: 1
+                    ---
+
+                    ## Steps
+
+                    1. Move this month's invoices from Downloads into Invoices.
+                       Check: Downloads has no invoice left.
+
+                    """),
+            ]),
         ])
     }
 
@@ -119,6 +142,9 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .getFacts, .forgetFact(id: "01JBF7A1B2C3D4E5F6G7H8J9KM"),
             .editFact(id: "01JBF7A1B2C3D4E5F6G7H8J9KM", text: "Anna is the user's sister. Her birthday is March 4."),
             .setDictationStream(.type),
+            .routine(id: "monday-report", action: .run),
+            .routine(id: "tidy-downloads", action: .resume),
+            .routineDraftAnswer(id: "d4e5f6a7", save: true),
         ]
         let encoder = JSONEncoder()
         let encoded = try commands.map { command in

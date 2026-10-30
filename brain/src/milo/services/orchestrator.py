@@ -93,12 +93,19 @@ class Orchestrator:
         self._sent: Helpers | None = None
         self.on_result: Callable[[str, str], None] | None = None
         """Called with (description, what Milo said) after each finished helper, e.g. LiveTalk.note."""
+        self.on_done: list[Callable[[Helper], None]] = []
+        """Hear every helper that ended, after its own `on_finish` (routines look for tasks that repeat)."""
 
     # ---- what the talker and the app see
 
     @property
     def helpers(self) -> list[Helper]:
         return list(self._helpers)
+
+    @property
+    def reporting(self) -> bool:
+        """A helper's result is waiting to be said or being said."""
+        return bool(self._reports)
 
     @property
     def busy(self) -> bool:
@@ -129,13 +136,16 @@ class Orchestrator:
     # ---- what the talker (and the Stop button) can do
 
     def submit(self, description: str, *, title: str = "", screen: bool | None = None,
-               careful: bool = False) -> Helper:
+               careful: bool = False, instructions: str = "",
+               on_finish: Callable[[Helper], None] | None = None) -> Helper:
         """Hand off a task. Returns at once with the new helper, queued or already working. `careful`: the
-        conversation that asked for it read the screen, so its tools ask before changes too."""
+        conversation that asked for it read the screen, so its tools ask before changes too. `instructions`
+        replace the description for the worker (a routine's recipe); `on_finish` hears how it ended."""
         screen = (needs_screen(description) if screen is None else screen) and self._runner.has_screen
         self._numbers += 1
         helper = Helper(self._transcript.task_started(description), self._numbers, short_title(description, title),
-                        description, screen, self._clock.monotonic(), careful=careful)
+                        description, screen, self._clock.monotonic(), careful=careful, instructions=instructions,
+                        on_finish=on_finish)
         log.info("helper %d %s%s, %s", helper.number, "on the screen" if screen else "in the background",
                  " (careful)" if careful else "", private(description))
         self._add(helper)
@@ -170,7 +180,7 @@ class Orchestrator:
         follow = Helper(self._transcript.task_started(f"{helper.description}\n\nChange: {change}"),
                         self._next_number(), helper.title, helper.description, helper.screen, self._clock.monotonic(),
                         session_id=helper.session_id, amendments=[*helper.amendments, change], follow_up=change,
-                        careful=careful)
+                        careful=careful, instructions=helper.instructions)
         self._add(follow)
         return follow
 
@@ -367,6 +377,17 @@ class Orchestrator:
         self._milestones.forget(helper.id)
         self._transcript.task_finished(helper.id, status is HelperStatus.DONE, result)
         self._changed(now=True)
+        finished, helper.on_finish = helper.on_finish, None
+        if finished is not None:
+            try:
+                finished(helper)
+            except Exception:
+                log.exception("helper %d: on_finish failed", helper.number)
+        for listener in self.on_done:
+            try:
+                listener(helper)
+            except Exception:
+                log.exception("helper %d: on_done failed", helper.number)
 
     def _report(self, text: str, emotion: Emotion, *, speak: bool) -> None:
         task = asyncio.create_task(self._say(text, emotion, speak=speak))

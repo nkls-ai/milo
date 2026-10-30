@@ -39,6 +39,7 @@ OUTBOUND = {
     "hands_borrow": lambda m: ev.HandsBorrow(m["on"], m["what"]),
     "facts": lambda m: ev.Facts(m["facts"]),
     "dictation_stream": lambda m: ev.DictationStream(m["stream"]),
+    "routines": lambda m: ev.Routines(m["routines"], m["drafts"]),
 }
 
 
@@ -124,3 +125,14 @@ def test_memory_commands_parse_into_their_values():
                 {"type": "edit_fact", "id": "f1"}):
         with pytest.raises(ev.ProtocolError):
             ev.parse_command(bad)
+
+
+def test_routine_commands():
+    assert ev.parse_command({"type": "routine", "id": "monday-report", "action": "run"}) == \
+        ev.RoutineAction("monday-report", "run")
+    assert ev.parse_command({"type": "routine_draft_answer", "id": "d1", "save": False}) == \
+        ev.RoutineDraftAnswer("d1", False)
+    with pytest.raises(ev.ProtocolError):
+        ev.parse_command({"type": "routine", "id": "x", "action": "explode"})
+    with pytest.raises(ev.ProtocolError):
+        ev.parse_command({"type": "routine_draft_answer", "id": "d1", "save": "yes"})

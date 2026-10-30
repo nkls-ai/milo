@@ -560,3 +560,97 @@ class FakeMemoryIndex:
             want |= {e.id: IndexItem.of_episode(e) for e in self.episodes.between(datetime.min, datetime.max)}
         self.items = want
         return 0  # all at once, so it is up to date after one call
+
+
+class MemoryRoutineBook:
+    """RoutineBook in memory. `drafts` holds what a worker "wrote" to each draft path."""
+
+    def __init__(self, *routines):
+        from milo.core.routines import Routine  # noqa: F401  for the type of what is stored
+
+        self.routines = {r.slug: r for r in routines}
+        self.broken: dict[str, str] = {}
+        self.drafts: dict[str, str] = {}
+        self.log: list[dict] = []
+        self.deleted: list[str] = []
+
+    def all(self):
+        return sorted(self.routines.values(), key=lambda r: r.name.lower())
+
+    def problems(self) -> dict[str, str]:
+        return dict(self.broken)
+
+    def get(self, slug):
+        return self.routines.get(slug)
+
+    def save(self, routine):
+        self.routines[routine.slug] = routine
+        return routine
+
+    def rename(self, slug, name):
+        from dataclasses import replace
+
+        from milo.core.routines import slugify
+
+        new = slugify(name)
+        if new != slug and new in self.routines:
+            raise ValueError(f"there is a routine called {name} already")
+        renamed = replace(self.routines.pop(slug), slug=new, name=name)
+        self.routines[new] = renamed
+        return renamed
+
+    def update(self, slug, fields):
+        from dataclasses import replace
+
+        if slug not in self.routines:
+            raise ValueError("there is no such routine")
+        if fields.get("paused", "no") not in ("yes", "no"):
+            raise ValueError("paused: must be yes or no")
+        values = {k: (v == "yes" if k == "paused" else v) for k, v in fields.items()}
+        self.routines[slug] = replace(self.routines[slug], **values)
+        return self.routines[slug]
+
+    def delete(self, slug):
+        if self.routines.pop(slug, None) is None:
+            return False
+        self.deleted.append(slug)
+        return True
+
+    def record_run(self, slug, run):
+        self.log.append({**run, "slug": slug})
+
+    def runs(self, slug, n=5):
+        return [r for r in self.log if r["slug"] == slug][-n:]
+
+    def draft_path(self, draft):
+        from pathlib import Path
+
+        return Path("/drafts") / f"{draft}.md"
+
+    def read_draft(self, draft):
+        return self.drafts.get(draft)
+
+    def write_draft(self, draft, text):
+        self.drafts[draft] = text
+
+    def drop_draft(self, draft):
+        self.drafts.pop(draft, None)
+
+
+class MemoryState:
+    """StateFile in memory; `saves` counts the writes."""
+
+    def __init__(self, data: dict | None = None):
+        self.data = data or {}
+        self.saves = 0
+
+    def load(self) -> dict:
+        import copy
+
+        return copy.deepcopy(self.data)
+
+    def save(self, data: dict) -> None:
+        import copy
+
+        self.data = copy.deepcopy(data)
+        self.saves += 1

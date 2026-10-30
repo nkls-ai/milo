@@ -21,16 +21,17 @@ from milo.services.dictation import DictationService
 from milo.services.hands import HandsService
 from milo.services.heartbeat_runner import HeartbeatRunner
 from milo.services.listening import Listening
-from milo.services.live_talk import LiveTalk
+from milo.services.live_talk import LiveTalk, untrusted
 from milo.services.memory import Memory, MemoryParts, TurnMemory
 from milo.services.speaker import Speaker
 from milo.services.orchestrator import Orchestrator
+from milo.services.routines import Routines
 from milo.services.task_runner import TaskRunner
 from milo.services.ui_state import UiState
 from tests.fakes import (FakeAudioInput, FakeAudioOutput, FakeClock, FakeEyes, FakeHands, FakeHarness,
                          FakeLiveModel, FakeTranscriber, FakeVoice, ListReminders, MemoryHistory, MemoryLedger,
-                         MemoryProfile, RecordingSink, ScriptedEngine, UpperCleaner, FakeMemoryIndex, MemoryEpisodeLog,
-                         MemoryFactStore)
+                         MemoryProfile, MemoryRoutineBook, MemoryState, RecordingSink, ScriptedEngine, UpperCleaner,
+                         FakeMemoryIndex, MemoryEpisodeLog, MemoryFactStore)
 
 PERSONA = "You are Milo, a test persona."
 
@@ -73,6 +74,9 @@ class Stack:
     screens: Path | None = None
     confirm_timeout_s: float = 1.0
     with_memory: bool = False  # recall per turn, episode stubs and the facts screen, all on fakes
+    routine_book: MemoryRoutineBook = field(default_factory=MemoryRoutineBook)
+    routine_state: MemoryState = field(default_factory=MemoryState)
+    max_routine_runs: int = 6
 
     def __post_init__(self):
         executor = InlineExecutor()
@@ -99,9 +103,15 @@ class Stack:
             self.memory = Memory(parts, executor, self.sink, self.clock)
             self.memory.ready.set()
             self.turn_memory = TurnMemory(self.memory)
+        self.routines = Routines(self.routine_book, self.routine_state, self.tasks, self.speaker, self.ui,
+                                 self.clock, approvals=self.approvals, quiet=lambda: self.live_talk.busy,
+                                 max_runs_per_day=lambda: self.max_routine_runs, inert=untrusted, wait_s=self.wait_s,
+                                 poll_s=0.005)
+        self.tasks.on_done.append(self.routines.seen)
         self.live_talk = LiveTalk(self.model, self.speaker, self.ui, self.context, self.clock, self.profile,
                                   self.reminders, self.ledger, lambda: self.persona, self.idle_reset_s, self.tasks,
-                                  eyes=self.eyes, approvals=self.approvals, memory=self.turn_memory)
+                                  eyes=self.eyes, approvals=self.approvals, memory=self.turn_memory,
+                                  routines=self.routines)
         self.tasks.on_result = self.live_talk.note
         self.dictation = DictationService(UpperCleaner(), self.history, self.ui)
         self.listening = Listening(self.mic, self.transcriber, executor, self.ui, self.dictation, self.live_talk,
@@ -111,7 +121,7 @@ class Stack:
                                          wait_s=self.wait_s, poll_s=0.005)
         self.brain = Brain(self.ui, self.listening, self.live_talk, self.context, self.heartbeat, UiSettings(),
                            approvals=self.approvals, bridge=self.bridge, hands=self.hands, screens=self.screens,
-                           helpers=self.tasks, memory=self.memory)
+                           helpers=self.tasks, memory=self.memory, routines=self.routines)
 
     def states(self) -> list[MiloState]:
         return [e.state for e in self.sink.of(StateChanged)]

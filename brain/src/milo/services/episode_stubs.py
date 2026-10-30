@@ -1,9 +1,10 @@
-"""Episode stubs written as the day goes: a line per conversation turn, task, look and (if switched on)
-dictation, with the time, the app, the people named and a pointer to the raw record.
+"""Episode stubs written as the day goes: a line per conversation turn, task, routine run, look and (if switched
+on) dictation, with the time, the app, the people named and a pointer to the raw record.
 
 Each stub is a decorator around a port the brain already writes to, so the services that write there don't
 change: the transcript store sees every finished turn and task, the dictation history every dictation, the
-screen eyes every look. The nightly consolidation turns the stubs into proper summaries.
+screen eyes every look. A routine run is a task too, but its stub comes from the routines service, which knows
+the routine's name, inputs and apps. The nightly consolidation turns the stubs into proper summaries.
 """
 
 from __future__ import annotations
@@ -45,17 +46,20 @@ class EpisodeTranscript:
 
     `outside()` says whether the live conversation carries outside text right now (task results, the screen,
     recalled outside episodes); its turns are then marked untrusted, since the replies may quote that text.
+    `elsewhere(id)` says the task with that entry id gets its episode from somewhere else (a routine run, from
+    RoutineEpisodes), so it isn't written twice.
     """
 
     def __init__(self, inner: TranscriptStore, record: Record, *, now: Callable[[], datetime],
                  app: Callable[[], str | None] = lambda: None, people: Callable[[str], tuple[str, ...]] = lambda t: (),
-                 outside: Callable[[], bool] = lambda: False):
+                 outside: Callable[[], bool] = lambda: False, elsewhere: Callable[[str], bool] = lambda id: False):
         self._inner = inner
         self._record = record
         self._now = now
         self._app = app
         self._people = people
         self._outside = outside
+        self._elsewhere = elsewhere
         self._waiting: dict | None = None
         """The user's last turn, until Milo's answer to it arrives."""
 
@@ -98,6 +102,8 @@ class EpisodeTranscript:
                              (app,) if app else (), f"transcript:{user.get('id', '')}", not self._outside()))
 
     def _task(self, entry: dict) -> None:
+        if self._elsewhere(str(entry.get("id", ""))):
+            return
         at = _at(entry, self._now)
         done = entry.get("status") == "done"
         summary = f"Task: {_cut(entry.get('text', ''))}"
@@ -110,6 +116,34 @@ class EpisodeTranscript:
         # The result may quote mail, files or web pages: outside text.
         self._record(Episode(new_id(at), at, "task", summary, self._people(summary), (app,) if app else (),
                              f"transcript:{entry.get('id', '')}", trusted=False))
+
+
+class RoutineEpisodes:
+    """Routines.on_episode: each finished routine run as a "task" episode, named after the routine.
+
+    Points at the run's transcript entry like any task. The result is helper output, so it is outside text.
+    """
+
+    def __init__(self, record: Record, *, people: Callable[[str], tuple[str, ...]] = lambda t: ()):
+        self._record = record
+        self._people = people
+
+    def __call__(self, run: dict) -> None:
+        at = datetime.fromisoformat(str(run["at"]))
+        inputs = ", ".join(f"{k} {v}" for k, v in (run.get("inputs") or {}).items())
+        summary = f"Routine “{_cut(run.get('name', ''), 80)}”"
+        summary += " on its schedule" if run.get("scheduled") else ""
+        summary += f" for {_cut(inputs, 120)}" if inputs else ""
+        outcome = str(run.get("outcome", ""))
+        result = _cut(run.get("result", ""))
+        if outcome == "done":
+            summary += f". Result: {result}" if result else ", done."
+        else:
+            summary += f", {outcome or 'not finished'}" + (f": {result}" if result else ".")
+        task = str(run.get("task") or "")
+        source = f"transcript:{task}" if task else f"routine:{run.get('slug', '')}"
+        apps = tuple(str(a) for a in run.get("apps") or ())
+        self._record(Episode(new_id(at), at, "task", summary, self._people(summary), apps, source, trusted=False))
 
 
 class EpisodeDictations:

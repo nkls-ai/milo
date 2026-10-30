@@ -3,7 +3,7 @@ from datetime import datetime
 import pytest
 
 from milo.core.types import Emotion
-from milo.services.reply_stream import ReplyParser, TaskRequest, parse_reminder
+from milo.services.reply_stream import ReplyParser, RoutineRequest, TaskRequest, parse_reminder
 
 
 def stream(*deltas: str) -> tuple[ReplyParser, list[str]]:
@@ -172,3 +172,17 @@ def test_an_attribute_tag_split_mid_name_is_never_spoken():
 def test_a_lone_angle_bracket_with_words_is_still_spoken():
     parser, out = stream("[neutral] 3 <stopwatch> 4 and a <taskbar thing")
     assert "".join(out) == "3 <stopwatch> 4 and a <taskbar thing" and parser.stops == []
+
+
+def test_routine_tags_are_collected_and_never_spoken():
+    p = ReplyParser()
+    deltas = ['[happy] On it. <rout', 'ine do="run" name="Monday ', 'report">month: Oct', 'ober</routine> And ',
+              '<routine do="create" name="Monday report" helper="2" schedule="every Monday at 9"/>',
+              '<routine do="schedule" name="Tidy" schedule=""/><routine do="rename" name="A" to="B"/>',
+              '<routine name="no do"/>']
+    spoken = "".join(p.feed(d) for d in deltas) + p.finish()
+    assert spoken == "On it.  And "
+    assert p.routines == [RoutineRequest("run", "Monday report", "month: October"),
+                          RoutineRequest("create", "Monday report", "", "2", "every Monday at 9"),
+                          RoutineRequest("schedule", "Tidy", "", "", ""),
+                          RoutineRequest("rename", "A", to="B")]

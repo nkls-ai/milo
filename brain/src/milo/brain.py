@@ -9,8 +9,9 @@ from pathlib import Path
 from .config import UiSettings
 from .core.events import (AppResponse, Command, ConfirmAnswer, ContextUpdate, DictationStream, EditFact,
                           EmotionChanged, Event, Facts, ForgetFact, GetFacts, GetHistory, HandsResult, HandsStop,
-                          ListenCancel, ListenConfirm, ListenStart, ListenStop, LookResult, Mute, SetDictationStream,
-                          StateChanged, Status, StopHelper, TextInput, UiConfig, WhatsThis)
+                          ListenCancel, ListenConfirm, ListenStart, ListenStop, LookResult, Mute, RoutineAction,
+                          RoutineDraftAnswer, SetDictationStream, StateChanged, Status, StopHelper, TextInput, UiConfig,
+                          WhatsThis)
 from .core.types import ListenMode, LiveMode
 from .services.app_bridge import AppBridge
 from .services.approvals import Approvals
@@ -21,6 +22,7 @@ from .services.listening import Listening
 from .services.live_talk import LiveTalk
 from .services.memory import Memory
 from .services.orchestrator import Orchestrator
+from .services.routines import Routines
 from .services.screen import checked, inside
 from .services.transcript import Transcript
 from .services.ui_state import UiState
@@ -40,9 +42,10 @@ class Brain:
                  *, approvals: Approvals | None = None, bridge: AppBridge | None = None,
                  hands: HandsService | None = None, screens: Path | None = None,
                  helpers: Orchestrator | None = None, memory: Memory | None = None,
-                 save_stream: Callable[[str], None] | None = None):
+                 save_stream: Callable[[str], None] | None = None, routines: Routines | None = None):
         self._memory = memory
         self._save_stream = save_stream
+        self._routines = routines
         self._hands = hands
         self._helpers = helpers
         self._screens = screens
@@ -66,7 +69,8 @@ class Brain:
                 *self._history(), *([self._helpers.snapshot()] if self._helpers is not None else [])]
 
     def _history(self) -> list[Event]:
-        return [self._transcript.history()] if self._transcript is not None else []
+        history = [self._transcript.history()] if self._transcript is not None else []
+        return history + ([self._routines.resend()] if self._routines is not None else [])
 
     async def handle(self, command: Command) -> None:
         match command:
@@ -108,6 +112,15 @@ class Brain:
             case StopHelper(id):
                 if self._helpers is not None and not self._helpers.stop(id):
                     log.info("Stop came for a helper that isn't working")
+            case RoutineAction(id, action):
+                if self._routines is not None:
+                    self._routines.command(id, action)
+            case RoutineDraftAnswer(id, save):
+                if self._routines is not None:
+                    if save:
+                        self._routines.save(draft_id=id)
+                    else:
+                        self._routines.drop(id)
             case AppResponse():
                 if self._bridge is not None:
                     self._bridge.resolve(command)

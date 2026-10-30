@@ -28,13 +28,14 @@ from .services.dictation import DictationService
 from .services.fallback_voice import FallbackVoice
 from .services.hands import HandsService
 from .services.heartbeat_runner import HeartbeatRunner
-from .services.episode_stubs import EpisodeDictations, EpisodeEyes, EpisodeTranscript
+from .services.episode_stubs import EpisodeDictations, EpisodeEyes, EpisodeTranscript, RoutineEpisodes
 from .services.listening import Listening
 from .services.live_talk import LiveTalk, untrusted
 from .services.orchestrator import HelperQuestions, Orchestrator
 from .services.memory import Memory, MemoryParts, TurnMemory
 from .services.memory_requests import MemoryRequests
 from .services.sleep import SleepRunner
+from .services.routines import Routines
 from .services.speaker import Speaker
 from .services.task_runner import TaskRunner
 from .services.tool_requests import ToolRequests
@@ -91,6 +92,7 @@ def build(home: Path) -> Runtime:
     from .memory.ledger import JsonlUsageLedger
     from .memory.profile import MarkdownProfile
     from .memory.reminders import MarkdownReminders
+    from .memory.routines import JsonStateFile, MarkdownRoutineBook
     from .memory.transcript import JsonlTranscript
     from .memory.workspace import Workspace
 
@@ -144,10 +146,12 @@ def build(home: Path) -> Runtime:
     speaker = Speaker(voice, output, ui, tts_executor)
     backchannel = Backchannel(speaker, enabled=config.chat.backchannels)
     transcript_store = JsonlTranscript(workspace.transcript_path)
+    routines: Routines | None = None  # built below, once the helpers are
     if mem is not None:
         transcript_store = EpisodeTranscript(transcript_store, mem.memory.record, now=clock.now,
                                              app=lambda: context.app, people=mem.memory.people_in,
-                                             outside=lambda: mem.turns.outside)
+                                             outside=lambda: mem.turns.outside,
+                                             elsewhere=lambda id: routines is not None and routines.is_run(id))
     transcript = Transcript(ui, transcript_store, clock)
     approvals = Approvals(ui, speaker, ActionPolicy(config.approval_levels), timeout_s=config.approvals.timeout_s,
                           speak=config.approvals.speak, quiet=lambda: live_talk.busy or mic.active,
@@ -175,10 +179,19 @@ def build(home: Path) -> Runtime:
     helpers = Orchestrator(runner, speaker, ui, clock, transcript=transcript, max_helpers=settings.max_helpers,
                            quiet=lambda: live_talk.busy or mic.active, updates=updates, milestones=Milestones(),
                            inert=untrusted)
+    if config.routines.enabled:
+        book = MarkdownRoutineBook(workspace.routines_dir, workspace.routine_runs_path, workspace.routine_drafts_dir)
+        routines = Routines(book, JsonStateFile(workspace.routine_state_path), helpers, speaker, ui, clock,
+                            transcript=transcript, approvals=approvals, quiet=lambda: live_talk.busy or mic.active,
+                            max_runs_per_day=lambda: config.routines.max_runs_per_day,
+                            grace_s=config.routines.grace_hours * 3600, inert=untrusted)
+        helpers.on_done.append(routines.seen)
+        if mem is not None:  # a run's episode names the routine; the transcript's task stub skips it
+            routines.on_episode = RoutineEpisodes(mem.memory.record, people=mem.memory.people_in)
     live_talk = LiveTalk(live_model, speaker, ui, context, clock, profile, reminders, ledger,
                          _persona(workspace.persona_path), idle_reset_s, helpers, transcript, eyes=eyes,
                          approvals=approvals, memory=mem.turns if mem is not None else None,
-                         backchannel=backchannel)
+                         backchannel=backchannel, routines=routines)
     helpers.on_result = live_talk.note
     updates.speak = live_talk.speak_update
     listening = Listening(mic, transcriber, stt_executor, ui, DictationService(cleaner, history, ui),
@@ -200,11 +213,14 @@ def build(home: Path) -> Runtime:
         engine = build_engine(config.section("heartbeat"), ctx, reminders)
         heartbeat = HeartbeatRunner(engine, context, conversation, speaker, ui, mic, clock,
                                     busy=lambda: live_talk.busy)
+        if routines is not None:
+            heartbeat.on_tick.append(routines.tick)
 
     brain = Brain(ui, listening, live_talk, context, heartbeat, config.ui, transcript, approvals=approvals,
                   bridge=bridge, hands=hands, screens=workspace.screens_dir, helpers=helpers,
                   memory=mem.memory if mem is not None else None,
-                  save_stream=lambda stream: set_value(workspace.config_path, "dictation", "stream", stream))
+                  save_stream=lambda stream: set_value(workspace.config_path, "dictation", "stream", stream),
+                  routines=routines)
     return Runtime(brain, server, heartbeat, transcriber, voice, stt_executor, tts_executor, harness,
                    live_model, live_talk, tool_server, hands_server, helpers, mem, barge_in, backchannel)
 

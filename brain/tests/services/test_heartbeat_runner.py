@@ -169,3 +169,11 @@ def test_run_loop_ticks_every_tick_s_and_survives_errors():
 
     asyncio.run(run())
     assert len(s.engine.seen) >= 2
+
+
+def test_other_checks_run_on_every_tick_and_one_that_breaks_does_not_stop_the_nudges():
+    s = Stack()
+    seen = []
+    s.heartbeat.on_tick += [lambda now: 1 / 0, seen.append]
+    deliver(s, REMINDER)
+    assert seen == [s.clock.now()] and s.bubbles() == ["Call the dentist."]

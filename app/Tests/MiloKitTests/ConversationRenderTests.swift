@@ -25,10 +25,26 @@ struct ConversationRenderTests {
         }
     }
 
+    @Test func renderRoutines() throws {
+        _ = NSApplication.shared
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let previous = UserDefaults.standard.object(forKey: "showRoutines")
+        defer { UserDefaults.standard.set(previous, forKey: "showRoutines") }
+        for open in [false, true] {
+            UserDefaults.standard.set(open, forKey: "showRoutines")
+            for dark in [false, true] {
+                try render(entries: Samples.oneTurn, state: .idle,
+                           name: "routines-\(open ? "open" : "closed")-\(dark ? "dark" : "light")", dark: dark,
+                           routines: .routines(Samples.routines, drafts: open ? [] : [Samples.draft]))
+            }
+        }
+    }
+
     private func render(entries: [TranscriptEntry], state: MiloState, name: String, dark: Bool,
-                        question: String? = nil) throws {
+                        question: String? = nil, routines: BrainEvent? = nil) throws {
         let model = MiloModel(scheduler: ManualScheduler())
         model.state = state
+        if let routines { model.apply(routines) }
         if let question { model.apply(.confirm(id: "q1", question: question)) }
         let view = ConversationView(transcript: TranscriptModel(entries: entries), model: model,
                                     settings: ConversationSettings(talkKey: "right ⌥"), send: { _, _ in })
@@ -49,6 +65,43 @@ struct ConversationRenderTests {
 
 enum Samples {
     static let base = Date(timeIntervalSinceNow: -600)
+
+    static let routines = [
+        RoutineInfo(id: "monday-report", name: "Monday report", description: "Adds up last week's sales.",
+                    schedule: "every Monday at 09:00", lastRun: "2026-10-26 09:00, done",
+                    nextRun: Date(timeIntervalSinceNow: 3 * 86400), inputs: ["month"]),
+        RoutineInfo(id: "tidy-downloads", name: "Tidy downloads", schedule: "every day at 18:00", paused: true),
+        RoutineInfo(id: "invoices", name: "File the invoices", lastRun: "2026-10-29 16:12, done"),
+        RoutineInfo(id: "broken", name: "broken", problem: "It must start with a line of three dashes (---)."),
+    ]
+
+    static let draft = RoutineDraft(id: "d1", name: "Monday report", recipe: """
+        ---
+        name: Monday report
+        inputs:
+          - name: month
+            ask: Which month?
+            default: last month
+        schedule: every Monday at 09:00
+        ---
+
+        ## Goal
+
+        A one-page sales report for the month in ~/Reports.
+
+        ## Steps
+
+        1. Read ~/Sales/{month}.csv.
+           Check: it has one row for each day of the month.
+        2. Make a table in Numbers with the total per week (sheet_write).
+           Check: the table has a Total row.
+        3. Save it as ~/Reports/{month}.numbers.
+           Check: the file is there.
+
+        ## Ask first
+
+        - If the sales file for the month is missing.
+        """, schedule: "every Monday at 09:00")
 
     static func at(_ seconds: TimeInterval) -> Date { base.addingTimeInterval(seconds) }
 
