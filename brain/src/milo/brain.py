@@ -7,9 +7,9 @@ from pathlib import Path
 
 from .config import UiSettings
 from .core.events import (AppResponse, Command, ConfirmAnswer, ContextUpdate, EditFact, EmotionChanged, Event,
-                          Facts, ForgetFact, GetFacts, GetHistory, HandsResult, HandsStop, ListenCancel, ListenConfirm,
-                          ListenStart, ListenStop, LookResult, Mute, StateChanged, StopHelper, TextInput, UiConfig,
-                          WhatsThis)
+                          Facts, ForgetFact, GetFacts, GetHistory, GetSettings, HandsResult, HandsStop, ListenCancel,
+                          ListenConfirm, ListenStart, ListenStop, LookResult, Mute, RoutineAction, RoutineDraftAnswer,
+                          SetSetting, StateChanged, StopHelper, TextInput, UiConfig, WhatsThis)
 from .core.types import ListenMode
 from .services.app_bridge import AppBridge
 from .services.approvals import Approvals
@@ -20,9 +20,11 @@ from .services.listening import Listening
 from .services.live_talk import LiveTalk
 from .services.memory import Memory
 from .services.orchestrator import Orchestrator
+from .services.routines import Routines
 from .services.screen import checked, inside
 from .services.transcript import Transcript
 from .services.ui_state import UiState
+from .settings import Settings
 
 log = logging.getLogger("milo.brain")
 
@@ -31,14 +33,18 @@ WHATS_THIS = "What's this?"
 
 class Brain:
     """`bridge` resolves the app's answers to looks, Mac actions and app work; `approvals` takes the answers
-    to Milo's questions. `screens` is state/screens: an image path from the app counts only if it points in there."""
+    to Milo's questions. `screens` is state/screens: an image path from the app counts only if it points in there.
+    `settings` reads and changes config.toml for the Settings window and the menu."""
 
     def __init__(self, ui: UiState, listening: Listening, live_talk: LiveTalk, context: UserContext,
                  heartbeat: HeartbeatRunner | None, ui_settings: UiSettings, transcript: Transcript | None = None,
                  *, approvals: Approvals | None = None, bridge: AppBridge | None = None,
                  hands: HandsService | None = None, screens: Path | None = None,
-                 helpers: Orchestrator | None = None, memory: Memory | None = None):
+                 helpers: Orchestrator | None = None, memory: Memory | None = None,
+                 routines: Routines | None = None, settings: Settings | None = None):
         self._memory = memory
+        self._routines = routines
+        self._settings = settings
         self._hands = hands
         self._helpers = helpers
         self._screens = screens
@@ -54,14 +60,22 @@ class Brain:
 
     def greeting(self) -> list[Event]:
         """What a newly connected app needs to draw Milo as he is right now."""
-        return [StateChanged(self._ui.state), EmotionChanged(self._ui.emotion),
-                UiConfig(self._ui_settings.dictate_key, self._ui_settings.talk_key,
-                         self._ui_settings.hands_free_max_s, self._ui_settings.whats_this_key,
-                         self._ui_settings.character),
+        return [StateChanged(self._ui.state), EmotionChanged(self._ui.emotion), self._ui_config(),
+                *([self._settings.report()] if self._settings is not None else []),
                 *self._history(), *([self._helpers.snapshot()] if self._helpers is not None else [])]
 
+    def use_ui(self, ui_settings: UiSettings) -> None:
+        """Keys or look changed in the Settings window: tell the app now and on every later connect."""
+        self._ui_settings = ui_settings
+        self._ui.emit(self._ui_config())
+
+    def _ui_config(self) -> UiConfig:
+        ui = self._ui_settings
+        return UiConfig(ui.dictate_key, ui.talk_key, ui.hands_free_max_s, ui.whats_this_key, ui.character)
+
     def _history(self) -> list[Event]:
-        return [self._transcript.history()] if self._transcript is not None else []
+        history = [self._transcript.history()] if self._transcript is not None else []
+        return history + ([self._routines.resend()] if self._routines is not None else [])
 
     async def handle(self, command: Command) -> None:
         match command:
@@ -103,11 +117,26 @@ class Brain:
             case StopHelper(id):
                 if self._helpers is not None and not self._helpers.stop(id):
                     log.info("Stop came for a helper that isn't working")
+            case RoutineAction(id, action):
+                if self._routines is not None:
+                    self._routines.command(id, action)
+            case RoutineDraftAnswer(id, save):
+                if self._routines is not None:
+                    if save:
+                        self._routines.save(draft_id=id)
+                    else:
+                        self._routines.drop(id)
             case AppResponse():
                 if self._bridge is not None:
                     self._bridge.resolve(command)
             case GetFacts() | ForgetFact() | EditFact():
                 self._facts(command)
+            case GetSettings():
+                if self._settings is not None:
+                    self._settings.send()
+            case SetSetting(section, key, value):
+                if self._settings is not None:
+                    self._settings.change(section, key, value)
             case _:
                 log.warning("no handler for %s", command.type)
 

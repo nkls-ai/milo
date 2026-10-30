@@ -1,10 +1,14 @@
 import AppKit
+import Combine
 import SwiftUI
 
 /// The Milo window: the conversation as text and a field to type to him. Closing only hides it.
 public final class ConversationWindow: NSWindow {
     private let controller: MiloController
     private let settings: ConversationSettings
+    /// The gear in the title bar: open the Settings window.
+    public var onSettings: (() -> Void)?
+    private var restyle: AnyCancellable?
 
     public init(controller: MiloController) {
         self.controller = controller
@@ -13,12 +17,17 @@ public final class ConversationWindow: NSWindow {
                    styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: true)
         title = "Milo"
         titlebarAppearsTransparent = true
-        backgroundColor = WindowColors.paperColor
         isReleasedWhenClosed = false
         minSize = NSSize(width: 320, height: 300)
         contentView = NSHostingView(rootView: ConversationView(
             transcript: controller.transcript, model: controller.model, settings: settings,
-            send: { [weak controller] text, speak in controller?.send(text: text, speak: speak) }))
+            send: { [weak controller] text, speak in controller?.send(text: text, speak: speak) })
+            .themed(by: controller.model))
+        // The title bar shows the window's own colour: keep it the skin's paper.
+        restyle = controller.model.$character.sink { [weak self] in
+            self?.backgroundColor = Theme.for($0).appKit.tint
+        }
+        addSettingsButton()
         if !setFrameUsingName(Self.frameName) { placeNearMilo() }
         setFrameAutosaveName(Self.frameName)
     }
@@ -52,6 +61,22 @@ public final class ConversationWindow: NSWindow {
         NSApp.activate(ignoringOtherApps: true)
         makeKeyAndOrderFront(nil)
     }
+
+    private func addSettingsButton() {
+        let button = NSButton(image: NSImage(systemSymbolName: "gearshape", accessibilityDescription: "Settings")!,
+                              target: self, action: #selector(openSettings))
+        button.bezelStyle = .accessoryBarAction
+        button.isBordered = false
+        button.contentTintColor = .secondaryLabelColor
+        button.toolTip = "Settings"
+        button.frame = NSRect(x: 0, y: 0, width: 34, height: 24)
+        let accessory = NSTitlebarAccessoryViewController()
+        accessory.view = button
+        accessory.layoutAttribute = .trailing
+        addTitlebarAccessoryViewController(accessory)
+    }
+
+    @objc private func openSettings() { onSettings?() }
 
     /// First open: just left of Milo's corner.
     private func placeNearMilo() {

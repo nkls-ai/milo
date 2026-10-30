@@ -82,6 +82,40 @@ private func entries(_ key: String) throws -> [[String: Any]] {
                 MemoryFact(id: "01JBF7A1B2C3D4E5F6G7H8J9KM", text: "Anna is the user's sister. Her birthday is March 3.",
                            topic: "people", since: "2026-10-30T18:05:41"),
             ]),
+            .routines([
+                RoutineInfo(id: "monday-report", name: "Monday report",
+                            description: "Sums last week's sales into a one-page report.",
+                            schedule: "every Monday at 09:00", lastRun: "2026-10-26 09:00, done",
+                            nextRun: try #require(RoutineInfo.parseTime("2026-11-02T09:00")), inputs: ["month"]),
+                RoutineInfo(id: "tidy-downloads", name: "Tidy downloads", paused: true),
+                RoutineInfo(id: "broken", name: "broken", problem: "it must start with a line of three dashes (---)"),
+            ], drafts: [
+                RoutineDraft(id: "d4e5f6a7", name: "Invoice folder", recipe: """
+                    ---
+                    name: Invoice folder
+                    schedule:
+                    paused: no
+                    version: 1
+                    ---
+
+                    ## Steps
+
+                    1. Move this month's invoices from Downloads into Invoices.
+                       Check: Downloads has no invoice left.
+
+                    """),
+            ]),
+            .settings(SettingsReport(settings: [
+                Setting(section: "ui", key: "character", value: "dragon",
+                        options: ["pip", "classic", "dragon", "kit", "glow"],
+                        labels: ["Pip", "Robot", "Dragon", "Kit", "Glow"]),
+                Setting(section: "ui", key: "voice", value: true),
+                Setting(section: "chat", key: "updates", value: "bubble", options: ["quiet", "bubble", "chatty"],
+                        labels: ["Only the answer", "Short notes in his bubble", "Tells you each step"]),
+                Setting(section: "dictation", key: "stream", value: "preview", options: ["off", "preview", "type"],
+                        labels: ["When you let go", "Show the words as you speak", "Type as you speak"]),
+            ])),
+            .settings(SettingsReport(settings: [], error: "The dictate key and the talk key need to be different keys.")),
         ])
     }
 
@@ -117,6 +151,12 @@ private func entries(_ key: String) throws -> [[String: Any]] {
                          error: "Excel doesn't take clicks in the background."),
             .getFacts, .forgetFact(id: "01JBF7A1B2C3D4E5F6G7H8J9KM"),
             .editFact(id: "01JBF7A1B2C3D4E5F6G7H8J9KM", text: "Anna is the user's sister. Her birthday is March 4."),
+            .routine(id: "monday-report", action: .run),
+            .routine(id: "tidy-downloads", action: .resume),
+            .routineDraftAnswer(id: "d4e5f6a7", save: true),
+            .getSettings,
+            .setSetting(section: "ui", key: "character", value: "dragon"),
+            .setSetting(section: "ui", key: "voice", value: false),
         ]
         let encoder = JSONEncoder()
         let encoded = try commands.map { command in
@@ -143,7 +183,7 @@ private func entries(_ key: String) throws -> [[String: Any]] {
     }
 
     @Test func uiConfigWithAnUnknownCharacterDecodesAsNone() throws {
-        let json = #"{"type":"ui_config","dictate_key":"fn","talk_key":"right_option","character":"dragon"}"#
+        let json = #"{"type":"ui_config","dictate_key":"fn","talk_key":"right_option","character":"unicorn"}"#
         #expect(try JSONDecoder().decode(BrainEvent.self, from: Data(json.utf8))
                 == .uiConfig(dictateKey: "fn", talkKey: "right_option", character: nil))
     }

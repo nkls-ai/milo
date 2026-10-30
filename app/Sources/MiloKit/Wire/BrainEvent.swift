@@ -54,6 +54,10 @@ public enum BrainEvent: Equatable, Sendable {
     case handsBorrow(on: Bool, what: String)
     /// Everything Milo knows about the user, for the "What Milo knows" window; sent after get_facts and each change.
     case facts([MemoryFact])
+    /// The user's routines by name, and the recipe drafts waiting for a look.
+    case routines([RoutineInfo], drafts: [RoutineDraft])
+    /// The settings and their choices, after `getSettings` and after every `setSetting`.
+    case settings(SettingsReport)
     case unknown(String)
 }
 
@@ -68,6 +72,8 @@ extension BrainEvent: Decodable {
         case handsFreeMaxSeconds = "hands_free_max_s"
         case character
         case helpers
+        case routines, drafts
+        case settings, restart, error
     }
 
     public init(from decoder: Decoder) throws {
@@ -117,6 +123,13 @@ extension BrainEvent: Decodable {
             self = .handsBorrow(on: try c.decode(Bool.self, forKey: .on),
                                 what: try c.decodeIfPresent(String.self, forKey: .what) ?? "")
         case "facts": self = .facts(try c.decode([MemoryFact].self, forKey: .facts))
+        case "routines":
+            self = .routines(try c.decodeIfPresent([RoutineInfo].self, forKey: .routines) ?? [],
+                             drafts: try c.decodeIfPresent([RoutineDraft].self, forKey: .drafts) ?? [])
+        case "settings":
+            self = .settings(SettingsReport(settings: try c.decode([Setting].self, forKey: .settings),
+                                            restart: try c.decodeIfPresent(Bool.self, forKey: .restart) ?? false,
+                                            error: try c.decodeIfPresent(String.self, forKey: .error) ?? ""))
         default: self = .unknown(type)
         }
     }

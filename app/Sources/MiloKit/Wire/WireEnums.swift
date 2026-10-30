@@ -14,6 +14,12 @@ public enum CharacterStyle: String, CaseIterable, Sendable {
     case pip
     /// The purple robot with the antenna.
     case classic
+    /// A small round dragon with tiny wings, who puffs smoke while he thinks.
+    case dragon
+    /// A fox folded from warm paper, who turns into a paper plane to fly.
+    case kit
+    /// A small lantern firefly, who points with a beam of light.
+    case glow
 }
 
 /// Why the user is holding a push-to-talk key.
@@ -22,4 +28,14 @@ public enum ListenMode: String, CaseIterable, Sendable, Encodable {
     case dictate
     /// Speech is a turn in the conversation with Milo.
     case talk
+}
+
+/// What dictation does while the user speaks (`[dictation] stream`). Raw values are the wire strings.
+public enum DictationStyle: String, CaseIterable, Sendable, Encodable {
+    /// Nothing until the key is let go, then one pass over the whole recording.
+    case off
+    /// The words show next to Milo while the user speaks; the text is pasted on release.
+    case preview
+    /// Each phrase is typed into the app at the pause after it.
+    case type
 }

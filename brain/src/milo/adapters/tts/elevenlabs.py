@@ -78,8 +78,6 @@ class ElevenLabsVoice:
     """Voice and StreamingVoice. stream() and prepare() run on the event loop, synthesize() on the TTS thread."""
 
     sample_rate = SAMPLE_RATE
-    remote = True
-    """Needs the network, so FallbackVoice keeps a local voice ready."""
 
     def __init__(self, key_file: Path, voice_id: str = DEFAULT_VOICE, *, model: str = "eleven_flash_v2_5",
                  stability: float = 0.5, similarity_boost: float = 0.75, speed: float = 1.0, language: str = "",

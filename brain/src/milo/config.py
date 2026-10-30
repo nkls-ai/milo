@@ -17,9 +17,9 @@ from .core.types import LiveMode
 log = logging.getLogger("milo.config")
 
 KEY_NAMES = ("fn", "right_option", "right_command", "right_control")
-CHARACTERS = ("pip", "classic")
+CHARACTERS = ("pip", "classic", "dragon", "kit", "glow")
 PLUGGABLE = ("chat", "harness", "stt", "tts", "audio", "dictation", "connections")
-SECTIONS = (*PLUGGABLE, "ui", "heartbeat", "hands", "approvals", "logging", "memory")
+SECTIONS = (*PLUGGABLE, "ui", "heartbeat", "hands", "approvals", "logging", "memory", "routines")
 _COMBO = re.compile(r"^((ctrl|control|option|alt|shift|cmd|command)\+)+[a-z0-9]+$|^f([1-9]|1[0-9])$")
 
 # `use` when a section leaves it out. Lets configs written before a section existed keep working.
@@ -87,7 +87,10 @@ class UiSettings:
     hands_free_max_s: float = 300.0
     """A recording locked on by a double tap stops by itself after this long."""
     character: str = "pip"
-    """How Milo looks: "pip" (the bird) or "classic" (the purple robot)."""
+    """How Milo looks: "pip" (the bird), "classic" (the purple robot), "dragon", "kit" (the paper fox) or "glow"
+    (the lantern firefly)."""
+    voice: bool = True
+    """Say answers out loud. False: the bubble and the window only."""
 
     def __post_init__(self):
         if self.whats_this_key and not _COMBO.match(str(self.whats_this_key).lower().replace(" ", "")):
@@ -135,6 +138,28 @@ class ApprovalSettings:
     """How long Milo waits for a yes. No answer means no."""
     speak: bool = True
     """Say the question aloud, besides showing it."""
+
+
+MAX_ROUTINE_RUNS = 50
+
+
+@dataclass(frozen=True)
+class RoutineSettings:
+    enabled: bool = True
+    """Routines: recipes Milo keeps in ~/Milo/routines and runs again on request or on a schedule."""
+    max_runs_per_day: int = 6
+    """Scheduled runs a day, all routines together. Asking for one yourself is never capped."""
+    grace_hours: float = 4.0
+    """A scheduled run the Mac slept through runs at wake if it is at most this late; after that Milo says he
+    missed it."""
+
+    def __post_init__(self):
+        if isinstance(self.max_runs_per_day, bool) or not isinstance(self.max_runs_per_day, int) \
+                or not 0 <= self.max_runs_per_day <= MAX_ROUTINE_RUNS:
+            raise ConfigError(f"[routines] max_runs_per_day must be a whole number from 0 to {MAX_ROUTINE_RUNS}")
+        if isinstance(self.grace_hours, bool) or not isinstance(self.grace_hours, (int, float)) \
+                or not 0 <= self.grace_hours <= 48:
+            raise ConfigError("[routines] grace_hours must be from 0 to 48")
 
 
 @dataclass(frozen=True)
@@ -216,6 +241,7 @@ class Config:
         self.heartbeat = _typed(HeartbeatSettings(**heartbeat), "heartbeat")
         self.hands = _typed(options_from(HandsSettings, _current(raw.get("hands", {}), "hands"), "hands"), "hands")
         self.memory: MemorySettings = _pluggable_settings(MemorySettings, raw.get("memory", {}), "memory")
+        self.routines = _typed(options_from(RoutineSettings, raw.get("routines", {}), "routines"), "routines")
 
     @classmethod
     def load(cls, path: Path) -> Config:

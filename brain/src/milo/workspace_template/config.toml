@@ -1,4 +1,5 @@
 # Milo configuration. Restart Milo after editing (menu bar > Restart brain).
+# Milo's Settings window changes some of these for you and keeps your comments.
 #
 # Every swappable part has `use = "<name>"` and a table `[<part>.<name>]` with that
 # implementation's options. Unknown keys are an error, so typos fail loudly.
@@ -105,8 +106,8 @@ vocabulary = "Milo, Codex, Claude" # names Whisper should spell right
 # as one, starting about 0.2 s after his first sentence is written; needs a key in ~/Milo/secrets/elevenlabs.key.
 # say: the Mac's own voice.
 use = "omnivoice"
-# Used if `use` fails to load, and while elevenlabs can't be reached. With elevenlabs, "omnivoice" is best: it
-# loads next to it, so a dropped connection goes on in Milo's local voice at once.
+# Used if `use` fails to load, and while elevenlabs can't be reached. It loads only when needed: "say" at
+# once, "omnivoice" sounds more like Milo but takes a while and a few GB of memory the first time.
 fallback = "say"
 
 [tts.elevenlabs]
@@ -143,8 +144,10 @@ output_device = ""
 [dictation]
 use = "fillers"                   # fillers | plain
 keep_history = true               # log dictations to dictation-history.jsonl
-# While you speak: "off" transcribes on release. "preview" shows the words next to Milo and pastes one
-# final pass on release. "type" pastes each phrase at the pause after it (earlier phrases stay as typed).
+# What happens while you speak, for dictation and for talking to Milo. Menu bar > Dictation style switches it.
+#   "preview": the words show next to Milo; the text is pasted the moment you let go.
+#   "type":    each phrase is typed into the app at the pause after it (talking to Milo works like preview).
+#   "off":     nothing while you speak; the whole recording is transcribed when you let go (slower).
 stream = "preview"
 
 [dictation.fillers]
@@ -182,9 +185,17 @@ grace_hours = 12
 dictate_key = "fn"                # fn | right_option | right_command | right_control
 talk_key = "right_option"
 hands_free_max_s = 300            # double-tap a key for hands-free; it stops by itself after this
-character = "pip"                 # pip (the bird) | classic (the purple robot)
+character = "pip"                 # pip (the bird) | classic (the robot) | dragon | kit (the fox) | glow (the firefly)
+voice = true                      # false: answers show in the bubble without being said out loud
 # Ask Milo about the selection, or the front window if nothing is selected. "" turns it off.
 whats_this_key = "ctrl+option+m"
+
+[routines]
+# Recipes for work you want done again ("remember how to do this, call it the Monday report"), kept as
+# Markdown in ~/Milo/routines. Schedules run on the heartbeat, without a model call to decide.
+enabled = true
+max_runs_per_day = 6              # scheduled runs a day, all routines together; asking yourself isn't capped
+grace_hours = 4                   # a run the Mac slept through runs at wake if at most this late, else he tells you
 
 [hands]
 # Let the worker agent use the Mac: read windows, press buttons, type and click. Needs Accessibility,

@@ -6,6 +6,8 @@ public final class ConversationSettings: ObservableObject {
     @Published public var talkKey: String
     /// The task entry to scroll to, set when the user clicks a helper.
     @Published public var focus: String?
+    /// Text to put in the field, ready to finish and send: "Change it" on a recipe draft.
+    @Published public var prefill: String?
 
     public init(talkKey: String) {
         self.talkKey = talkKey
@@ -14,12 +16,14 @@ public final class ConversationSettings: ObservableObject {
 
 /// The Milo window: the conversation as text, what Milo is doing, and a field to type to him.
 public struct ConversationView: View {
+    @Environment(\.miloTheme) private var theme
     @ObservedObject var transcript: TranscriptModel
     @ObservedObject var model: MiloModel
     @ObservedObject var settings: ConversationSettings
     let send: (_ text: String, _ speak: Bool) -> Void
 
     @AppStorage("speakTypedReplies") private var speakReplies = false
+    @AppStorage("showRoutines") private var showRoutines = false
 
     public init(transcript: TranscriptModel, model: MiloModel, settings: ConversationSettings,
                 send: @escaping (_ text: String, _ speak: Bool) -> Void) {
@@ -31,6 +35,9 @@ public struct ConversationView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
+            if !model.routines.isEmpty {
+                RoutinesPanel(routines: model.routines, open: $showRoutines, act: model.routine)
+            }
             if !model.helpers.isEmpty {
                 HelpersPanel(helpers: model.helpers, entries: transcript.entries, character: model.character,
                              open: { settings.focus = $0 }, stop: model.stopHelper)
@@ -58,12 +65,19 @@ public struct ConversationView: View {
                     }
                 }
             }
+            if let draft = model.drafts.last {
+                DraftCard(draft: draft, talkKey: settings.talkKey,
+                          save: { model.answerDraft(draft.id, save: true) },
+                          change: { settings.prefill = "Change \(draft.name): " },
+                          drop: { model.answerDraft(draft.id, save: false) })
+            }
             if let question = model.question {
                 QuestionBar(question: question, talkKey: settings.talkKey, answer: model.answer)
             }
-            InputBar(speakReplies: $speakReplies) { send($0, speakReplies) }
+            InputBar(speakReplies: $speakReplies, prefill: $settings.prefill) { send($0, speakReplies) }
         }
-        .background(WindowColors.paper)
+        .background(theme.tint)
+        .animation(theme.motion.gentle, value: theme)
     }
 
     private static let bottom = "bottom"
@@ -157,6 +171,7 @@ struct UserLine: View {
 
 /// Milo's words: the rounded face of the app, with a small dot in the colour of his mood.
 struct MiloLine: View {
+    @Environment(\.miloTheme) private var theme
     let text: String
     let emotion: Emotion
     var streaming = false
@@ -164,12 +179,12 @@ struct MiloLine: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 7) {
             Circle()
-                .fill(WindowColors.mood(emotion))
+                .fill(WindowColors.mood(emotion, theme))
                 .frame(width: 7, height: 7)
                 .frame(width: 12)
                 .help("Milo felt \(emotion.rawValue)")
                 .accessibilityLabel("Milo, \(emotion.rawValue)")
-            (Text(text) + Text(streaming ? " ▍" : "").foregroundColor(WindowColors.accent))
+            (Text(text) + Text(streaming ? " ▍" : "").foregroundColor(theme.primary))
                 .font(.system(size: 14, design: .rounded))
                 .lineSpacing(2.5)
                 .textSelection(.enabled)
@@ -179,6 +194,7 @@ struct MiloLine: View {
 }
 
 struct DayHeading: View {
+    @Environment(\.miloTheme) private var theme
     let text: String
 
     var body: some View {
@@ -186,7 +202,7 @@ struct DayHeading: View {
             Text(text)
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
-            Rectangle().fill(WindowColors.rule).frame(height: 1)
+            Rectangle().fill(theme.rule).frame(height: 1)
         }
         .padding(.leading, Layout.gutter + 10)
     }
@@ -202,6 +218,7 @@ struct DayHeading: View {
 
 /// "Listening…" or "Thinking…" at the end while nothing has arrived yet.
 struct PendingRow: View {
+    @Environment(\.miloTheme) private var theme
     let text: String
     let state: MiloState
 
@@ -209,9 +226,9 @@ struct PendingRow: View {
         HStack(alignment: .center, spacing: 10) {
             Color.clear.frame(width: Layout.gutter, height: 1)
             if state == .listening {
-                LevelBars(level: 0.35, color: Palette.talk).frame(width: 12).scaleEffect(0.6)
+                LevelBars(level: 0.35, color: theme.primary).frame(width: 12).scaleEffect(0.6)
             } else {
-                ThinkingDots(color: Palette.think).scaleEffect(0.55).frame(width: 12)
+                ThinkingDots(color: theme.accent).scaleEffect(0.55).frame(width: 12)
             }
             Text(text)
                 .font(.system(size: 12.5, design: .rounded))
@@ -231,18 +248,15 @@ struct PendingRow: View {
 
 /// The first thing a new user sees: talk first, typing second.
 struct EmptyConversation: View {
+    @Environment(\.miloTheme) private var theme
     let talkKey: String
 
     var body: some View {
         VStack(spacing: 12) {
             Spacer()
-            Circle()
-                .fill(LinearGradient(colors: [Palette.bodyTop, Palette.bodyBottom], startPoint: .top, endPoint: .bottom))
-                .frame(width: 34, height: 34)
-                .overlay(HStack(spacing: 7) {
-                    Capsule().fill(Palette.face).frame(width: 4, height: 8)
-                    Capsule().fill(Palette.face).frame(width: 4, height: 8)
-                }.offset(y: -2))
+            CharacterFigure(for: theme.style, emotion: .happy, size: 72)
+                .frame(width: 72, height: 72)
+                .background(Circle().fill(RadialGradient(colors: [theme.glow.opacity(0.45), theme.glow.opacity(0)], center: .center, startRadius: 4, endRadius: 50)).frame(width: 110, height: 110))
             Text("Hold \(talkKey) and talk, or type here.")
                 .font(.system(size: 15, weight: .medium, design: .rounded))
                 .multilineTextAlignment(.center)
@@ -260,6 +274,7 @@ struct EmptyConversation: View {
 
 /// Milo's waiting question, pinned above the text field until it is answered.
 struct QuestionBar: View {
+    @Environment(\.miloTheme) private var theme
     let question: PendingQuestion
     let talkKey: String
     let answer: (Bool) -> Void
@@ -280,15 +295,17 @@ struct QuestionBar: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(WindowColors.inset)
-        .overlay(alignment: .top) { Rectangle().fill(WindowColors.rule).frame(height: 1) }
+        .background(theme.ink.opacity(0.05))
+        .overlay(alignment: .top) { Rectangle().fill(theme.rule).frame(height: 1) }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Milo asks: \(question.text)")
     }
 }
 
 struct InputBar: View {
+    @Environment(\.miloTheme) private var theme
     @Binding var speakReplies: Bool
+    @Binding var prefill: String?
     let submit: (String) -> Void
     @State private var draft = ""
     @FocusState private var focused: Bool
@@ -305,15 +322,15 @@ struct InputBar: View {
                 .padding(.vertical, 8)
                 // Keep the radius under half the field's height (~32 pt): from about there on, the border
                 // renders with a short vertical bar at each end.
-                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(WindowColors.field))
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(theme.card))
                 .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(focused ? WindowColors.accent.opacity(0.55) : WindowColors.rule, lineWidth: 1))
+                    .strokeBorder(focused ? theme.primary.opacity(0.55) : theme.rule, lineWidth: 1))
             Button {
                 speakReplies.toggle()
             } label: {
                 Image(systemName: speakReplies ? "speaker.wave.2.fill" : "speaker.slash")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(speakReplies ? WindowColors.accent : Color.secondary)
+                    .foregroundStyle(speakReplies ? theme.primary : Color.secondary)
                     .frame(width: 30, height: 34)
                     .contentShape(Rectangle())
             }
@@ -326,9 +343,15 @@ struct InputBar: View {
         .padding(.horizontal, 14)
         .padding(.top, 10)
         .padding(.bottom, 14)
-        .background(WindowColors.paper)
-        .overlay(alignment: .top) { Rectangle().fill(WindowColors.rule).frame(height: 1) }
+        .background(theme.tint)
+        .overlay(alignment: .top) { Rectangle().fill(theme.rule).frame(height: 1) }
         .onAppear { focused = true }
+        .onChange(of: prefill) {
+            guard let text = prefill else { return }
+            draft = text
+            focused = true
+            prefill = nil
+        }
     }
 
     private func send() {
@@ -339,37 +362,25 @@ struct InputBar: View {
     }
 }
 
-/// Window colours built from Milo's palette, one value for light and one for dark mode.
+/// Colours for what a task is doing, the same under every skin, and the dot by Milo's lines.
+/// Everything else in the window comes from the skin's `Theme`.
 enum WindowColors {
-    /// Lavender paper by day, Milo's face indigo by night.
-    static let paperColor = dynamicNS(light: NSColor(Palette.idle).blended(withFraction: 0.72, of: .white)!,
-                                      dark: NSColor(Palette.face).blended(withFraction: 0.08, of: .black)!)
-    static let paper = Color(nsColor: paperColor)
-    static let field = dynamic(light: .white, dark: NSColor(Palette.face).blended(withFraction: 0.12, of: .white)!)
-    static let rule = dynamic(light: NSColor(Palette.bodyBottom).withAlphaComponent(0.12),
-                              dark: NSColor.white.withAlphaComponent(0.09))
-    static let thread = dynamic(light: NSColor(Palette.bodyBottom).withAlphaComponent(0.22),
-                                dark: NSColor.white.withAlphaComponent(0.18))
-    static let accent = dynamic(light: NSColor(Palette.bodyBottom), dark: NSColor(Palette.bodyTop))
-    /// The thread the steps of a task hang on.
     static let running = dynamic(light: NSColor(Palette.think).blended(withFraction: 0.25, of: .black)!,
                                  dark: NSColor(Palette.think))
     static let done = dynamic(light: NSColor(Palette.dictate).blended(withFraction: 0.35, of: .black)!,
                               dark: NSColor(Palette.dictate))
     static let failed = dynamic(light: NSColor(Palette.talk).blended(withFraction: 0.18, of: .black)!,
                                 dark: NSColor(Palette.talk))
-    static let inset = dynamic(light: NSColor(Palette.face).withAlphaComponent(0.05),
-                               dark: NSColor.black.withAlphaComponent(0.25))
 
-    static func mood(_ emotion: Emotion) -> Color {
+    static func mood(_ emotion: Emotion, _ theme: Theme) -> Color {
         switch emotion {
-        case .neutral: accent
+        case .neutral: theme.primary
         case .happy: Palette.think
-        case .excited: Palette.blush
+        case .excited: theme.accent
         case .thinking: Palette.speak
         case .concerned, .confused: Palette.talk
-        case .sad: Palette.bodyBottom.opacity(0.6)
-        case .sleepy: Palette.idle
+        case .sad: theme.primary.opacity(0.6)
+        case .sleepy: theme.glow
         }
     }
 
@@ -386,8 +397,6 @@ enum WindowColors {
     }
 
     private static func dynamicNS(light: NSColor, dark: NSColor) -> NSColor {
-        NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
-        }
+        ThemeColors.dynamic((light, dark))
     }
 }

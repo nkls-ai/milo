@@ -151,7 +151,7 @@ def test_the_cloud_voice_gets_another_try_after_a_while():
     switches = []
     voice = FallbackVoice(cloud, lambda: local, on_switch=switches.append, clock=lambda: now[0])
     voice.warm()
-    assert local.warmed, "a cloud voice keeps a local one ready, so a drop goes on at once"
+    assert not local.warmed, "the local voice loads only when it is needed: it holds gigabytes"
 
     async def run():
         assert voice.stream() is not None
@@ -159,6 +159,8 @@ def test_the_cloud_voice_gets_another_try_after_a_while():
         assert voice.stream() is None
         voice.failed("still offline")
         assert switches == ["offline"], "said once"
+        voice.synthesize("Hm.")
+        assert local.warmed
         now[0] += RETRY_S + 1
         assert voice.stream() is not None
 

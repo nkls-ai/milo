@@ -72,7 +72,7 @@ class Utterance:
 
     def __init__(self, speaker: Speaker):
         self._speaker = speaker
-        self._stream = speaker.voice.stream() if isinstance(speaker.voice, StreamingVoice) else None
+        self._stream = self._open_stream()
         self._streaming = self._stream is not None
         self._chunker = self._new_chunker()
         self._more = asyncio.Event()
@@ -241,6 +241,11 @@ class Utterance:
                                                               (self._closed and self._began)):
             self._worker = asyncio.create_task(self._play())
 
+    def _open_stream(self) -> VoiceStream | None:
+        """A stream from a streaming voice, unless Milo's voice is switched off (then nothing goes out)."""
+        voice = self._speaker.voice
+        return voice.stream() if isinstance(voice, StreamingVoice) and not self._speaker.silent else None
+
     def _new_chunker(self) -> SpeechChunker:
         return SpeechChunker(sentences=self._streaming)
 
@@ -306,7 +311,7 @@ class Utterance:
     async def _play_streamed(self, loop: asyncio.AbstractEventLoop) -> None:
         """Speak the reply as one delivery, sending each piece to the stream as soon as the chunker cuts it.
         Returns once the stream has played out, or when it broke: then the unheard rest is back in the chunker."""
-        stream, self._stream = self._stream or self._speaker.voice.stream(), None  # a stream doesn't outlive a hold
+        stream, self._stream = self._stream or self._open_stream(), None  # a stream doesn't outlive a hold
         if stream is None:
             self._streaming = False  # the voice can't stream now: on piece by piece
             self._requeue([])
@@ -391,6 +396,8 @@ class Utterance:
 
     async def _synthesize(self, chunk: str) -> Audio | None:
         speaker = self._speaker
+        if speaker.silent:
+            return None
         loop = asyncio.get_running_loop()
         try:
             return await loop.run_in_executor(speaker.executor, speaker.voice.synthesize, chunk)
@@ -425,6 +432,8 @@ class Speaker:
         self.current: Utterance | None = None
         self.held = False
         """hold() is in force: what is being said, and a reply that starts meanwhile, wait for resume()."""
+        self.silent = False
+        """[ui] voice off: replies show piece by piece at speaking pace, with no voice."""
 
     @property
     def active(self) -> bool:

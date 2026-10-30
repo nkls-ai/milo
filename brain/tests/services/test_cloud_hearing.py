@@ -97,3 +97,19 @@ def test_a_cancelled_recording_cancels_its_session():
 
     asyncio.run(run())
     assert cloud.sessions[0].cancelled and not cloud.sessions[0].finished
+
+
+def test_with_live_words_on_the_cloud_text_still_wins_and_no_final_local_pass_runs():
+    cloud = FakeStreamingTranscriber("die Wolke")
+    s = Stack(model=FakeLiveModel(["[neutral] Ja."]), transcriber=FakeTranscriber("lokal"), hearing=CloudHearing(cloud))
+    s.listening.live_mode = LiveMode.PREVIEW
+
+    async def run():
+        s.listening.start(ListenMode.TALK)
+        await settle()
+        await s.listening.stop()
+        await settle()
+
+    asyncio.run(run())
+    assert [h.text for h in s.sink.of(Heard)] == ["die Wolke"]
+    assert s.transcriber.calls == []

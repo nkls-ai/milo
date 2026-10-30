@@ -38,6 +38,8 @@ OUTBOUND = {
     "helpers": lambda m: ev.Helpers(m["helpers"]),
     "hands_borrow": lambda m: ev.HandsBorrow(m["on"], m["what"]),
     "facts": lambda m: ev.Facts(m["facts"]),
+    "routines": lambda m: ev.Routines(m["routines"], m["drafts"]),
+    "settings": lambda m: ev.SettingsReport(m["settings"], m["restart"], m["error"]),
 }
 
 
@@ -82,6 +84,8 @@ def test_parsed_values():
     assert ev.parse_command({"type": "stop_helper", "id": "c0ffee12ab34"}) == ev.StopHelper("c0ffee12ab34")
     with pytest.raises(ev.ProtocolError):
         ev.parse_command({"type": "stop_helper", "id": " "})
+    assert ev.parse_command({"type": "set_setting", "section": "ui", "key": "voice", "value": False}) == \
+        ev.SetSetting("ui", "voice", False)
 
 
 @pytest.mark.parametrize("raw", [
@@ -91,6 +95,8 @@ def test_parsed_values():
     {"type": "hands_result", "id": "h", "ok": True, "result": []},
     {"type": "confirm_answer", "id": "q1", "yes": "no"}, {"type": "confirm_answer", "yes": True},
     {"type": "app_response", "ok": True},
+    {"type": "set_setting", "section": "ui", "key": "character"},
+    {"type": "set_setting", "section": "ui", "key": "character", "value": ["pip"]},
 ])
 def test_bad_commands_raise_protocol_error(raw):
     with pytest.raises(ev.ProtocolError):
@@ -121,3 +127,14 @@ def test_memory_commands_parse_into_their_values():
                 {"type": "edit_fact", "id": "f1"}):
         with pytest.raises(ev.ProtocolError):
             ev.parse_command(bad)
+
+
+def test_routine_commands():
+    assert ev.parse_command({"type": "routine", "id": "monday-report", "action": "run"}) == \
+        ev.RoutineAction("monday-report", "run")
+    assert ev.parse_command({"type": "routine_draft_answer", "id": "d1", "save": False}) == \
+        ev.RoutineDraftAnswer("d1", False)
+    with pytest.raises(ev.ProtocolError):
+        ev.parse_command({"type": "routine", "id": "x", "action": "explode"})
+    with pytest.raises(ev.ProtocolError):
+        ev.parse_command({"type": "routine_draft_answer", "id": "d1", "save": "yes"})

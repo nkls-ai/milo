@@ -147,3 +147,30 @@ public protocol HotkeySource: AnyObject {
     /// nil removes it. Returns false if macOS refused, e.g. another app holds the combo.
     @discardableResult func register(_ combo: KeyCombo?) -> Bool
 }
+
+/// A macOS permission the setup window walks through.
+public enum Permission: String, CaseIterable, Sendable {
+    case microphone, accessibility, screenRecording, calendars, reminders, automation
+}
+
+public enum PermissionState: Equatable, Sendable {
+    case granted
+    /// macOS hasn't asked yet; asking shows its own dialog.
+    case notAsked
+    case denied
+    /// macOS can't say right now, e.g. Mail isn't open to check Automation.
+    case unknown
+}
+
+/// Reads and asks for permissions. Every call is cheap enough to poll once a second.
+public protocol PermissionSource: AnyObject {
+    func state(of permission: Permission) -> PermissionState
+    /// Puts Milo in the permission's list in System Settings, so he is there to switch on. Shows macOS's own
+    /// question where there is one and it wasn't asked yet.
+    func register(_ permission: Permission)
+    /// Opens the page in System Settings where the user switches Milo on.
+    func openSettings(_ permission: Permission)
+    /// Forgets Milo's own entry for the permission (`tccutil reset`), e.g. one that shows as on after a rebuild
+    /// but no longer counts. Only Milo's bundle id, never another app's.
+    func reset(_ permission: Permission)
+}

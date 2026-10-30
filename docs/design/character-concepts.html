@@ -108,6 +108,12 @@
   .pick p { max-width: 68ch; }
   .pick p + p { margin-top: 12px; }
 
+  .built { margin-top: 72px; }
+  .built .shots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 20px; }
+  .built figure { margin: 0; }
+  .built img { width: 100%; height: auto; border-radius: 14px; border: 1px solid var(--line); display: block; }
+  .built figcaption { margin-top: 6px; color: var(--muted); font-size: 14px; }
+  .built .wide { grid-column: 1 / -1; }
   @media (max-width: 900px) {
     section.dir, .pick { grid-template-columns: 1fr; gap: 20px; }
     .corners { grid-template-columns: 1fr; }
@@ -300,6 +306,7 @@
   <header>
     <h1>Bodies for Milo</h1>
     <p class="lede">Same Milo in each: the voice, the manners and the life described in <a href="../CHARACTER.md">CHARACTER.md</a>. Only the drawing changes. Each one sits at real size in the corner of a desktop, on a light and a dark wallpaper. Move your mouse and they watch it.</p>
+    <p class="lede">Update, 30 October, later: five looks are now built in the app and picked in Settings: Pip, the robot, a new round dragon, Kit and Glow. See <a href="#built">Built in the app</a> below; the live sketches after it are the original directions.</p>
     <p class="lede">Update, 30 October: Pip is now drawn in the app and is Milo's default look. The robot stays available with <code>[ui] character = "classic"</code>. Kit, Glow and Puff further down are three new directions, in case Pip isn't the one.</p>
     <div class="hero" aria-label="The three directions side by side">
       <div class="hero-row">
@@ -312,6 +319,20 @@
       </div>
     </div>
   </header>
+
+  <section class="built" id="built">
+    <h2>Built in the app</h2>
+    <p class="lede">Rendered from the Swift code (<code>MILO_RENDER_DIR=… swift test --filter SkinRender</code>). Every look gets the same signals, so each blinks, listens, thinks, speaks, sleeps, flies and points, and each brings its own colours and springs to the bubble and the windows. <code>[ui] character</code> = <code>pip</code>, <code>classic</code>, <code>dragon</code>, <code>kit</code> or <code>glow</code>.</p>
+    <div class="shots">
+      <figure class="wide"><img src="skins/skins-lineup-light.png" alt="Pip, the robot, the dragon, Kit and Glow, idle, happy and asleep, on a light background"><figcaption>Idle, happy and asleep. The dragon curls around his tail to sleep; Glow cools to an ember.</figcaption></figure>
+      <figure class="wide"><img src="skins/skins-lineup-dark.png" alt="The same five looks on a dark background"><figcaption>The same in dark mode.</figcaption></figure>
+      <figure><img src="skins/dragon-corner-light.png" alt="The dragon in the corner asking a question in a teal bubble"><figcaption>The bubble takes the skin's colours: teal and ember for the dragon.</figcaption></figure>
+      <figure><img src="skins/glow-corner-dark.png" alt="Glow in the corner at night with an amber Yes button"><figcaption>Glow's lantern amber on night blue.</figcaption></figure>
+      <figure class="wide"><img src="skins/skins-small.png" alt="All five looks at 36 points"><figcaption>At helper size, 36 pt: idle, thinking and pointing.</figcaption></figure>
+      <figure><img src="skins/settings-dragon.png" alt="The Settings window with five live look previews"><figcaption>Settings: each preview perks up when the pointer is over it.</figcaption></figure>
+      <figure><img src="skins/setup-kit.png" alt="The setup window with a small scene per permission, in Kit's colours"><figcaption>Setup: a little scene shows what Milo does with each permission.</figcaption></figure>
+    </div>
+  </section>
 
   <section class="dir" id="visor" data-dir="visor">
     <div class="copy">

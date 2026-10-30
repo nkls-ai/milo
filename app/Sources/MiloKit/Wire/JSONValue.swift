@@ -45,6 +45,20 @@ extension JSONValue: Codable {
     }
 }
 
+/// Lets a value be a picker tag in the Settings window.
+extension JSONValue: Hashable {
+    public func hash(into hasher: inout Hasher) {
+        switch self {
+        case .null: hasher.combine(0)
+        case let .bool(b): hasher.combine(b)
+        case let .number(n): hasher.combine(n)
+        case let .string(s): hasher.combine(s)
+        case let .array(a): hasher.combine(a)
+        case let .object(o): hasher.combine(o)
+        }
+    }
+}
+
 extension JSONValue: ExpressibleByStringLiteral, ExpressibleByFloatLiteral, ExpressibleByIntegerLiteral,
                      ExpressibleByBooleanLiteral {
     public init(stringLiteral value: String) { self = .string(value) }

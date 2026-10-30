@@ -9,11 +9,14 @@ import pytest
 from milo.brain import Brain
 from milo.config import UiSettings
 from milo.core.events import (Bubble, Dictation, EmotionChanged, Facts, HandsSession, Heard, Level, ListenStart,
-                              ListenStop, Looking, Mute, StateChanged, Status, TextInput, UiConfig, parse_command)
+                              ListenStop, Looking, Mute, Partial, SetSetting, SettingsReport, StateChanged, Status,
+                              TextInput, UiConfig, parse_command)
+from milo.core.events import Routines
 from milo.core.memory import Fact
-from milo.core.types import Emotion, HandsError, ListenMode, MiloState, Nudge, ScreenCapture
+from milo.core.routines import Routine
+from milo.core.types import Emotion, HandsError, ListenMode, LiveMode, MiloState, Nudge, ScreenCapture
 from milo.services.app_bridge import AppEyes, AppHands
-from tests.fakes import FakeEyes, FakeHands, FakeLiveModel, FakeTranscriber
+from tests.fakes import FakeEyes, FakeHands, FakeLiveModel, FakeTranscriber, MemoryConfigFile
 from milo.services.helpers import HelperStatus
 from tests.fakes import ScriptedHarness, WorkerScript
 from tests.services.stack import Stack, settle
@@ -78,7 +81,8 @@ def check_listen_confirm(s: Stack, msg: dict) -> None:
 
 def check_get_history(s: Stack, msg: dict) -> None:
     run(s, parse_command(msg))
-    assert s.sink.events == []  # the stack has no transcript, so there is nothing to send
+    # The stack has no transcript, so only the routines go out: the window lists them.
+    assert s.sink.events == [Routines([], [])]
 
 
 def check_context(s: Stack, msg: dict) -> None:
@@ -224,7 +228,67 @@ def check_edit_fact(s: Stack, msg: dict) -> None:
     assert s.sink.of(Facts)[-1].facts[-1]["text"] == msg["text"]
 
 
+def check_routine(s: Stack, msg: dict) -> None:
+    report = Routine("monday-report", "Monday report", body="1. Add up the sales.\n   Check: one total.")
+    s.routine_book.save(report)
+    s.routine_book.save(Routine("tidy-downloads", "Tidy downloads", paused=True, body="Tidy."))
+    s.routine_state.data = {"approved": {"monday-report": report.fingerprint()}}
+    s.routines._state = s.routine_state.load()
+
+    async def go():
+        await s.brain.handle(parse_command(msg))
+        await s.routines.idle()
+        await s.tasks.idle()
+
+    asyncio.run(go())
+    if msg["action"] == "run":
+        assert [h.title for h in s.tasks.helpers] == ["Monday report"]
+        assert "Add up the sales." in s.harness.calls[0][0]
+    else:
+        assert not s.routine_book.get("tidy-downloads").paused
+
+
+def check_routine_draft_answer(s: Stack, msg: dict) -> None:
+    text = "---\nname: Invoice folder\n---\n\n1. Move the invoices.\n"
+    s.routine_state.data = {"drafts": {msg["id"]: {"name": "Invoice folder", "base": "invoice-folder",
+                                                   "schedule": None, "ready": True, "text": text}}}
+    s.routines._state = s.routine_state.load()
+    s.routine_book.drafts[msg["id"]] = text
+
+    async def go():
+        await s.brain.handle(parse_command(msg))
+        await s.routines.idle()
+
+    asyncio.run(go())
+    saved = s.routine_book.get("invoice-folder")
+    assert (saved is not None) is msg["save"] and not s.routine_book.drafts
+    assert s.routine_state.data["approved"]["invoice-folder"] == saved.fingerprint()
+
+
+def check_get_settings(s: Stack, msg: dict) -> None:
+    run(s, parse_command(msg))
+    [report] = s.sink.of(SettingsReport)
+    assert {(r["section"], r["key"]) for r in report.settings} >= {("ui", "character"), ("chat", "updates"),
+                                                                    ("dictation", "stream"), ("ui", "voice")}
+    assert not report.restart and not report.error
+
+
+def check_set_setting(s: Stack, msg: dict) -> None:
+    run(s, parse_command(msg))
+    assert s.config_file.raw["ui"][msg["key"]] == msg["value"]
+    [report] = s.sink.of(SettingsReport)
+    assert not report.error
+    if msg["key"] == "character":
+        assert s.sink.of(UiConfig)[-1].character == msg["value"]
+    else:
+        assert s.speaker.silent is not msg["value"]
+
+
 CHECKS = {
+    "get_settings": check_get_settings,
+    "set_setting": check_set_setting,
+    "routine": check_routine,
+    "routine_draft_answer": check_routine_draft_answer,
     "stop_helper": check_stop_helper,
     "get_facts": check_get_facts,
     "forget_fact": check_forget_fact,
@@ -254,6 +318,13 @@ def test_every_fixture_command_has_a_routing_check():
                          ids=lambda m: f"{m['type']}-{m.get('mode', '')}{m.get('id', '')}")
 def test_every_fixture_command_routes_to_its_service(msg):
     CHECKS[msg["type"]](Stack(transcriber=FakeTranscriber("something")), msg)
+
+
+def test_settings_changes_reach_listening_and_every_later_greeting():
+    s = Stack()
+    run(s, SetSetting("dictation", "stream", "type"), SetSetting("ui", "dictate_key", "right_control"))
+    assert s.listening.live_mode is LiveMode.TYPE
+    assert s.brain.greeting()[2].dictate_key == "right_control"
 
 
 def test_mute_without_a_heartbeat_is_harmless():
@@ -307,3 +378,26 @@ def test_mute_stops_nudges_but_reminders_still_show_silently():
     asyncio.run(go())
     assert s.bubbles()[-1] == "Time to stretch."
     assert s.voice.spoken == ["Time to stretch."]
+
+
+def test_a_dictation_style_picked_in_the_menu_applies_to_the_next_recording():
+    s = Stack(transcriber=FakeTranscriber("one", "two"))
+    run(s, ListenStart(ListenMode.DICTATE), ListenStop())
+    assert s.sink.of(Partial) == []
+    run(s, SetSetting("dictation", "stream", "preview"))
+    assert s.listening.live_mode is LiveMode.PREVIEW
+    [report] = [e for e in s.brain.greeting() if isinstance(e, SettingsReport)]
+    assert [r["value"] for r in report.settings if (r["section"], r["key"]) == ("dictation", "stream")] == ["preview"]
+
+
+def test_a_style_that_cant_be_saved_is_not_used_and_the_report_says_why():
+    class ReadOnly(MemoryConfigFile):
+        def write(self, section, key, value):
+            raise OSError("read-only")
+
+    s = Stack(config_file=ReadOnly())
+    run(s, SetSetting("dictation", "stream", "type"))
+    assert s.listening.live_mode is LiveMode.OFF
+    [report] = s.sink.of(SettingsReport)
+    assert report.error
+    assert [r["value"] for r in report.settings if (r["section"], r["key"]) == ("dictation", "stream")] != ["type"]

@@ -21,11 +21,12 @@ NOTICE = "I can't reach my usual voice right now, so I'm talking with my own for
 class FallbackVoice:
     """A Voice that swaps to a simpler engine when the configured one can't be used, so Milo still talks.
 
-    An engine that fails to load is replaced for good. A cloud engine (one with `remote = True`) can also fail
-    later: offline, a bad key, no credits. Then its stream or synthesize() raises VoiceUnavailable, and replies
-    use the fallback until RETRY_S has passed. For that the fallback is warmed at start-up next to a cloud engine,
-    so a drop mid-reply goes on at once. `on_switch(reason)` hears about each switch to the fallback, at most once
-    per RETRY_S. Fallback audio comes resampled to the primary's rate, so an open output stream can go on.
+    An engine that fails to load is replaced for good. A cloud engine can also fail later: offline, a bad key,
+    no credits. Then its stream or synthesize() raises VoiceUnavailable, and replies use the fallback until
+    RETRY_S has passed. The fallback loads only then, on the TTS thread: a local voice holds gigabytes that a
+    16 GB Mac shouldn't keep for a voice it may never need ("say" loads at once, OmniVoice takes a while).
+    `on_switch(reason)` hears about each switch to the fallback, at most once per RETRY_S. Fallback audio comes
+    resampled to the primary's rate, so an open output stream can go on.
     """
 
     def __init__(self, primary: Voice, fallback_factory: Callable[[], Voice] | None,
@@ -61,12 +62,6 @@ class FallbackVoice:
             log.exception("tts engine %s failed to load, switching to the fallback", type(self._voice).__name__)
             self._voice = self._load_fallback()
             self._switched(str(e) or type(e).__name__)
-            return
-        if getattr(self._voice, "remote", False) and self._fallback_factory is not None:
-            try:
-                self._load_fallback()
-            except Exception:
-                log.exception("the fallback voice failed to load; without the network Milo will be silent")
 
     def synthesize(self, text: str) -> Audio:
         if not self._using_fallback():
@@ -76,7 +71,10 @@ class FallbackVoice:
                 if self._fallback_factory is None:
                     raise
                 self.failed(str(e))
-        fallback = self._fallback or self._load_fallback()
+        try:
+            fallback = self._load_fallback()
+        except Exception as e:
+            raise VoiceUnavailable(f"the fallback voice failed to load: {e}") from e
         return _resample(fallback.synthesize(text), fallback.sample_rate, self.sample_rate)
 
     def cancel(self) -> None:

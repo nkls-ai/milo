@@ -11,7 +11,7 @@ from milo.adapters.embed.hashing import HashEmbedder
 from milo.brain import Brain
 from milo.config import UiSettings
 from milo.core.events import Bubble, StateChanged
-from milo.core.types import MiloState
+from milo.core.types import LiveMode, MiloState
 from milo.memory.recall import HybridRecaller, render
 from milo.services.app_bridge import AppBridge
 from milo.services.approvals import Approvals
@@ -22,16 +22,18 @@ from milo.services.hands import HandsService
 from milo.services.heartbeat_runner import HeartbeatRunner
 from milo.services.cloud_hearing import CloudHearing
 from milo.services.listening import Listening
-from milo.services.live_talk import LiveTalk
+from milo.services.live_talk import LiveTalk, untrusted
 from milo.services.memory import Memory, MemoryParts, TurnMemory
 from milo.services.speaker import Speaker
 from milo.services.orchestrator import Orchestrator
+from milo.services.routines import Routines
 from milo.services.task_runner import TaskRunner
 from milo.services.ui_state import UiState
+from milo.settings import Settings
 from tests.fakes import (FakeAudioInput, FakeAudioOutput, FakeClock, FakeEyes, FakeHands, FakeHarness,
-                         FakeLiveModel, FakeTranscriber, FakeVoice, ListReminders, MemoryHistory, MemoryLedger,
-                         MemoryProfile, RecordingSink, ScriptedEngine, UpperCleaner, FakeMemoryIndex, MemoryEpisodeLog,
-                         MemoryFactStore)
+                         FakeLiveModel, FakeTranscriber, FakeVoice, ListReminders, MemoryConfigFile, MemoryHistory,
+                         MemoryLedger, MemoryProfile, MemoryRoutineBook, MemoryState, RecordingSink, ScriptedEngine,
+                         UpperCleaner, FakeMemoryIndex, MemoryEpisodeLog, MemoryFactStore)
 
 PERSONA = "You are Milo, a test persona."
 
@@ -75,6 +77,10 @@ class Stack:
     confirm_timeout_s: float = 1.0
     hearing: CloudHearing | None = None  # a cloud transcriber that listens along in talk mode
     with_memory: bool = False  # recall per turn, episode stubs and the facts screen, all on fakes
+    routine_book: MemoryRoutineBook = field(default_factory=MemoryRoutineBook)
+    routine_state: MemoryState = field(default_factory=MemoryState)
+    max_routine_runs: int = 6
+    config_file: MemoryConfigFile = field(default_factory=MemoryConfigFile)
 
     def __post_init__(self):
         executor = InlineExecutor()
@@ -101,9 +107,15 @@ class Stack:
             self.memory = Memory(parts, executor, self.sink, self.clock)
             self.memory.ready.set()
             self.turn_memory = TurnMemory(self.memory)
+        self.routines = Routines(self.routine_book, self.routine_state, self.tasks, self.speaker, self.ui,
+                                 self.clock, approvals=self.approvals, quiet=lambda: self.live_talk.busy,
+                                 max_runs_per_day=lambda: self.max_routine_runs, inert=untrusted, wait_s=self.wait_s,
+                                 poll_s=0.005)
+        self.tasks.on_done.append(self.routines.seen)
         self.live_talk = LiveTalk(self.model, self.speaker, self.ui, self.context, self.clock, self.profile,
                                   self.reminders, self.ledger, lambda: self.persona, self.idle_reset_s, self.tasks,
-                                  eyes=self.eyes, approvals=self.approvals, memory=self.turn_memory)
+                                  eyes=self.eyes, approvals=self.approvals, memory=self.turn_memory,
+                                  routines=self.routines)
         self.tasks.on_result = self.live_talk.note
         self.dictation = DictationService(UpperCleaner(), self.history, self.ui)
         self.listening = Listening(self.mic, self.transcriber, executor, self.ui, self.dictation, self.live_talk,
@@ -111,9 +123,15 @@ class Stack:
         self.heartbeat = HeartbeatRunner(self.engine, self.context, self.conversation, self.speaker, self.ui,
                                          self.mic, self.clock, busy=lambda: self.live_talk.busy,
                                          wait_s=self.wait_s, poll_s=0.005)
+        use_ui = lambda c: self.brain.use_ui(c.ui)  # noqa: E731
+        live = {("ui", "character"): use_ui, ("ui", "dictate_key"): use_ui, ("ui", "talk_key"): use_ui,
+                ("ui", "whats_this_key"): use_ui, ("ui", "voice"): lambda c: setattr(self.speaker, "silent", not c.ui.voice),
+                ("dictation", "stream"): lambda c: setattr(self.listening, "live_mode", LiveMode(c.dictation.stream))}
+        self.settings = Settings(self.config_file, self.config_file.read(), self.ui, live)
         self.brain = Brain(self.ui, self.listening, self.live_talk, self.context, self.heartbeat, UiSettings(),
                            approvals=self.approvals, bridge=self.bridge, hands=self.hands, screens=self.screens,
-                           helpers=self.tasks, memory=self.memory)
+                           helpers=self.tasks, memory=self.memory, routines=self.routines,
+                           settings=self.settings)
 
     def states(self) -> list[MiloState]:
         return [e.state for e in self.sink.of(StateChanged)]

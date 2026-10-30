@@ -100,6 +100,10 @@ class VoiceUnavailable(Exception):
     The message is plain enough for the log; the caller falls back to a local engine."""
 
 
+class Interrupted(Exception):
+    """Transcriber.interrupt() ended the pass that was running."""
+
+
 class HarnessError(Exception):
     """A harness call failed. `transient` says whether retrying later can help."""
 

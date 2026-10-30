@@ -92,7 +92,7 @@ class Backchannel:
         await asyncio.sleep(LATE_S)
         speaker = self._speaker
         now = asyncio.get_running_loop().time()
-        if speaker.held or (self._last_at is not None and now - self._last_at < COOLDOWN_S):
+        if speaker.held or speaker.silent or (self._last_at is not None and now - self._last_at < COOLDOWN_S):
             return
         target = self._reply
         if target is not None:
