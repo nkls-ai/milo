@@ -251,6 +251,24 @@ def test_the_apps_error_shows_once_and_a_recorder_that_failed_ends_the_meeting(t
     assert rig.service.current is None
 
 
+def test_a_recording_of_a_meeting_that_is_over_is_stopped(tmp_path):
+    rig = Rig(tmp_path, Script.conversation(["Anna"], lines=1))
+
+    async def go():
+        rig.service.start()
+        rig.service.recording_changed(MeetingRecording("2026-10-29-0900-old", True, ("me", "them")))
+
+    asyncio.run(go())
+    assert [(r.id, r.on) for r in rig.records()] == [("2026-10-29-0900-old", False)]
+
+
+def test_meeting_folders_are_for_the_user_alone(tmp_path):
+    rig = Rig(tmp_path, Script.conversation(["Anna"], lines=1))
+    asyncio.run(rig.service.toggle(True))
+    folder = rig.store.folder(rig.id)
+    assert folder.stat().st_mode & 0o077 == 0 and rig.store.audio_dir(rig.id).stat().st_mode & 0o077 == 0
+
+
 def test_a_question_during_the_call_gets_what_was_just_said_as_data(tmp_path):
     script = Script.conversation(["Anna", "me", "Sam"], lines=20)
     rig = Rig(tmp_path, script)

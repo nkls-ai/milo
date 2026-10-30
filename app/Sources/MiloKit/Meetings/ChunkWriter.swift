@@ -74,11 +74,14 @@ public final class ChunkWriter {
 
     private func openIfNeeded() throws {
         guard file == nil else { return }
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        // Other people's voices: readable by the user alone.
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
         index += 1
         inChunk = 0
         let url = path(index)
-        FileManager.default.createFile(atPath: url.path, contents: Self.header(dataBytes: 0, sampleRate: sampleRate))
+        FileManager.default.createFile(atPath: url.path, contents: Self.header(dataBytes: 0, sampleRate: sampleRate),
+                                       attributes: [.posixPermissions: 0o600])
         let handle = try FileHandle(forWritingTo: url)
         try handle.seekToEnd()
         file = handle

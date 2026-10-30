@@ -10,20 +10,24 @@ public final class MeetingController {
     private let signals: CallSignals?
     private let scheduler: Scheduler
     private let pollInterval: TimeInterval
+    private let brainGrace: TimeInterval
     private var detector: CallDetector
     private var poller: ScheduledTask?
+    private var brainGone: ScheduledTask?
     /// The meeting being recorded, until the recorder has written its last chunk.
     public private(set) var meeting: String?
     private var stopping = false
 
     public init(model: MiloModel, brain: BrainClient, recorder: MeetingRecorder, signals: CallSignals?,
-                scheduler: Scheduler, pollInterval: TimeInterval = 2.5, detector: CallDetector = CallDetector()) {
+                scheduler: Scheduler, pollInterval: TimeInterval = 2.5, brainGrace: TimeInterval = 300,
+                detector: CallDetector = CallDetector()) {
         self.model = model
         self.brain = brain
         self.recorder = recorder
         self.signals = signals
         self.scheduler = scheduler
         self.pollInterval = pollInterval
+        self.brainGrace = brainGrace
         self.detector = detector
     }
 
@@ -54,9 +58,20 @@ public final class MeetingController {
     }
 
     /// Tells a new brain what is being recorded, so it goes on with that meeting, or finishes one it was taking
-    /// notes in when it stopped.
+    /// notes in when it stopped. Recording goes on while the brain restarts, so no minute is lost, but not for
+    /// longer than `brainGrace` without one.
     public func connectionChanged(_ up: Bool) {
-        guard up else { return }
+        brainGone?.cancel()
+        brainGone = nil
+        guard up else {
+            if meeting != nil {
+                brainGone = scheduler.after(brainGrace) { [weak self] in
+                    NSLog("Milo: no brain for the meeting; stopping the recording")
+                    self?.end()
+                }
+            }
+            return
+        }
         if let meeting, !stopping {
             brain.send(.meetingRecording(id: meeting, on: true, tracks: recorder.tracks))
         } else {
@@ -64,9 +79,12 @@ public final class MeetingController {
         }
     }
 
-    /// "Take meeting notes" or "Stop taking notes" in the menu. The brain answers with `meeting_record`.
+    /// "Take meeting notes" or "Stop taking notes" in the menu. Starting is the brain's to decide (it answers with
+    /// `meeting_record`); stopping happens here at once, brain or not.
     public func toggle() {
-        brain.send(.meetingToggle(!model.recording))
+        let stop = model.recording
+        brain.send(.meetingToggle(!stop))
+        if stop { end() }
     }
 
     private func begin(id: String, dir: String) {

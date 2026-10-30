@@ -95,12 +95,13 @@ class FileMeetingStore:
     # ---- the meeting
 
     def open(self, meeting: MeetingInfo) -> str:
-        self.root.mkdir(parents=True, exist_ok=True)
+        self.root.mkdir(mode=0o700, parents=True, exist_ok=True)  # other people's words: the user's eyes only
         base = id = meeting_id(meeting)
         n = 2
         while (self.root / id).exists():
             id, n = f"{base}-{n}", n + 1
-        (self.root / id / "audio").mkdir(parents=True)
+        (self.root / id).mkdir(mode=0o700)
+        (self.root / id / "audio").mkdir(mode=0o700)
         self._write_meta(id, {"info": meeting.to_dict(), "state": {}, "done": False})
         return id
 

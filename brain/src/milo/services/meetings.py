@@ -271,6 +271,11 @@ class MeetingService:
                 log.info("the app still records meeting %s: going on with it", rec.id)
                 self._run(m)
             self._finish_waiting(keep=rec.id)
+            if rec.id and (m is None or m.id != rec.id) and rec.id not in self._finishing:
+                # A recording no meeting here wants (it was finished while the app was away): stop it.
+                log.info("the app records meeting %s, which is over: stopping it", rec.id)
+                self._ui.emit(MeetingRecord(rec.id, "", False))
+                return
             if m is not None and m.id == rec.id and rec.error and not m.told_error:
                 m.told_error = True
                 self._ui.emit(Status(rec.error))

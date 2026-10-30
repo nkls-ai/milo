@@ -2,7 +2,7 @@
 service), scored for who-said-what, words and time. Nothing plays, nothing is recorded, nothing is sent.
 
     uv run python -m milo.eval.meetings                    # the 20-line script, five other voices
-    uv run python -m milo.eval.meetings --repeat 25 --fast # about an hour: memory must stay flat
+    uv run python -m milo.eval.meetings --repeat 15        # 18 minutes of call: memory must stay flat
     uv run python -m milo.eval.meetings --realtime         # chunks arrive every 30 s, as in a call: lag
 
 `--leak 0.3` mixes the call into the microphone, like a user on speakers. Loads Whisper large-v3-turbo and
@@ -14,8 +14,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import itertools
+import os
 import re
 import resource
+import subprocess
 import tempfile
 import time
 from collections import Counter
@@ -133,7 +135,19 @@ def write_chunks(meeting: FakeMeeting, folder: Path, upto_s: float | None = None
 
 
 def rss_mb() -> float:
-    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 2**20  # macOS reports bytes
+    """Resident memory now (not the peak), plus what MLX holds on the GPU, in MB."""
+    try:
+        rss = int(subprocess.run(["ps", "-o", "rss=", "-p", str(os.getpid())], capture_output=True, text=True,
+                                 timeout=5).stdout.strip()) / 1024
+    except (OSError, ValueError, subprocess.SubprocessError):
+        rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 2**20
+    try:
+        import mlx.core as mx
+
+        rss += mx.get_active_memory() / 2**20
+    except (ImportError, AttributeError):
+        pass
+    return rss
 
 
 async def run(args) -> None:
@@ -170,6 +184,8 @@ async def run(args) -> None:
                 if chunk.path not in sent:
                     sent.add(chunk.path)
                     service.chunk(MeetingChunk(m.id, chunk.track, chunk.index, chunk.path, chunk.start, chunk.seconds))
+            if int(elapsed) % 30 == 0:
+                memory.append((elapsed, rss_mb()))
             await asyncio.sleep(1)
     else:
         for chunk in write_chunks(meeting, folder):

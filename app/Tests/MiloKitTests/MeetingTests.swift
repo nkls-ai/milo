@@ -111,13 +111,29 @@ private final class Rig {
         #expect(rig.brain.sent == [.meetingRecording(id: "m1", on: true, tracks: ["me", "them"])])
     }
 
-    @Test func theMenuAsksTheBrainToStartOrStop() {
+    @Test func theMenuAsksTheBrainToStartButStopsAtOnce() {
         let rig = Rig()
         rig.meetings.toggle()
+        #expect(rig.brain.sent == [.meetingToggle(true)] && rig.recorder.started.isEmpty)
         rig.record(true)
         rig.brain.clearSent()
         rig.meetings.toggle()
-        #expect(rig.brain.sent == [.meetingToggle(false)])
+        #expect(!rig.model.recording && rig.recorder.pendingStop != nil)
+        rig.recorder.finishStop()
+        #expect(rig.brain.sent == [.meetingToggle(false), .meetingRecording(id: "m1", on: false, tracks: [])])
+    }
+
+    @Test func recordingGoesOnWhileTheBrainRestartsButNotWithoutOneForLong() {
+        let rig = Rig()
+        rig.record(true)
+        rig.meetings.connectionChanged(false)
+        rig.scheduler.advance(by: 60)
+        rig.meetings.connectionChanged(true)  // back: the same meeting goes on
+        rig.scheduler.advance(by: 600)
+        #expect(rig.model.recording && rig.recorder.pendingStop == nil)
+        rig.meetings.connectionChanged(false)
+        rig.scheduler.advance(by: 301)
+        #expect(!rig.model.recording && rig.recorder.pendingStop != nil)
     }
 
     @Test func otherEventsAreNotTheMeetingsBusiness() {
@@ -248,7 +264,9 @@ private final class Rig {
         let writer = ChunkWriter(dir: dir, track: "me", sampleRate: 100, chunkSeconds: 10)
         try writer.append([Float](repeating: 0.25, count: 120))
         // The app dies here: no finish(). The header still says 0 bytes, but the samples are in the file.
-        let data = try Data(contentsOf: dir.appendingPathComponent("me-0001.wav"))
-        #expect(data.count == 44 + 240)
+        let url = dir.appendingPathComponent("me-0001.wav")
+        #expect(try Data(contentsOf: url).count == 44 + 240)
+        let mode = try FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? Int
+        #expect(mode == 0o600)
     }
 }

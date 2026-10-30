@@ -3,7 +3,7 @@ import CoreAudio
 import ScreenCaptureKit
 
 /// Records a meeting: the microphone through AVAudioEngine, the call through a Core Audio process tap of
-/// everything the Mac plays except Milo (macOS 14.2+, permission "System Audio Recording"), or through
+/// everything the Mac plays except Milo (macOS 14.4+, permission "System Audio Recording"), or through
 /// ScreenCaptureKit when there is no tap (permission "Screen Recording"). Both tracks go to disk as 30 s chunks
 /// first (ChunkWriter), then the brain hears about them.
 ///
@@ -93,7 +93,8 @@ public final class MacMeetingRecorder: MeetingRecorder {
 
     private func startCall() {
         let excluded = excludedPIDs()
-        if #available(macOS 14.2, *) {
+        // Taps exist since 14.2, but asking for the permission works from 14.4.
+        if #available(macOS 14.4, *) {
             let tap = ProcessTapCapture(excluding: excluded) { [weak self] samples, host in
                 self?.write("them", samples, host: host)
             }
@@ -139,7 +140,17 @@ public final class MacMeetingRecorder: MeetingRecorder {
     }
 
     private func check() {
-        (call as? ProcessTapCapture14)?.refresh(excluding: excludedPIDs())
+        if let tap = call as? ProcessTapCapture14 {
+            if tap.outputChanged {
+                // A tap follows the output device it was made on: make a new one for headphones plugged in.
+                NSLog("Milo: the output device changed; a new tap for the meeting")
+                call?.stop()
+                call = nil
+                startCall()
+            } else {
+                tap.refresh(excluding: excludedPIDs())
+            }
+        }
         guard call != nil else { return }
         let now = AVAudioTime.seconds(forHostTime: mach_absolute_time()) - AVAudioTime.seconds(forHostTime: startHost)
         let heard = queue.sync { lastSound }
@@ -170,6 +181,7 @@ private protocol CallCapture: AnyObject {
 
 /// Lets `check()` reach the tap without an availability check at every use.
 private protocol ProcessTapCapture14: AnyObject {
+    var outputChanged: Bool { get }
     func refresh(excluding pids: [pid_t])
 }
 
@@ -264,7 +276,10 @@ private final class ProcessTapCapture: CallCapture, ProcessTapCapture14 {
     private var tap = AudioObjectID(kAudioObjectUnknown)
     private var device = AudioObjectID(kAudioObjectUnknown)
     private var proc: AudioDeviceIOProcID?
+    private var output: String?
     private let queue = DispatchQueue(label: "milo.meeting.tap", qos: .userInitiated)
+
+    var outputChanged: Bool { output != nil && CoreAudio.defaultOutputUID != output }
 
     init(excluding pids: [pid_t], sink: @escaping ([Float], UInt64) -> Void) {
         self.sink = sink
@@ -279,6 +294,7 @@ private final class ProcessTapCapture: CallCapture, ProcessTapCapture14 {
     func start() throws {
         try check(AudioHardwareCreateProcessTap(description, &tap), "create the tap")
         guard let output = CoreAudio.defaultOutputUID else { stop(); throw Self.error("no output device") }
+        self.output = output
         let aggregate: [String: Any] = [
             kAudioAggregateDeviceNameKey: "Milo meeting notes",
             kAudioAggregateDeviceUIDKey: UUID().uuidString,
