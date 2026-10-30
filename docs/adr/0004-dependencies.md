@@ -13,4 +13,6 @@ The standard library handles everything else: transport (asyncio Unix sockets), 
 
 All were released within the last year. OmniVoice is an optional extra, so Milo also runs with macOS `say`. `[tts] fallback = "say"` takes over automatically if OmniVoice fails to load.
 
+The milo-mac MCP server is standard library too. MCP over stdio needs four JSON-RPC methods, which is about 100 lines, and the official SDK would pull in pydantic, anyio and an HTTP stack for a process the worker CLI starts on every task. The Swift side uses ScreenCaptureKit, ApplicationServices and Carbon from the SDK.
+
 Dev only: pytest.

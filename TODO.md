@@ -8,11 +8,14 @@
 - A stable signing identity so macOS permissions survive rebuilds.
 
 - Milo window: show heartbeat nudges and reminders in the transcript too (only turns and tasks are recorded now).
-- Milo window: a stop button for a running task, and a confirm row for irreversible steps (Phase 2 brakes).
+- Milo window: a stop button for a running task. The confirm question lives in the bubble now (`ConfirmGate`); merge it with the shared approval flow.
+- Computer use: the character flies to `MiloModel.flyTarget` instead of the ring from `FlyFallback`.
+- Computer use: try it on real apps (Excel, Mail, Safari) and tune the tool descriptions, the risk words and the takeover slop.
+- Computer use: a stop key that works while a question waits (input is ignored then, so the user can click Yes or No).
+- Looking: send the screenshot only when the window text isn't enough, to save tokens on text-heavy windows.
 - Milo window: persist a task when it starts, so one cut off by a brain restart still shows (now it is lost).
 
 ## Later
-- "What's this?" hotkey: screenshot or selection goes to the harness.
 - Wake word ("hey Milo") with a small local model.
 - Rive or sprite animations instead of SwiftUI shapes.
 - Usage readout in the menu (`JsonlUsageLedger.today_totals()` exists).

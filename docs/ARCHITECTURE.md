@@ -2,7 +2,7 @@
 
 Milo is two processes on one Mac:
 
-- **The app** (`app/`, Swift). The floating character, speech bubble, push-to-talk keys, pasting dictated text into the focused app, the Milo window with the conversation, and the menu bar item. It knows nothing about models.
+- **The app** (`app/`, Swift). The floating character, speech bubble, push-to-talk keys, pasting dictated text into the focused app, the Milo window with the conversation, and the menu bar item. It holds the Accessibility and Screen Recording permissions, so it also reads windows, takes screenshots and runs the worker's actions on the Mac. It knows nothing about models.
 - **The brain** (`brain/`, Python, run with `uv`). Microphone, speech-to-text, the live chat model, the agent harness, text-to-speech, memory and the heartbeat.
 
 They talk over a Unix socket at `~/Milo/run/brain.sock` (mode 0600) using JSON objects, one per line. Every message is listed in [`protocol/messages.json`](../protocol/messages.json) and defined in `brain/src/milo/core/events.py`. Both test suites decode that file, so the two sides can't drift apart silently.
@@ -13,7 +13,8 @@ They talk over a Unix socket at `~/Milo/run/brain.sock` (mode 0600) using JSON o
 
 ```
 brain/src/milo/
-  core/           types, ports (Protocols), wire events, registries, clock. Depends on nothing.
+  core/           types, ports (Protocols), wire events, registries, clock, hands (the milo-mac tools and
+                  their schemas). Depends on nothing.
   adapters/       concrete engines, each registering itself by name
     harness/      codex, claude (agent harnesses), claude_live (the streaming chat model)
     stt/          mlx_whisper
@@ -27,9 +28,13 @@ brain/src/milo/
                   live_transcript (pause segmenter and partial passes while recording),
                   live_talk (user turns on the chat model), reply_stream (tags out of the reply stream),
                   chunker + speaker (streaming TTS), task_runner + conversation (delegated work on the
-                  harness), transcript (what the Milo window shows), heartbeat_runner, plus small shared pieces: ui_state, context (latest app/idle
-                  report), levels (throttled meters), quiet (wait for a turn to end), fallback_voice
-  transport/      Unix socket JSONL server (an EventSink)
+                  harness), transcript (what the Milo window shows), heartbeat_runner, app_bridge (requests to the app
+                  and their answers: AppEyes, AppHands, BubbleConfirm), screen (screen data for the
+                  chat model), hands + risk (checking and logging the worker's Mac actions), plus
+                  small shared pieces: ui_state, context (latest app/idle report), levels (throttled
+                  meters), quiet (wait for a turn to end), fallback_voice
+  transport/      Unix socket JSONL servers: brain.sock (an EventSink) and hands.sock
+  mcp_server.py   the milo-mac MCP stdio server the worker CLI starts; forwards calls to hands.sock
   brain.py        routes inbound commands to services
   config.py       reads config.toml into sections
   compose.py      composition root: the only module that names concrete classes
@@ -51,7 +56,7 @@ Beyond `milo.core.ports`, these entry points are fixed:
 | Function / class | Owner | Contract |
 |---|---|---|
 | `milo.adapters.load_builtin() -> None` | adapters | Imports every built-in adapter module so it registers. Idempotent. Heavy imports (torch, mlx) stay inside methods, never at module import. |
-| `milo.memory.workspace.Workspace(home)` | memory | `.ensure()` copies the template without overwriting, and creates dirs. Path properties: `config_path`, `reminders_path`, `profile_path`, `persona_path`, `state_dir`, `log_dir`, `socket_path`, `usage_path`, `dictation_history_path`, `transcript_path`, `heartbeat_state_path`. |
+| `milo.memory.workspace.Workspace(home)` | memory | `.ensure()` copies the template without overwriting, and creates dirs. Path properties: `config_path`, `reminders_path`, `profile_path`, `persona_path`, `state_dir`, `log_dir`, `socket_path`, `usage_path`, `dictation_history_path`, `transcript_path`, `heartbeat_state_path`, `hands_socket_path`, `screens_dir`. |
 | `milo.memory.reminders.MarkdownReminders(path)` | memory | `ReminderBook`. Re-parses only when mtime changes. `add(due, text)` appends a line. Shared by the heartbeat and LiveTalk. |
 | `milo.memory.profile.MarkdownProfile(path)` | memory | `ProfileMemory` over `memory/profile.md`. |
 | `milo.memory.ledger.JsonlUsageLedger(path, clock)` | memory | `UsageLedger`. Appends one JSON line per harness call. |
@@ -71,6 +76,15 @@ Typed and spoken turns take the same path through `LiveTalk`:
 ## Delegated tasks
 
 The chat model has no tools. Work that needs files, research or several steps comes out of a reply as a `<task>`. `TaskRunner` runs tasks one at a time in the background on the agent harness (`[harness]`, Codex by default) through `Conversation`, which resumes one harness session so the agent keeps context across tasks. The agent works in its `~/Milo` sandbox under `AGENTS.md`. When it finishes, Milo speaks its `say`, and the next chat message carries the result so the chat model knows about it. A result that finishes during a live turn waits up to 30 s for the turn to end, then shows silently. Heartbeat nudges wait the same way, and a silent bubble never cuts off speech.
+
+## Looking and computer use
+
+See [ADR 6](adr/0006-looking-at-the-screen.md) and [ADR 7](adr/0007-computer-use-through-the-brain.md).
+
+- **Looking.** The chat model writes `<look/>` when it needs to see the screen. LiveTalk asks through the `ScreenEyes` port (`AppEyes` sends `look_request`), the app answers `look_result` with the front window's text and a screenshot path, and LiveTalk sends both to the model as a second message with an image block. `looking` turns the eye badge next to Milo on and off. "What's this?" (the shortcut or the menu item) sends `whats_this` with a capture, and the brain starts a turn with it. Screen text sits between `<screen_data>` markers (`services/screen.py`), and a conversation that has seen it asks before handing off a task.
+- **Computer use.** Workers get the milo-mac tools (`core/hands.py`) through `AdapterContext.mac_tools`, which compose.py fills when `[hands] enabled`. Codex and Claude start `python -m milo.mcp_server`, which sends each call to `~/Milo/run/hands.sock`. `HandsService` validates it, asks the app to describe the target, classifies it with `services/risk.py`, asks through the `ConfirmGate` port when needed, logs a step, and then has the app run it (`hands_request`, `hands_result`). It only answers while `TaskRunner` runs a task.
+- **On screen.** `hands_session` shows the "Milo is working" frame (`AppKit/WorkingFrame`). `fly_to` sets `MiloModel.flyTarget` in AppKit coordinates; until the character can fly, `AppKit/FlyFallback` draws a ring there. `confirm_request` puts a Yes and No question in the bubble (`MiloModel.question`).
+- **Stopping.** `Screen/ScreenController` watches real input during a session through `UserInputSource`. `TakeoverDetector` is pure: it gets timestamps and tells real input from Milo's own events. On a stop the app sends `hands_stop` and the brain fails every later call in that task.
 
 ## The Milo window
 
@@ -93,7 +107,9 @@ A chat turn costs one message to the running chat model: about 600 tokens, with 
 app/
   Sources/MiloKit/   protocols, wire types, controller, hotkey state machine, views (all testable).
                      The Milo window: TranscriptModel, Views/ConversationView + ActivityView,
-                     AppKit/ConversationWindow
+                     AppKit/ConversationWindow. Screen/: ScreenController and TakeoverDetector.
+                     Hotkeys/KeyCombo. Adapters/: Accessibility, SystemScreenReader, ScreenShots,
+                     MacHands, NSEventInputMonitor, CarbonHotkey
   Sources/Milo/      main.swift: builds concrete adapters, hands them to MiloController
   Tests/MiloKitTests Swift Testing; decodes protocol/messages.json, drives the controller with fakes.
                      MILO_RENDER_DIR=/tmp/milo-render swift test --filter ConversationRender renders the
