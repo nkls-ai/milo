@@ -13,6 +13,7 @@ BUILTIN = (
     "harness.claude",
     "harness.claude_live",
     "stt.mlx_whisper",
+    "stt.elevenlabs_scribe",
     "tts.say",
     "tts.omnivoice",
     "tts.elevenlabs",

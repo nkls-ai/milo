@@ -14,16 +14,19 @@ from .brain import Brain
 from .config import Config
 from .core.clock import SystemClock
 from .core.ports import Harness, LiveModel, PlaybackTap, Transcriber, Voice
-from .core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, EMBEDDERS, HARNESSES, LIVE_MODELS, TEXT_CLEANERS,
-                            TRANSCRIBERS, VOICES, AdapterContext, ConfigError, Registry)
+from .core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, EMBEDDERS, HARNESSES, LIVE_MODELS, STREAMING_TRANSCRIBERS,
+                            TEXT_CLEANERS, TRANSCRIBERS, VOICES, AdapterContext, ConfigError, Registry)
 from .core.types import Emotion, LiveMode, ToolServer
 from .services.app_bridge import AppBridge, AppEyes, AppHands
 from .services.approvals import ActionPolicy, Approvals
 from .services.backchannel import Backchannel
 from .services.barge_in import BargeIn
+from .services.cloud_hearing import NOTICE as HEARING_NOTICE
+from .services.cloud_hearing import CloudHearing
 from .services.context import UserContext
 from .services.conversation import Conversation
 from .services.dictation import DictationService
+from .services.fallback_voice import NOTICE as VOICE_NOTICE
 from .services.fallback_voice import FallbackVoice, VoiceNotice
 from .services.hands import HandsService
 from .services.heartbeat_runner import HeartbeatRunner
@@ -70,7 +73,8 @@ class Runtime:
     memory: MemoryRuntime | None = None
     barge_in: BargeIn | None = None
     backchannel: Backchannel | None = None
-    voice_notice: VoiceNotice | None = None
+    notices: tuple[VoiceNotice, ...] = ()
+    """Said when the voice or the hearing falls back to the Mac; they need the event loop once it runs."""
 
 
 @dataclass
@@ -142,9 +146,12 @@ def build(home: Path) -> Runtime:
     idle_reset_s = config.chat.conversation_idle_reset_s
     conversation = Conversation(harness, ledger, clock, idle_reset_s)
     speaker = Speaker(voice, output, ui, tts_executor)
-    # Milo says it once when his usual voice can't be reached and the local one takes over.
-    voice.on_switch = voice_notice = VoiceNotice(lambda text: speaker.say(text, Emotion.CONCERNED),
-                                                 busy=lambda: live_talk.busy or speaker.active or mic.active)
+    # Milo says it once when his usual voice or hearing can't be reached and the local one takes over.
+    notices = tuple(VoiceNotice(lambda text: speaker.say(text, Emotion.CONCERNED), text=text,
+                                busy=lambda: live_talk.busy or speaker.active or mic.active)
+                    for text in (VOICE_NOTICE, HEARING_NOTICE))
+    voice.on_switch = notices[0]
+    hearing = _cloud_hearing(config, ctx, notices[1])
     backchannel = Backchannel(speaker, enabled=config.chat.backchannels)
     transcript_store = JsonlTranscript(workspace.transcript_path)
     if mem is not None:
@@ -185,7 +192,7 @@ def build(home: Path) -> Runtime:
     helpers.on_result = live_talk.note
     updates.speak = live_talk.speak_update
     listening = Listening(mic, transcriber, stt_executor, ui, DictationService(cleaner, history, ui),
-                          live_talk, context, LiveMode(config.dictation.stream))
+                          live_talk, context, LiveMode(config.dictation.stream), hearing=hearing)
 
     barge_in = None
     if config.chat.voice_barge_in:
@@ -209,7 +216,7 @@ def build(home: Path) -> Runtime:
                   memory=mem.memory if mem is not None else None)
     return Runtime(brain, server, heartbeat, transcriber, voice, stt_executor, tts_executor, harness,
                    live_model, live_talk, tool_server, hands_server, helpers, mem, barge_in, backchannel,
-                   voice_notice)
+                   notices)
 
 
 def _memory(config: Config, workspace, ctx: AdapterContext, clock, ui: UiState, harness: Harness, ledger,
@@ -283,6 +290,20 @@ def _persona(path: Path):
             return ""
 
     return read
+
+
+def _cloud_hearing(config: Config, ctx: AdapterContext, notice) -> CloudHearing | None:
+    """[stt] talk: the cloud transcriber that listens along while the user talks to Milo. None: all local."""
+    name = config.stt.talk
+    if not name:
+        if config.stt.cloud_dictation:
+            log.warning("[stt] cloud_dictation needs [stt] talk to name a service; dictation stays on this Mac")
+        return None
+    options = config.section("stt").get(name, {})
+    if not isinstance(options, dict):
+        raise ConfigError(f"[stt.{name}] must be a table")
+    engine = STREAMING_TRANSCRIBERS.create(name, options, ctx)
+    return CloudHearing(engine, dictation=config.stt.cloud_dictation, on_switch=notice)
 
 
 def _fallback_voice(config: Config, ctx: AdapterContext):

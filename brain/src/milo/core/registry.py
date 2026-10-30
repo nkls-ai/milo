@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 if TYPE_CHECKING:
     from .ports import (AudioInput, AudioOutput, Clock, Connections, Embedder, Harness, LiveModel, ProactiveRule,
-                        TextCleaner, Transcriber, Voice)
+                        StreamingTranscriber, TextCleaner, Transcriber, Voice)
     from .types import ToolServer
 
 T = TypeVar("T")
@@ -88,6 +88,7 @@ def options_from(cls: type[O], options: Mapping[str, Any], section: str) -> O:
 HARNESSES: Registry[Harness] = Registry("harness")
 LIVE_MODELS: Registry[LiveModel] = Registry("chat model")
 TRANSCRIBERS: Registry[Transcriber] = Registry("stt engine")
+STREAMING_TRANSCRIBERS: Registry[StreamingTranscriber] = Registry("streaming stt engine")
 VOICES: Registry[Voice] = Registry("tts engine")
 AUDIO_INPUTS: Registry[AudioInput] = Registry("audio input")
 AUDIO_OUTPUTS: Registry[AudioOutput] = Registry("audio output")

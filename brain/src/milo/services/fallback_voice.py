@@ -154,13 +154,16 @@ class _Watched:
 
 
 class VoiceNotice:
-    """Says NOTICE once when the voice switches to its fallback, after whatever Milo is saying now.
+    """Says `text` (by default NOTICE) when called, after whatever Milo is saying now: the voice or the hearing
+    switched to its local fallback. The callers call it at most once per switch.
 
-    on_switch may come from the TTS thread; the notice waits on the event loop (`loop`, set once it runs) until
+    It may be called from the TTS thread; the notice waits on the event loop (`loop`, set once it runs) until
     Milo is quiet."""
 
-    def __init__(self, say: Callable[[str], object], busy: Callable[[], bool], wait_s: float = 60.0):
+    def __init__(self, say: Callable[[str], object], busy: Callable[[], bool], wait_s: float = 60.0,
+                 text: str = NOTICE):
         self.loop: asyncio.AbstractEventLoop | None = None
+        self.text = text
         self._say = say
         self._busy = busy
         self._wait_s = wait_s
@@ -178,7 +181,7 @@ class VoiceNotice:
         from .quiet import wait_while
 
         if await wait_while(self._busy, self._wait_s):
-            self._say(NOTICE)
+            self._say(self.text)
 
 
 def _resample(audio: Audio, rate: int, to: int) -> Audio:

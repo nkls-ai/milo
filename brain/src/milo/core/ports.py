@@ -71,6 +71,34 @@ class Transcriber(Protocol):
 
 
 @runtime_checkable
+class TranscriptionSession(Protocol):
+    """One recording streamed to a transcriber while it is made, so the text is ready right after it ends."""
+
+    def feed(self, audio: Audio) -> None:
+        """More 16 kHz mono samples, straight after the last. Doesn't block."""
+        ...
+
+    async def finish(self) -> str:
+        """The recording is over: the whole text ("" for silence). Raises VoiceUnavailable if the engine can't
+        say; then the caller transcribes the recording another way."""
+        ...
+
+    def cancel(self) -> None:
+        """Drop the recording. Nothing more is sent."""
+        ...
+
+
+@runtime_checkable
+class StreamingTranscriber(Protocol):
+    """A transcriber that listens along while the user speaks (a cloud service). Used only where config.toml
+    allows audio to leave the Mac."""
+
+    def session(self) -> TranscriptionSession:
+        """Start a recording's session now (it connects while the user speaks). On the event loop."""
+        ...
+
+
+@runtime_checkable
 class Voice(Protocol):
     sample_rate: int
 

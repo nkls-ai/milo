@@ -20,6 +20,7 @@ from milo.services.conversation import Conversation
 from milo.services.dictation import DictationService
 from milo.services.hands import HandsService
 from milo.services.heartbeat_runner import HeartbeatRunner
+from milo.services.cloud_hearing import CloudHearing
 from milo.services.listening import Listening
 from milo.services.live_talk import LiveTalk
 from milo.services.memory import Memory, MemoryParts, TurnMemory
@@ -72,6 +73,7 @@ class Stack:
     hands_port: FakeHands = field(default_factory=FakeHands)
     screens: Path | None = None
     confirm_timeout_s: float = 1.0
+    hearing: CloudHearing | None = None  # a cloud transcriber that listens along in talk mode
     with_memory: bool = False  # recall per turn, episode stubs and the facts screen, all on fakes
 
     def __post_init__(self):
@@ -105,7 +107,7 @@ class Stack:
         self.tasks.on_result = self.live_talk.note
         self.dictation = DictationService(UpperCleaner(), self.history, self.ui)
         self.listening = Listening(self.mic, self.transcriber, executor, self.ui, self.dictation, self.live_talk,
-                                   self.context)
+                                   self.context, hearing=self.hearing)
         self.heartbeat = HeartbeatRunner(self.engine, self.context, self.conversation, self.speaker, self.ui,
                                          self.mic, self.clock, busy=lambda: self.live_talk.busy,
                                          wait_s=self.wait_s, poll_s=0.005)

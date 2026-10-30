@@ -38,7 +38,7 @@ def test_the_shipped_template_loads():
 
 
 @pytest.mark.parametrize("section, name, key, value", [
-    ("chat", "claude_live", "model", "claude-sonnet-5-5"),
+    ("chat", "claude_live", "model", "claude-haiku-5-5"),
     ("harness", "codex", "reasoning_effort", "low"),
     ("stt", "mlx_whisper", "model", "mlx-community/whisper-large-v3-turbo"),
     ("tts", "omnivoice", "steps", 6),

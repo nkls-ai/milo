@@ -48,7 +48,7 @@ INACTIVITY_TIMEOUT_S = 180  # the server closes an idle connection after this (i
 MIN_LIFE_S = 30.0  # a connection closed sooner than this isn't reopened by itself: something is wrong
 KEEP_WARM_S = 600.0  # reopen a connection the server closed only if Milo spoke this recently
 FIRST_AUDIO_GUESS_S = 0.45
-DEFAULT_VOICE = "TX3LPaxmHKxFdv7VOQHJ"  # "Liam" until a voice is picked; see [tts.elevenlabs] voice_id
+DEFAULT_VOICE = "bIHbv24MWmeRgasZH58o"  # "Will", a premade voice: young, relaxed, conversational
 
 _END = object()
 

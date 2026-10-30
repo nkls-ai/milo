@@ -10,6 +10,7 @@ from milo.core.logtext import private
 from milo.core.ports import AudioInput, Transcriber
 from milo.core.types import STT_SAMPLE_RATE, ListenMode, LiveMode, MiloState
 
+from .cloud_hearing import CloudHearing, CloudRecording
 from .context import UserContext
 from .dictation import DictationService
 from .levels import throttled_levels
@@ -28,11 +29,13 @@ class Listening:
 
     A tentative start records without showing anything (no state, no levels, no barge-in) until confirm()
     or stop(), because the key press may still turn out to be a tap. `live` transcribes while recording.
+    `hearing` streams talk recordings (and dictation, if allowed) to a cloud transcriber while they are made;
+    without it, or when it fails, the transcriber does the final pass.
     """
 
     def __init__(self, mic: AudioInput, transcriber: Transcriber, executor: Executor, ui: UiState,
                  dictation: DictationService, live_talk: LiveTalk, context: UserContext,
-                 live: LiveMode = LiveMode.OFF):
+                 live: LiveMode = LiveMode.OFF, hearing: CloudHearing | None = None):
         self._mic = mic
         self._transcriber = transcriber
         self._executor = executor
@@ -44,6 +47,8 @@ class Listening:
         self._mode: ListenMode | None = None
         self._shown = False
         self._live: LiveTranscript | None = None
+        self._hearing = hearing
+        self._cloud: CloudRecording | None = None
 
     def start(self, mode: ListenMode, tentative: bool = False) -> None:
         if self._mic.active:
@@ -76,6 +81,9 @@ class Listening:
         self._shown = True
         dictate = self._mode is ListenMode.DICTATE
         self._ui.set_state(MiloState.DICTATING if dictate else MiloState.LISTENING)
+        if self._hearing is not None and (not dictate or (self._hearing.dictation and
+                                                          self._live_mode is not LiveMode.TYPE)):
+            self._cloud = self._hearing.start(self._mic)
         if self._live_mode is LiveMode.OFF:
             return
         typed = self._dictation.typed() if dictate and self._live_mode is LiveMode.TYPE else None
@@ -88,10 +96,13 @@ class Listening:
             return
         mode, self._mode = self._mode, None
         live, self._live = self._live, None
+        cloud, self._cloud = self._cloud, None
         if not self._shown and mode is ListenMode.TALK:
             self._live_talk.hold()  # released before the confirm arrived: still a real hold
         self._shown = False
         audio = self._mic.stop()
+        # The commit goes out at once; the live preview winds down meanwhile.
+        heard = asyncio.create_task(self._hearing.transcribe(cloud, audio)) if cloud is not None else None
         self._ui.set_state(MiloState.TRANSCRIBING)
         started = time.monotonic()
         typed = None
@@ -100,9 +111,12 @@ class Listening:
             typed = live.typed
             if typed is not None:
                 audio = audio[live.tail_start:]  # earlier phrases are typed already
+        text = await heard if heard is not None else None
+        by_cloud = text is not None
         try:
-            text = await asyncio.get_running_loop().run_in_executor(
-                self._executor, self._transcriber.transcribe, audio)
+            if text is None:
+                text = await asyncio.get_running_loop().run_in_executor(
+                    self._executor, self._transcriber.transcribe, audio)
         except Exception:
             log.exception("transcription failed")
             self._ui.emit(Status("I couldn't transcribe that."))
@@ -112,8 +126,8 @@ class Listening:
                 self._live_talk.interrupt(rest=False)
             self._ui.rest()
             return
-        log.info("stt %.2fs audio in %.2fs: %s", len(audio) / STT_SAMPLE_RATE, time.monotonic() - started,
-                 private(text))
+        log.info("stt %.2fs audio in %.2fs%s: %s", len(audio) / STT_SAMPLE_RATE, time.monotonic() - started,
+                 " (cloud)" if by_cloud else "", private(text))
         text = text.strip()
         if typed is not None:
             typed.add(text)
@@ -134,6 +148,9 @@ class Listening:
             live.abort()
             if live.typed is not None:
                 live.typed.finish(self._context.app)
+        cloud, self._cloud = self._cloud, None
+        if cloud is not None:
+            cloud.cancel()
         if self._mic.active:
             self._mic.stop()
         mode, self._mode = self._mode, None

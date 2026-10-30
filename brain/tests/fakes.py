@@ -149,6 +149,40 @@ class FakeTranscriber:
         return ""
 
 
+class FakeTranscriptionSession:
+    def __init__(self, engine: FakeStreamingTranscriber):
+        self.engine = engine
+        self.fed: list[int] = []  # sample counts, in order
+        self.cancelled = False
+        self.finished = False
+
+    def feed(self, audio: Audio) -> None:
+        self.fed.append(len(audio))
+
+    async def finish(self) -> str:
+        self.finished = True
+        if self.engine.fail:
+            raise VoiceUnavailable(self.engine.fail)
+        return self.engine.texts.popleft() if self.engine.texts else ""
+
+    def cancel(self) -> None:
+        self.cancelled = True
+
+
+class FakeStreamingTranscriber:
+    """Answers each session with the next scripted text, or raises VoiceUnavailable(`fail`) if set."""
+
+    def __init__(self, *texts: str, fail: str = ""):
+        self.texts = deque(texts)
+        self.fail = fail
+        self.sessions: list[FakeTranscriptionSession] = []
+
+    def session(self) -> FakeTranscriptionSession:
+        session = FakeTranscriptionSession(self)
+        self.sessions.append(session)
+        return session
+
+
 class FakeVoice:
     sample_rate = 1000
 

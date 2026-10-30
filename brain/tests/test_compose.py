@@ -213,3 +213,25 @@ def test_a_bad_memory_setting_fails_at_build(build):
         build(cheap(**{"memory.recall_tokens": 99999}))
     with pytest.raises(ConfigError, match="embedder"):
         build(cheap(**{"memory.embedder": "nope"}))
+
+
+def test_the_cloud_voice_and_hearing_are_built_from_config(build):
+    from milo.adapters.stt.elevenlabs_scribe import ScribeRealtime
+    from milo.adapters.tts.elevenlabs import ElevenLabsVoice
+
+    text = set_key(cheap(**{"stt.talk": "elevenlabs", "stt.elevenlabs.keyterms": ["Milo"],
+                            "tts.elevenlabs.voice_id": "abc"}), "tts", "use", "elevenlabs")
+    runtime, home = build(text)
+    assert isinstance(runtime.voice.current, ElevenLabsVoice) and runtime.voice.current.voice_id == "abc"
+    assert runtime.voice.current.key_file == home / "secrets" / "elevenlabs.key"
+    hearing = runtime.brain._listening._hearing
+    assert isinstance(hearing._engine, ScribeRealtime) and hearing._engine.keyterms == ("Milo",)
+    assert not hearing.dictation, "dictation stays on the Mac unless cloud_dictation says otherwise"
+    assert len(runtime.notices) == 2
+
+
+def test_talk_stays_local_by_default_and_a_bogus_service_fails_at_build(build):
+    runtime, _ = build(cheap())
+    assert runtime.brain._listening._hearing is None
+    with pytest.raises(ConfigError, match="streaming stt engine 'bogus'"):
+        build(cheap(**{"stt.talk": "bogus"}))
