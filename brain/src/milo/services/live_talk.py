@@ -135,13 +135,15 @@ _PLAIN = ((re.compile(r"\s+(on|in) the user's (Mac|computer)\b", re.I), ""),
           (re.compile(r"\bthe user\b", re.I), "you"))
 
 
-def task_question(description: str) -> str:
+def task_question(description: str, *, title: str = "") -> str:
     """A yes-or-no question a person can answer at a glance: the task's first sentence, short, in the second
     person. "Open Microsoft Excel on the user's Mac and make a table. Then ..." asks "Open Microsoft Excel and
-    make a table?"."""
+    make a table?". A first sentence too long to fit asks about the task's `title` instead, if it has one."""
     first = _FIRST_SENTENCE.split(" ".join(description.split()), maxsplit=1)[0].rstrip(".!?;: ")
     for pattern, plain in _PLAIN:
         first = pattern.sub(plain, first)
+    if len(first) > QUESTION_CHARS - 1 and title.strip():
+        return f"Start “{' '.join(title.split())}”?"
     if len(first) > QUESTION_CHARS - 1:
         first = first[:QUESTION_CHARS - 2].rsplit(" ", 1)[0].rstrip(",;: ") + "…"
     return (first[:1].upper() + first[1:] or "Go ahead") + "?"
@@ -622,7 +624,7 @@ class LiveTalk:
             effects.append((f"Should I remind you on {due:%A %-d %B at %H:%M}: {what}?", "",
                             lambda due=due, what=what: self._remind(due, what), self._tainted or screen))
         for task in parser.tasks:
-            question = task_question(task.description)
+            question = task_question(task.description, title=task.title)
             # The whole task shows under the short question in the window: the user approves all of it.
             detail = "" if question.rstrip("?") == task.description.rstrip(".?") else task.description
             effects.append((question, detail, lambda task=task: self._tasks.submit(

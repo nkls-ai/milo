@@ -420,3 +420,8 @@ def test_task_questions_are_one_short_sentence_in_plain_words():
                          "into one list with dates")
     assert len(long) <= 80 and long.endswith("…?") and long.startswith("Look through every email")
     assert task_question("   ") == "Go ahead?"
+    # Cut short, the first sentence reads badly ("…a simple table titled…?"): the task's own title says it better.
+    excel = ("Open Microsoft Excel and make a new workbook with a simple table titled \"Weekly shopping list\" with "
+             "two columns, Item and Price.")
+    assert task_question(excel, title="Shopping list in Excel") == "Start “Shopping list in Excel”?"
+    assert task_question("Make a budget table in Excel.", title="Budget") == "Make a budget table in Excel?"

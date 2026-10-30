@@ -125,8 +125,10 @@ struct QuestionView: View {
                 .labelStyle(TightLabel())
             Text(question.text)
                 .font(.system(size: 13.5, weight: .medium))
+                .lineLimit(5)  // the whole task is in the Milo window; the bubble must fit beside Milo
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
+                .help(question.text)
             AnswerButtons(answer: answer)
                 .padding(.top, 2)
         }

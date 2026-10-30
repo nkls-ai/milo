@@ -29,6 +29,9 @@ public final class OverlayPanel: NSPanel {
         hidesOnDeactivate = false
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         host.frame = NSRect(origin: .zero, size: Self.size)
+        // The panel keeps its size. By default the hosting view resizes its window to fit the content, and a
+        // long bubble grew the panel down past the bottom of the screen, taking Milo and his Yes/No with it.
+        host.sizingOptions = []
         contentView = host
         flight = FlightDriver(panel: self, model: model, center: Self.characterCenter)
     }
