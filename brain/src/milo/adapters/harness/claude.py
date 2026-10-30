@@ -9,11 +9,11 @@ from pathlib import Path
 from typing import Any
 
 from milo.core.hands import mac_server
-from milo.core.ports import StepCallback
+from milo.core.ports import PlanCallback, SessionCallback, StepCallback
 from milo.core.registry import HARNESSES, AdapterContext, options_from
 from milo.core.types import REPLY_SCHEMA, HarnessError, Reply, ToolServer, Usage
 
-from ._activity import ClaudeActivity
+from ._activity import ClaudeActivity, RunWatch, lines
 from ._binary import find_binary
 from ._process import last_line, run
 
@@ -68,10 +68,12 @@ class ClaudeHarness:
             cmd += ["--disallowedTools", *self.disallowed_tools]
         return cmd + ["--", prompt]
 
-    async def reply(self, prompt: str, session_id: str | None, *, on_step: StepCallback | None = None) -> Reply:
-        on_line = ClaudeActivity(on_step, self.workdir).line if on_step is not None else None
+    async def reply(self, prompt: str, session_id: str | None, *, on_step: StepCallback | None = None,
+                    on_session: SessionCallback | None = None, on_plan: PlanCallback | None = None) -> Reply:
+        on_line = lines(ClaudeActivity(on_step, self.workdir).line if on_step is not None else None,
+                        RunWatch(on_session, on_plan).line if on_session or on_plan else None)
         code, out, err = await run(self.command(prompt, session_id), cwd=self.workdir, timeout_s=self.timeout_s,
-                                   on_line=on_line)
+                                   on_line=on_line, done=is_result)
         return parse_result(result_line(out), code, err, session_id)
 
 
@@ -79,6 +81,11 @@ def mcp_servers(servers: tuple[ToolServer, ...]) -> dict:
     """The --mcp-config file for Claude Code."""
     return {"mcpServers": {s.name: {"type": "stdio", "command": s.command[0], "args": list(s.command[1:]),
                                     **({"env": dict(s.env)} if s.env else {})} for s in servers}}
+
+
+def is_result(line: str) -> bool:
+    """The `{"type":"result",...}` line, which ends a `claude -p` turn."""
+    return '"type":"result"' in line[:40] and line.lstrip().startswith("{")
 
 
 def result_line(out: str) -> str:
