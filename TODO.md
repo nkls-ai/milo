@@ -43,3 +43,4 @@
 - Usage readout in the menu (`JsonlUsageLedger.today_totals()` exists).
 - Mic pre-roll buffer. Skipped for now: a ring buffer needs the input stream running all the time, which keeps the macOS orange mic indicator on permanently. Recording already starts at key-down (before the 250 ms hold check shows anything), and a double tap records from the first tap.
 - The final pass over a long hands-free recording is slow (about 1.5 s per 30 s). The live phrases come from the small preview model, so they can't simply be reused; transcribing closed phrases with the full model while the user still speaks would, at the cost of a busier GPU.
+- Dev: a rebuilt app joins whatever brain holds the lock, even one running older code. build-app.sh now stops this checkout's brain; better would be the brain reporting its build and the app restarting a brain from another build.
