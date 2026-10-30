@@ -294,3 +294,16 @@ def test_every_busy_check_asks_attention(build):
     if runtime.meetings is not None:
         assert (runtime.meetings._private, runtime.meetings._quiet) == (a.private, a.in_conversation)
     assert a.turn() is False and a.question() is False and a.helpers() is False, "every part is attached"
+
+
+def test_a_step_moved_before_what_it_needs_fails_at_build_naming_the_part(build, monkeypatch):
+    # A1: build() is named steps in an explicit order. A reorder used to surface as a NameError inside a
+    # callback, long after start; now the build itself stops and says which part was missing.
+    steps = list(compose.BUILD_STEPS)
+    assert [s.__name__ for s in steps] == ["_workspace", "_engines", "_stores", "_presence", "_helpers", "_meetings",
+                                           "_talk", "_messages", "_tool_socket", "_heartbeat", "_brain"]
+    steps.remove(compose._talk)
+    steps.insert(steps.index(compose._helpers), compose._talk)
+    monkeypatch.setattr(compose, "BUILD_STEPS", tuple(steps))
+    with pytest.raises(compose.BuildOrder, match="'helpers' is used before the step that builds it"):
+        build(cheap())
