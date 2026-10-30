@@ -6,7 +6,7 @@ import numpy as np
 
 from milo.adapters.text.fillers import FillerCleaner
 from milo.core.events import Dictation, Partial
-from milo.core.types import STT_SAMPLE_RATE, Audio
+from milo.core.types import STT_SAMPLE_RATE, Audio, Interrupted
 from milo.services.dictation import TypedDictation
 from milo.services.live_transcript import LiveTranscript, PauseSegmenter, join_phrases
 from tests.fakes import MemoryHistory, RecordingSink
@@ -195,8 +195,9 @@ class GrowingMic:
 
 class HearingStt:
     """The full model hears in capitals, the preview model in lower case, so a test can tell which one
-    produced a text. `log` records every pass in order: ("full" or "preview", seconds of audio, before).
-    With `block`, full passes wait for `release` (for a thread executor)."""
+    produced a text. `log` records every pass in order: ("full", "quick" or "preview", seconds of audio,
+    before). With `block`, full-model passes wait for `release` (for a thread executor); interrupt() ends
+    a waiting pass with Interrupted."""
 
     def __init__(self, block: bool = False, fail_preview: bool = False):
         self.log: list[tuple[str, float, str]] = []
@@ -206,22 +207,34 @@ class HearingStt:
         self.fail_preview = fail_preview
         self.running = 0
         self.max_running = 0
+        self.interrupted = 0
+        self._stop = threading.Event()
         self._lock = threading.Lock()
 
     def warm(self) -> None:
         pass
 
-    def transcribe(self, audio: Audio, before: str = "") -> str:
+    def transcribe(self, audio: Audio, before: str = "", *, quick: bool = False) -> str:
         with self._lock:
             self.running += 1
             self.max_running = max(self.max_running, self.running)
-        self.log.append(("full", len(audio) / SR, before))
+        self.log.append(("quick" if quick else "full", len(audio) / SR, before))
         self.entered.set()
-        if self.block:
-            self.release.wait(5)
-        with self._lock:
-            self.running -= 1
+        try:
+            if self.block:
+                self.release.wait(5)
+            if self._stop.is_set():
+                self._stop.clear()
+                self.interrupted += 1
+                raise Interrupted()
+        finally:
+            with self._lock:
+                self.running -= 1
         return hear(audio).upper()
+
+    def interrupt(self) -> None:
+        self._stop.set()
+        self.release.set()
 
     def preview(self, audio: Audio) -> str:
         with self._lock:
@@ -235,7 +248,11 @@ class HearingStt:
         return hear(audio)
 
     def full(self) -> list[tuple[float, str]]:
-        return [(secs, before) for kind, secs, before in self.log if kind == "full"]
+        """Passes of the full model, quick or not."""
+        return [(secs, before) for kind, secs, before in self.log if kind != "preview"]
+
+    def kinds(self) -> list[str]:
+        return [kind for kind, _, _ in self.log]
 
 
 def live(mic, stt, sink, on_phrase=None, executor=None, **kw):
@@ -314,7 +331,7 @@ def test_speaking_again_drops_the_guess():
     assert [secs for secs, _ in stt.full()][-1] >= 2.0, "the last pass covers the whole open phrase again"
 
 
-def test_a_guess_becomes_the_commit_when_the_pause_closes_the_phrase():
+def test_while_recording_a_phrase_is_committed_at_full_accuracy_even_after_a_guess():
     mic, stt, sink = GrowingMic(), HearingStt(), RecordingSink()
     lt = live(mic, stt, sink, settle_s=0.3)
 
@@ -328,7 +345,8 @@ def test_a_guess_becomes_the_commit_when_the_pause_closes_the_phrase():
         return await lt.finish(mic.stop())
 
     assert asyncio.run(run()) == "ALPHA BRAVO"
-    assert len(stt.full()) == 2, "one full pass per phrase"
+    assert [k for k in stt.kinds() if k != "preview"] == ["quick", "full", "quick"], \
+        "guess, then the commit at full accuracy, then the tail after the release"
 
 
 def test_type_mode_hands_over_each_phrase_in_order_and_previews_only_the_open_one():
@@ -400,7 +418,7 @@ def test_previews_leave_the_gpu_idle_for_a_gap_but_commits_do_not_wait():
     assert [kind for kind, _, _ in stt.log] == ["preview", "full"]
 
 
-def test_finish_waits_for_the_phrase_in_flight_then_does_the_rest_in_order():
+def test_the_release_interrupts_a_commit_in_flight_and_does_the_rest_quickly_in_order():
     mic, stt, sink = GrowingMic(), HearingStt(block=True), RecordingSink()
     executor = ThreadPoolExecutor(1)
     phrases: list[str] = []
@@ -411,16 +429,14 @@ def test_finish_waits_for_the_phrase_in_flight_then_does_the_rest_in_order():
         lt.start()
         while not stt.entered.is_set():
             await asyncio.sleep(0.01)
-        finishing = asyncio.create_task(lt.finish(mic.stop()))
-        await asyncio.sleep(0.05)
-        assert not finishing.done()
-        stt.release.set()
-        return await finishing
+        stt.block = False  # passes after the release run straight through
+        return await lt.finish(mic.stop())
 
     assert asyncio.run(run()) == "ALPHA BRAVO"
     executor.shutdown()
     assert phrases == ["ALPHA", "BRAVO"]
-    assert [kind for kind, _, _ in stt.log] == ["full", "full"], "nothing live after the release"
+    assert stt.kinds() == ["full", "quick", "quick"], "the commit in flight was interrupted and done again quickly"
+    assert stt.interrupted == 1
 
 
 def test_never_more_than_one_pass_in_flight():
@@ -486,4 +502,4 @@ def test_a_voice_too_quiet_for_the_segmenter_still_gets_one_pass_over_everything
         return await lt.finish(mic.stop())
 
     assert asyncio.run(run()) == ""
-    assert stt.full() == [(2.0, "")]
+    assert stt.log == [("quick", 2.0, "")]

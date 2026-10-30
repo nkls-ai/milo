@@ -1,9 +1,12 @@
+import threading
+
 import numpy as np
 import pytest
 
 from milo.adapters.stt import mlx_whisper
 from milo.adapters.stt.mlx_whisper import MlxWhisper, _Whisper, is_hallucination, is_silent, repeats
 from milo.core.registry import TRANSCRIBERS
+from milo.core.types import Interrupted
 
 
 @pytest.mark.parametrize("text", ["Thank you.", "thanks for watching!", "Untertitel im Auftrag des ZDF, 2021", "you"])
@@ -59,23 +62,22 @@ class FakeWhisper:
     """Stands in for one loaded model: records what each pass got and reports a detected language."""
 
     def __init__(self, detected: str = "de"):
-        self.passes: list[tuple[str | None, str | None]] = []
+        self.passes: list[tuple[str | None, str | None, bool]] = []
         self.language: str | None = None
         self.detected = detected
 
-    def run(self, audio, language, prompt):
-        self.passes.append((language, prompt))
+    def run(self, audio, language, prompt, *, quick=False):
+        self.passes.append((language, prompt, quick))
         self.language = language or self.detected
         return "ok"
 
 
-def test_the_text_before_a_phrase_goes_into_the_prompt_after_the_vocabulary():
+def test_only_the_vocabulary_goes_into_the_prompt_and_quick_passes_say_so():
     stt = MlxWhisper("big", vocabulary="Milo, Codex")
     whisper = stt._models["big"] = FakeWhisper()
     stt.transcribe(SPEECH)
-    stt.transcribe(SPEECH, before="x" * 300 + " and then we")
-    assert whisper.passes[0][1] == "Milo, Codex"
-    assert whisper.passes[1][1] == "Milo, Codex " + ("x" * 300 + " and then we")[-200:].strip()
+    stt.transcribe(SPEECH, before="and then we", quick=True)
+    assert whisper.passes == [(None, "Milo, Codex", False), ("de", "Milo, Codex", True)]
 
 
 def test_a_short_phrase_that_goes_on_keeps_the_language_of_the_recording():
@@ -84,12 +86,13 @@ def test_a_short_phrase_that_goes_on_keeps_the_language_of_the_recording():
     stt.transcribe(np.tile(SPEECH, 3))  # long: detected
     stt.transcribe(SPEECH, before="Hallo Thomas.")  # short and goes on: kept
     stt.transcribe(SPEECH)  # short but a new recording: detected again
-    assert [language for language, _ in whisper.passes] == [None, "de", None]
+    assert [language for language, _, _ in whisper.passes] == [None, "de", None]
     assert MlxWhisper("big", language="en")._last_language is None
 
 
 @pytest.mark.parametrize("text", ["Okay. Okay.", "Yes, please. Yes, please.", "I Milo. I Milo.",
-                                  "we need to go we need to go home", "the end the end the end"])
+                                  "we need to go we need to go home", "the end the end the end",
+                                  "Erinnere mich heute Abend um 8 Uhr um 8 Uhr die Blumen zu gießen."])
 def test_whisper_looping_is_caught(text):
     assert repeats(text)
 
@@ -106,8 +109,10 @@ def test_a_short_pass_that_cant_be_trusted_falls_back_to_full_windows(monkeypatc
     monkeypatch.setattr(_Whisper, "_load", lambda self: object())
     monkeypatch.setattr(_Whisper, "_run_short", lambda self, *a: paths.append("short") or None)
     monkeypatch.setattr(_Whisper, "_run_full", lambda self, *a: paths.append("full") or "text")
-    assert whisper.run(SPEECH, None, None) == "text"
+    assert whisper.run(SPEECH, None, None, quick=True) == "text"
     assert paths == ["short", "full"]
+    assert whisper.run(SPEECH, None, None) == "text"
+    assert paths == ["short", "full", "full"], "a pass nobody waits for takes the accurate path"
 
 
 def test_long_audio_takes_the_full_path(monkeypatch):
@@ -116,8 +121,8 @@ def test_long_audio_takes_the_full_path(monkeypatch):
     monkeypatch.setattr(_Whisper, "_load", lambda self: object())
     monkeypatch.setattr(_Whisper, "_run_short", lambda self, *a: paths.append("short") or "short")
     monkeypatch.setattr(_Whisper, "_run_full", lambda self, *a: paths.append("full") or "full")
-    assert whisper.run(np.zeros(int(16000 * 29.5)), None, None) == "full"
-    assert whisper.run(np.zeros(16000 * 29), None, None) == "short"
+    assert whisper.run(np.zeros(int(16000 * 29.5)), None, None, quick=True) == "full"
+    assert whisper.run(np.zeros(16000 * 29), None, None, quick=True) == "short"
     assert paths == ["full", "short"]
 
 
@@ -132,10 +137,52 @@ def test_a_changed_mlx_whisper_turns_the_short_path_off(monkeypatch):
     monkeypatch.setattr(_Whisper, "_load", lambda self: object())
     monkeypatch.setattr(_Whisper, "_run_short", broken)
     monkeypatch.setattr(_Whisper, "_run_full", lambda self, *a: paths.append("full") or "text")
-    assert whisper.run(SPEECH, None, None) == "text"
-    assert whisper.run(SPEECH, None, None) == "text"
+    assert whisper.run(SPEECH, None, None, quick=True) == "text"
+    assert whisper.run(SPEECH, None, None, quick=True) == "text"
     assert paths == ["short", "full", "full"]
 
 
 def test_the_window_constants_match_what_was_measured():
     assert mlx_whisper.MIN_WINDOW_S == 10.0 and mlx_whisper.PAD_S == 1.0
+
+
+class FakeMlxEncoder:
+    """The parts of mlx_whisper's AudioEncoder that _Encoder uses: identity convolutions, 8 blocks that
+    count how often they ran."""
+
+    def __init__(self):
+        import mlx.core as mx
+
+        self.ran = 0
+        self._positional_embedding = mx.zeros((1500, 4))
+        self.conv1 = self.conv2 = self.ln_post = lambda x: x
+        self.blocks = [self._block] * 8
+
+    def _block(self, x):
+        self.ran += 1
+        return x, None, None
+
+
+def test_an_interrupt_ends_the_encoding_between_layers():
+    import mlx.core as mx
+
+    stop = threading.Event()
+    inner = FakeMlxEncoder()
+    encoder = mlx_whisper._Encoder(inner, 1280, stop)
+    mel = mx.zeros((1, 1500, 4))
+    assert encoder(mel).shape == (1, 1500, 4) and inner.ran == 8
+    assert encoder(mel) is not None and inner.ran == 8, "the same window is encoded once"
+    stop.set()
+    with pytest.raises(Interrupted):
+        encoder(mx.ones((1, 1500, 4)))
+    assert inner.ran == 8, "stopped before the first layer"
+    assert encoder(mx.zeros((1, 10, 1280))).shape == (1, 10, 1280), "an encoding passes through"
+
+
+def test_interrupt_reaches_the_pass_and_the_next_pass_starts_clean(monkeypatch):
+    stt = MlxWhisper("big")
+    seen = []
+    monkeypatch.setattr(MlxWhisper, "_run", lambda self, *a: seen.append(self._stop.is_set()) or "ok")
+    stt.interrupt()
+    assert stt.transcribe(SPEECH) == "ok"
+    assert seen == [False], "an interrupt only ends the pass running when it came"

@@ -17,7 +17,7 @@ class HearingStt:
     def warm(self) -> None:
         pass
 
-    def transcribe(self, audio, before: str = "") -> str:
+    def transcribe(self, audio, before: str = "", *, quick: bool = False) -> str:
         """Each phrase as Whisper writes it: a capital first letter."""
         self.calls.append(len(audio))
         return hear(audio).capitalize()
@@ -25,6 +25,9 @@ class HearingStt:
     def preview(self, audio) -> str:
         self.previews.append(len(audio))
         return hear(audio)
+
+    def interrupt(self) -> None:
+        pass
 
 
 def wired(live: LiveMode) -> tuple[Stack, Listening, GrowingMic, HearingStt]:

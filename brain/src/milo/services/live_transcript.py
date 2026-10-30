@@ -14,6 +14,7 @@ import time
 from collections.abc import Callable, Iterable
 from concurrent.futures import Executor
 from dataclasses import dataclass
+from functools import partial
 from typing import NamedTuple
 
 import numpy as np
@@ -21,7 +22,7 @@ import numpy as np
 from milo.core.events import Partial
 from milo.core.logtext import private
 from milo.core.ports import AudioInput, EventSink, Transcriber
-from milo.core.types import STT_SAMPLE_RATE, Audio
+from milo.core.types import STT_SAMPLE_RATE, Audio, Interrupted
 
 log = logging.getLogger("milo.live_transcript")
 
@@ -170,11 +171,10 @@ class LiveTranscript:
     Every `poll_s` it reads the new audio and lets the segmenter close phrases at pauses. Then it runs the
     most urgent pass, if any:
 
-    1. Commit a closed phrase with the full model, prompted with the text before it. `on_phrase` gets each
-       committed phrase in order (stream = "type" pastes it).
-    2. Guess: the open phrase has been silent for `settle_s`, so the full model transcribes it as it is.
-       If the user speaks again first, the guess is dropped; if a pause then closes the phrase, the guess
-       is its commit and costs no second pass.
+    1. Commit a closed phrase with the full model, at full accuracy. `on_phrase` gets each committed
+       phrase in order (stream = "type" pastes it).
+    2. Guess: the open phrase has been silent for `settle_s`, so the full model transcribes it as it is, in
+       a quick pass. If the user speaks again, the guess is dropped. If they let go first, it is the end.
     3. Preview the open phrase with the fast model, once `min_new_s` more audio came in.
 
     `show` sends the words so far as a Partial: committed text, then the guess or preview of the open
@@ -183,7 +183,8 @@ class LiveTranscript:
     GPU before it, which leaves room for speech synthesis, and none starts once the open phrase has gone
     quiet: the guess is about to come.
 
-    finish() is the release: it waits for the pass in flight, commits what is left and returns the whole text.
+    finish() is the release: it interrupts a commit or preview in flight (a guess is let finish, it may be the
+    end), commits what is left in quick passes and returns the whole text.
     """
 
     def __init__(self, mic: AudioInput, stt: Transcriber, executor: Executor, sink: EventSink,
@@ -210,6 +211,7 @@ class LiveTranscript:
         self._previewed = 0
         self._shown = ""
         self._passing = False
+        self._interruptible = False
         self._idle_since = float("-inf")  # when the last pass ended
         self._closing = False
         self._task: asyncio.Task | None = None
@@ -224,16 +226,15 @@ class LiveTranscript:
 
     async def finish(self, audio: Audio) -> str:
         """The rest of `audio` (the whole recording) transcribed after the phrases already committed.
-        Returns all of it. A pass in flight finishes first: MLX can't be interrupted, and a commit or
-        guess is needed anyway. A preview in flight costs about 0.1 s and its text is dropped."""
+        Returns all of it. Everything left runs in quick passes: the user is waiting now."""
         await self._stop()
         self._listen(audio[self._heard:])
         if self._heard_nothing():
             # The segmenter heard no speech at all; maybe the voice was very quiet. One pass over everything.
-            self._commit(await self._pass(self._stt.transcribe, audio))
+            self._commit(await self._pass(self._stt.transcribe, audio, "", quick=True))
             return self.text
         while self._pending:
-            await self._commit_next(lambda start, end: audio[start:end])
+            await self._commit_next(lambda start, end: audio[start:end], quick=True)
         seg = self._segmenter
         if seg.open_has_speech:
             guess, self._guess, self._preview = self._guess, None, ""
@@ -241,7 +242,7 @@ class LiveTranscript:
                 log.debug("release: the guess covers the last phrase")
                 self._commit(guess.text)
             else:
-                self._commit(await self._pass(self._stt.transcribe, audio[seg.open_start:], self.text))
+                self._commit(await self._pass(self._stt.transcribe, audio[seg.open_start:], self.text, quick=True))
         return self.text
 
     def abort(self) -> None:
@@ -257,6 +258,8 @@ class LiveTranscript:
             return
         if not self._passing:
             task.cancel()
+        elif self._interruptible:
+            self._stt.interrupt()
         await asyncio.wait({task})
 
     async def _run(self) -> None:
@@ -267,6 +270,8 @@ class LiveTranscript:
                 await self._next_pass()
         except asyncio.CancelledError:
             raise
+        except Interrupted:
+            log.debug("live pass interrupted by the release")
         except Exception:
             log.exception("live transcription failed; the rest is transcribed on release")
 
@@ -283,10 +288,11 @@ class LiveTranscript:
         """Run the most urgent pass, if any."""
         seg = self._segmenter
         if self._pending:
-            await self._commit_next(lambda start, end: self._mic.peek(start)[:end - start])
+            await self._commit_next(lambda start, end: self._mic.peek(start)[:end - start], quick=False)
         elif seg.open_has_speech and seg.silence_s >= self._settle_s and self._guess is None:
             start, end = seg.open_start, self._heard
-            text = await self._pass(self._stt.transcribe, self._mic.peek(start)[:end - start], self.text)
+            text = await self._pass(self._stt.transcribe, self._mic.peek(start)[:end - start], self.text,
+                                    quick=True, interruptible=False)
             if seg.open_start == start and seg.speech_end <= end:  # kept on release too: it may be the end
                 self._guess = _Guess(start, end, text)
                 self._show()
@@ -294,20 +300,21 @@ class LiveTranscript:
               and seg.silence_s < self._settle_s / 2 and self._monotonic() - self._idle_since >= self._gap_s):
             self._previewed = self._heard
             start = seg.open_start
-            text = await self._pass(self._stt.preview, self._mic.peek(start))
+            text = await self._pass(self._stt.preview, self._mic.peek(start), None)
             if not self._closing and seg.open_start == start:
                 self._preview = text
                 self._show()
 
-    async def _commit_next(self, clip: Callable[[int, int], Audio]) -> None:
-        """Commit the oldest closed phrase; `clip(start, end)` gives its audio. A guess still standing for
-        the same phrase is its text already: nothing was said after it."""
+    async def _commit_next(self, clip: Callable[[int, int], Audio], *, quick: bool) -> None:
+        """Commit the oldest closed phrase; `clip(start, end)` gives its audio. A quick commit takes a guess
+        still standing for the same phrase as its text: nothing was said after it. A full one does the
+        phrase again at full accuracy."""
         start, end, _ = self._pending[0]
         guess = self._guess
-        if guess is not None and guess.start == start:
+        if quick and guess is not None and guess.start == start:
             text = guess.text
         else:
-            text = await self._pass(self._stt.transcribe, clip(start, end), self.text)
+            text = await self._pass(self._stt.transcribe, clip(start, end), self.text, quick=quick)
         self._pending.pop(0)
         if self._guess is not None and self._guess.start == start:
             self._guess = None
@@ -325,12 +332,18 @@ class LiveTranscript:
     def _heard_nothing(self) -> bool:
         return not self.phrases and not self._pending and not self._segmenter.open_has_speech
 
-    async def _pass(self, fn: Callable[..., str], audio: Audio, before: str | None = None) -> str:
+    async def _pass(self, fn: Callable[..., str], audio: Audio, before: str | None, *, quick: bool = False,
+                    interruptible: bool = True) -> str:
+        """Run `fn` on the STT executor. `before` None: a preview (no context, always quick)."""
         started = self._monotonic()
         self._passing = True
+        self._interruptible = interruptible
         try:
-            args = (audio,) if before is None else (audio, before)
-            text = await asyncio.get_running_loop().run_in_executor(self._executor, fn, *args)
+            if before is None:
+                text = await asyncio.get_running_loop().run_in_executor(self._executor, fn, audio)
+            else:
+                text = await asyncio.get_running_loop().run_in_executor(
+                    self._executor, partial(fn, audio, before, quick=quick))
         finally:
             self._passing = False
             self._idle_since = self._monotonic()

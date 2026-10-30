@@ -67,13 +67,16 @@ class FakeTranscriber:
     def warm(self) -> None:
         self.warmed = True
 
-    def transcribe(self, audio: Audio, before: str = "") -> str:
+    def transcribe(self, audio: Audio, before: str = "", *, quick: bool = False) -> str:
         self.calls.append(audio)
         return self.texts.popleft() if self.texts else ""
 
     def preview(self, audio: Audio) -> str:
         self.previews.append(audio)
         return ""
+
+    def interrupt(self) -> None:
+        pass
 
 
 class FakeVoice:

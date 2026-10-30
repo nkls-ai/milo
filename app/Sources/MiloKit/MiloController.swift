@@ -175,6 +175,7 @@ public final class MiloController {
             // A new brain sends its own state on connect.
             pushToTalkChanged(pushToTalk.reset(), at: nil)
             model.apply(.state(.idle))
+            dictationStyle = nil  // the next brain says which it uses
             return
         }
         sendContext()

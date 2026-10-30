@@ -127,6 +127,9 @@ private final class Harness {
         #expect(h.controller.dictationStyle == .preview, "the checkmark moves once the brain confirms")
         h.brain.emit(.dictationStream(.type))
         #expect(h.controller.dictationStyle == .type)
+
+        h.brain.connect(false)
+        #expect(h.controller.dictationStyle == nil, "no brain, nothing to switch")
     }
 
     @Test func losingTheBrainMidAnswerReturnsMiloToIdle() {

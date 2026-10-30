@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -11,7 +12,7 @@ from typing import Any
 import numpy as np
 
 from milo.core.registry import TRANSCRIBERS, AdapterContext, options_from
-from milo.core.types import STT_SAMPLE_RATE, Audio
+from milo.core.types import STT_SAMPLE_RATE, Audio, Interrupted
 
 log = logging.getLogger(__name__)
 
@@ -50,18 +51,16 @@ class MlxWhisperOptions:
     vocabulary: str = ""
 
 
-BEFORE_CHARS = 200
-"""How much of what was said before a phrase goes into Whisper's prompt: enough for spelling, casing and
-the language to carry over, short enough that Whisper doesn't start repeating it."""
-
 SHORT_PHRASE_S = 3.0
 """Language detection on a phrase shorter than this is a guess ("okay" sounds like many languages), so a
 phrase that continues a recording keeps the language its earlier phrases had."""
 
 
 class MlxWhisper:
-    """Final passes use `model`. Live passes use the much smaller `preview_model`, so a final pass never
-    waits long behind one. Both encode only as much audio as there is (see `_Whisper`)."""
+    """Passes use `model`; live words use the much smaller `preview_model`. A quick pass and every preview
+    encode only as much audio as there is (see `_Whisper`). The text said before a phrase is not put in
+    Whisper's prompt: on 12 test dictations that made more errors (2.8% of words against 2.2%), since
+    Whisper copies the prompt's style and drops full stops once one phrase lacks one."""
 
     def __init__(self, model: str, *, preview_model: str = "", language: str = "", vocabulary: str = ""):
         self.model = model
@@ -70,6 +69,7 @@ class MlxWhisper:
         self.prompt = vocabulary or None  # names in the initial prompt bias Whisper's spelling
         self._models: dict[str, _Whisper] = {}
         self._last_language: str | None = None
+        self._stop = threading.Event()
 
     def warm(self) -> None:
         """Download and load the models so the first real transcription is fast."""
@@ -78,32 +78,35 @@ class MlxWhisper:
             self._whisper(name).warm(self.language, self.prompt)
         log.info("stt ready")
 
-    def transcribe(self, audio: Audio, before: str = "") -> str:
+    def transcribe(self, audio: Audio, before: str = "", *, quick: bool = False) -> str:
         language = self.language
         if language is None and before and len(audio) < SHORT_PHRASE_S * STT_SAMPLE_RATE:
             language = self._last_language
-        prompt = " ".join(p for p in (self.prompt, before[-BEFORE_CHARS:].strip()) if p) or None
-        return self._transcribe(self.model, audio, language, prompt)
+        return self._transcribe(self.model, audio, language, quick)
 
     def preview(self, audio: Audio) -> str:
-        return self._transcribe(self.preview_model, audio, self.language, self.prompt)
+        return self._transcribe(self.preview_model, audio, self.language, True)
 
-    def _transcribe(self, model: str, audio: Audio, language: str | None, prompt: str | None) -> str:
+    def interrupt(self) -> None:
+        self._stop.set()
+
+    def _transcribe(self, model: str, audio: Audio, language: str | None, quick: bool) -> str:
+        self._stop.clear()
         if is_silent(audio):
             return ""
-        text = self._run(audio, model, language, prompt)
+        text = self._run(audio, model, language, quick)
         return "" if is_hallucination(text) else text
 
-    def _run(self, audio: Audio, model: str, language: str | None, prompt: str | None) -> str:
+    def _run(self, audio: Audio, model: str, language: str | None, quick: bool) -> str:
         whisper = self._whisper(model)
-        text = whisper.run(audio, language, prompt)
+        text = whisper.run(audio, language, self.prompt, quick=quick)
         if model == self.model and whisper.language:
             self._last_language = whisper.language
         return text
 
     def _whisper(self, model: str) -> _Whisper:
         if model not in self._models:
-            self._models[model] = _Whisper(model)
+            self._models[model] = _Whisper(model, self._stop)
         return self._models[model]
 
 
@@ -113,20 +116,21 @@ MIN_WINDOW_S = 10.0
 because the audio is padded with silence to the full window. `_Whisper` encodes only the audio plus
 `PAD_S` of silence, but never less than `MIN_WINDOW_S`: with a shorter window the decoder no longer knows
 where speech ends and repeats itself ("Okay. Okay. Okay."). Measured on 48 phrases of 1-12 s in English
-and German: same words as the full window, 3 times faster, no repeats at 10 s (several at 6 and 8 s)."""
+and German: 3 times faster than the full window, no repeats at 10 s (several at 6 and 8 s), but a few
+more wrong words (2.7% against 1.7%), so only quick passes take it."""
 
 TOKENS_PER_S = 8
 """Far more than anyone speaks (about 4 a second). A decode that runs past this for its audio is looping."""
 
 
 def repeats(text: str) -> bool:
-    """Whisper looping, not speech: the same sentence twice in a row, a run of four or more words twice,
-    or of two or more words three times ("Okay. Okay.", "I Milo. I Milo.")."""
+    """Whisper looping, not speech: the same sentence twice in a row, a run of three or more words twice,
+    or of two or more words three times ("Okay. Okay.", "um 8 Uhr um 8 Uhr")."""
     sentences = [w for w in (_words(p) for p in re.split(r"[.!?]+", text)) if w]
     if any(a == b for a, b in zip(sentences, sentences[1:])):
         return True
     words = _words(text)
-    for size, times in ((4, 2), (2, 3)):
+    for size, times in ((3, 2), (2, 3)):
         for k in range(size, len(words) // times + 1):
             for i in range(len(words) - k * times + 1):
                 if all(words[i:i + k] == words[i + j * k:i + (j + 1) * k] for j in range(1, times)):
@@ -139,18 +143,21 @@ def _words(text: str) -> list[str]:
 
 
 class _Whisper:
-    """One loaded Whisper model. Not thread-safe; it runs on the STT thread only.
+    """One loaded Whisper model. Not thread-safe; it runs on the STT thread only. Setting `stop` ends the
+    pass at the next few encoder layers with Interrupted.
 
-    Audio that fits one window takes the short path: encode just the audio (see MIN_WINDOW_S), detect the
-    language on that encoding and decode it without timestamps. If that decode looks wrong (it loops, ran
-    past TOKENS_PER_S, or Whisper itself is unsure), the same audio goes through the full path:
-    mlx_whisper.transcribe over padded 30 s windows. Whisper's own transcribe() detects the language with
-    an encoder pass and then encodes the same window again to decode it, so the full path detects on
-    exactly the window the decoder will see and keeps that encoding: one encoder pass instead of two.
+    A quick pass on audio that fits one window takes the short path: encode just the audio (see
+    MIN_WINDOW_S), detect the language on that encoding and decode it without timestamps. If that decode
+    looks wrong (it loops, ran past TOKENS_PER_S, or Whisper itself is unsure), the same audio goes through
+    the full path. Every other pass takes the full path: mlx_whisper.transcribe over padded 30 s windows,
+    the most accurate. Whisper's own transcribe() detects the language with an encoder pass and then
+    encodes the same window again to decode it, so the full path detects on exactly the window the decoder
+    will see and keeps that encoding: one encoder pass instead of two.
     """
 
-    def __init__(self, repo: str):
+    def __init__(self, repo: str, stop: threading.Event | None = None):
         self.repo = repo
+        self._stop = stop or threading.Event()
         self.language: str | None = None
         """The language of the last pass."""
         self._model = None
@@ -162,12 +169,14 @@ class _Whisper:
         self._run_short(model, silence, language, prompt)
         self._run_full(model, silence, language, prompt)
 
-    def run(self, audio: Audio, language: str | None, prompt: str | None) -> str:
+    def run(self, audio: Audio, language: str | None, prompt: str | None, *, quick: bool = False) -> str:
         audio = audio.astype(np.float32)
         model = self._load()
-        if self._short and len(audio) + PAD_S * STT_SAMPLE_RATE <= 30 * STT_SAMPLE_RATE:
+        if quick and self._short and len(audio) + PAD_S * STT_SAMPLE_RATE <= 30 * STT_SAMPLE_RATE:
             try:
                 text = self._run_short(model, audio, language, prompt)
+            except Interrupted:
+                raise
             except (AttributeError, AssertionError, TypeError):
                 # mlx_whisper changed inside; the full path still works.
                 log.exception("short whisper pass failed; using full windows from now on")
@@ -184,7 +193,7 @@ class _Whisper:
 
             mx.set_cache_limit(CACHE_LIMIT)
             self._model = load_model(self.repo, dtype=mx.float16)
-            self._model.encoder = _Encoder(self._model.encoder, self._model.dims.n_audio_state)
+            self._model.encoder = _Encoder(self._model.encoder, self._model.dims.n_audio_state, self._stop)
         return self._model
 
     def _run_short(self, model, audio: Audio, language: str | None, prompt: str | None) -> str | None:
@@ -257,11 +266,15 @@ class _Whisper:
 class _Encoder:
     """Wraps the Whisper encoder. A full window's result is kept and returned again for an equal input
     (the full path encodes for language detection, then transcribe() asks again). Input that is already
-    encoded passes through, so the decoder can take a short encoding."""
+    encoded passes through, so the decoder can take a short encoding. The layers run a few at a time, and
+    `stop` ends the encoding between them with Interrupted: the encoder is nearly all of a pass."""
 
-    def __init__(self, encoder, n_state: int):
+    LAYERS_PER_STEP = 4
+
+    def __init__(self, encoder, n_state: int, stop: threading.Event):
         self._encoder = encoder
         self._n_state = n_state
+        self._stop = stop
         self._input = None
         self._output = None
 
@@ -273,17 +286,24 @@ class _Encoder:
         last = self._input
         if last is not None and last.shape == mel.shape and last.dtype == mel.dtype and mx.array_equal(last, mel).item():
             return self._output
-        self._input, self._output = mel, self._encoder(mel)
-        return self._output
+        self._input, self._output = None, None
+        output = self.short(mel)
+        self._input, self._output = mel, output
+        return output
 
     def short(self, mel):
-        """Encode fewer than 3000 mel frames, with the matching slice of the positional embedding."""
+        """Encode up to 3000 mel frames, with the matching slice of the positional embedding."""
+        import mlx.core as mx
         import mlx.nn as nn
 
         e = self._encoder
         x = nn.gelu(e.conv2(nn.gelu(e.conv1(mel))))
         x = x + e._positional_embedding[: x.shape[1]]
-        for block in e.blocks:
+        for i, block in enumerate(e.blocks):
+            if i % self.LAYERS_PER_STEP == 0:
+                mx.eval(x)
+                if self._stop.is_set():
+                    raise Interrupted()
             x, _, _ = block(x)
         return e.ln_post(x)
 
