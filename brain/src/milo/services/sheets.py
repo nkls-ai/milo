@@ -110,7 +110,8 @@ def literal(value: object) -> str:
             raise HandsError("A cell can't be NaN or infinite.")
         return repr(value)
     text = str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\r\n", "\n").replace("\r", "\n")
-    return '"' + text.replace("\n", '" & linefeed & "') + '"'
+    # Literals sit inside an app's `tell`, where a bare `linefeed` could mean the app's own term.
+    return '"' + text.replace("\n", '" & (AppleScript\'s linefeed) & "') + '"'
 
 
 def _is_formula(value: object) -> bool:
@@ -194,7 +195,7 @@ def describe_script(app: str, rows: list, start: str) -> str:
             + _NAMES + _COUNT_FILLED)
 
 
-# Outside any `tell`: Excel and Numbers have their own meanings for `tab` and `linefeed`.
+# Outside any `tell`: an app's own `tab` or `linefeed` would win inside one (Excel's `tab` did).
 _NAMES = 'set out to "document" & tab & docName & linefeed & "sheet" & tab & sheetName\n'
 _ADDRESS = 'set out to out & linefeed & "first" & tab & addr\n'
 

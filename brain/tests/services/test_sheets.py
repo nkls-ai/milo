@@ -3,7 +3,7 @@
 import pytest
 
 from milo.core.types import HandsError
-from milo.services import sheets
+from milo.services import documents, sheets
 from milo.services.sheets import EXCEL, NUMBERS, block, literal, parse, read_script, table_text, write_script
 
 WEEK = [["Day", "Budget"]] + [[d, 214.29] for d in ("Mon", "Tue")] + [["Total", "=SUM(B2:B3)"]]
@@ -11,7 +11,7 @@ WEEK = [["Day", "Budget"]] + [[d, 214.29] for d in ("Mon", "Tue")] + [["Total", 
 
 def test_values_become_literals_that_cannot_break_out_of_their_string():
     assert literal('say "hi" \\ bye') == '"say \\"hi\\" \\\\ bye"'
-    assert literal("two\nlines") == '"two" & linefeed & "lines"'
+    assert literal("two\nlines") == '"two" & (AppleScript\'s linefeed) & "lines"'
     assert literal(3) == "3" and literal(214.29) == "214.29" and literal(None) == '""'
     attack = '" & (do shell script "rm -rf ~") & "'
     script = write_script(EXCEL, [[attack]], new_document=True)
@@ -78,3 +78,28 @@ def test_app_names():
     ("", "#,##0.00"), ("xx", "#,##0.00")])
 def test_money_is_in_the_currency_of_the_macs_region(locale, money):
     assert sheets.excel_money(locale) == money
+
+
+def _inside_tell(script: str) -> list[str]:
+    depth, inside = 0, []
+    for line in script.splitlines():
+        words = line.split()
+        if words[:2] == ["end", "tell"]:
+            depth -= 1
+        elif words[:1] == ["tell"]:
+            depth += 1
+        elif depth:
+            inside.append(line)
+    return inside
+
+
+@pytest.mark.parametrize("script", [
+    write_script(EXCEL, WEEK, new_document=True), write_script(NUMBERS, WEEK, new_document=True),
+    sheets.describe_script(EXCEL, WEEK, "A1"), sheets.describe_script(NUMBERS, WEEK, "A1"),
+    read_script(EXCEL), read_script(NUMBERS), documents.write_script("TextEdit", "two\nlines"),
+    documents.write_script("Pages", "hi")])
+def test_tab_and_linefeed_are_never_said_to_an_app(script):
+    # Inside `tell application "Microsoft Excel"`, `tab` is Excel's and the document name came back empty.
+    import re
+    said = [line for line in _inside_tell(script) if re.search(r"(?<!AppleScript's )\b(tab|linefeed)\b", line)]
+    assert said == []

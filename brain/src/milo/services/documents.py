@@ -26,4 +26,4 @@ def write_script(app: str, text: str) -> str:
     else:
         raise HandsError(f"write_document works in {' and '.join(APPS)}, not {app!r}.")
     return (f'tell application "{app}"\n  activate\n' + make
-            + '  return "document" & tab & (name of doc)\nend tell\n')
+            + '  set docName to name of doc\nend tell\nreturn "document" & tab & docName\n')
