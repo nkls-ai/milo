@@ -13,6 +13,8 @@ from milo.core.events import (Bubble, Dictation, EmotionChanged, HandsSession, H
 from milo.core.types import Emotion, HandsError, ListenMode, MiloState, Nudge, ScreenCapture
 from milo.services.app_bridge import AppEyes, AppHands
 from tests.fakes import FakeEyes, FakeHands, FakeLiveModel, FakeTranscriber
+from milo.services.helpers import HelperStatus
+from tests.fakes import ScriptedHarness, WorkerScript
 from tests.services.stack import Stack, settle
 
 FIXTURE = json.loads((Path(__file__).parents[2] / "protocol" / "messages.json").read_text())
@@ -164,7 +166,26 @@ def check_app_response(s: Stack, msg: dict) -> None:
     assert asyncio.run(go()) == (msg["result"] if msg["ok"] else msg["error"])
 
 
+def check_stop_helper(s: Stack, msg: dict) -> None:
+    gate = asyncio.Event()
+    s.harness = ScriptedHarness(WorkerScript(gate, "never"))
+    s.runner._harness = s.harness
+
+    async def go():
+        helper = s.tasks.submit("count to a million")
+        await settle()
+        s.tasks._supervisors[msg["id"]] = s.tasks._supervisors.pop(helper.id)  # the fixture's id
+        helper.id = msg["id"]
+        await s.brain.handle(parse_command(msg))
+        await s.tasks.idle()
+        return helper
+
+    helper = asyncio.run(go())
+    assert helper.status is HelperStatus.STOPPED and s.harness.played[0].cancelled
+
+
 CHECKS = {
+    "stop_helper": check_stop_helper,
     "look_result": check_look_result,
     "whats_this": check_whats_this,
     "hands_result": check_hands_result,

@@ -145,8 +145,8 @@ def test_a_finished_task_result_reaches_the_next_turn():
         await s.live_talk.start("so?")
 
     asyncio.run(run())
-    assert ("<task_result>\nTask: check the weather\nResult: It's sunny.\n</task_result>\nso?"
-            in s.model.turns[1])
+    assert ("<task_result>\nTask: check the weather\nResult: It's sunny.\n</task_result>\n<helpers>\n"
+            "- helper 1 “Check the weather”: finished 0s ago\n</helpers>\nso?" in s.model.turns[1])
 
 
 def test_interrupt_mid_reply_stops_the_model_and_the_audio_at_once():

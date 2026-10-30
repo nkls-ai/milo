@@ -24,12 +24,14 @@ from .services.fallback_voice import FallbackVoice
 from .services.hands import HandsService
 from .services.heartbeat_runner import HeartbeatRunner
 from .services.listening import Listening
-from .services.live_talk import LiveTalk
+from .services.live_talk import LiveTalk, untrusted
+from .services.orchestrator import HelperQuestions, Orchestrator
 from .services.speaker import Speaker
 from .services.task_runner import TaskRunner
 from .services.tool_requests import ToolRequests
 from .services.transcript import Transcript
 from .services.ui_state import UiState
+from .services.updates import LiveSettings, Milestones, Updates
 from .transport.hands_socket import HandsSocketServer
 from .transport.tool_socket import ToolSocketServer
 from .transport.unix_socket import UnixSocketServer
@@ -53,6 +55,7 @@ class Runtime:
     live_talk: LiveTalk
     tool_server: ToolSocketServer
     hands_server: HandsSocketServer | None = None
+    helpers: Orchestrator | None = None
 
 
 def build(home: Path) -> Runtime:
@@ -81,6 +84,13 @@ def build(home: Path) -> Runtime:
 
     live_model = create(LIVE_MODELS, "chat")
     harness = create(HARNESSES, "harness")
+    # Helpers that don't work on the screen get the same worker without the Mac tools, so only one helper
+    # at a time can reach the screen. Its own state folder keeps its MCP config apart.
+    background = None
+    if mac_tools:
+        background_ctx = AdapterContext(home, workspace.state_dir / "background", clock, (), ctx.tool_servers)
+        name, options = config.pluggable("harness")
+        background = HARNESSES.create(name, options, background_ctx)
     transcriber = create(TRANSCRIBERS, "stt")
     voice = FallbackVoice(create(VOICES, "tts"), _fallback_voice(config, ctx))
     mic = create(AUDIO_INPUTS, "audio")
@@ -105,20 +115,29 @@ def build(home: Path) -> Runtime:
                           speak=config.approvals.speak, quiet=lambda: live_talk.busy or mic.active,
                           transcript=transcript)
     bridge = AppBridge(ui, connected=server.connected)
+    settings = LiveSettings(workspace.config_path, _live_settings, config.chat.updates, config.harness.max_helpers)
+    updates = Updates(ui, settings.updates, clock,
+                      busy=lambda: live_talk.busy or mic.active or speaker.active or approvals.pending)
     hands = hands_server = None
+    helpers: Orchestrator  # built below; the questions only reach it once a helper runs
     if config.hands.enabled:
-        hands = HandsService(AppHands(bridge), approvals, ui, transcript=transcript,
-                             applescript=config.hands.applescript)
+        hands = HandsService(AppHands(bridge), HelperQuestions(approvals, lambda: helpers, screen=True), ui,
+                             transcript=transcript, applescript=config.hands.applescript)
         hands_server = HandsSocketServer(hands_socket, hands.call)
     switches = config.connections
     enabled = [name for name in ("calendar", "reminders") if switches.enabled and getattr(switches, name)]
-    tool_server = ToolSocketServer(workspace.tools_socket_path, ToolRequests(approvals, bridge, enabled).handle)
-    tasks = TaskRunner(conversation, speaker, context, quiet=lambda: live_talk.busy or mic.active,
-                       transcript=transcript, hands=hands)
+    tool_server = ToolSocketServer(workspace.tools_socket_path,
+                                   ToolRequests(HelperQuestions(approvals, lambda: helpers, screen=False), bridge,
+                                                enabled).handle)
+    runner = TaskRunner(harness, ledger, clock, context, background=background, hands=hands)
+    helpers = Orchestrator(runner, speaker, ui, clock, transcript=transcript, max_helpers=settings.max_helpers,
+                           quiet=lambda: live_talk.busy or mic.active, updates=updates, milestones=Milestones(),
+                           inert=untrusted)
     live_talk = LiveTalk(live_model, speaker, ui, context, clock, profile, reminders, ledger,
-                         _persona(workspace.persona_path), idle_reset_s, tasks, transcript, eyes=AppEyes(bridge),
+                         _persona(workspace.persona_path), idle_reset_s, helpers, transcript, eyes=AppEyes(bridge),
                          approvals=approvals)
-    tasks.on_result = live_talk.note
+    helpers.on_result = live_talk.note
+    updates.speak = live_talk.speak_update
     listening = Listening(mic, transcriber, stt_executor, ui, DictationService(cleaner, history, ui),
                           live_talk, context, LiveMode(config.dictation.stream))
 
@@ -131,9 +150,9 @@ def build(home: Path) -> Runtime:
                                     busy=lambda: live_talk.busy)
 
     brain = Brain(ui, listening, live_talk, context, heartbeat, config.ui, transcript, approvals=approvals,
-                  bridge=bridge, hands=hands, screens=workspace.screens_dir)
+                  bridge=bridge, hands=hands, screens=workspace.screens_dir, helpers=helpers)
     return Runtime(brain, server, heartbeat, transcriber, voice, stt_executor, tts_executor, harness,
-                   live_model, live_talk, tool_server, hands_server)
+                   live_model, live_talk, tool_server, hands_server, helpers)
 
 
 def _tool_servers(config: Config, home: Path) -> tuple[ToolServer, ...]:
@@ -141,6 +160,12 @@ def _tool_servers(config: Config, home: Path) -> tuple[ToolServer, ...]:
     if not config.connections.enabled:
         return ()
     return (ToolServer("milo", (sys.executable, "-m", "milo.connect"), (("MILO_HOME", str(home)),)),)
+
+
+def _live_settings(text: str) -> tuple[str, int]:
+    """The settings LiveSettings re-reads from a changed config.toml. Raises ConfigError on bad values."""
+    config = Config.parse(text)
+    return config.chat.updates, config.harness.max_helpers
 
 
 def _persona(path: Path):

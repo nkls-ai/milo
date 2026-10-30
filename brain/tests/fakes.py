@@ -43,8 +43,11 @@ class FakeHarness:
         self.steps = list(steps)
         """Reported to on_step on every call, before the reply."""
 
-    async def reply(self, prompt: str, session_id: str | None, *, on_step=None) -> Reply:
+    async def reply(self, prompt: str, session_id: str | None, *, on_step=None, on_session=None,
+                    on_plan=None) -> Reply:
         self.calls.append((prompt, session_id))
+        if on_session is not None:
+            on_session(session_id or f"s{len(self.calls)}")
         for step in self.steps if on_step is not None else ():
             on_step(step)
         if self.delay_s:
@@ -55,6 +58,76 @@ class FakeHarness:
         if isinstance(item, str):
             return Reply(Emotion.HAPPY, item, Usage(100, 50, 10), session_id or f"s{len(self.calls)}")
         return item
+
+
+class WorkerScript:
+    """What one scripted worker turn does, in order: report steps, plan progress, wait, then answer.
+
+    Entries: a Step (reported to on_step), ("plan", done, total), ("sleep", seconds), an asyncio.Event (wait
+    for it), and last a Reply, a str (said happily) or a HarnessError (raised). `session` is the id it names.
+    """
+
+    def __init__(self, *actions, session: str = ""):
+        self.actions = actions
+        self.session = session
+        self.started = asyncio.Event()
+        self.cancelled = False
+        self.prompt = ""
+        self.session_id: str | None = None
+
+
+class ScriptedHarness:
+    """A worker harness that plays one WorkerScript per call, in parallel, like separate worker processes.
+
+    A call without a script left answers "ok" at once. Cancelling a call marks its script cancelled, the way
+    the real adapters end the CLI.
+    """
+
+    def __init__(self, *scripts: WorkerScript, name: str = "scripted"):
+        self.name = name
+        self.scripts = deque(scripts)
+        self.played: list[WorkerScript] = []
+        self.running = 0
+        self.most_at_once = 0
+
+    def add(self, *scripts: WorkerScript) -> None:
+        self.scripts.extend(scripts)
+
+    async def reply(self, prompt: str, session_id: str | None, *, on_step=None, on_session=None,
+                    on_plan=None) -> Reply:
+        script = self.scripts.popleft() if self.scripts else WorkerScript("ok")
+        script.prompt, script.session_id = prompt, session_id
+        self.played.append(script)
+        self.running += 1
+        self.most_at_once = max(self.most_at_once, self.running)
+        script.started.set()
+        session = session_id or script.session or f"{self.name}-{len(self.played)}"
+        try:
+            if on_session is not None:
+                on_session(session)
+            for action in script.actions:
+                if isinstance(action, Step):
+                    if on_step is not None:
+                        on_step(action)
+                elif isinstance(action, tuple) and action[0] == "plan":
+                    if on_plan is not None:
+                        on_plan(action[1], action[2])
+                elif isinstance(action, tuple) and action[0] == "sleep":
+                    await asyncio.sleep(action[1])
+                elif isinstance(action, asyncio.Event):
+                    await action.wait()
+                elif isinstance(action, HarnessError):
+                    raise action
+                elif isinstance(action, str):
+                    return Reply(Emotion.HAPPY, action, Usage(100, 50, 10), session)
+                elif isinstance(action, Reply):
+                    return action
+            return Reply(Emotion.HAPPY, "ok", Usage(100, 50, 10), session)
+        except asyncio.CancelledError:
+            script.cancelled = True
+            raise
+        finally:
+            self.running -= 1
 
 
 class FakeTranscriber:

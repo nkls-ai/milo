@@ -8,6 +8,10 @@
 use = "claude_live"
 # Start a fresh conversation after this many seconds without talking (also reloads memory).
 conversation_idle_reset_s = 600
+# How Milo tells you about work his helpers do: "quiet" (only the small birds and the Milo window),
+# "bubble" (short notes in the bubble) or "chatty" (he also says them). Results and questions always
+# come through. Changes take effect without a restart.
+updates = "bubble"
 
 [chat.claude_live]
 binary = ""                       # empty: PATH, then ~/.local/bin
@@ -17,6 +21,8 @@ effort = "low"
 [harness]
 # The agent that does real work (files, research, multi-step tasks) when the chat model hands one off.
 use = "codex"                     # codex | claude
+# Helpers that work at the same time, each its own worker. Work on the screen goes one at a time.
+max_helpers = 3
 
 [harness.codex]
 binary = ""                       # empty: PATH, then ChatGPT.app's bundled codex
