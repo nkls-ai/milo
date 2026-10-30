@@ -105,7 +105,7 @@ public final class MiloController {
         meetings?.start()
 
         if !accessibility.isTrusted(prompt: settings.promptForAccessibility) {
-            model.show("Grant me Accessibility in System Settings so I can hear the \(bindings.dictate.displayName) key and paste for you.")
+            model.show(Self.needAccessibility(bindings.dictate.displayName), action: .permissions)
         }
 
         context.onAppSwitch = { [weak self] in self?.sendContext() }
@@ -146,7 +146,11 @@ public final class MiloController {
 
     static let noConnections = "This version of Milo can't reach your calendar or reminders."
 
-    static let pasteBlocked = "I can't paste: macOS turned off my Accessibility permission. Your text is on the clipboard, press ⌘V. To fix it, remove Milo in System Settings › Privacy & Security › Accessibility and add him again."
+    static func needAccessibility(_ key: String) -> String {
+        "I need Accessibility to hear the \(key) key and paste for you."
+    }
+
+    static let pasteBlocked = "I couldn't paste: macOS switched off my Accessibility. Your words are on the clipboard, press ⌘V."
 
     private func received(_ event: BrainEvent) {
         if let screen, screen.apply(event) { return }
@@ -157,10 +161,11 @@ public final class MiloController {
             // rebuild loses the permission while System Settings still shows it switched on.
             if accessibility.isTrusted(prompt: false) {
                 inserter.insert(text)
+                model.pasted(text)
             } else {
                 inserter.copy(text)
                 NSLog("Milo: not trusted for Accessibility, dictation left on the clipboard")
-                model.show(Self.pasteBlocked)
+                model.show(Self.pasteBlocked, action: .permissions)
             }
         case let .uiConfig(dictateKey, talkKey, handsFreeMax, whatsThisKey, character):
             if let handsFreeMax, handsFreeMax > 0 { pushToTalk.maxLocked = handsFreeMax }
@@ -250,12 +255,21 @@ public final class MiloController {
         }
     }
 
+    /// Shows the output on Milo first, in the same frame as the key, then tells the brain.
     private func send(_ output: PushToTalk.Output) {
         switch output {
-        case let .start(mode): brain.send(.listenStart(mode, tentative: true))
-        case .confirm, .lock: brain.send(.listenConfirm)
-        case .stop: brain.send(.listenStop)
-        case .cancel: brain.send(.listenCancel)
+        case let .start(mode):
+            model.press(mode)
+            brain.send(.listenStart(mode, tentative: true))
+        case let .confirm(mode), let .lock(mode):
+            model.hold(mode)
+            brain.send(.listenConfirm)
+        case let .stop(mode):
+            model.release(mode)
+            brain.send(.listenStop)
+        case .cancel:
+            model.cancelPress()
+            brain.send(.listenCancel)
         }
     }
 

@@ -14,7 +14,7 @@ public struct OverlayView: View {
             Spacer(minLength: 0)
             // A question to the user shows in the bubble, with Yes and No.
             BubbleView(model: model)
-            LiveTranscriptView(model: model)
+            VoiceCapsule(model: model)
             HStack(alignment: .bottom, spacing: 0) {
                 // Left of the square DraggableHostingView keeps for Milo, so a click on a bird is the bird's.
                 HelperFlock(model: model)
@@ -33,6 +33,7 @@ public struct OverlayView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         .animation(motion, value: model.bubble)
         .animation(motion, value: model.state)
+        .animation(motion, value: model.voicePhase)
         .animation(motion, value: model.question)
         .animation(motion, value: model.looking)
         .animation(motion, value: model.recording)

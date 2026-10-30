@@ -62,12 +62,42 @@ public final class MiloModel: ObservableObject {
     public var onRoutine: ((String, RoutineAction) -> Void)?
     /// Called with a draft's id and true for Save, false for throwing it away. Set by the controller.
     public var onDraftAnswer: ((String, Bool) -> Void)?
+    /// The talk or dictate key as the app saw it, ahead of the brain. Set by the controller.
+    @Published public private(set) var ear: Ear?
+    /// Dictation just went into the focused app: "Pasted" shows for a moment.
+    @Published public private(set) var pasted = false
+    /// How the bubble's words keep pace with Milo's voice.
+    @Published public private(set) var reveal = SpeechReveal()
+    /// A button under the bubble that helps with what it says, such as "Fix it" on a missing permission.
+    @Published public private(set) var bubbleAction: BubbleAction?
+    /// Called when the user clicks the bubble's button. Set by main.swift.
+    public var onBubbleAction: ((BubbleAction) -> Void)?
+    /// When Milo started thinking, on `now`'s clock; nil while he isn't.
+    public private(set) var thinkingSince: TimeInterval?
+    /// The mode of the newest recording, for the colour of what comes after it.
+    public private(set) var lastMode: ListenMode = .talk
+    /// Seconds on a monotonic clock, for pacing the bubble's words.
+    public let now: () -> TimeInterval
 
     private let scheduler: Scheduler
     private var hideBubble: ScheduledTask?
+    private var endBeat: ScheduledTask?
+    private var endPasted: ScheduledTask?
 
-    public init(scheduler: Scheduler) {
+    public init(scheduler: Scheduler, clock: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
         self.scheduler = scheduler
+        now = clock
+    }
+
+    /// How long "Got it" stays after the key comes up. Long enough to read, short enough not to hold anything up.
+    public static let caughtBeat: TimeInterval = 0.6
+    /// How long "Pasted" stays.
+    public static let pastedBeat: TimeInterval = 1.4
+
+    /// What the capsule over Milo shows now.
+    public var voicePhase: VoicePhase? {
+        VoicePhase.of(state: state, ear: ear, handsFree: handsFree, pasted: pasted, connected: connected,
+                      lastMode: lastMode, answering: bubble != nil || question != nil)
     }
 
     /// How long a bubble stays up: longer for longer text, at most 20 s.
@@ -79,11 +109,16 @@ public final class MiloModel: ObservableObject {
     public func apply(_ event: BrainEvent) {
         switch event {
         case let .state(new):
+            let wasSpeaking = state == .speaking
             state = new
+            if new == .listening { lastMode = .talk }
+            if new == .dictating { lastMode = .dictate }
+            if wasSpeaking && new != .speaking { reveal.finish() }
+            if new != .thinking { thinkingSince = nil } else if thinkingSince == nil { thinkingSince = now() }
             if state == .listening || state == .dictating { heard = nil }
             // A new question replaces the last answer, so that answer's hide timer can't later
             // wipe the new `heard` while Milo thinks.
-            if state == .listening { bubble = nil }
+            if state == .listening { clearBubble() }
             // Idle starts the hide timer; speaking and listening stop a pending one.
             if state == .idle || state == .speaking || state == .listening { scheduleBubbleHide() }
             if state != .speaking && state != .listening && state != .dictating { level = 0 }
@@ -150,10 +185,71 @@ public final class MiloModel: ObservableObject {
         onOpenHelper?(id)
     }
 
-    /// Shows text in the bubble for a while. Empty text hides it.
-    public func show(_ text: String) {
-        bubble = text.isEmpty ? nil : text
+    /// Shows text in the bubble for a while, with a button that helps if there is one. Empty text hides it.
+    public func show(_ text: String, action: BubbleAction? = nil) {
+        guard !text.isEmpty else {
+            clearBubble()
+            return scheduleBubbleHide()
+        }
+        reveal.show(text, speaking: state == .speaking && action == nil, at: now())
+        bubble = text
+        if bubbleAction != action { bubbleAction = action }
         scheduleBubbleHide()
+    }
+
+    /// The user clicked the bubble's button.
+    public func performBubbleAction() {
+        guard let bubbleAction else { return }
+        onBubbleAction?(bubbleAction)
+    }
+
+    // MARK: The keys, a frame ahead of the brain
+
+    /// The talk or dictate key went down: the recording light shows at once.
+    public func press(_ mode: ListenMode) {
+        endBeat?.cancel()
+        lastMode = mode
+        set(ear: .armed(mode))
+    }
+
+    /// The hold is real, or a double tap locked it on: Milo listens.
+    public func hold(_ mode: ListenMode) {
+        lastMode = mode
+        set(ear: .open(mode))
+    }
+
+    /// The key came up after a hold: "Got it" for a beat, then whatever the brain says.
+    public func release(_ mode: ListenMode) {
+        set(ear: .caught(mode))
+        endBeat?.cancel()
+        endBeat = scheduler.after(Self.caughtBeat) { [weak self] in
+            guard let self, case .caught = self.ear else { return }
+            set(ear: nil)
+        }
+    }
+
+    /// A tap, a shortcut or esc: the light goes out.
+    public func cancelPress() {
+        endBeat?.cancel()
+        set(ear: nil)
+    }
+
+    /// Dictation went into the focused app.
+    public func pasted(_ text: String) {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        if !pasted { pasted = true }
+        endPasted?.cancel()
+        endPasted = scheduler.after(Self.pastedBeat) { [weak self] in self?.pasted = false }
+    }
+
+    private func clearBubble() {
+        bubble = nil
+        bubbleAction = nil
+        reveal.clear()
+    }
+
+    private func set(ear new: Ear?) {
+        if ear != new { ear = new }
     }
 
     private func scheduleBubbleHide() {
@@ -163,9 +259,21 @@ public final class MiloModel: ObservableObject {
         guard let text = bubble, state != .speaking, question == nil else { return }
         hideBubble = scheduler.after(Self.bubbleDuration(for: text)) { [weak self] in
             guard let self else { return }
-            bubble = nil
+            clearBubble()
             heard = nil
             if state == .idle { emotion = .neutral }
+        }
+    }
+}
+
+/// What the button under a bubble does.
+public enum BubbleAction: Equatable, Sendable {
+    /// Opens the permissions window, where each missing switch has its own button.
+    case permissions
+
+    public var title: String {
+        switch self {
+        case .permissions: "Fix it"
         }
     }
 }
