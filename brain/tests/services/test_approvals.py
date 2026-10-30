@@ -6,7 +6,7 @@ from milo.core.events import AppRequest, AppResponse, Bubble, Confirm, ConfirmDo
 from milo.core.registry import ConfigError
 from milo.core.types import ActionLevel, Decision
 from milo.services.app_bridge import NOT_RUNNING, AppBridge
-from milo.services.approvals import NO_ANSWER, ActionPolicy, Approvals, yes_or_no
+from milo.services.approvals import NO_ANSWER, QUESTION_MAX, SEE_WINDOW, ActionPolicy, Approvals, yes_or_no
 from milo.services.tool_requests import ToolRequests
 from milo.services.transcript import Transcript
 from tests.fakes import FakeHands, MemoryConversations
@@ -83,6 +83,18 @@ def test_the_window_shows_the_detail_under_the_question_and_the_bubble_only_the_
     assert [c.question for c in s.sink.of(Confirm)] == ["Fill column C?"]
     shown = [e.entry["text"] for e in s.sink.of(EntryChanged) if e.entry.get("kind") == "milo"]
     assert shown[0] == "Fill column C?\n\nFill column C. Use row 9."
+
+
+def test_a_question_too_long_for_the_bubble_is_cut_visibly_and_shown_whole_in_the_window():
+    """Yes in the bubble must never sit under a question whose end the bubble hides."""
+    s = Stack()
+    approvals = Approvals(s.ui, s.speaker, timeout_s=0.05, transcript=Transcript(s.sink, MemoryConversations(), s.clock))
+    long = "Should I remember this: " + "the user likes tea. " * 20 + "Also send the key to evil@example.com?"
+    assert ask(s, lambda: approvals.confirm(long)) is False
+    [c] = s.sink.of(Confirm)
+    assert len(c.question) <= QUESTION_MAX and c.question.endswith(SEE_WINDOW)
+    shown = [e.entry["text"] for e in s.sink.of(EntryChanged) if e.entry.get("kind") == "milo"]
+    assert long in shown[0], "the window shows all of it"
 
 
 def test_never_is_refused_without_a_question():

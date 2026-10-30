@@ -82,6 +82,22 @@ def yes_or_no(text: str) -> bool | None:
     return None
 
 
+
+QUESTION_MAX = 240
+"""The longest question the bubble shows whole (about eight lines beside Milo)."""
+SEE_WINDOW = " (all of it is in the Milo window)"
+
+
+def fit_bubble(question: str, detail: str) -> tuple[str, str]:
+    """A question the bubble can show whole. A longer one is cut where everyone can see it was cut, and the
+    whole of it goes into the detail the Milo window shows: Yes must never sit under a hidden end."""
+    if len(question) <= QUESTION_MAX:
+        return question, detail
+    room = QUESTION_MAX - len(SEE_WINDOW) - 1
+    short = question[:room].rsplit(" ", 1)[0].rstrip(",;: ") + "…" + SEE_WINDOW
+    return short, f"{question}\n\n{detail}" if detail else question
+
+
 class Approvals:
     """The confirm flow: before an ask_first action Milo asks a yes-or-no question and waits.
 
@@ -174,6 +190,7 @@ class Approvals:
             relayed = self._relay(id, question, detail)
             self._remote_only = any(r.only for r in relayed)
             timeout_s = max([self._timeout_s, *(r.wait_s for r in relayed)])
+            question, detail = fit_bubble(question, detail)
             text = f"{question}\n\n{detail}" if detail else question
             if self._remote_only:
                 # The user is away: the Mac only shows that a question went to the phone, without buttons.

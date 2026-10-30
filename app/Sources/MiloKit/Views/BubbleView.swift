@@ -125,7 +125,9 @@ struct QuestionView: View {
                 .labelStyle(TightLabel())
             Text(question.text)
                 .font(.system(size: 13.5, weight: .medium))
-                .lineLimit(5)  // the whole task is in the Milo window; the bubble must fit beside Milo
+                // The brain sends at most 240 characters (approvals.fit_bubble), which fit in 8 lines: a question
+                // is never cut here, so Yes never sits under a hidden end. The limit only keeps Milo on screen.
+                .lineLimit(8)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
                 .help(question.text)
