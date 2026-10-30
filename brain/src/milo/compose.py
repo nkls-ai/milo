@@ -148,7 +148,7 @@ def build(home: Path) -> Runtime:
     stt_executor = ThreadPoolExecutor(1, thread_name_prefix="stt")
     tts_executor = ThreadPoolExecutor(1, thread_name_prefix="tts")
     server = UnixSocketServer(workspace.socket_path, on_command=lambda c: brain.handle(c),
-                              on_connect=lambda: brain.greeting())
+                              on_connect=lambda: brain.greeting(), on_disconnect=lambda: brain.app_gone())
     ui = UiState(server)
     context = UserContext(clock)
     mem = _memory(config, workspace, ctx, clock, ui, harness, ledger, context,
