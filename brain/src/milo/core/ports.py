@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from .events import Event
+from .routines import Routine
 from .types import Audio, Nudge, Reminder, Reply, ScreenCapture, Signals, Step, Usage
 
 LevelCallback = Callable[[float], None]
@@ -239,6 +240,50 @@ class TranscriptStore(Protocol):
     def tail(self, n: int) -> list[dict]:
         """The last `n` entries, oldest first. Reads only the end of the file."""
         ...
+
+
+@runtime_checkable
+class RoutineBook(Protocol):
+    """The user's routines, one Markdown recipe each (milo.core.routines), plus a short log of their runs."""
+
+    def all(self) -> list[Routine]:
+        """Every routine that reads, by name. Re-reads only files that changed."""
+        ...
+
+    def problems(self) -> dict[str, str]:
+        """Files that don't read, by slug, with what is wrong in plain words."""
+        ...
+
+    def get(self, slug: str) -> Routine | None: ...
+
+    def save(self, routine: Routine) -> Routine:
+        """Write the routine to its file, whole or not at all."""
+        ...
+
+    def rename(self, slug: str, name: str) -> Routine:
+        """Give it a new name and the file a matching slug. Raises ValueError if that name is taken."""
+        ...
+
+    def delete(self, slug: str) -> bool:
+        """Move the file aside (not gone: it can be put back by hand). False if there was none."""
+        ...
+
+    def record_run(self, slug: str, run: dict) -> None:
+        """Append one run ({"slug", "at", "outcome", "inputs", "result"}) to the run log."""
+        ...
+
+    def runs(self, slug: str, n: int = 5) -> list[dict]:
+        """The last `n` runs of a routine, oldest first."""
+        ...
+
+
+@runtime_checkable
+class StateFile(Protocol):
+    """A small JSON object kept across restarts, for a service's own bookkeeping."""
+
+    def load(self) -> dict: ...
+
+    def save(self, data: dict) -> None: ...
 
 
 @runtime_checkable
