@@ -80,9 +80,10 @@ class Routine:
     """Front matter keys Milo doesn't know, kept so a hand edit survives a save."""
 
     def fingerprint(self) -> str:
-        """What a run follows: the recipe and its inputs. A change means the user should look again before
-        it runs; a new name, schedule or last run doesn't."""
-        data = json.dumps([self.body.strip(), [(i.name, i.ask, i.default) for i in self.inputs]])
+        """What a run follows: the recipe, its inputs and the apps it works in. A change means the user should
+        look again before it runs; a new name or last run doesn't. (A schedule set outside Milo asks on its own,
+        see services/routines.py.)"""
+        data = json.dumps([self.body.strip(), [(i.name, i.ask, i.default) for i in self.inputs], list(self.apps)])
         return hashlib.sha256(data.encode()).hexdigest()[:16]
 
     def input(self, name: str) -> RoutineInput | None:

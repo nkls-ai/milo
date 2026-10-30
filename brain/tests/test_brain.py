@@ -208,10 +208,11 @@ def check_routine(s: Stack, msg: dict) -> None:
 
 
 def check_routine_draft_answer(s: Stack, msg: dict) -> None:
+    text = "---\nname: Invoice folder\n---\n\n1. Move the invoices.\n"
     s.routine_state.data = {"drafts": {msg["id"]: {"name": "Invoice folder", "base": "invoice-folder",
-                                                   "schedule": None, "ready": True}}}
+                                                   "schedule": None, "ready": True, "text": text}}}
     s.routines._state = s.routine_state.load()
-    s.routine_book.drafts[msg["id"]] = "---\nname: Invoice folder\n---\n\n1. Move the invoices.\n"
+    s.routine_book.drafts[msg["id"]] = text
 
     async def go():
         await s.brain.handle(parse_command(msg))

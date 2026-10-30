@@ -402,8 +402,10 @@ class Routines:
         return draft
 
     def _write(self, draft: str, name: str, prompt: str) -> Helper:
+        # Careful: it read a helper's steps and result, which may quote outside text, and all it should do is
+        # write one file. Anything else it tries asks first.
         helper = self._tasks.submit(f"Write down how to do “{name}” as a routine.", title=f"Writing down {name}",
-                                    screen=False, instructions=prompt,
+                                    screen=False, careful=True, instructions=prompt,
                                     on_finish=lambda h, draft=draft: self._drafted(draft, h))
         self._writing[draft] = helper
         return helper
@@ -426,8 +428,9 @@ class Routines:
             self._drop(draft_id)
             self._tell(f"I couldn't write {draft['name']} down properly: {e}. Ask me again?", Emotion.CONFUSED)
             return
-        self._book.write_draft(draft_id, render(routine))
-        draft["ready"] = True
+        text = render(routine)
+        self._book.write_draft(draft_id, text)
+        draft["ready"], draft["text"] = True, text  # Save keeps exactly what the window showed
         self._save_state()
         log.info("draft %s of %s is ready", draft_id, private(routine.name))
         self.refresh()
@@ -459,7 +462,7 @@ class Routines:
             return None
         draft_id, draft = waiting
         try:
-            routine = self._normalize(parse(self._book.read_draft(draft_id) or "", draft["base"]), draft)
+            routine = self._normalize(parse(draft.get("text") or "", draft["base"]), draft)
         except RecipeError as e:
             self._tell(f"That recipe doesn't read any more: {e}.", Emotion.CONFUSED)
             return None
@@ -518,16 +521,23 @@ class Routines:
     async def _start(self, routine: Routine, values: dict[str, str], note: str, *, careful: bool, scheduled: bool,
                      missed: datetime | None) -> None:
         approved = self._approved().get(routine.slug)
-        if approved != routine.fingerprint():
+        schedule = self._state.get("schedules", {}).get(routine.slug, {})
+        new_schedule = scheduled and schedule.get("ask")
+        if approved != routine.fingerprint() or new_schedule:
             if self._approvals is None:
                 self._tell(f"{routine.name} changed since it was saved, so I left it.", Emotion.CONCERNED)
                 return
-            question = (f"Run the new routine “{routine.name}”?" if approved is None else
-                        f"“{routine.name}” changed since you saved it. Run it?")
+            if approved is None:
+                question = f"Run the new routine “{routine.name}”?"
+            elif approved != routine.fingerprint():
+                question = f"“{routine.name}” changed since you saved it. Run it?"
+            else:
+                question = f"Run “{routine.name}” now? It's set to run {routine.schedule}."
             if not await self._approvals.confirm(question, detail=routine.body):
                 log.info("routine %s not run: changed, and no yes", routine.slug)
                 return
             self._approved()[routine.slug] = routine.fingerprint()
+            schedule.pop("ask", None)
             self._save_state()
         if missed is not None:
             self._tell(f"I missed {routine.name} at {missed:%H:%M} while the Mac was asleep, so I'm doing it now.",
@@ -584,7 +594,9 @@ class Routines:
                     changed = True
                 continue
             if entry is None or entry.get("schedule") != str(schedule):
-                schedules[routine.slug] = {"schedule": str(schedule), "since": now.isoformat(timespec="seconds")}
+                # Not set through Milo (a hand edit, or a worker writing the file): its first run asks.
+                schedules[routine.slug] = {"schedule": str(schedule), "since": now.isoformat(timespec="seconds"),
+                                           "ask": True}
                 changed = True
                 continue
             due = schedule.last_due(now)
@@ -602,8 +614,9 @@ class Routines:
                            f"{routine.name}” if you still want it.", Emotion.CONCERNED, speak=False)
                 continue
             if not self._budget(now):
-                self._tell(f"I skipped {routine.name}: that's {self._max_runs_per_day()} scheduled runs today, "
-                           f"the most I do in a day.", Emotion.CONCERNED, speak=False)
+                cap = self._max_runs_per_day()
+                self._tell(f"I skipped {routine.name}: I've done {cap} scheduled run{'' if cap == 1 else 's'} "
+                           f"today, my limit for a day.", Emotion.CONCERNED, speak=False)
                 continue
             self.run(routine.slug, scheduled=True, missed=due if late > ON_TIME else None)
         if changed:
@@ -737,7 +750,7 @@ class Routines:
                 data["problem"] = f"I can't read the schedule “{r.schedule}”."
             routines.append(data)
         routines += [{"id": slug, "name": slug, "problem": problem} for slug, problem in self._book.problems().items()]
-        drafts = [{"id": k, "name": d["name"], "recipe": self._book.read_draft(k) or "", "schedule": d.get("schedule") or ""}
+        drafts = [{"id": k, "name": d["name"], "recipe": d.get("text") or "", "schedule": d.get("schedule") or ""}
                   for k, d in self._drafts().items() if d.get("ready")]
         return RoutinesEvent(routines, drafts)
 
