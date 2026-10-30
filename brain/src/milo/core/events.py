@@ -229,6 +229,19 @@ class Helpers(Event):
     helpers: list[dict]
 
 
+@dataclass(frozen=True)
+class HandsBorrow(Event):
+    """The user lent Milo the real mouse and keyboard for actions that can't be done in the background.
+
+    The app shows the frame around the screen and stops on any touch while it holds them, and hands them back on
+    its own a while after the last such action or when the session ends.
+    """
+
+    type: ClassVar[str] = "hands_borrow"
+    on: bool
+    what: str = ""
+
+
 # ---- app -> brain
 
 

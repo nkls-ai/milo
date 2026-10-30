@@ -4,8 +4,8 @@ import asyncio
 
 import pytest
 
-from milo.core.events import Activity, FlyTo, HandsSession, Status
-from milo.core.types import HandsError
+from milo.core.events import Activity, FlyTo, HandsBorrow, HandsSession, Status
+from milo.core.types import BorrowNeeded, HandsError
 from milo.services.hands import NO_TASK, STOPPED, TURNED_OFF, HandsService, title
 from milo.services.transcript import Transcript
 from tests.fakes import FakeClock, FakeConfirm, FakeHands, MemoryTranscript, RecordingSink
@@ -180,3 +180,58 @@ def test_the_end_of_a_task_takes_the_frame_away_and_brings_milo_home():
 ])
 def test_steps_read_like_plain_sentences(tool, args, target, expected):
     assert title(tool, args, target) == expected
+
+
+class BorrowingHands(FakeHands):
+    """The app can do `tool` only with the real mouse, which it says until Milo was lent it."""
+
+    def __init__(self, what: str = "mouse", **kwargs):
+        super().__init__(**kwargs)
+        self.what = what
+        self.lent = False
+
+    async def act(self, tool: str, args: dict) -> dict:
+        if tool != "describe" and not self.lent:
+            self.calls.append((tool, args))
+            raise BorrowNeeded(self.what, "Excel doesn't take clicks in the background.")
+        return await super().act(tool, args)
+
+
+def test_an_action_that_needs_the_mouse_asks_to_borrow_it_then_runs():
+    hands = BorrowingHands(targets={"click": {"app": "Microsoft Excel", "point": {"x": 1, "y": 2}}})
+    t = Setup(hands, FakeConfirm(True))
+    t.service._sink.emit = _lend_on_borrow(t.sink.emit, hands)
+    out = t.call("click", {"x": 1, "y": 2})
+    assert t.confirm.asked == ["Can I borrow your mouse for a moment, to click in Microsoft Excel?"]
+    assert t.sink.of(HandsBorrow) == [HandsBorrow(True, "mouse")]
+    assert [c[0] for c in hands.calls] == ["describe", "click", "click"]
+    assert out.text == "click done"
+    assert t.steps()[-1][1] == "done"
+
+
+def test_no_to_borrowing_tells_the_worker_to_find_another_way():
+    hands = BorrowingHands("keyboard", targets={"type": {"app": "Microsoft Word"}})
+    t = Setup(hands, FakeConfirm(False))
+    error = t.fails("type", {"text": "Dear Anna"})
+    assert t.confirm.asked == ["Can I borrow your keyboard for a moment, to type in Microsoft Word?"]
+    assert "keep their keyboard" in error and "run_applescript" in error
+    assert t.sink.of(HandsBorrow) == []
+    assert t.steps()[-1][1] == "failed"
+
+
+def test_a_risky_action_asks_its_own_question_before_the_borrow_question():
+    hands = BorrowingHands(targets={"click": {"app": "Mail", "title": "Send", "role": "button", "point": {"x": 1, "y": 2}}})
+    t = Setup(hands, FakeConfirm(True, True))
+    t.service._sink.emit = _lend_on_borrow(t.sink.emit, hands)
+    t.call("click", {"x": 1, "y": 2})
+    assert t.confirm.asked == ["I'm about to click “Send” in Mail. Go ahead?",
+                               "Can I borrow your mouse for a moment, to click in Mail?"]
+
+
+def _lend_on_borrow(emit, hands: BorrowingHands):
+    """The app answers hands_borrow by using the real mouse from then on."""
+    def wrapped(event):
+        if isinstance(event, HandsBorrow) and event.what == hands.what:
+            hands.lent = event.on
+        emit(event)
+    return wrapped

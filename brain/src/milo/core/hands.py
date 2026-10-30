@@ -27,7 +27,7 @@ def mac_server(command: Sequence[str]) -> tuple[ToolServer, ...]:
 
 
 INSTRUCTIONS = """\
-Tools that act on the user's Mac. The user may be watching; every action shows in Milo's window.
+Tools that act on the user's Mac. Milo runs them in the background where he can (pressing buttons, filling in fields, scrolling) without touching the user's mouse or keyboard, so prefer ax_press and ax_set_value: they never interrupt the user. Some actions can't be done in the background (typing into a spreadsheet cell, clicking a web page, a plain keystroke); Milo then asks the user to lend the mouse or keyboard for a moment. If the user says no, do that part another way or tell them what is left. The user may be watching; every action shows in Milo's window.
 For the calendar, reminders, mail, notes, shortcuts and files, use Milo's own tools (calendar_, mail_ and so \
 on) if you have them, not these. For other apps, use the fastest route that can do the job, in this order:
 1. run_applescript for scriptable apps (Finder, Safari, Excel, Numbers).

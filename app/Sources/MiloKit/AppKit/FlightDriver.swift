@@ -2,7 +2,8 @@ import AppKit
 import Combine
 import QuartzCore
 
-/// Flies the overlay panel to `MiloModel.flyTarget`, and home again when it clears. It moves the whole
+/// Flies the overlay panel to the corner of `MiloModel.workingWindow` while Milo works in it, else to
+/// `MiloModel.flyTarget`, and home again when both clear. It moves the whole
 /// window along an arc, 60 times a second while he is in the air and not at all otherwise, and keeps
 /// `MiloModel.flight` up to date so the figure flaps and points.
 final class FlightDriver {
@@ -19,12 +20,40 @@ final class FlightDriver {
         self.panel = panel
         self.model = model
         self.center = center
-        watch = model.$flyTarget.removeDuplicates().sink { [weak self] in self?.go(to: $0) }
+        watch = model.$workingWindow.combineLatest(model.$flyTarget)
+            .map { Goal(window: $0, point: $1) }
+            .removeDuplicates()
+            .sink { [weak self] in self?.go(to: $0) }
     }
 
-    private func go(to target: CGPoint?) {
+    private struct Goal: Equatable {
+        var window: CGRect?
+        var point: CGPoint?
+    }
+
+    private var perchedOn: CGRect?
+
+    private func go(to goal: Goal) {
         guard let panel else { return }
-        if let target {
+        if let window = goal.window {
+            if home == nil { home = panel.frame.origin }
+            let corner = CGPoint(x: window.maxX, y: window.maxY)
+            let screen = NSScreen.screens.first { $0.frame.contains(corner) } ?? panel.screen ?? NSScreen.main
+            guard let visible = screen?.visibleFrame else { return }
+            let perch = FlightPlan.perch(onCornerOf: window, within: visible)
+            let origin = NSPoint(x: perch.center.x - center.x, y: perch.center.y - center.y)
+            // Dragged along with the window: he holds on instead of flying again.
+            if perchedOn != nil, timer == nil, hypot(origin.x - panel.frame.minX, origin.y - panel.frame.minY) < 160 {
+                panel.setFrameOrigin(origin)
+                perchedOn = window
+                return set(.pointing(toward: perch.toward))
+            }
+            perchedOn = window
+            fly(to: origin) { [weak self] in self?.set(.pointing(toward: perch.toward)) }
+            return
+        }
+        perchedOn = nil
+        if let target = goal.point {
             if home == nil { home = panel.frame.origin }
             let screen = NSScreen.screens.first { $0.frame.contains(target) } ?? panel.screen ?? NSScreen.main
             guard let visible = screen?.visibleFrame else { return }

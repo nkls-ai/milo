@@ -132,6 +132,9 @@ final class FakeScreenReader: ScreenReader {
 /// Answers each action at once, or holds it until `finish` when `hold` is set.
 final class FakeHandsExecutor: HandsExecutor {
     var result: Result<[String: JSONValue], HandsFailure> = .success(["text": "done"])
+    /// Answers for particular tools, e.g. "describe".
+    var results: [String: Result<[String: JSONValue], HandsFailure>] = [:]
+    var borrowed: Set<String> = []
     var hold = false
     private(set) var performed: [String] = []
     private(set) var cancels = 0
@@ -140,7 +143,8 @@ final class FakeHandsExecutor: HandsExecutor {
     func perform(_ tool: String, args: [String: JSONValue],
                  completion: @escaping (Result<[String: JSONValue], HandsFailure>) -> Void) {
         performed.append(tool)
-        if hold { held.append(completion) } else { completion(result) }
+        let result = results[tool] ?? result
+        if hold && tool != "describe" { held.append(completion) } else { completion(result) }
     }
 
     func cancel() { cancels += 1 }
@@ -150,6 +154,39 @@ final class FakeHandsExecutor: HandsExecutor {
         held.removeAll()
         pending.forEach { $0(result) }
     }
+}
+
+final class FakeCursor: CursorDisplay {
+    /// Holds glides until `land()`.
+    var hold = false
+    private(set) var calls: [String] = []
+    private var pending: [() -> Void] = []
+
+    func glide(to point: CGPoint, arrived: @escaping () -> Void) {
+        calls.append("glide \(Int(point.x)),\(Int(point.y))")
+        if hold { pending.append(arrived) } else { arrived() }
+    }
+    func click(at point: CGPoint) { calls.append("click \(Int(point.x)),\(Int(point.y))") }
+    func typing(at point: CGPoint) { calls.append("typing \(Int(point.x)),\(Int(point.y))") }
+    func rest() { calls.append("rest") }
+    func land() {
+        let ready = pending
+        pending.removeAll()
+        ready.forEach { $0() }
+    }
+}
+
+final class FakeWindowWatcher: WindowWatcher {
+    private(set) var watched: [(pid: Int32, frame: CGRect)] = []
+    private(set) var stops = 0
+    private var changed: ((CGRect?) -> Void)?
+
+    func watch(pid: Int32, frame: CGRect, changed: @escaping (CGRect?) -> Void) {
+        watched.append((pid, frame))
+        self.changed = changed
+    }
+    func stop() { stops += 1; changed = nil }
+    func move(to frame: CGRect?) { changed?(frame) }
 }
 
 final class FakeInputSource: UserInputSource {

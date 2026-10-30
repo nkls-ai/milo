@@ -49,12 +49,15 @@ public enum BrainEvent: Equatable, Sendable {
     case appRequest(id: String, op: String, args: JSONValue)
     /// The helpers working for Milo, oldest first; finished ones stay a few seconds.
     case helpers([HelperInfo])
+    /// The user lent Milo one real device ("mouse" or "keyboard") for an action that can't be done in the
+    /// background. The app hands it back on its own a while after the last such action, or when the session ends.
+    case handsBorrow(on: Bool, what: String)
     case unknown(String)
 }
 
 extension BrainEvent: Decodable {
     private enum Key: String, CodingKey {
-        case type, state, emotion, text, value, entries, entry, id, step, mode, on, tool, args, point, question, answer, op
+        case type, state, emotion, text, value, entries, entry, id, step, mode, on, tool, args, point, question, answer, op, what
         case taskID = "task_id"
         case whatsThisKey = "whats_this_key"
         case dictateKey = "dictate_key"
@@ -107,6 +110,9 @@ extension BrainEvent: Decodable {
             self = .appRequest(id: try c.decode(String.self, forKey: .id), op: try c.decode(String.self, forKey: .op),
                                args: try c.decodeIfPresent(JSONValue.self, forKey: .args) ?? .object([:]))
         case "helpers": self = .helpers(try c.decode([HelperInfo].self, forKey: .helpers))
+        case "hands_borrow":
+            self = .handsBorrow(on: try c.decode(Bool.self, forKey: .on),
+                                what: try c.decodeIfPresent(String.self, forKey: .what) ?? "")
         default: self = .unknown(type)
         }
     }

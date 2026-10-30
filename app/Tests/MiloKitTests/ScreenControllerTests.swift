@@ -9,6 +9,8 @@ private final class Rig {
     let hands = FakeHandsExecutor()
     let input = FakeInputSource()
     let hotkey = FakeHotkey()
+    let cursor = FakeCursor()
+    let windows = FakeWindowWatcher()
     let scheduler = ManualScheduler()
     let model: MiloModel
     let screen: ScreenController
@@ -17,10 +19,11 @@ private final class Rig {
 
     init() {
         model = MiloModel(scheduler: scheduler)
-        let ports = ScreenPorts(reader: reader, hands: hands, input: input, hotkey: hotkey)
+        let ports = ScreenPorts(reader: reader, hands: hands, input: input, hotkey: hotkey, cursor: cursor,
+                                windows: windows)
         var now: () -> TimeInterval = { 0 }
         screen = ScreenController(model: model, brain: brain, ports: ports, now: { now() },
-                                  toAppKit: { CGPoint(x: $0.x, y: 1000 - $0.y) })
+                                  toAppKit: { CGPoint(x: $0.x, y: 1000 - $0.y) }, scheduler: scheduler)
         controller = MiloController(model: model, brain: brain, launcher: FakeBrainLauncher(),
                                     inserter: FakeTextInserter(), keys: FakeKeySource(), context: FakeContextProvider(),
                                     accessibility: FakeAccessibility(), scheduler: scheduler, screen: screen)
@@ -33,11 +36,20 @@ private final class Rig {
         brain.sent.filter { if case .context = $0 { false } else { true } }
     }
 
-    /// Starts a session with the pointer resting at (0, 0) a while ago.
-    func startSession() {
+    /// Starts a session with the pointer resting at (0, 0) a while ago. `borrowed`: the user lent the mouse.
+    func startSession(borrowed: Bool = false) {
         brain.emit(.handsSession(true))
+        if borrowed { brain.emit(.handsBorrow(on: true, what: "mouse")) }
         input.send(UserInput(.mouseMoved(x: 0, y: 0), at: clock))
         clock += 1
+    }
+
+    /// describe answers with a click on a button at (600, 400) in a window of pid 42.
+    func describesAButton() {
+        hands.results["describe"] = .success([
+            "app": "TextEdit", "title": "Bold", "point": .object(["x": 600, "y": 400]), "pid": 42,
+            "window": .object(["x": 100, "y": 50, "width": 800, "height": 600]),
+        ])
     }
 }
 
@@ -93,9 +105,9 @@ private final class Rig {
         #expect(!r.model.handsActive && !r.input.running && r.model.flyTarget == nil)
     }
 
-    @Test func realInputStopsTheSessionAtOnce() {
+    @Test func whileTheMouseIsLentRealInputStopsTheSessionAtOnce() {
         let r = Rig()
-        r.startSession()
+        r.startSession(borrowed: true)
         r.hands.hold = true
         r.brain.emit(.handsRequest(id: "hands-1", tool: "run_applescript", args: ["script": "delay 20"]))
         r.input.send(UserInput(.key, at: r.clock))
@@ -112,7 +124,7 @@ private final class Rig {
 
     @Test func milosOwnEventsDontStopHim() {
         let r = Rig()
-        r.startSession()
+        r.startSession(borrowed: true)
         r.brain.emit(.handsRequest(id: "hands-1", tool: "click", args: ["x": 600, "y": 400]))
         r.input.send(UserInput(.mouseMoved(x: 600, y: 400), at: r.clock + 0.1))
         r.input.send(UserInput(.mouseDown, at: r.clock + 0.1, synthetic: true))
@@ -122,7 +134,7 @@ private final class Rig {
 
     @Test func afterAStopActionsAreRefusedUntilTheBrainEndsTheSession() {
         let r = Rig()
-        r.startSession()
+        r.startSession(borrowed: true)
         r.input.send(UserInput(.mouseDown, at: r.clock))
         r.brain.emit(.handsRequest(id: "hands-9", tool: "type", args: ["text": "x"]))
         #expect(r.hands.performed.isEmpty)
@@ -134,7 +146,7 @@ private final class Rig {
 
     @Test func answeringAQuestionWithTheMouseDoesntStopTheSession() {
         let r = Rig()
-        r.startSession()
+        r.startSession(borrowed: true)
         r.brain.emit(.confirm(id: "q1", question: "Send it?"))
         #expect(r.model.question == PendingQuestion(id: "q1", text: "Send it?"))
         r.input.send(UserInput(.mouseMoved(x: 900, y: 900), at: r.clock))
@@ -151,7 +163,7 @@ private final class Rig {
 
     @Test func aSpokenAnswerDoesntStopTheSessionEither() {
         let r = Rig()
-        r.startSession()
+        r.startSession(borrowed: true)
         r.brain.emit(.confirm(id: "q1", question: "Send it?"))
         r.input.send(UserInput(.key, at: r.clock))  // the talk key, to say "yes"
         r.brain.emit(.confirmDone(id: "q0", answer: "no"))
@@ -161,5 +173,136 @@ private final class Rig {
         #expect(r.model.question == nil && r.model.handsActive)
         r.input.send(UserInput(.key, at: r.clock + 1))
         #expect(r.sent.last == .handsStop(reason: "user"))
+    }
+
+    // MARK: Background work
+
+    @Test func inTheBackgroundTheUsersOwnWorkNeverStopsMilo() {
+        let r = Rig()
+        r.startSession()
+        for input in [UserInput(.key, at: r.clock), UserInput(.mouseDown, at: r.clock), UserInput(.scroll, at: r.clock),
+                      UserInput(.mouseMoved(x: 700, y: 700), at: r.clock + 1)] {
+            r.input.send(input)
+        }
+        #expect(r.sent.isEmpty && r.model.handsActive)
+        r.input.send(UserInput(.escape, at: r.clock + 2))
+        #expect(r.sent == [.handsStop(reason: "escape")], "esc still stops him")
+    }
+
+    @Test func describeOutlinesTheWindowAndGlidesTheCursorBeforeTheClick() {
+        let r = Rig()
+        r.startSession()
+        r.describesAButton()
+        r.cursor.hold = true
+        r.brain.emit(.handsRequest(id: "h1", tool: "describe", args: ["tool": "click", "x": 1, "y": 2]))
+        #expect(r.model.workingWindow == CGRect(x: 100, y: 350, width: 800, height: 600), "AppKit: y flips")
+        #expect(r.windows.watched.map(\.pid) == [42])
+        #expect(r.cursor.calls == ["glide 600,600"])
+        r.brain.emit(.handsRequest(id: "h2", tool: "click", args: ["x": 1, "y": 2]))
+        #expect(r.hands.performed == ["describe"], "the click waits for the cursor to get there")
+        r.cursor.land()
+        #expect(r.hands.performed == ["describe", "click"])
+        #expect(r.cursor.calls == ["glide 600,600", "click 600,600"])
+    }
+
+    @Test func aCursorThatNeverArrivesDoesntHoldTheActionForever() {
+        let r = Rig()
+        r.startSession()
+        r.describesAButton()
+        r.cursor.hold = true
+        r.brain.emit(.handsRequest(id: "h1", tool: "describe", args: ["tool": "click", "x": 1, "y": 2]))
+        r.brain.emit(.handsRequest(id: "h2", tool: "click", args: ["x": 1, "y": 2]))
+        r.scheduler.advance(by: ScreenController.glideWait)
+        #expect(r.hands.performed == ["describe", "click"])
+    }
+
+    @Test func typingShowsTheCaretHint() {
+        let r = Rig()
+        r.startSession()
+        r.describesAButton()
+        r.brain.emit(.handsRequest(id: "h1", tool: "describe", args: ["tool": "type", "text": "hi"]))
+        r.brain.emit(.handsRequest(id: "h2", tool: "type", args: ["text": "hi"]))
+        #expect(r.cursor.calls.last == "typing 600,600")
+    }
+
+    @Test func theOutlineFollowsTheWindowAndGoesWhenItCloses() {
+        let r = Rig()
+        r.startSession()
+        r.describesAButton()
+        r.brain.emit(.handsRequest(id: "h1", tool: "describe", args: ["tool": "click", "x": 1, "y": 2]))
+        r.windows.move(to: CGRect(x: 300, y: 50, width: 800, height: 600))
+        #expect(r.model.workingWindow == CGRect(x: 300, y: 350, width: 800, height: 600))
+        r.windows.move(to: nil)
+        #expect(r.model.workingWindow == nil)
+    }
+
+    @Test func pipStaysOnTheWindowWhileTheBrainPointsAtSpotsInIt() {
+        let r = Rig()
+        r.startSession()
+        r.brain.emit(.flyTo(ScreenPoint(x: 10, y: 10)))
+        #expect(r.model.flyTarget == CGPoint(x: 10, y: 990), "no window known yet: he flies to the spot")
+        r.describesAButton()
+        r.brain.emit(.handsRequest(id: "h1", tool: "describe", args: ["tool": "click", "x": 1, "y": 2]))
+        #expect(r.model.flyTarget == nil && r.model.workingWindow != nil)
+        r.brain.emit(.flyTo(ScreenPoint(x: 600, y: 400)))
+        #expect(r.model.flyTarget == nil, "he perches on the window instead")
+    }
+
+    @Test func theEndOfTheSessionClearsTheScreen() {
+        let r = Rig()
+        r.startSession(borrowed: true)
+        r.describesAButton()
+        r.brain.emit(.handsRequest(id: "h1", tool: "describe", args: ["tool": "click", "x": 1, "y": 2]))
+        r.brain.emit(.handsSession(false))
+        #expect(r.model.workingWindow == nil && !r.model.handsBorrowed && r.hands.borrowed.isEmpty)
+        #expect(r.windows.stops >= 1 && r.cursor.calls.last == "rest")
+    }
+
+    @Test func aFailureThatNeedsTheMouseTellsTheBrain() {
+        let r = Rig()
+        r.startSession()
+        r.hands.result = .failure(HandsFailure("Excel doesn't take clicks in the background.", borrow: "mouse"))
+        r.brain.emit(.handsRequest(id: "h1", tool: "click", args: ["x": 1, "y": 2]))
+        #expect(r.sent == [.handsResult(id: "h1", ok: false, result: ["borrow": "mouse"],
+                                        error: "Excel doesn't take clicks in the background.")])
+    }
+
+    @Test func theMouseGoesBackAWhileAfterTheLastBorrowedAction() {
+        let r = Rig()
+        r.startSession()
+        r.brain.emit(.handsBorrow(on: true, what: "mouse"))
+        #expect(r.model.handsBorrowed && r.hands.borrowed == ["mouse"])
+        r.scheduler.advance(by: ScreenController.lendFor - 1)
+        r.brain.emit(.handsRequest(id: "h1", tool: "click", args: ["x": 1, "y": 2]))
+        r.scheduler.advance(by: ScreenController.lendFor - 1)
+        #expect(r.model.handsBorrowed, "each action starts the wait again")
+        r.scheduler.advance(by: 1)
+        #expect(!r.model.handsBorrowed && r.hands.borrowed.isEmpty)
+        r.input.send(UserInput(.mouseDown, at: r.clock + 5))
+        #expect(r.model.handsActive, "back in the background, touching the mouse is fine again")
+    }
+
+    @Test func theStopButtonStopsLikeEsc() {
+        let r = Rig()
+        r.startSession()
+        r.screen.stopPressed()
+        #expect(r.sent == [.handsStop(reason: "escape")] && !r.model.handsActive)
+    }
+
+    @Test func aBorrowOutsideASessionIsIgnored() {
+        let r = Rig()
+        r.brain.emit(.handsBorrow(on: true, what: "mouse"))
+        #expect(!r.model.handsBorrowed && r.hands.borrowed.isEmpty)
+    }
+
+    @Test func lendingTheMouseDoesNotLendTheKeyboard() {
+        let r = Rig()
+        r.startSession()
+        r.brain.emit(.handsBorrow(on: true, what: "mouse"))
+        #expect(r.hands.borrowed == ["mouse"], "a yes for the mouse never lends the keyboard")
+        r.brain.emit(.handsBorrow(on: true, what: "keyboard"))
+        #expect(r.hands.borrowed == ["mouse", "keyboard"])
+        r.brain.emit(.handsSession(false))
+        #expect(r.hands.borrowed.isEmpty)
     }
 }

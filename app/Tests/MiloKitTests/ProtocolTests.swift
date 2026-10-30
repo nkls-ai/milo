@@ -75,6 +75,7 @@ private func entries(_ key: String) throws -> [[String: Any]] {
                 HelperInfo(id: "e1e1e1e1e1e1", title: "Sort downloads", status: .needsYou, step: "Waiting for your answer"),
                 HelperInfo(id: "f2f2f2f2f2f2", title: "Dentist email", status: .done),
             ]),
+            .handsBorrow(on: true, what: "mouse"),
         ])
     }
 
@@ -106,6 +107,8 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .appResponse(id: "a42f", outcome: .failure(
                 "Milo isn't allowed to use your calendar. Turn it on in System Settings › Privacy & Security › Calendars.")),
             .stopHelper(id: "c0ffee12ab34"),
+            .handsResult(id: "hands-7", ok: false, result: ["borrow": "mouse"],
+                         error: "Excel doesn't take clicks in the background."),
         ]
         let encoder = JSONEncoder()
         let encoded = try commands.map { command in

@@ -29,6 +29,10 @@ public final class MiloModel: ObservableObject {
     @Published public var looking = false
     /// The worker agent is acting on screen: the "Milo is working" frame shows.
     @Published public var handsActive = false
+    /// The user lent Milo the real mouse and keyboard: the frame around the screen shows, and any touch stops him.
+    @Published public var handsBorrowed = false
+    /// The window Milo works in, in AppKit global coordinates: outlined, and Pip perches on its corner.
+    @Published public var workingWindow: CGRect?
     /// How Milo looks, from the brain's `ui_config`.
     @Published public var character: CharacterStyle = .pip
     /// A point on screen Milo should fly to and point at, in AppKit global screen coordinates (points,
@@ -95,7 +99,7 @@ public final class MiloModel: ObservableObject {
         case let .helpers(list):
             if list != helpers { helpers = list }
         case .dictation, .uiConfig, .history, .entry, .replyDelta, .activity, .lookRequest, .handsRequest,
-             .handsSession, .flyTo, .appRequest, .unknown:
+             .handsSession, .flyTo, .appRequest, .handsBorrow, .unknown:
             break
         }
     }
