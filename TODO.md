@@ -9,6 +9,7 @@
 - Let the brain ask the app whether a question still shows, instead of trusting its own record of the bubble, so a spoken yes can't land on a question already gone.
 - Run the eval on Codex as the worker too, and on a few German phrasings.
 - Thumbs up/down on unprompted nudges, stored in memory, so rules learn what you care about.
+- Dictation learning (ADR 21): try it live in Slack, Mail, Notes, Messages, Chrome and Safari text fields and VS Code, and note which apps don't expose their field's value. Check that ElevenLabs takes 50 keyterms in a realtime session. Measure a Whisper prompt with 400 characters of learned words against the dictation eval (punctuation loss).
 - Context-aware dictation formatting by frontmost app (casual in Slack, formal in Mail), via a local model `TextCleaner`.
 
 - Milo's CPU while he talks or listens is 4 to 6% of a core on a busy machine (2026-10-30, release; idle about 1%, asleep 0.02%). Drawing is under 0.1 ms a frame; the rest is the 60 fps display link and Core Animation commits. Next: drive speaking at 30 fps, and let the voice capsule's meter share his display link.
