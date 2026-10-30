@@ -67,3 +67,18 @@ def test_what_a_helper_left_to_steer_the_next_one_is_removed_and_links_are_not_f
     assert [p.name for p in (work / "project" / "src").iterdir()] == ["main.py"], "at any depth"
     assert (home / "AGENTS.md").exists(), "a link to a folder isn't walked into"
     assert (home / "persona.md").read_text() == "Milo" and (home / "work").is_dir(), "nothing followed"
+
+
+def test_steering_in_another_case_or_behind_a_locked_folder_is_found_too(tmp_path):
+    from milo.core.control import clear_steering
+
+    work = tmp_path / "Milo" / "work"
+    (work / "locked" / "deeper").mkdir(parents=True)
+    (work / "locked" / "deeper" / "claude.md").write_text("APFS opens me as CLAUDE.md")
+    (work / "Agents.MD").write_text("and me as AGENTS.md")
+    (work / "locked").chmod(0)
+    try:
+        clear_steering(work)
+    finally:
+        (work / "locked").chmod(0o700)
+    assert [p.name for p in work.rglob("*")] == ["locked", "deeper"]

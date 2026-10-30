@@ -101,8 +101,7 @@ def _fold(path: Path) -> str:
 def clear_steering(workdir: Path) -> None:
     """Remove what a helper could have left in its folder to steer the next one (STEERING). A link is removed
     itself, never what it points at. Raises OSError if one is still there."""
-    found = [Path(top) / name for top, dirs, files in os.walk(workdir)  # never follows a link
-             for name in (*dirs, *files) if name in STEERING]
+    found = _steering_in(workdir)
     for path in found:
         try:
             if path.is_symlink() or not path.is_dir():
@@ -118,3 +117,25 @@ def clear_steering(workdir: Path) -> None:
     left = [str(path.relative_to(workdir)) for path in found if os.path.lexists(path)]
     if left:
         raise OSError(f"{', '.join(left)} in {workdir} can't be removed")
+
+
+_STEERING_FOLDED = frozenset(name.casefold() for name in STEERING)
+
+
+def _steering_in(workdir: Path) -> list[Path]:
+    """Every STEERING name below `workdir`, in any case (APFS opens claude.md as CLAUDE.md). A folder that
+    can't be listed is the helper's: it gets its owner's permissions back, and if it still can't be listed,
+    this raises rather than miss what's inside."""
+    for _ in range(3):
+        unreadable: list[str] = []
+        found = [Path(top) / name for top, dirs, files in os.walk(workdir, onerror=lambda e: unreadable.append(
+                     e.filename))  # never follows a link
+                 for name in (*dirs, *files) if name.casefold() in _STEERING_FOLDED]
+        if not unreadable:
+            return found
+        for folder in unreadable:
+            try:
+                os.chmod(folder, 0o700, follow_symlinks=False)
+            except OSError:
+                pass
+    raise OSError(f"can't look through {', '.join(unreadable)}")
