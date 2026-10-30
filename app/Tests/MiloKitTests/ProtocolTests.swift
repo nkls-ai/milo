@@ -68,6 +68,13 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .appRequest(id: "a41f", op: "calendar.add_event", args: .object([
                 "title": .string("Doctor"), "start": .string("2026-11-05T15:00:00"), "end": .string("2026-11-05T16:00:00"),
             ])),
+            .helpers([
+                HelperInfo(id: "c0ffee12ab34", title: "Budget table in Excel", status: .working,
+                           step: "Typing “Monday” in Excel", progress: 0.4),
+                HelperInfo(id: "d00d12ab3456", title: "Flights to Lisbon", status: .queued, step: "Waiting for a free helper"),
+                HelperInfo(id: "e1e1e1e1e1e1", title: "Sort downloads", status: .needsYou, step: "Waiting for your answer"),
+                HelperInfo(id: "f2f2f2f2f2f2", title: "Dentist email", status: .done),
+            ]),
         ])
     }
 
@@ -98,6 +105,7 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             ]))),
             .appResponse(id: "a42f", outcome: .failure(
                 "Milo isn't allowed to use your calendar. Turn it on in System Settings › Privacy & Security › Calendars.")),
+            .stopHelper(id: "c0ffee12ab34"),
         ]
         let encoder = JSONEncoder()
         let encoded = try commands.map { command in
@@ -140,6 +148,12 @@ private func entries(_ key: String) throws -> [[String: Any]] {
         let event = try JSONDecoder().decode(BrainEvent.self, from: Data(json.utf8))
         #expect(event == .handsRequest(id: "h", tool: "key",
                                        args: ["combo": "cmd+s", "n": .array([1, true, .null])]))
+    }
+
+    @Test func aHelperWithAnUnknownStatusShowsAsWorkingAndProgressStaysInRange() throws {
+        let json = #"{"type":"helpers","helpers":[{"id":"h","title":"X","status":"dreaming","step":"","progress":3}]}"#
+        #expect(try JSONDecoder().decode(BrainEvent.self, from: Data(json.utf8))
+                == .helpers([HelperInfo(id: "h", title: "X", status: .working, progress: 1)]))
     }
 
     @Test func missingTypeThrows() {

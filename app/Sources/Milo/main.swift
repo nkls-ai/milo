@@ -48,6 +48,7 @@ let lifecycle = AppLifecycle(
         workingFrame = WorkingFrame(model: model)
         let window = ConversationWindow(controller: controller)
         overlay.onClick = { window.toggle() }
+        model.onOpenHelper = { window.show(helper: $0) }
         let statusMenu = StatusMenu(controller: controller, panel: overlay, window: window, paths: paths)
         controller.onBindingsChange = { statusMenu.show($0); window.show($0) }
         conversation = window

@@ -47,6 +47,8 @@ public enum BrainEvent: Equatable, Sendable {
     case confirmDone(id: String, answer: String)
     /// Work only the app may do (EventKit). Answered with `BrainCommand.appResponse` and the same id.
     case appRequest(id: String, op: String, args: JSONValue)
+    /// The helpers working for Milo, oldest first; finished ones stay a few seconds.
+    case helpers([HelperInfo])
     case unknown(String)
 }
 
@@ -59,6 +61,7 @@ extension BrainEvent: Decodable {
         case talkKey = "talk_key"
         case handsFreeMaxSeconds = "hands_free_max_s"
         case character
+        case helpers
     }
 
     public init(from decoder: Decoder) throws {
@@ -103,6 +106,7 @@ extension BrainEvent: Decodable {
         case "app_request":
             self = .appRequest(id: try c.decode(String.self, forKey: .id), op: try c.decode(String.self, forKey: .op),
                                args: try c.decodeIfPresent(JSONValue.self, forKey: .args) ?? .object([:]))
+        case "helpers": self = .helpers(try c.decode([HelperInfo].self, forKey: .helpers))
         default: self = .unknown(type)
         }
     }

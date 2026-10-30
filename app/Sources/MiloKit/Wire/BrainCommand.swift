@@ -27,6 +27,8 @@ public enum BrainCommand: Equatable, Sendable {
     case confirmAnswer(id: String, yes: Bool)
     /// The answer to `app_request` `id`.
     case appResponse(id: String, outcome: AppOutcome)
+    /// The user clicked Stop on the helper `id`.
+    case stopHelper(id: String)
 }
 
 /// What the app did with an `app_request`: a JSON result, or a plain-language error for the user.
@@ -98,6 +100,9 @@ extension BrainCommand: Encodable {
                 try c.encode(false, forKey: .ok)
                 try c.encode(message, forKey: .error)
             }
+        case let .stopHelper(id):
+            try c.encode("stop_helper", forKey: .type)
+            try c.encode(id, forKey: .id)
         }
     }
 }
