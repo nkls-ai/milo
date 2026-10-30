@@ -129,6 +129,19 @@ mention them to the user.
 
 QUESTION_CHARS = 80
 _FIRST_SENTENCE = re.compile(r"(?<=[.!?;:])\s")
+_WORK = re.compile(r"\b((fix|fill|put|add|make|change|update|correct|write|enter|insert|sort|format|create|build|"
+                   r"finish|complete|edit|move|rename|copy|paste|replace)(es|s|ed|d|ing)?|"
+                   r"(mach|füll|änder|korrigier|trag|schreib|erstell|sortier|formatier|bearbeit|füg|erledig|"
+                   r"kopier|ersetz|verschieb|benenn)\w*)\b", re.IGNORECASE)
+_QUESTION = re.compile(r"^\s*(what|why|how|who|whom|whose|where|when|which|is|are|was|were|does|did|do|has|have|"
+                       r"was|warum|wieso|weshalb|wie|wer|wo|wann|welche\w*|ist|sind|hat|haben)\b", re.IGNORECASE)
+
+
+def asks_for_work(text: str) -> bool:
+    """Whether the user's own words ask Milo to do something, not only to look or explain: "fix this sheet",
+    "can you fill this in", "füll das aus". A question ("what is this?", "why is it red?") never does. In auto
+    mode only then may a task from the reply to what he saw start without a question."""
+    return not _QUESTION.search(text) and bool(_WORK.search(text))
 _PLAIN = ((re.compile(r"\s+(on|in) the user's (Mac|computer)\b", re.I), ""),
           (re.compile(r"\s+for the user\b", re.I), ""),
           (re.compile(r"\bthe user's\b", re.I), "your"),
@@ -199,6 +212,8 @@ class LiveTalk:
         """Recaps of an earlier conversation the user picked up again, trusted ones: they don't taint."""
         self._tainted = False
         """Task results entered the running conversation, so outside text can steer every later reply in it."""
+        self._request = ""
+        """The user's own words in the turn being answered (auto mode reads them, ADR 0022)."""
         self._asking: set[asyncio.Task] = set()
         self._preparing: asyncio.Task | None = None
         self._hold_timer: asyncio.TimerHandle | None = None
@@ -344,6 +359,7 @@ class LiveTalk:
         self._ui.emit(Heard(text))
         self._transcript.user(text, "message")
         await self._settle_interrupt()
+        self._request = text
         self._notes.extend(data)
         try:
             parser = await self._reply(prompt, (), False, screen=False)
@@ -387,6 +403,7 @@ class LiveTalk:
         self._ui.emit(Heard(text))
         self._transcript.user(text, via)
         await self._settle_interrupt()
+        self._request = text
         looking = None
         try:
             if capture is not None:
@@ -614,8 +631,14 @@ class LiveTalk:
             self._looking(True)
             self._ui.thinking = True
             self._look_started = asyncio.create_task(self._eyes.look("window"))
-        ask_tasks = self._tainted or screen
+        # Auto mode (ADR 0022): the user's own request is the yes, also for a task from a look, but only when their
+        # words asked for work ("fix this sheet"): "what's this?" can't become work the page asked for. Outside
+        # text (task results, mail, web pages, messages passed on) still makes every tag ask.
+        auto = self._approvals is not None and self._approvals.permits.ask == "auto"
+        auto_screen = auto and asks_for_work(self._request)
+        ask_tasks = self._tainted or (screen and not auto_screen)
         careful = self._saw_screen or self._tainted
+        user_asked = not self._tainted and (not screen or auto_screen)
         effects: list[tuple[str, str, Callable[[], None], bool]] = []
         for fact in () if screen else parser.remembers:
             effects.append((f"Should I remember this: {fact}?", "", lambda fact=fact: self._remember(fact),
@@ -628,12 +651,13 @@ class LiveTalk:
             # The whole task shows under the short question in the window: the user approves all of it.
             detail = "" if question.rstrip("?") == task.description.rstrip(".?") else task.description
             effects.append((question, detail, lambda task=task: self._tasks.submit(
-                task.description, title=task.title, screen=task.screen, careful=careful), ask_tasks))
+                task.description, title=task.title, screen=task.screen, careful=careful, user_asked=user_asked),
+                            ask_tasks))
         for ref, change in parser.steers:  # a change to a task is a task: same rule
             question = task_question(f"Change the task to {change}")
             detail = change if question.endswith("…?") else ""
             effects.append((question, detail, lambda ref=ref, change=change: self._tasks.steer(
-                ref, change, careful=careful), ask_tasks))
+                ref, change, careful=careful, user_asked=user_asked), ask_tasks))
         if self._routines is not None:  # a routine run is a task: same rule, unless the routine says otherwise
             for question, detail, apply, ask in self._routines.effects(parser.routines, careful=careful):
                 effects.append((question, detail, apply, ask_tasks if ask is None else ask))

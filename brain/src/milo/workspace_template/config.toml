@@ -67,6 +67,12 @@ files_scope = "~"                 # files outside this folder are never searched
 # How long Milo waits for your yes. No answer means no.
 timeout_s = 60
 speak = true                      # say the question out loud, besides showing it
+# How often Milo asks about work in an app (ADR 22): "step" (every step that would ask), "task" (one Allow
+# covers the rest of that task in that app) or "auto" (what you asked for needs no question). Sending, deleting
+# and buying still ask, and passwords, money and security settings he never does, in every mode.
+ask = "task"
+# Apps you chose "Allow always" for. Settings › "How often Milo asks" lists them, with Remove.
+allowed_apps = []
 
 [approvals.levels]
 # read: just do it. change: do it, it shows in the Milo window. ask_first: ask yes or no first. never: refuse.

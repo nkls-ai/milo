@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any, Protocol
 
 from milo.core.ports import ReminderBook
-from milo.core.types import ChannelError
+from milo.core.types import AppRef, ChannelError, Scope
 from milo.core.wording import question, when
 
 from .app_bridge import AppBridge, AppError
@@ -24,6 +24,10 @@ APP_OPS: dict[str, tuple[str, str]] = {
     "reminders.add": ("reminders", "change"),
     "reminders.complete": ("reminders", "change"),
 }
+APPS = {"calendar": AppRef("Calendar", "com.apple.iCal"), "reminders": AppRef("Reminders", "com.apple.reminders")}
+# The apps an `approve` may name: the ones Milo's connection tools change things in (connect/server.py APPS).
+# Anything else gets no scope, so a caller can't borrow the Allow (or Allow always) of an app it doesn't work in.
+APPROVE_APPS = {"Notes": AppRef("Notes", "com.apple.Notes"), "Finder": AppRef("Finder", "com.apple.finder")}
 REFUSED = {"no": "The user said no.", "timeout": "The user didn't answer, so it wasn't done.",
            "refused": "Milo isn't allowed to do this."}
 
@@ -48,7 +52,8 @@ class ToolRequests:
     Callers are Milo's own helpers: the app-connections MCP server the worker starts, and anything else
     that needs the user's yes. One JSON object per request, with an `op`:
 
-    - `approve` {kind, summary}: the action level for `kind`, asking `summary` if it is ask_first.
+    - `approve` {kind, summary, app?}: the action level for `kind`, asking `summary` if it is ask_first. `app`
+      names the app a change happens in, so the user's Allow can cover the next one (ADR 0022).
       Result: {allowed, level, answer}.
     - `confirm` {summary}: always ask. Result: {yes}.
     - `app` {name, args}: run `name` (one of APP_OPS) in Milo.app. Result: what the app returned.
@@ -78,7 +83,9 @@ class ToolRequests:
         try:
             match op:
                 case "approve":
-                    decision = await self._approvals.approve(str(request["kind"]), _summary(request))
+                    app = APPROVE_APPS.get(str(request.get("app") or "").strip())
+                    decision = await self._approvals.approve(str(request["kind"]), _summary(request),
+                                                             scope=Scope((app,)) if app else None)
                     return _ok(decision.to_dict())
                 case "confirm":
                     return _ok({"yes": await self._approvals.confirm(_summary(request))})
@@ -92,7 +99,8 @@ class ToolRequests:
                     args = request.get("args") or {}
                     if not isinstance(args, dict):
                         return _error("args must be an object")
-                    decision = await self._approvals.approve(kind, question(name.replace(".", "_"), args))
+                    decision = await self._approvals.approve(kind, question(name.replace(".", "_"), args),
+                                                             scope=Scope((APPS[connection],)))
                     if not decision.allowed:
                         return _error(REFUSED.get(decision.answer, REFUSED["refused"]))
                     return _ok(await self._bridge.call(name, args))

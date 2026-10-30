@@ -49,6 +49,7 @@ _RISKY = re.compile(r"(?<!\w)(" + "|".join(re.escape(w) for w in sorted(_RISKY_W
 _SECRET = re.compile(r"(?<!\w)(password|passwort|kennwort|passcode|keychain|schlüsselbund)(?!\w)", re.IGNORECASE)
 # Only for wording the question; every script asks anyway.
 _CODE = re.compile(r"\b(do\s+shell\s+script|do\s+script|do\s+javascript|run\s+script|load\s+script|osascript"
+                   r"|do\s+visual\s+basic|run\s+vb\s+macro"
                    r"|use\s+framework|current\s+application|system\s+events|keystroke|key\s+code)\b|«",
                    re.IGNORECASE)
 _SETTINGS_APPS = ("system settings", "system preferences", "systemeinstellungen", "com.apple.systempreferences")
@@ -95,6 +96,32 @@ def app_names(*names: object) -> set[str]:
         if text:
             out.add(text)
     return out
+
+
+WORK = frozenset({"run a script", "overwrite", "replace", "ersetzen", "use"})
+"""Reasons that are about the work in the app itself. An Allow covers them for the rest of the task, and Allow
+always for that app (ADR 0022). Sending, deleting, buying, code and settings are not among them: they ask every
+time."""
+
+
+# What a script may not do for an Allow to cover it: write or open files and links itself, or work in Finder.
+_SCRIPT_REACH = re.compile(r"\b(open\s+for\s+access|write|set\s+eof|open|location|store\s+script|posix\s+file"
+                           r"|alias|path\s+to|choose\s+file|mount\s+volume|delete|move|duplicate|save|export|print"
+                           r"|file|folder|url|close|quit|read|info\s+for|list\s+(disk|folder))\b|\"[/~]|https?:|://"
+                           r'|"[^"\n]*:[^"\n]*:[^"\n]*"', re.IGNORECASE)  # the last: an HFS path, "Disk:Users:me"
+_FILE_APPS = ("finder", "com.apple.finder", "path finder", "forklift", "commander one")
+
+
+def coverable_script(script: str) -> bool:
+    """A script an Allow for its app may cover: it does nothing outside the document in front, as far as words can
+    tell (no files, paths, links, saving, opening or closing). A brake, not a sandbox, like the rest of this file."""
+    return not _SCRIPT_REACH.search(script)
+
+
+def plain_app(name: str, bundle: str = "") -> bool:
+    """An app an Allow may cover: not a password manager, System Settings or a program that runs commands."""
+    names = app_names(name, bundle)
+    return bool(names) and not names & set(_SECRET_APPS + _SETTINGS_APPS + _CODE_APPS + _FILE_APPS)
 
 
 def classify(tool: str, args: dict, target: dict) -> Verdict:

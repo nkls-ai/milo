@@ -32,8 +32,8 @@ public enum BrainCommand: Equatable, Sendable {
     case handsResult(id: String, ok: Bool, result: [String: JSONValue], error: String = "")
     /// The user took over the mouse or keyboard ("user") or pressed esc ("escape").
     case handsStop(reason: String)
-    /// The user clicked Yes or No on the question `id`.
-    case confirmAnswer(id: String, yes: Bool)
+    /// The user clicked Yes or No on the question `id`, or Allow always (`always`, with yes) where it was offered.
+    case confirmAnswer(id: String, yes: Bool, always: Bool = false)
     /// The answer to `app_request` `id`.
     case appResponse(id: String, outcome: AppOutcome)
     /// The user clicked Stop on the helper `id`.
@@ -101,6 +101,7 @@ public enum AppOutcome: Equatable, Sendable {
 extension BrainCommand: Encodable {
     private enum Key: String, CodingKey {
         case type, mode, text, app, on, tentative, speak, id, capture, ok, result, error, reason, yes, action, save
+        case always
         case section, key, value
         case bundle, title, track, index, path, start, seconds, tracks
         case conversation, before, query, span, fixes, heard, meant
@@ -165,10 +166,11 @@ extension BrainCommand: Encodable {
         case let .handsStop(reason):
             try c.encode("hands_stop", forKey: .type)
             try c.encode(reason, forKey: .reason)
-        case let .confirmAnswer(id, yes):
+        case let .confirmAnswer(id, yes, always):
             try c.encode("confirm_answer", forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(yes, forKey: .yes)
+            if always { try c.encode(true, forKey: .always) }
         case let .appResponse(id, outcome):
             try c.encode("app_response", forKey: .type)
             try c.encode(id, forKey: .id)

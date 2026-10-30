@@ -42,8 +42,9 @@ public enum BrainEvent: Equatable, Sendable {
     case handsSession(Bool)
     /// Where Milo is about to act; nil sends him home.
     case flyTo(ScreenPoint?)
-    /// Milo asks a yes-or-no question before an action; shown with Yes and No until `confirmDone`.
-    case confirm(id: String, question: String)
+    /// Milo asks a yes-or-no question before an action; shown with Yes and No until `confirmDone`. `always`: it is
+    /// about working in an app, so it offers Allow, Allow always and No instead (ADR 22).
+    case confirm(id: String, question: String, always: Bool = false)
     /// The question `id` is over: "yes", "no" or "timeout".
     case confirmDone(id: String, answer: String)
     /// Work only the app may do (EventKit). Answered with `BrainCommand.appResponse` and the same id.
@@ -79,6 +80,7 @@ public enum BrainEvent: Equatable, Sendable {
 extension BrainEvent: Decodable {
     private enum Key: String, CodingKey {
         case type, state, emotion, text, value, entries, entry, id, step, mode, on, tool, args, point, question, answer, op, what
+        case always
         case facts
         case dir
         case taskID = "task_id"
@@ -131,7 +133,8 @@ extension BrainEvent: Decodable {
         case "hands_session": self = .handsSession(try c.decode(Bool.self, forKey: .on))
         case "fly_to": self = .flyTo(try c.decodeIfPresent(ScreenPoint.self, forKey: .point))
         case "confirm": self = .confirm(id: try c.decode(String.self, forKey: .id),
-                                        question: try c.decode(String.self, forKey: .question))
+                                        question: try c.decode(String.self, forKey: .question),
+                                        always: try c.decodeIfPresent(Bool.self, forKey: .always) ?? false)
         case "confirm_done": self = .confirmDone(id: try c.decode(String.self, forKey: .id),
                                                  answer: try c.decode(String.self, forKey: .answer))
         case "app_request":

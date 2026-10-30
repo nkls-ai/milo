@@ -76,6 +76,10 @@ class Helper:
     careful: bool = False
     """Asked for in a conversation that read outside text (the screen): its tools ask before changes too.
     See ADR 0014."""
+    user_asked: bool = False
+    """The user asked for it themselves, in a conversation without outside text (a look at the screen they asked
+    for doesn't count as outside). In auto mode its work in apps needs no question (ADR 0022). Routines, meeting
+    follow-ups and anything a mail or web page could have suggested are False."""
     instructions: str = ""
     """What the worker gets instead of the description, when that is long: a routine's recipe. The
     description stays short, for the Milo window."""
@@ -130,6 +134,16 @@ def short_title(description: str, title: str = "") -> str:
     text = text.strip(" .,") or "A task"
     text = text[:1].upper() + text[1:]
     return text if len(text) <= MAX_TITLE else text[:MAX_TITLE - 1].rstrip() + "…"
+
+
+def reads_outside(step: Step) -> bool:
+    """A worker step that may bring in text someone else wrote. Every step counts except the few known to read
+    nothing back: the worker's own edits, opening an app by name, listing a folder and finding files by name.
+    The web, the connection tools (mail, notes, calendar, files), a file's contents, a grep and any other command
+    count. The Mac tools never show up as worker steps; HandsService logs them itself."""
+    return not (step.kind == "edit" or (step.kind == "app" and step.title.startswith("Opening "))
+                or (step.kind == "read" and step.title.startswith("Looking in"))
+                or (step.kind == "search" and step.title.startswith("Looking for files")))
 
 
 def plain_step(step: Step, installed=None) -> str:

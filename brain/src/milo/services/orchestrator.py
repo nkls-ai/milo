@@ -16,14 +16,15 @@ import asyncio
 import logging
 import re
 from collections.abc import Callable
+from dataclasses import replace
 
 from milo.core.events import Helpers
 from milo.core.logtext import private
 from milo.core.ports import Clock, EventSink
-from milo.core.types import Decision, Emotion, HarnessError, Reply, Step
+from milo.core.types import Decision, Emotion, HarnessError, Reply, Scope, Step
 
 from . import helpers as board_text
-from .helpers import Helper, HelperStatus, plain_step, short_title
+from .helpers import Helper, HelperStatus, plain_step, reads_outside, short_title
 from .quiet import POLL_S
 from .speaker import Speaker
 from .task_runner import NEEDS_SCREEN, TASK_FAILED, TaskRunner, follow_up_prompt, steer_prompt
@@ -140,25 +141,27 @@ class Orchestrator:
 
     def submit(self, description: str, *, title: str = "", screen: bool | None = None,
                careful: bool = False, instructions: str = "",
-               on_finish: Callable[[Helper], None] | None = None, own: str = "") -> Helper:
+               on_finish: Callable[[Helper], None] | None = None, own: str = "", user_asked: bool = False) -> Helper:
         """Hand off a task. Returns at once with the new helper, queued or already working. `careful`: the
         conversation that asked for it read the screen, so its tools ask before changes too. `instructions`
         replace the description for the worker (a routine's recipe); `on_finish` hears how it ended. `own`
-        = "routine": the window shows it as a conversation of its own (a routine run on its schedule)."""
+        = "routine": the window shows it as a conversation of its own (a routine run on its schedule).
+        `user_asked`: the user asked for it in a conversation without outside text (Helper.user_asked)."""
         screen = (needs_screen(description) if screen is None else screen) and self._runner.has_screen
         self._numbers += 1
         name = short_title(description, title)
         helper = Helper(self._transcript.task_started(description, title=name, own=own), self._numbers, name,
                         description, screen, self._clock.monotonic(), careful=careful, instructions=instructions,
-                        on_finish=on_finish)
+                        on_finish=on_finish, user_asked=user_asked)
         log.info("helper %d %s%s, %s", helper.number, "on the screen" if screen else "in the background",
                  " (careful)" if careful else "", private(description))
         self._add(helper)
         return helper
 
-    def steer(self, ref: str, change: str, *, careful: bool = False) -> Helper | None:
+    def steer(self, ref: str, change: str, *, careful: bool = False, user_asked: bool = True) -> Helper | None:
         """Tell a helper the user changed the task. A finished one continues its session as a new helper.
-        A `careful` change makes the helper careful from its next turn on.
+        A `careful` change makes the helper careful from its next turn on; one that isn't `user_asked` (the
+        conversation read outside text) takes the helper's user_asked away.
 
         Returns the helper that will act on it, or None if `ref` names no helper.
         """
@@ -170,6 +173,8 @@ class Orchestrator:
         log.info("steering helper %d, %s", helper.number, private(change))
         careful = careful or helper.careful
         helper.careful = careful
+        user_asked = user_asked and helper.user_asked
+        helper.user_asked = user_asked
         if helper.status is HelperStatus.QUEUED:
             helper.amendments.append(change)
             self._changed(now=True)
@@ -186,7 +191,7 @@ class Orchestrator:
                                                       title=helper.title),
                         self._next_number(), helper.title, helper.description, helper.screen, self._clock.monotonic(),
                         session_id=helper.session_id, amendments=[*helper.amendments, change], follow_up=change,
-                        careful=careful, instructions=helper.instructions)
+                        careful=careful, instructions=helper.instructions, user_asked=user_asked)
         self._add(follow)
         return follow
 
@@ -241,6 +246,10 @@ class Orchestrator:
         counts, so a careful helper never acts unasked."""
         working = [h for h in self._helpers if h.status in (HelperStatus.WORKING, HelperStatus.NEEDS_YOU)]
         return any(h.careful for h in working if h.screen or not screen)
+
+    def user_asked(self, id: str) -> bool:
+        """Whether the helper `id` is still at work on something the user asked for themselves."""
+        return any(h.id == id and h.active and h.user_asked for h in self._helpers)
 
     def answered(self, helper: Helper | None) -> None:
         if helper is None:
@@ -356,6 +365,10 @@ class Orchestrator:
         if not helper.active:
             return
         self._transcript.task_step(helper.id, step)
+        if helper.user_asked and reads_outside(step):
+            # What it read could steer the rest of its work: from now on it asks as usual (ADR 0022).
+            helper.user_asked = False
+            log.info("helper %d read outside text, so auto mode no longer covers it", helper.number)
         if helper.record(step) and self.updates is not None:
             text = self._milestones.step(helper, step, self._clock.monotonic())
             if text is not None:
@@ -465,21 +478,25 @@ class HelperQuestions:
         self._orchestrator = orchestrator
         self._screen = screen
 
-    async def confirm(self, summary: str, *, detail: str = "") -> bool:
+    async def confirm(self, summary: str, *, detail: str = "", scope: Scope | None = None) -> bool:
         helper = self._orchestrator().asking(screen=self._screen)
         try:
-            return await self._approvals.confirm(summary, detail=detail)
+            return await self._approvals.confirm(summary, detail=detail, scope=scope)
         finally:
             self._orchestrator().answered(helper)
 
-    async def approve(self, kind: str, summary: str) -> Decision:
-        """Approvals.approve, careful when the helper that asks is (see Orchestrator.careful)."""
+    async def approve(self, kind: str, summary: str, *, scope: Scope | None = None) -> Decision:
+        """Approvals.approve, careful when the helper that asks is (see Orchestrator.careful). `scope` names the
+        app; the helper that asks becomes its task, so the user's Allow lasts as long as that helper (ADR 0022).
+        When it can't tell which helper asks, only Allow always covers it."""
         careful = self._orchestrator().careful(screen=self._screen)
         if not self._approvals.asks(kind, careful=careful):
             return await self._approvals.approve(kind, summary, careful=careful)
         helper = self._orchestrator().asking(screen=self._screen)
+        if scope is not None:
+            scope = replace(scope, task=helper.id if helper is not None else "")
         try:
-            return await self._approvals.approve(kind, summary, careful=careful)
+            return await self._approvals.approve(kind, summary, careful=careful, scope=scope)
         finally:
             self._orchestrator().answered(helper)
 

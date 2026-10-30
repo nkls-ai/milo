@@ -25,7 +25,7 @@ struct BubbleView: View {
         let phase = model.voicePhase
         if phase?.recording == true { return nil }
         if let question = model.question {
-            return AnyView(QuestionView(question: question, answer: model.answer))
+            return AnyView(QuestionView(question: question, answer: { model.answer($0) }))
         }
         if case .transcribing = phase { return nil }
         guard let text = model.bubble else { return nil }
@@ -115,7 +115,7 @@ struct RevealingText: View {
 struct QuestionView: View {
     @Environment(\.miloTheme) private var theme
     let question: PendingQuestion
-    let answer: (Bool) -> Void
+    let answer: (Answer) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -131,7 +131,7 @@ struct QuestionView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
                 .help(question.text)
-            AnswerButtons(answer: answer)
+            AnswerButtons(always: question.always, answer: answer)
                 .padding(.top, 2)
         }
         .accessibilityElement(children: .contain)
@@ -149,18 +149,50 @@ struct TightLabel: LabelStyle {
     }
 }
 
+/// Yes and No, or for a question about working in an app, Allow, Allow always and No (ADR 22). The three are a
+/// little narrower, so they fit in one row even in the bubble: a second row would push an eight-line question's
+/// top out of Milo's panel. Should they not fit, Allow always goes on a line of its own.
 struct AnswerButtons: View {
-    let answer: (Bool) -> Void
+    var always = false
+    let answer: (Answer) -> Void
 
     var body: some View {
-        HStack(spacing: 8) {
-            Button("Yes") { answer(true) }
-                .buttonStyle(AnswerButtonStyle(prominent: true))
-                .accessibilityHint("Milo goes ahead")
-            Button("No") { answer(false) }
-                .buttonStyle(AnswerButtonStyle(prominent: false))
-                .accessibilityHint("Milo leaves it")
+        if always {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 6) { allow; allowAlways; no }
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) { allow; no }
+                    allowAlways
+                }
+            }
+        } else {
+            HStack(spacing: 8) {
+                Button("Yes") { answer(.yes) }
+                    .buttonStyle(AnswerButtonStyle(prominent: true))
+                    .accessibilityHint("Milo goes ahead")
+                no
+            }
         }
+    }
+
+    private var allow: some View {
+        Button("Allow") { answer(.yes) }
+            .buttonStyle(AnswerButtonStyle(prominent: true, compact: always))
+            .accessibilityHint("Milo goes ahead, and doesn't ask again about this work in this app until the task is done")
+    }
+
+    private var allowAlways: some View {
+        Button("Allow always") { answer(.always) }
+            .buttonStyle(AnswerButtonStyle(prominent: false, compact: true))
+            .accessibilityHint("Milo won't ask about work in this app again. Take it back in Settings.")
+            .help("Milo won't ask about work in this app again. Sending, deleting and buying still ask. "
+                  + "Take it back in Settings.")
+    }
+
+    private var no: some View {
+        Button("No") { answer(.no) }
+            .buttonStyle(AnswerButtonStyle(prominent: false, compact: always))
+            .accessibilityHint("Milo leaves it")
     }
 }
 
@@ -170,6 +202,8 @@ struct AnswerButtonStyle: ButtonStyle {
     @Environment(\.miloTheme) private var theme
     @Environment(\.colorSchemeContrast) private var contrast
     let prominent: Bool
+    /// Narrower, for three buttons in a row.
+    var compact = false
     @State private var hovered = false
 
     func makeBody(configuration: Configuration) -> some View {
@@ -177,9 +211,9 @@ struct AnswerButtonStyle: ButtonStyle {
         return configuration.label
             .font(.system(size: 13.5, weight: .semibold, design: .rounded))
             .foregroundStyle(prominent ? theme.onPrimary : theme.ink)
-            .frame(minWidth: 64)
+            .frame(minWidth: compact ? 34 : 64)
             .padding(.vertical, 7)
-            .padding(.horizontal, 10)
+            .padding(.horizontal, compact ? 9 : 10)
             .background(shape.fill(prominent ? theme.primary : theme.ink.opacity(hovered ? 0.12 : 0.08)))
             .overlay(shape.strokeBorder(theme.ink.opacity(contrast == .increased && !prominent ? 0.5 : 0)))
             .brightness(prominent && hovered ? 0.04 : 0)

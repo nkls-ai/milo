@@ -61,6 +61,15 @@ public final class MiloController {
     public var learnsFromFixes: Bool {
         model.connected && settingsModel.value("dictation", "learn")?.bool == true
     }
+    /// `[approvals] ask = "auto"` as the brain last reported it: Milo does what you ask without asking first.
+    public var autoMode: Bool {
+        settingsModel.value("approvals", "ask")?.string == "auto"
+    }
+
+    /// Back to one question per task (the menu bar's "Turn off auto mode").
+    public func endAutoMode() {
+        settingsModel.change("approvals", "ask", to: .string("task"))
+    }
     public var bindings: HotkeyBindings { pushToTalk.bindings }
     /// Called when `ui_config` changes the bindings.
     public var onBindingsChange: ((HotkeyBindings) -> Void)?
@@ -102,7 +111,9 @@ public final class MiloController {
     }
 
     public func start() {
-        model.onAnswer = { [weak self] question, yes in self?.brain.send(.confirmAnswer(id: question.id, yes: yes)) }
+        model.onAnswer = { [weak self] question, answer in
+            self?.brain.send(.confirmAnswer(id: question.id, yes: answer != .no, always: answer == .always))
+        }
         model.onStopHelper = { [weak self] id in self?.brain.send(.stopHelper(id: id)) }
         model.onRoutine = { [weak self] id, action in self?.brain.send(.routine(id: id, action: action)) }
         model.onDraftAnswer = { [weak self] id, save in self?.brain.send(.routineDraftAnswer(id: id, save: save)) }

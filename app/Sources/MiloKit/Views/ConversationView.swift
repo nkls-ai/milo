@@ -457,7 +457,7 @@ struct QuestionBar: View {
     @Environment(\.miloTheme) private var theme
     let question: PendingQuestion
     let talkKey: String
-    let answer: (Bool) -> Void
+    let answer: (Answer) -> Void
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
@@ -471,7 +471,7 @@ struct QuestionBar: View {
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            AnswerButtons(answer: answer)
+            AnswerButtons(always: question.always, answer: answer)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)

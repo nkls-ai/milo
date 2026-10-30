@@ -24,6 +24,8 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
     private var styleMenu: NSMenu!
     private var restyle: AnyCancellable?
     private var notesItem: NSMenuItem?
+    /// "Auto mode is on" and its switch: shown only while Milo acts without asking (ADR 22).
+    private var autoItems: [NSMenuItem] = []
     /// Milo by message: hidden while messages are off.
     private var remoteItems: [NSMenuItem] = []
     private var remoteStatusItem: NSMenuItem!
@@ -43,12 +45,21 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
         super.init()
 
         // Milo's silhouette, drawn like every menu bar icon (it follows the menu bar's colour),
-        // and a red dot instead while he records a meeting.
-        restyle = controller.model.$character.combineLatest(controller.model.$recording.removeDuplicates())
-            .sink { [weak self] style, recording in self?.showIcon(style, recording: recording) }
+        // and a red dot instead while he records a meeting. "auto" next to it while he acts without asking.
+        let auto = controller.settingsModel.$report
+            .map { $0?["approvals", "ask"]?.value.string == "auto" }
+            .removeDuplicates()
+        restyle = controller.model.$character
+            .combineLatest(controller.model.$recording.removeDuplicates(), auto)
+            .sink { [weak self] style, recording, auto in self?.showIcon(style, recording: recording, auto: auto) }
         let menu = NSMenu()
         hintItem.isEnabled = false
         menu.addItem(hintItem)
+        let autoStatus = menu.addItem(withTitle: "Auto mode: Milo doesn't ask first", action: nil, keyEquivalent: "")
+        autoStatus.isEnabled = false
+        autoStatus.toolTip = "He still asks before he sends, deletes or buys, and never touches passwords, money or "
+            + "security settings."
+        autoItems = [autoStatus, add(menu, "Turn off auto mode", #selector(endAutoMode))]
         menu.addItem(.separator())
         add(menu, "Open conversation", #selector(toggleWindow))
         add(menu, "What's this?", #selector(whatsThis))
@@ -104,9 +115,16 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
         remoteForgetItem.isHidden = remote.state != .paired
     }
 
-    private func showIcon(_ style: CharacterStyle, recording: Bool) {
+    private func showIcon(_ style: CharacterStyle, recording: Bool, auto: Bool) {
         notesItem?.title = recording ? "Stop taking notes" : "Take meeting notes"
+        autoItems.forEach { $0.isHidden = !auto }
         guard let button = statusItem.button else { return }
+        statusItem.length = auto ? NSStatusItem.variableLength : NSStatusItem.squareLength
+        button.imagePosition = auto ? .imageLeading : .imageOnly
+        button.attributedTitle = NSAttributedString(string: auto ? "auto" : "", attributes: [
+            .font: NSFont.systemFont(ofSize: 10, weight: .semibold), .baselineOffset: 1,
+        ])
+        button.toolTip = auto ? "Milo: auto mode is on, he doesn't ask first" : nil
         if recording {
             let config = NSImage.SymbolConfiguration(paletteColors: [.white, .systemRed])
             let image = NSImage(systemSymbolName: "record.circle.fill", accessibilityDescription: "Milo is taking notes")?
@@ -172,6 +190,7 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
     @objc private func toggleVisible() { panel.toggleVisible() }
     @objc private func toggleWindow() { window.toggle() }
     @objc private func openSettings() { settings.open() }
+    @objc private func endAutoMode() { controller.endAutoMode() }
     @objc private func openSetup() { setup.open() }
     @objc private func whatsThis() { controller.screen?.whatsThis() }
     @objc private func showKnowledge() { knowledge.show() }

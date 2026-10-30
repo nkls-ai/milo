@@ -36,7 +36,7 @@ struct ConversationPage: View {
                           drop: { model.answerDraft(draft.id, save: false) })
             }
             if live, let question = model.question {
-                QuestionBar(question: question, talkKey: settings.talkKey, answer: model.answer)
+                QuestionBar(question: question, talkKey: settings.talkKey, answer: { model.answer($0) })
             }
             InputBar(speakReplies: $speakReplies, prefill: $settings.prefill,
                      placeholder: live ? "Type to Milo" : "Continue this conversation", focusTick: settings.typeHere) {

@@ -34,6 +34,7 @@ RETIRED = {("harness", "conversation_idle_reset_s"): "it moved to [chat]",
 
 
 UPDATES = ("quiet", "bubble", "chatty")
+ASK = ("step", "task", "auto")
 MAX_HELPERS = 8
 
 
@@ -154,6 +155,16 @@ class ApprovalSettings:
     """How long Milo waits for a yes. No answer means no."""
     speak: bool = True
     """Say the question aloud, besides showing it."""
+    ask: str = "task"
+    """How often Milo asks about work in an app (ADR 0022): "step" (every step that would ask), "task" (one Allow
+    covers the rest of that task in that app) or "auto" (what the user asked for needs no question). Sending,
+    deleting and buying ask every time, and passwords, money and security settings are refused, in every mode."""
+    allowed_apps: tuple[dict, ...] = ()
+    """Apps the user said Allow always to, each {name, bundle}. Milo adds them; the Settings window takes them away."""
+
+    def __post_init__(self):
+        if self.ask not in ASK:
+            raise ConfigError(f"[approvals] ask must be one of {', '.join(ASK)}")
 
 
 MAX_ROUTINE_RUNS = 50
@@ -320,7 +331,10 @@ class Config:
         self.connections: ConnectionSettings = settings["connections"]
         self.messages: MessagesSettings = settings["messages"]
         approvals = raw.get("approvals", {})
-        self.approvals = _pluggable_settings(ApprovalSettings, approvals, "approvals")
+        allowed = _allowed_apps(approvals.get("allowed_apps", []))
+        self.approvals = dataclasses.replace(_pluggable_settings(
+            ApprovalSettings, {k: v for k, v in approvals.items() if k != "allowed_apps"}, "approvals"),
+            allowed_apps=allowed)
         if not isinstance(approvals.get("levels", {}), dict):
             raise ConfigError("[approvals.levels] must be a table")
         self.approval_levels: dict[str, Any] = dict(approvals.get("levels", {}))
@@ -373,6 +387,21 @@ def _pluggable_settings(cls: type, table: Mapping[str, Any], section: str):
     """Top-level keys other than `use` and implementation tables belong to the settings dataclass."""
     own = {k: v for k, v in table.items() if k != "use" and not isinstance(v, dict)}
     return _typed(options_from(cls, _current(own, section), section), section)
+
+
+def _allowed_apps(value: Any) -> tuple[dict, ...]:
+    """[approvals] allowed_apps: a list of {name, bundle} tables, or plain app names written by hand."""
+    if not isinstance(value, list):
+        raise ConfigError("[approvals] allowed_apps must be a list")
+    apps = []
+    for entry in value:
+        if isinstance(entry, str):
+            entry = {"name": entry}
+        if not isinstance(entry, dict) or not all(isinstance(entry.get(k, ""), str) for k in ("name", "bundle")) \
+                or not (entry.get("name") or entry.get("bundle")) or set(entry) - {"name", "bundle"}:
+            raise ConfigError("[approvals] allowed_apps: each one is an app name, or {name = \"...\", bundle = \"...\"}")
+        apps.append({"name": str(entry.get("name", "")), "bundle": str(entry.get("bundle", ""))})
+    return tuple(apps)
 
 
 def _current(table: Mapping[str, Any], section: str) -> dict[str, Any]:

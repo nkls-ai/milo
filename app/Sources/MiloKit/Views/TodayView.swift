@@ -119,7 +119,7 @@ struct TodayView: View {
                             .foregroundStyle(theme.ink.opacity(0.5))
                     }
                     Spacer(minLength: 8)
-                    AnswerButtons(answer: model.answer)
+                    AnswerButtons(always: question.always) { model.answer($0) }
                 }
             }
             ForEach(model.drafts) { draft in

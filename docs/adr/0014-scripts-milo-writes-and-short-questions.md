@@ -1,6 +1,6 @@
 # 14. Scripts Milo writes himself, and short questions
 
-Date: 2026-10-30. Status: accepted. Changes [ADR 7](0007-computer-use-through-the-brain.md).
+Date: 2026-10-30. Status: accepted. Changes [ADR 7](0007-computer-use-through-the-brain.md). How often a question about work in an app asks, Allow always and auto mode: [ADR 22](0022-one-question-per-piece-of-work.md).
 
 ## Context
 
