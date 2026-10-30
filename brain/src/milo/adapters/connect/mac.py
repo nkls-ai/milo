@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from milo.core.control import Protected
 from milo.core.ports import Connections
 from milo.core.registry import CONNECTIONS, AdapterContext, options_from
 from milo.core.types import ToolError
@@ -314,26 +315,28 @@ class ShortcutsApp:
 
 
 class SpotlightFiles:
-    def __init__(self, scope: Path):
+    def __init__(self, scope: Path, protected: Protected | None = None):
         self.scope = scope
+        self.protected = protected
+        """Milo's control files, which these tools never list, read or move (ADR 0020)."""
 
     def find(self, name: str, limit: int = 20) -> list[dict]:
-        return _files.newest(self._mdfind(["-name", name]), self.scope, limit)
+        return _files.newest(self._mdfind(["-name", name]), self.scope, limit, self.protected)
 
     def search(self, text: str, limit: int = 20) -> list[dict]:
         query = " ".join(text.translate({ord(c): " " for c in "\"'\\()=<>*$"}).split())
         if not query:
             raise ToolError("Say what words to look for.")
-        return _files.newest(self._mdfind([query]), self.scope, limit)
+        return _files.newest(self._mdfind([query]), self.scope, limit, self.protected)
 
     def read(self, path: str, max_chars: int = 20000) -> dict:
-        return _files.read(_files.checked(path, self.scope), max_chars)
+        return _files.read(_files.checked(path, self.scope, self.protected), max_chars)
 
     def list(self, folder: str, name: str = "", limit: int = 20) -> list[dict]:
-        return _files.listing(folder, self.scope, name, limit)
+        return _files.listing(folder, self.scope, name, limit, self.protected)
 
     def move(self, paths: list[str], folder: str) -> dict:
-        return _files.move(paths, folder, self.scope)
+        return _files.move(paths, folder, self.scope, self.protected)
 
     def _mdfind(self, query: list[str]) -> list[Path]:
         try:
@@ -350,4 +353,4 @@ def _mac(options: Mapping[str, Any], ctx: AdapterContext) -> Connections:
     brain = BrainClient(Workspace(ctx.home).tools_socket_path)
     return Connections(calendar=AppCalendar(brain), reminders=AppReminders(brain), mail=AppleMail(),
                        notes=AppleNotes(), shortcuts=ShortcutsApp(),
-                       files=SpotlightFiles(Path(o.files_scope).expanduser().resolve()))
+                       files=SpotlightFiles(Path(o.files_scope).expanduser().resolve(), Protected(ctx.home)))

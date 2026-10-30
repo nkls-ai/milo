@@ -185,6 +185,22 @@ def test_a_finished_task_result_reaches_the_next_turn():
             "- helper 1 “Check the weather”: finished 0s ago\n</helpers>\nso?" in s.model.turns[1])
 
 
+def test_a_task_result_survives_a_turn_that_crashed():
+    # L2: a HarnessError and a cancel put the results back for the next turn; a crash lost them for good.
+    s = Stack(model=FakeLiveModel(["[happy] On it. <task>check the weather</task>"], RuntimeError("bug"),
+                                  ["[happy] Sunny."]),
+              harness=FakeHarness("It's sunny."))
+
+    async def run():
+        await s.live_talk.start("weather?")
+        await s.tasks.idle()
+        await s.live_talk.start("so?")
+        await s.live_talk.start("and?")
+
+    asyncio.run(run())
+    assert "Result: It's sunny." in s.model.turns[1] and "Result: It's sunny." in s.model.turns[2]
+
+
 def test_interrupt_mid_reply_stops_the_model_and_the_audio_at_once():
     gate = asyncio.Event()
     s = Stack(model=FakeLiveModel(["[happy] Let me tell you a story, ", "a long one. <remember>x</remember>"],

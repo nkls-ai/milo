@@ -263,13 +263,9 @@ public final class MacHands: HandsExecutor {
             script = nil
             lock.unlock()
         }
-        input.fileHandleForWriting.write(Data(source.utf8))
-        try? input.fileHandleForWriting.close()
         let deadline = DispatchTime.now() + 30
         DispatchQueue.global().asyncAfter(deadline: deadline) { if process.isRunning { process.terminate() } }
-        let out = output.fileHandleForReading.readDataToEndOfFile()
-        let err = errors.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
+        let (out, err) = Self.collect(process, input: Data(source.utf8), output: output, errors: errors)
         let text = String(decoding: out, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         guard process.terminationStatus == 0 else {
             if process.terminationReason == .uncaughtSignal { throw HandsFailure("The script was stopped.") }
@@ -277,6 +273,26 @@ public final class MacHands: HandsExecutor {
             throw HandsFailure("The script failed: \(why.isEmpty ? "exit \(process.terminationStatus)" : why)")
         }
         return ["text": .string(String(text.prefix(16000)))]
+    }
+
+    /// Writes `input`, then reads stdout and stderr to the end at the same time and waits for the exit. Read
+    /// one after the other, a child that fills the other pipe (64 KB of `log` output) blocks forever.
+    static func collect(_ process: Process, input: Data, output: Pipe, errors: Pipe) -> (Data, Data) {
+        let group = DispatchGroup()
+        var err = Data()
+        group.enter()
+        DispatchQueue.global().async {
+            err = errors.fileHandleForReading.readDataToEndOfFile()
+            group.leave()
+        }
+        if let stdin = process.standardInput as? Pipe {
+            stdin.fileHandleForWriting.write(input)
+            try? stdin.fileHandleForWriting.close()
+        }
+        let out = output.fileHandleForReading.readDataToEndOfFile()
+        group.wait()
+        process.waitUntilExit()
+        return (out, err)
     }
 
     private func screenshot(front: NSRunningApplication?, finish: @escaping (Result<[String: JSONValue], HandsFailure>) -> Void) {

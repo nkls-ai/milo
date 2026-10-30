@@ -347,14 +347,14 @@ class FakeAudioOutput:
 
 
 class FakeLiveModel:
-    """Streams scripted replies. Each script entry is a list of deltas, or a HarnessError to raise.
+    """Streams scripted replies. Each script entry is a list of deltas, or an exception to raise.
 
     `gate` (an asyncio.Event) pauses after the first delta until set, so tests can interrupt mid-reply.
     """
 
     name = "fake-live"
 
-    def __init__(self, *script: list[str] | HarnessError, gate: asyncio.Event | None = None):
+    def __init__(self, *script: list[str] | Exception, gate: asyncio.Event | None = None):
         self.script = deque(script)
         self.gate = gate
         self.system_prompts: list[str] = []
@@ -376,7 +376,7 @@ class FakeLiveModel:
         self.images.append(list(images))
         self._interrupted.clear()
         item = self.script.popleft() if self.script else ["[neutral] ok."]
-        if isinstance(item, HarnessError):
+        if isinstance(item, Exception):
             raise item
         for i, delta in enumerate(item):
             if self._interrupted.is_set():
@@ -416,11 +416,19 @@ class UpperCleaner:
 
 
 class RecordingSink:
-    def __init__(self):
+    """An EventSink, and an AppLink to one app on connection `app` (None: no app is connected)."""
+
+    def __init__(self, app: int | None = 1):
         self.events: list[Event] = []
+        self.app = app
 
     def emit(self, event: Event) -> None:
         self.events.append(event)
+
+    def request(self, event: Event) -> int | None:
+        if self.app is not None:
+            self.events.append(event)
+        return self.app
 
     def of(self, cls: type) -> list:
         return [e for e in self.events if isinstance(e, cls)]
@@ -803,9 +811,6 @@ class MemoryRoutineBook:
 
     def read_draft(self, draft):
         return self.drafts.get(draft)
-
-    def write_draft(self, draft, text):
-        self.drafts[draft] = text
 
     def drop_draft(self, draft):
         self.drafts.pop(draft, None)

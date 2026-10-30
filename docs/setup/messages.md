@@ -13,7 +13,7 @@ Your Mac has to be on and Milo running. Nothing on your Mac is opened to the int
    (umask 077 && pbpaste > ~/Milo/secrets/telegram-token)    # after copying the token
    ```
 
-   The file is readable by you only (`chmod 600`); Milo refuses a token file that others on your Mac could read.
+   The file should be readable by you only (`chmod 600`, in a `0700` folder). If others on your Mac could read it, Milo tightens it himself and notes that in the log; a link, or a file that belongs to another user, he refuses.
 3. **Switch it on.** In `~/Milo/config.toml`, under `[messages]`, set `enabled = true`. A config from before this feature has no `[messages]` section: add these two lines at the end. Then restart the brain from Milo's menu bar item.
 
    ```toml

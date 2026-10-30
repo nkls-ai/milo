@@ -72,7 +72,7 @@ def test_build_picks_the_engines_named_in_config(build):
     assert isinstance(runtime.live_talk, LiveTalk) and runtime.live_talk._idle_reset_s == 600
     assert isinstance(runtime.harness, CodexHarness)
     assert runtime.harness.binary == "/nonexistent/codex" and runtime.harness.model == "gpt-x"
-    assert runtime.harness.workdir == home
+    assert runtime.harness.workdir == home / "work", "helpers write only their own folder (ADR 0020)"
     assert isinstance(runtime.transcriber, MlxWhisper)
     assert isinstance(runtime.voice, FallbackVoice) and isinstance(runtime.voice.current, MacSay)
     assert isinstance(runtime.server, UnixSocketServer)
@@ -139,7 +139,9 @@ def test_screen_and_background_workers_both_run_with_milos_tools_only(build):
     runtime, home = build(cheap(**{"harness.use": "claude"}))
     for worker in (runtime.harness, runtime.helpers._runner._background):
         cmd = worker.command("hi", None)
-        assert cmd[cmd.index("--setting-sources") + 1] == "project,local" and "--strict-mcp-config" in cmd
+        assert "--restricted" in cmd and "--strict-mcp-config" in cmd
+        assert f"Write(/{(home / 'config.toml').resolve()})" in worker.deny, "both keep off Milo's control files"
+        assert worker.workdir == home / "work"
 
 
 def test_heartbeat_disabled_builds_no_runner(build):
@@ -206,6 +208,8 @@ def test_memory_can_be_switched_off_and_keeps_the_tools_server_for_it(build):
     assert [s.name for s in runtime.harness.tool_servers] == ["milo"], "the memory tools still need it"
     assert runtime.memory.sleep is None
     runtime.memory.executor.shutdown(wait=False)
+    runtime, _ = build(cheap(**{"connections.enabled": False, "memory.enabled": False}))
+    assert [s.name for s in runtime.harness.tool_servers] == ["milo"], "milo_remind: helpers can't write reminders.md"
 
 
 def test_a_bad_memory_setting_fails_at_build(build):
@@ -273,3 +277,33 @@ def test_a_bad_messages_setting_names_the_key(build):
         build(cheap(**{"messages.enabled": True, "messages.brief_at": "7.30am"}))
     with pytest.raises(ConfigError, match=r"messages\.telegram.*tokn_file"):
         build(cheap(**{"messages.enabled": True}).replace("token_file =", "tokn_file ="))
+
+
+def test_every_busy_check_asks_attention(build):
+    # A2: one place says when the user is busy; a new kind of activity is added there, not in eight lambdas.
+    runtime, _ = build(cheap(**{"chat.voice_barge_in": False}))
+    a = runtime.attention
+    approvals = runtime.brain._approvals
+    assert approvals._quiet == a.in_conversation
+    assert runtime.helpers._quiet == a.in_conversation
+    assert runtime.heartbeat._busy == a.answering
+    assert {n._busy for n in runtime.notices} == {a.using_voice}
+    assert runtime.memory.sleep._busy == a.at_work
+    runtime.memory.executor.shutdown(wait=False)
+    assert runtime.brain._routines._quiet == a.in_conversation
+    if runtime.meetings is not None:
+        assert (runtime.meetings._private, runtime.meetings._quiet) == (a.private, a.in_conversation)
+    assert a.turn() is False and a.question() is False and a.helpers() is False, "every part is attached"
+
+
+def test_a_step_moved_before_what_it_needs_fails_at_build_naming_the_part(build, monkeypatch):
+    # A1: build() is named steps in an explicit order. A reorder used to surface as a NameError inside a
+    # callback, long after start; now the build itself stops and says which part was missing.
+    steps = list(compose.BUILD_STEPS)
+    assert [s.__name__ for s in steps] == ["_workspace", "_engines", "_stores", "_presence", "_helpers", "_meetings",
+                                           "_talk", "_messages", "_tool_socket", "_heartbeat", "_brain"]
+    steps.remove(compose._talk)
+    steps.insert(steps.index(compose._helpers), compose._talk)
+    monkeypatch.setattr(compose, "BUILD_STEPS", tuple(steps))
+    with pytest.raises(compose.BuildOrder, match="'helpers' is used before the step that builds it"):
+        build(cheap())

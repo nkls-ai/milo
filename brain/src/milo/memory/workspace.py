@@ -6,7 +6,9 @@ from importlib import resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
 
-_DIRS = ("run", "state", "logs", "memory/journal", "memory/episodes", "routines")
+from milo.core.control import WORK_FOLDER, Protected
+
+_DIRS = ("run", "state", "logs", "memory/journal", "memory/episodes", "routines", "work")
 _PRIVATE_DIRS = ("secrets",)
 
 
@@ -115,7 +117,18 @@ class Workspace:
 
     @property
     def routine_drafts_dir(self) -> Path:
-        return self.state_dir / "routine-drafts"
+        """In the worker's folder: the drafting helper writes the draft here, and Save keeps the text the user saw."""
+        return self.work_dir / "routine-drafts"
+
+    @property
+    def work_dir(self) -> Path:
+        """The worker's working directory, and the only folder of the workspace it may write (ADR 0020)."""
+        return self.home / WORK_FOLDER
+
+    @property
+    def protected(self) -> Protected:
+        """Milo's control files and folders, which helpers never write (milo.core.control)."""
+        return Protected(self.home)
 
     @property
     def meetings_dir(self) -> Path:

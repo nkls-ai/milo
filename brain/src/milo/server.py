@@ -108,15 +108,19 @@ async def _serve(runtime: Runtime) -> None:
     if memory is not None:
         engines["memory"] = memory.memory.warm  # the embedder on its own thread, then the index catches up
     warming = asyncio.create_task(_warm_all(engines))
-    tasks = [warming] + ([asyncio.create_task(runtime.heartbeat.run())] if runtime.heartbeat else [])
+    loops: dict[str, Callable[[], Awaitable[None]]] = {}
+    if runtime.heartbeat is not None:
+        loops["the heartbeat"] = runtime.heartbeat.run
     if memory is not None and memory.sleep is not None:
-        tasks.append(asyncio.create_task(memory.sleep.run()))
+        loops["the nightly consolidation"] = memory.sleep.run
     if runtime.barge_in is not None:
-        tasks.append(asyncio.create_task(runtime.barge_in.run()))
+        loops["barge-in"] = runtime.barge_in.run
     if runtime.messages is not None:
-        tasks.append(asyncio.create_task(runtime.messages.run()))
+        loops["messages"] = runtime.messages.run
         if runtime.heartbeat is None:  # the brief and the settings guard still need their tick
-            tasks.append(asyncio.create_task(_every(MESSAGES_TICK_S, runtime.messages.tick)))
+            messages = runtime.messages
+            loops["the messages tick"] = lambda: _every(MESSAGES_TICK_S, messages.tick)
+    tasks = [warming, *(asyncio.create_task(supervised(name, run)) for name, run in loops.items())]
     try:
         await runtime.server.serve_forever()
     finally:
@@ -135,10 +139,40 @@ async def _serve(runtime: Runtime) -> None:
         await _close(runtime)
 
 
+RESTART_S = (1.0, 5.0, 30.0, 60.0)
+"""How long a crashed background loop waits before it starts again, growing with each crash in a row."""
+STEADY_S = 600.0
+"""A loop that ran this long before it crashed starts from the shortest wait again."""
+
+
+async def supervised(name: str, run: Callable[[], Awaitable[None]], restart_s: tuple[float, ...] = RESTART_S) -> None:
+    """Run a background loop for the brain's whole life. One that crashes is logged and started again, so one
+    bad tick doesn't end the heartbeat (or the brief, or the settings guard) until the next restart."""
+    loop = asyncio.get_running_loop()
+    crashes = 0
+    while True:
+        started = loop.time()
+        try:
+            await run()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            crashes = 1 if loop.time() - started >= STEADY_S else crashes + 1
+            wait = restart_s[min(crashes, len(restart_s)) - 1]
+            log.exception("%s crashed; starting it again in %.0f s", name, wait)
+            await asyncio.sleep(wait)
+        else:
+            log.warning("%s stopped by itself", name)
+            return
+
+
 async def _every(seconds: float, check: Callable[[], Awaitable[None]]) -> None:
     while True:
         await asyncio.sleep(seconds)
-        await check()
+        try:
+            await check()
+        except Exception:
+            log.exception("a background check failed; trying again in %.0f s", seconds)
 
 
 async def _close(runtime: Runtime) -> None:

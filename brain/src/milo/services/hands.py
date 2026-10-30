@@ -7,6 +7,7 @@ import logging
 import re
 from dataclasses import dataclass
 
+from milo.core.control import Protected
 from milo.core.events import FlyTo, HandsBorrow, HandsSession, Status
 from milo.core.hands import validate
 from milo.core.ports import AppHands, Confirmer, EventSink
@@ -35,6 +36,8 @@ _NOT_AUTHORIZED = re.compile(r"Not authori[sz]ed to send Apple events to (.+?)\.
 _COMPOSED = ("sheet_write", "sheet_read", "write_document", "ax_find")
 # Acting tools that never need the careful gate: they open an app or make something new.
 _NEW_THINGS = ("open_app", "write_document", "scroll")
+MAX_ASKS = 3
+"""Questions for one action whose target keeps changing under the user's answers, before Milo gives up."""
 
 
 @dataclass(frozen=True)
@@ -58,9 +61,12 @@ class HandsService:
     """
 
     def __init__(self, hands: AppHands, confirm: Confirmer, sink: EventSink, *,
-                 transcript: Transcript | None = None, applescript: bool = True, locale: str = ""):
+                 transcript: Transcript | None = None, applescript: bool = True, locale: str = "",
+                 protected: Protected | None = None):
         """`locale` is the Mac's region (AppleLocale, like "en_US@rg=dezzzz"): money in spreadsheets uses its
-        currency."""
+        currency. A script that names one of Milo's control files (`protected`) never runs (ADR 0020); one
+        that builds the path some other way still waits for the user's yes, like every script."""
+        self._protected = protected
         self._hands = hands
         self._locale = locale
         self._confirm = confirm
@@ -125,14 +131,14 @@ class HandsService:
             self._check()
             step = Step(f"hands_{next(self._ids)}", "app" if spec.acts else "read", title(tool, args, target),
                         _detail(tool, args), StepStatus.RUNNING)
-            verdict = classify(tool, args, target)
-            app = _app_of(tool, args, target)
-            if verdict.risk is Risk.OK and self._needs_clearing(tool, spec.acts, target, app):
-                verdict = Verdict(Risk.ASK, "use")
-            if verdict.risk is Risk.NEVER:
-                self._step(task_id, step, StepStatus.FAILED)
-                raise HandsError(f"Not allowed: Milo never touches {verdict.reason}. Ask the user to do this part.")
-            if verdict.risk is Risk.ASK:
+            verdict, app = self._judge(tool, spec.acts, args, target)
+            for _ in range(MAX_ASKS):
+                if verdict.risk is Risk.NEVER:
+                    self._step(task_id, step, StepStatus.FAILED)
+                    raise HandsError(f"Not allowed: Milo never touches {verdict.reason}. Ask the user to do this "
+                                     "part.")
+                if verdict.risk is not Risk.ASK:
+                    break
                 self._transcript.task_step(task_id, step)  # the user can read the whole thing before answering
                 question = confirm_question(tool, args, target, verdict.reason)
                 if not await self._confirm.confirm(question):
@@ -140,8 +146,21 @@ class HandsService:
                     raise HandsError(f"The user said no (or didn't answer) to: {question} Don't try it another "
                                      "way; tell the user what is left to do.")
                 self._check()
-                if app:
-                    self._cleared.add(app)
+                # The question may have waited a minute: the yes is for what the user saw, so look again.
+                fresh = await self._describe(tool, args) if spec.acts else target
+                self._check()
+                if same_target(target, fresh):
+                    if app:
+                        self._cleared.add(app)
+                    break
+                log.info("%s: what it would touch changed while the user answered; asking again", tool)
+                target = fresh
+                step = Step(step.id, step.kind, title(tool, args, target), step.detail, step.status)
+                verdict, app = self._judge(tool, spec.acts, args, target)
+            else:
+                self._step(task_id, step, StepStatus.FAILED)
+                raise HandsError("What this would touch kept changing on the screen, so Milo didn't do it. Look "
+                                 "again (screenshot or ax_tree) before you try.")
             self._transcript.task_step(task_id, step)
             if spec.acts:
                 self._start_session(target)
@@ -155,6 +174,17 @@ class HandsService:
                 raise
             self._step(task_id, step, StepStatus.DONE)
             return output(tool, result)
+
+    def _judge(self, tool: str, acts: bool, args: dict, target: dict) -> tuple[Verdict, str]:
+        """How risky the action is on `target`, and the app it acts in."""
+        verdict = classify(tool, args, target)
+        if tool == "run_applescript" and self._protected is not None and \
+                self._protected.mentioned_in(str(args.get("script", ""))):
+            verdict = Verdict(Risk.NEVER, "his own settings, memory or routines from a script")
+        app = _app_of(tool, args, target)
+        if verdict.risk is Risk.OK and self._needs_clearing(tool, acts, target, app):
+            verdict = Verdict(Risk.ASK, "use")
+        return verdict, app
 
     async def _borrow(self, tool: str, args: dict, target: dict, need: BorrowNeeded) -> dict:
         """The app can't do this in the background. Ask to borrow the mouse or keyboard, then try again with it.
@@ -257,6 +287,13 @@ class HandsService:
             self._active = False
             self._sink.emit(FlyTo(None))
             self._sink.emit(HandsSession(False))
+
+
+def same_target(before: dict, after: dict) -> bool:
+    """Whether a second look at what an action would touch found the same thing. Where on the screen it sits may
+    move a little (a caret, a window nudged); which app, element, label, role or document it is may not."""
+    keys = (before.keys() | after.keys()) - {"point"}
+    return all(before.get(k) == after.get(k) for k in keys)
 
 
 def title(tool: str, args: dict, target: dict) -> str:

@@ -35,6 +35,7 @@ from urllib.parse import urlencode
 
 import numpy as np
 
+from milo.core.secrets import SecretError, read_secret
 from milo.core.registry import VOICES, AdapterContext, ConfigError, options_from
 from milo.core.types import Audio, VoiceUnavailable
 
@@ -147,12 +148,10 @@ class ElevenLabsVoice:
     def _read_key(self) -> str:
         if self._key is None:
             try:
-                key = self.key_file.expanduser().read_text(encoding="utf-8").strip()
-            except OSError:
-                raise VoiceUnavailable(f"no ElevenLabs key in {self.key_file}") from None
-            if not key:
-                raise VoiceUnavailable(f"{self.key_file} is empty")
-            self._key = key
+                self._key = read_secret(self.key_file, "The ElevenLabs key",
+                                        missing=f"no ElevenLabs key in {self.key_file}")
+            except SecretError as e:
+                raise VoiceUnavailable(str(e)) from None
         return self._key
 
     def _url(self) -> str:
@@ -331,8 +330,7 @@ class ElevenLabsStream:
     def cancel(self) -> None:
         if self._done:
             return
-        if self._started and self.voice._connection is not None and not self.voice._connection.closed:
-            self.voice._connection.send(self, {"context_id": self.context_id, "close_context": True})
+        self._close_context(again=True)  # also after finish(): the user cut it off, stop the audio now
         self._end(_END)
 
     async def __aiter__(self) -> AsyncIterator[tuple[int, Audio]]:
@@ -391,6 +389,7 @@ class ElevenLabsStream:
 
     def _fail(self, reason: str) -> None:
         if not self._done:
+            self._close_context()  # the server keeps only a few open; a stalled or failed one must not count
             self._end(VoiceUnavailable(reason))
 
     # ---- internals
@@ -413,7 +412,13 @@ class ElevenLabsStream:
     def _stalled(self) -> None:
         if not self._done and self._sent - self._spoken > 1:
             self._fail(f"no audio from ElevenLabs for {NO_AUDIO_S:.0f} s")
-            self.cancel()
+
+    def _close_context(self, again: bool = False) -> None:
+        """Tell the server this context is over, unless finish() did (`again`: even then) or there is no
+        connection to tell."""
+        connection = self.voice._connection
+        if self._started and (again or not self._finished) and connection is not None and not connection.closed:
+            connection.send(self, {"context_id": self.context_id, "close_context": True})
 
 
 def _samples(pcm: bytes) -> Audio:

@@ -10,6 +10,8 @@ from milo.transport.tool_client import BrainClient, refusal
 from .mcp import McpServer
 from .memory_tools import INSTRUCTIONS as MEMORY_INSTRUCTIONS
 from .memory_tools import MEMORY_TOOLS, RemoteMemory
+from .milo_tools import INSTRUCTIONS as MILO_INSTRUCTIONS
+from .milo_tools import MILO_TOOLS, RemoteMilo
 from .tools import INSTRUCTIONS, Tool, by_name
 
 log = logging.getLogger("milo.connect")
@@ -21,15 +23,19 @@ class Toolbox:
     """Runs a tool after its approval. A connection that asks the brain itself (Calendar and Reminders
     through Milo.app, where the brain applies the level) has `approves_itself` set."""
 
-    def __init__(self, connections: Connections, brain: BrainClient, memory: RemoteMemory | None = None):
+    def __init__(self, connections: Connections, brain: BrainClient, memory: RemoteMemory | None = None,
+                 milo: RemoteMilo | None = None):
         self._connections = connections
         self._brain = brain
         self._memory = memory
-        self.tools = by_name(connections) | ({t.name: t for t in MEMORY_TOOLS} if memory is not None else {})
+        self._milo = milo
+        self.tools = (by_name(connections) | ({t.name: t for t in MEMORY_TOOLS} if memory is not None else {})
+                      | ({t.name: t for t in MILO_TOOLS} if milo is not None else {}))
 
     def call(self, name: str, args: dict) -> Any:
         tool = self.tools[name]
-        backend = self._memory if tool.connection == "memory" else getattr(self._connections, tool.connection)
+        own = {"memory": self._memory, "milo": self._milo}
+        backend = own[tool.connection] if tool.connection in own else getattr(self._connections, tool.connection)
         unknown = sorted(set(args) - set(tool.properties))
         if unknown:
             raise ToolError(f"{name} doesn't take {', '.join(unknown)}")
@@ -44,6 +50,10 @@ class Toolbox:
     @property
     def has_memory(self) -> bool:
         return self._memory is not None
+
+    @property
+    def has_milo(self) -> bool:
+        return self._milo is not None
 
 
 class BrainPhone:
@@ -65,5 +75,6 @@ def listing(tool: Tool) -> dict:
 
 
 def mcp_server(toolbox: Toolbox) -> McpServer:
-    instructions = INSTRUCTIONS + (MEMORY_INSTRUCTIONS if toolbox.has_memory else "")
+    instructions = (INSTRUCTIONS + (MEMORY_INSTRUCTIONS if toolbox.has_memory else "")
+                    + (MILO_INSTRUCTIONS if toolbox.has_milo else ""))
     return McpServer("milo", VERSION, [listing(t) for t in toolbox.tools.values()], toolbox.call, instructions)

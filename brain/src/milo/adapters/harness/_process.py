@@ -107,13 +107,14 @@ async def stop(proc: asyncio.subprocess.Process, grace_s: float = STOP_GRACE_S) 
     """
     if proc.returncode is not None:
         return
-    tree = descendants(proc.pid)
-    _signal(proc.pid, tree, signal.SIGTERM)
+    tree = await asyncio.to_thread(descendants, proc.pid)  # ps takes tens of ms: not on the event loop
+    _signal(proc.pid, [pid for pid, _ in tree], signal.SIGTERM)
     try:
         await asyncio.wait_for(proc.wait(), grace_s)
     except TimeoutError:
         pass
-    _signal(proc.pid, tree, signal.SIGKILL)
+    # Only those still the same processes: in the grace a pid that ended may have gone to someone else.
+    _signal(proc.pid, await asyncio.to_thread(still_running, tree), signal.SIGKILL)
     try:
         # wait() also waits for the pipes, which a process that escaped the tree could hold open forever.
         await asyncio.wait_for(asyncio.shield(proc.wait()), grace_s)
@@ -121,23 +122,39 @@ async def stop(proc: asyncio.subprocess.Process, grace_s: float = STOP_GRACE_S) 
         log.warning("%s was killed, but something it started still holds its output open", proc.pid)
 
 
-def descendants(pid: int) -> list[int]:
-    """Every process below `pid`, children first. Empty if ps can't be read."""
-    try:
-        out = subprocess.run(["ps", "-A", "-o", "pid=,ppid="], capture_output=True, text=True, timeout=2).stdout
-    except (OSError, subprocess.SubprocessError):
-        return []
+def descendants(pid: int) -> list[tuple[int, str]]:
+    """Every process below `pid`, children first, each with its start time. Empty if ps can't be read."""
+    table = _processes()
     children: dict[int, list[int]] = {}
-    for line in out.splitlines():
-        parts = line.split()
-        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
-            children.setdefault(int(parts[1]), []).append(int(parts[0]))
+    for child, (parent, _) in table.items():
+        children.setdefault(parent, []).append(child)
     found, todo = [], list(children.get(pid, []))
     while todo:
         child = todo.pop()
-        found.append(child)
+        found.append((child, table[child][1]))
         todo.extend(children.get(child, []))
     return found
+
+
+def still_running(tree: list[tuple[int, str]]) -> list[int]:
+    """The pids of `tree` that are still the processes they were: same pid, same start time."""
+    table = _processes()
+    return [pid for pid, started in tree if pid in table and table[pid][1] == started]
+
+
+def _processes() -> dict[int, tuple[int, str]]:
+    """pid -> (parent pid, start time) for every process. Empty if ps can't be read."""
+    try:
+        out = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,lstart="], capture_output=True, text=True,
+                             timeout=2).stdout
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    table = {}
+    for line in out.splitlines():
+        parts = line.split(maxsplit=2)
+        if len(parts) == 3 and parts[0].isdigit() and parts[1].isdigit():
+            table[int(parts[0])] = (int(parts[1]), parts[2].strip())
+    return table
 
 
 def _signal(root: int, tree: list[int], sig: int) -> None:

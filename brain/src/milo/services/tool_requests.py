@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Collection
+from datetime import datetime
 from typing import Any, Protocol
 
+from milo.core.ports import ReminderBook
 from milo.core.types import ChannelError
-
-from milo.core.wording import question
+from milo.core.wording import question, when
 
 from .app_bridge import AppBridge, AppError
 from .approvals import Approvals
@@ -56,16 +57,20 @@ class ToolRequests:
       from the arguments that go to the app, never taken from the caller.
     - `send_to_phone` {path, caption?}: send one file to the owner's phone. Always a `share`, so it asks first
       unless the user made sharing not ask; the question names the file and its size. Result: {sent}.
+    - `reminder.add` {when, text}: one of Milo's own reminders, a line in reminders.md, which the worker can't
+      write (ADR 0020). Always asks, with the reminder on its own marked line. Result: {reminder, due}.
     """
 
     def __init__(self, approvals: Approvals, bridge: AppBridge, enabled: Collection[str] = ("calendar", "reminders"),
-                 memory: MemoryRequests | None = None, phone: Phone | None = None):
+                 memory: MemoryRequests | None = None, phone: Phone | None = None,
+                 reminders: ReminderBook | None = None):
         self._approvals = approvals
         self._bridge = bridge
         self._enabled = frozenset(enabled)
         self._memory = memory
         """`memory.*` ops: the worker's memory tools (services/memory_requests.py). None: memory is off."""
         self._phone = phone
+        self._reminders = reminders
 
     async def handle(self, request: dict) -> dict:
         """{"ok": true, "result": ...} or {"ok": false, "error": "plain words"}. Never raises."""
@@ -99,6 +104,8 @@ class ToolRequests:
                     if not decision.allowed:
                         return _error(REFUSED.get(decision.answer, REFUSED["refused"]))
                     return _ok(await self._phone.send_file(outgoing, str(request.get("caption") or "")))
+                case "reminder.add" if self._reminders is not None:
+                    return await self._remind(request)
                 case str() if op.startswith("memory.") and self._memory is not None:
                     return await self._memory.handle(op, request)
         except (AppError, NotShareable, ChannelError) as e:
@@ -109,6 +116,20 @@ class ToolRequests:
             log.exception("tool request %s failed", op)
             return _error("Something went wrong inside Milo.")
         return _error(f"unknown op {op!r}")
+
+    async def _remind(self, request: dict) -> dict:
+        text = " ".join(str(request.get("text") or "").split())[:200]
+        if not text:
+            return _error("say what to remind the user of (text)")
+        try:
+            due = datetime.fromisoformat(str(request.get("when") or "")).replace(tzinfo=None, second=0,
+                                                                                 microsecond=0)
+        except ValueError:
+            return _error("when must look like 2026-11-05T15:00")
+        if not await self._approvals.confirm(f"Should I remind you on {when(due.isoformat())}?\n› {text}"):
+            return _error(REFUSED["no"])
+        reminder = self._reminders.add(due, text)
+        return _ok({"reminder": reminder.text, "due": f"{reminder.due:%Y-%m-%dT%H:%M}"})
 
 
 def _summary(request: dict) -> str:

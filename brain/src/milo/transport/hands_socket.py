@@ -9,7 +9,7 @@ from pathlib import Path
 
 from milo.core.types import HandsError
 
-from .unix_socket import claim_socket, peer_uid
+from .unix_socket import claim_socket, same_user
 
 log = logging.getLogger("milo.hands_socket")
 
@@ -51,7 +51,7 @@ class HandsSocketServer:
         self.path.unlink(missing_ok=True)
 
     async def _client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        if peer_uid(writer.get_extra_info("socket")) not in (os.getuid(), None):
+        if not same_user(writer.get_extra_info("socket")):
             log.warning("refusing a hands connection from another user")
             writer.close()
             return

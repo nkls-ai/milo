@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from milo.core.events import Bubble, Command, StateChanged, TextInput, UiConfig
+from milo.core.events import Bubble, Command, Level, StateChanged, TextInput, UiConfig
 from milo.core.types import MiloState
 from milo.transport.unix_socket import UnixSocketServer, peer_uid
 
@@ -281,3 +281,78 @@ def test_the_last_client_hanging_up_is_reported_once_the_others_are_gone(sock_pa
         assert gone == [1], "closing the server isn't an app going away"
 
     asyncio.run(run())
+
+
+def test_an_app_that_stops_reading_gets_no_more_levels_and_is_cut_off_when_it_hangs(sock_path):
+    # M1 in docs/review/2026-10-30.md: emit() queued without limit, 20,000 levels left 630 KB waiting.
+    gone: list[int] = []
+
+    async def run():
+        server = UnixSocketServer(sock_path, lambda c: asyncio.sleep(0), lambda: list(GREETING),
+                                  on_disconnect=lambda: gone.append(1), soft_limit=64 * 1024,
+                                  hard_limit=1024 * 1024)
+        await server.start()
+        try:
+            client = await Client.connect(sock_path)  # never reads, like an app whose main thread hangs
+            await asyncio.sleep(0.05)
+            writer = next(iter(server._clients))
+            for _ in range(50_000):
+                server.emit(Level(0.5))
+            assert writer.transport.get_write_buffer_size() < 64 * 1024 + 100, "levels stop at the soft limit"
+            server.emit(Bubble("still here"))
+            assert writer.transport.get_write_buffer_size() > 64 * 1024, "real events still go out"
+            for _ in range(200):
+                server.emit(Bubble("x" * 10_000))
+            await asyncio.sleep(0.05)
+            assert not server.connected() and gone == [1], "a hung app is cut off and may reconnect"
+            await client.close()
+        finally:
+            await server.close()
+
+    asyncio.run(run())
+
+
+def test_a_request_goes_to_the_newest_app_only_and_its_hanging_up_is_reported(sock_path):
+    # M2 in docs/review/2026-10-30.md: requests were broadcast, so two apps would both click, type and add
+    # the reminder.
+    gone: list[int] = []
+
+    async def run():
+        server = UnixSocketServer(sock_path, lambda c: asyncio.sleep(0), lambda: list(GREETING))
+        server.on_client_gone.append(gone.append)
+        await server.start()
+        try:
+            old, new = await Client.connect(sock_path), await Client.connect(sock_path)
+            await old.read_greeting()
+            await new.read_greeting()
+            assert server.request(Bubble("only one of you")) == 2
+            assert await new.read() == {"type": "bubble", "text": "only one of you"}
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(old.reader.readline(), 0.1)
+            await new.close()
+            await asyncio.sleep(0.05)
+            assert gone == [2]
+            assert server.request(Bubble("now you")) == 1, "the app still here answers from now on"
+            assert await old.read() == {"type": "bubble", "text": "now you"}
+            await old.close()
+            await asyncio.sleep(0.05)
+            assert server.request(Bubble("nobody")) is None
+        finally:
+            await server.close()
+
+    asyncio.run(run())
+
+
+def test_a_peer_whose_user_the_mac_cant_tell_is_refused(monkeypatch):
+    # L3: macOS always answers LOCAL_PEERCRED, so no answer there means something is off: refuse.
+    import sys
+
+    from milo.transport import unix_socket
+
+    monkeypatch.setattr(unix_socket, "peer_uid", lambda sock: None)
+    monkeypatch.setattr(sys, "platform", "darwin")
+    assert not unix_socket.same_user(None)
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert unix_socket.same_user(None), "elsewhere the 0700 run/ folder is the check"
+    monkeypatch.setattr(unix_socket, "peer_uid", lambda sock: os.getuid() + 1)
+    assert not unix_socket.same_user(None)

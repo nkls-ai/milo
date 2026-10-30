@@ -1,7 +1,7 @@
 """Reminders live in <home>/reminders.md as `- [ ] YYYY-MM-DD HH:MM text` lines.
 
-The agent sets reminders by editing that file; the heartbeat fires them locally, so a reminder
-costs no tokens.
+Milo's chat tags and the worker's milo_remind tool (with the user's yes, ADR 0020) add them, and the user may
+edit the file; the heartbeat fires them locally, so a reminder costs no tokens.
 """
 
 from __future__ import annotations

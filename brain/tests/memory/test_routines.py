@@ -76,11 +76,34 @@ def test_update_keeps_what_the_user_wrote(book):
 
 def test_drafts(book):
     assert book.read_draft("d1") is None
-    book.write_draft("d1", "---\nname: X\n---\n")
+    book.draft_path("d1").write_text("---\nname: X\n---\n")  # the helper writes it
     assert book.draft_path("d1").parent == book.drafts and book.read_draft("d1").startswith("---")
     book.drop_draft("d1")
     book.drop_draft("d1")
     assert book.read_draft("d1") is None
+
+
+def test_a_draft_that_is_a_link_is_neither_read_nor_followed(book, tmp_path):
+    # ADR 0020: the drafts folder is the helper's, so a link there could point Milo at his own files.
+    secret = tmp_path / "secrets" / "elevenlabs.key"
+    secret.parent.mkdir()
+    secret.write_text("sk_secret")
+    book.draft_path("d1").symlink_to(secret)
+    assert book.read_draft("d1") is None
+    book.drop_draft("d1")
+    assert secret.read_text() == "sk_secret" and not book.draft_path("d1").is_symlink()
+    routines = tmp_path / "elsewhere"
+    routines.mkdir()
+    (routines / "d2.md").write_text("---\nname: Planted\n---\n")
+    book.drafts.rmdir()
+    book.drafts.symlink_to(routines, target_is_directory=True)
+    assert book.read_draft("d2") is None, "a drafts folder that is a link isn't followed either"
+    book.drop_draft("d2")
+    assert (routines / "d2.md").exists()
+    book.drafts.unlink()
+    book.drafts.mkdir()
+    (book.drafts / "d3.md").write_text("x" * 70_000)
+    assert book.read_draft("d3") is None, "too long for a recipe"
 
 
 def test_run_log(book):

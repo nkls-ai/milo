@@ -237,9 +237,12 @@ def test_no_audio_for_a_while_means_the_voice_is_gone(tmp_path, monkeypatch):
             stream.send("Hallo?")
             with pytest.raises(VoiceUnavailable, match="no audio"):
                 await collect(stream)
+            await asyncio.sleep(0.05)
             await voice.close()
 
     asyncio.run(run())
+    # M7: the server keeps only a few contexts open per connection, so a stalled one is closed there too.
+    assert {"context_id": "milo-1", "close_context": True} in fake.received
 
 
 def test_nobody_listening_is_voice_unavailable(tmp_path):

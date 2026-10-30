@@ -4,7 +4,7 @@ import pytest
 
 from milo.core.events import AppRequest, AppResponse, HandsRequest, LookRequest
 from milo.core.types import HandsError
-from milo.services.app_bridge import NO_APP, NOT_RUNNING, AppBridge, AppError, AppEyes, AppHands
+from milo.services.app_bridge import APP_LEFT_WORDS, NO_APP, NOT_RUNNING, AppBridge, AppError, AppEyes, AppHands
 from tests.fakes import RecordingSink
 
 
@@ -16,8 +16,8 @@ def test_a_look_nobody_answers_comes_back_as_an_error():
 
 
 def test_without_an_app_nothing_is_sent():
-    sink = RecordingSink()
-    bridge = AppBridge(sink, connected=lambda: False)
+    sink = RecordingSink(app=None)
+    bridge = AppBridge(sink)
     assert asyncio.run(AppEyes(bridge).look()).error == NO_APP
     with pytest.raises(HandsError, match="isn't connected"):
         asyncio.run(AppHands(bridge).act("list_apps", {}))
@@ -72,3 +72,30 @@ def test_app_work_and_mac_actions_wait_side_by_side_without_crossing():
 
 def test_late_or_unknown_answers_are_dropped():
     AppBridge(RecordingSink()).answer("look-7", None)
+
+
+def test_an_app_that_hangs_up_fails_what_it_owed_at_once_and_only_that():
+    # M3 in docs/review/2026-10-30.md: requests waited out their whole timeout (up to 90 s) after the app left.
+    sink = RecordingSink(app=1)
+    bridge = AppBridge(sink, timeout_s=60)
+
+    async def run():
+        acting = asyncio.create_task(AppHands(bridge, timeout_s=60).act("list_apps", {}))
+        listing = asyncio.create_task(bridge.call("reminders.list", {}))
+        await asyncio.sleep(0)
+        sink.app = 2  # a new app connected; requests from now on go to it
+        looking = asyncio.create_task(AppEyes(bridge, timeout_s=60).look())
+        await asyncio.sleep(0)
+        bridge.app_gone(1)
+        results = await asyncio.gather(acting, listing, return_exceptions=True)
+        assert not looking.done(), "the new app still owes its look"
+        bridge.answer("look-3", None)
+        return results, await looking
+
+    loop_started = asyncio.new_event_loop()
+    try:
+        (hands, app), look = loop_started.run_until_complete(asyncio.wait_for(run(), 2))
+    finally:
+        loop_started.close()
+    assert isinstance(hands, HandsError) and "closed" in str(hands)
+    assert isinstance(app, AppError) and str(app) == APP_LEFT_WORDS

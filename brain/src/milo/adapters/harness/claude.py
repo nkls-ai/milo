@@ -2,7 +2,10 @@
 
 The worker gets Milo's tools and instructions only: no user settings (so none of the user's plugins, hooks or
 permission rules), no skills or slash commands, no auto-memory, only the MCP servers Milo passes and a fixed set
-of built-in tools. Its instructions are the workspace's CLAUDE.md, which imports AGENTS.md.
+of built-in tools. It runs in the workspace's work/ folder with --restricted, so its file tools stay there, deny
+rules keep them off Milo's control files, and Bash runs in Claude Code's sandbox, which writes only there
+(ADR 0020). Its instructions are the workspace's CLAUDE.md, one folder up, which Claude Code finds there and
+which imports AGENTS.md.
 """
 
 from __future__ import annotations
@@ -13,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from milo.core.control import STEERING, STEERING_FOLDERS, Protected, clear_steering
 from milo.core.hands import mac_server
 from milo.core.ports import PlanCallback, SessionCallback, StepCallback
 from milo.core.registry import HARNESSES, AdapterContext, options_from
@@ -23,11 +27,22 @@ from ._binary import find_binary
 from ._process import last_line, run
 
 
-# Built-in tools the worker may use: files in its workspace (memory), a shell and the web. No sub-agents,
-# workflows, schedules or worktrees.
+# Built-in tools the worker may use: files in its own folder, a shell and the web. No sub-agents, workflows,
+# schedules or worktrees.
 BUILTIN_TOOLS = ("Bash", "Read", "Edit", "Write", "Glob", "Grep", "WebSearch", "WebFetch")
-# Project settings stay (the workspace's own .claude/settings.json, if the user made one); user settings don't.
-SETTINGS = json.dumps({"autoMemoryEnabled": False})
+
+
+
+def settings(deny: Sequence[str], no_writes: Sequence[str] = (), no_reads: Sequence[str] = ()) -> str:
+    """The worker's only settings (--restricted ignores every settings file): no auto-memory; `deny`, the rules
+    that keep its file tools off Milo's control files; and Bash in Claude Code's sandbox, which may write only
+    the worker's folder and the temp folder, never `no_writes`, can't read `no_reads` (the keys), and runs
+    nothing outside it (ADR 0020). No
+    sandbox on this Mac means no task: --restricted keeps Bash, so it must not run unsandboxed."""
+    return json.dumps({"autoMemoryEnabled": False, "permissions": {"deny": list(deny)},
+                       "sandbox": {"enabled": True, "failIfUnavailable": True, "allowUnsandboxedCommands": False,
+                                   "autoAllowBashIfSandboxed": True,
+                                   "filesystem": {"denyWrite": list(no_writes), "denyRead": list(no_reads)}}})
 
 
 @dataclass(frozen=True)
@@ -38,6 +53,9 @@ class ClaudeOptions:
     timeout_s: float = 180
     disallowed_tools: tuple[str, ...] = ()
     """Built-in tools the agent may not use, e.g. ["Bash", "WebFetch"]."""
+    restricted: bool = True
+    """`--restricted` (Claude Code 2.1.3xx): the file tools stay in the worker's folder, no settings file counts,
+    and the worker can't approve writes to settings itself. False only for an older CLI without it."""
 
 
 class ClaudeHarness:
@@ -45,7 +63,8 @@ class ClaudeHarness:
 
     def __init__(self, binary: str, workdir: Path, *, model: str = "", permission_mode: str = "acceptEdits",
                  timeout_s: float = 180, mac_tools: Sequence[str] = (), tool_servers: tuple[ToolServer, ...] = (),
-                 mcp_config: Path | None = None, disallowed_tools: tuple[str, ...] = ()):
+                 mcp_config: Path | None = None, disallowed_tools: tuple[str, ...] = (),
+                 protected: Protected | None = None, restricted: bool = True):
         """`mac_tools` starts the milo-mac server, `tool_servers` are Milo's app connections. Both go into
         `mcp_config` if given, else inline on the command line."""
         self.binary = binary
@@ -57,6 +76,16 @@ class ClaudeHarness:
         self.tool_servers = tool_servers
         self.mcp_config = mcp_config
         self.disallowed_tools = disallowed_tools
+        # And what in its own folder would steer the next task (instructions, settings, MCP servers). They are
+        # removed before each run too, which also covers Codex.
+        own = [f"/{workdir.resolve()}/{deep}{name}" + ("/**" if name in STEERING_FOLDERS else "")
+               for name in STEERING for deep in ("", "**/")]
+        self.deny = [*(protected.deny_rules() if protected is not None else []),
+                     *(f"{tool}({path})" for path in own for tool in ("Edit", "Write"))]
+        self.no_writes = [*(protected.resolved() if protected is not None else []),
+                          *(str(workdir.resolve() / deep / name) for name in STEERING for deep in ("", "**"))]
+        self.no_reads = [str((protected.home / "secrets").resolve())] if protected is not None else []
+        self.restricted = restricted
         self.servers = (*mac_server(self.mac_tools), *tool_servers)
         if self.servers and mcp_config is not None:
             mcp_config.parent.mkdir(parents=True, exist_ok=True)
@@ -65,7 +94,8 @@ class ClaudeHarness:
     def command(self, prompt: str, session_id: str | None) -> list[str]:
         cmd = [self.binary, "-p", "--output-format", "stream-json", "--verbose",
                "--json-schema", json.dumps(REPLY_SCHEMA), "--permission-mode", self.permission_mode,
-               "--setting-sources", "project,local", "--settings", SETTINGS, "--disable-slash-commands",
+               *(["--restricted"] if self.restricted else ["--setting-sources", "project,local"]),
+               "--settings", settings(self.deny, self.no_writes, self.no_reads), "--disable-slash-commands",
                "--tools", ",".join(t for t in BUILTIN_TOOLS if t not in self.disallowed_tools)]
         if session_id:
             cmd += ["--resume", session_id]
@@ -86,6 +116,11 @@ class ClaudeHarness:
                     on_session: SessionCallback | None = None, on_plan: PlanCallback | None = None) -> Reply:
         on_line = lines(ClaudeActivity(on_step, self.workdir).line if on_step is not None else None,
                         RunWatch(on_session, on_plan).line if on_session or on_plan else None)
+        try:
+            self.workdir.mkdir(parents=True, exist_ok=True)
+            clear_steering(self.workdir)  # nothing a helper left there steers this one (ADR 0020)
+        except OSError as e:
+            raise HarnessError(f"the worker's folder isn't safe to work in: {e}", transient=False) from None
         code, out, err = await run(self.command(prompt, session_id), cwd=self.workdir, timeout_s=self.timeout_s,
                                    on_line=on_line, done=is_result)
         return parse_result(result_line(out), code, err, session_id)
@@ -142,7 +177,7 @@ def _claude(options: Mapping[str, Any], ctx: AdapterContext) -> ClaudeHarness:
     o = options_from(ClaudeOptions, options, "harness.claude")
     return ClaudeHarness(
         find_binary(o.binary, "claude", section="harness.claude"),
-        ctx.home,
+        ctx.worker_dir,
         model=o.model,
         permission_mode=o.permission_mode,
         timeout_s=o.timeout_s,
@@ -150,4 +185,6 @@ def _claude(options: Mapping[str, Any], ctx: AdapterContext) -> ClaudeHarness:
         tool_servers=ctx.tool_servers,
         mcp_config=ctx.state_dir / "mcp-servers.json",
         disallowed_tools=o.disallowed_tools,
+        protected=Protected(ctx.home),
+        restricted=o.restricted,
     )

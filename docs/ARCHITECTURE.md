@@ -7,9 +7,11 @@ Milo is two processes on one Mac:
 
 They talk over a Unix socket at `~/Milo/run/brain.sock` (mode 0600) using JSON objects, one per line. Every message is listed in [`protocol/messages.json`](../protocol/messages.json) and defined in `brain/src/milo/core/events.py`. Both test suites decode that file, so the two sides can't drift apart silently.
 
+Events that only draw (state, bubble, levels) go to every connected app. Requests that need one app to act and answer (`look_request`, `hands_request`, `app_request`) go to the newest connection only (`AppLink`), and if that app hangs up, what it still owed fails at once.
+
 Only one brain runs per workspace. It takes an `flock` on `~/Milo/run/brain.lock` before it loads anything and holds it until the process ends, and a second brain exits at once. The app starts a brain only while nobody holds that lock: after a restart it waits for the old brain to let go, and it leaves a brain started by hand alone. It stops its brain with SIGTERM, since `uv run` passes that on and swallows SIGINT. Two brains would each load Whisper and OmniVoice, which on 16 GB fills swap and makes every Whisper pass several times slower.
 
-`~/Milo/` is the workspace. It holds `config.toml`, Milo's persona for the chat model (`persona.md`), the agent's instructions (`AGENTS.md`, `CLAUDE.md`), `memory/`, `reminders.md`, `state/` and `logs/`. The harness runs with this folder as its working directory, so the agent reads and edits its own memory with ordinary file tools.
+`~/Milo/` is the workspace. It holds `config.toml`, Milo's persona for the chat model (`persona.md`), the agent's instructions (`AGENTS.md`, `CLAUDE.md`), `memory/`, `reminders.md`, `state/` and `logs/`. The harness runs in `work/`, the one folder of the workspace its sandbox may write. It can read the rest, but Milo's control files (config, persona, instructions, reminders, routines, memory, secrets) change only through the Settings window, Milo's tags and tools that ask the user ([ADR 20](adr/0020-helpers-never-write-milos-control-files.md)).
 
 ## Brain layout
 
@@ -77,8 +79,9 @@ Rules that keep the parts swappable:
 1. **Services depend on ports, never on adapters.** `services/` imports from `milo.core` only. A service gets every collaborator through its constructor.
 2. **Adapters register themselves.** `@HARNESSES.register("codex")` sits next to the class. `milo.adapters.load_builtin()` imports the built-in modules. Adding an engine means adding a module, without editing any switch statement.
 3. **Config picks by name.** Every swappable section has `use = "<name>"` and a table `[<section>.<name>]` holding that implementation's options. An adapter parses its own table with `options_from(OptionsDataclass, table, "section.name")`, which rejects unknown keys.
-4. **Only `compose.py` wires concrete things.** Tests wire fakes from `tests/fakes.py` instead.
+4. **Only `compose.py` wires concrete things.** Tests wire fakes from `tests/fakes.py` instead. `tests/services/stack.py` runs STT, TTS and memory inline, so most tests are deterministic. `Stack(real_threads=True)` puts each on a real thread, as compose does, and `tests/test_races.py` uses it with the real socket and slow engines to catch ordering bugs between the loop and those threads.
 5. **Blocking work runs on dedicated single-thread executors.** STT gets one thread and TTS another, so MLX and PyTorch each stay on their own thread and the event loop never blocks.
+6. **"Is the user busy?" has one answer.** `services/attention.py` holds the facts (a turn runs, the mic records, Milo speaks, a question waits, a helper works) and named questions over them: `in_conversation`, `using_voice`, `occupied`, `at_work`, `private`, `user_speaking`. compose.py passes the question a service needs, never its own mix.
 
 ## Cross-module interfaces
 
@@ -150,7 +153,7 @@ Milo remembers episodes (what happened) and facts (what is true about the user) 
 
 ## Helpers
 
-The chat model, the talker, has no tools and never waits for work. Work that needs files, research, the user's apps or the screen comes out of a reply as a `<task>`, and `services/orchestrator.py` hands it to a helper: one run of the agent harness (`[harness]`, Codex by default) in its own process and its own session, working in the `~/Milo` sandbox under `AGENTS.md`. See [ADR 11](adr/0011-helpers-and-the-orchestrator.md).
+The chat model, the talker, has no tools and never waits for work. Work that needs files, research, the user's apps or the screen comes out of a reply as a `<task>`, and `services/orchestrator.py` hands it to a helper: one run of the agent harness (`[harness]`, Codex by default) in its own process and its own session, working in `~/Milo/work` under `AGENTS.md`, with a sandbox that can't write Milo's control files (ADR 20). See [ADR 11](adr/0011-helpers-and-the-orchestrator.md).
 
 - **At once and in turn.** Up to `[harness] max_helpers` (3) helpers work at the same time; more wait as queued. Helpers with `screen="yes"` take turns on the screen harness (with the milo-mac tools). The rest run on a second harness instance without them. A background helper that answers `NEEDS_SCREEN` is queued again for the screen.
 - **Milo's tools only.** Both harness instances run without the user's own setup: Codex in a home of Milo's own (`~/Milo/.codex`, rewritten before every turn, the login linked from the user's), Claude Code without user settings, skills and other MCP servers. See [ADR 13](adr/0013-a-worker-with-milos-tools-only.md).
@@ -221,7 +224,7 @@ phone ──Telegram──▶ api.telegram.org ◀──HTTPS long poll── br
              worker's send_to_phone ──tools.sock──▶ check, ask "share", send the bytes ─┘
 ```
 
-- **Channels** (`CHANNELS` registry, `core/ports.Channel`) only move messages. Telegram uses the Bot API over HTTPS with the standard library, so nothing on the Mac listens for the network. The token comes from `~/Milo/secrets/telegram-token` (0600, never logged). iMessage reads chat.db read-only (Full Disk Access) and sends with AppleScript to the owner's own handle only.
+- **Channels** (`CHANNELS` registry, `core/ports.Channel`) only move messages. Telegram uses the Bot API over HTTPS with the standard library, so nothing on the Mac listens for the network. The token comes from `~/Milo/secrets/telegram-token` (0600, never logged). Every secret file (this token, the ElevenLabs key) is read through `core/secrets.read_secret`: a plain file the user owns, made 0600 in a 0700 folder if it was more open, links and other users' files refused. iMessage reads chat.db read-only (Full Disk Access) and sends with AppleScript to the owner's own handle only.
 - **Pairing** (`services/pairing.py`): the first message from an unknown private chat makes a 6-digit code that shows on the Mac only; sending it back makes that chat the owner (`state/messages.json`, 0600). Codes are tied to their chat, last 10 minutes and 5 tries. After pairing everything but the owner's private chat is dropped and logged without its text.
 - **Turns.** `LiveTalk.message` runs a text turn on the live model: same persona, memory and helpers, no speech, no looking. Forwarded, quoted and long (pasted) text goes in as escaped `<forwarded>`, `<quoted>`, `<pasted>` data and makes later tags ask first.
 - **Questions.** `Approvals.relays` holds the MessageService. While the Mac has been idle for `away_after_min`, a question goes to the chat and only the chat may answer (`Relayed.only`); while the owner writes from the phone and the Mac is in use, both may.

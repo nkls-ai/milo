@@ -423,3 +423,103 @@ def test_the_server_offers_send_to_phone_when_messages_are_on(home):
                           capture_output=True, text=True, timeout=30, env={**os.environ, "MILO_HOME": str(home)})
     names = {t["name"] for t in [json.loads(line) for line in done.stdout.splitlines()][1]["result"]["tools"]}
     assert "send_to_phone" in names
+
+
+def test_milo_remind_goes_to_the_brain_which_asks_itself(home):
+    from milo.connect.milo_tools import RemoteMilo
+
+    class Brain(FakeBrain):
+        def request(self, body):
+            self.requests.append(body)
+            return {"reminder": body["text"], "due": body["when"]}
+
+    brain = Brain()
+    brain.requests = []
+    server = mcp_server(Toolbox(_fake({}, AdapterContext(home, home / "state", FakeClock())), brain,
+                                milo=RemoteMilo(brain)))
+    tools = {t["name"] for t in rpc(server, "tools/list")["result"]["tools"]}
+    assert "milo_remind" in tools and "reminders.md" in rpc(server, "initialize")["result"]["instructions"]
+    assert call(server, "milo_remind", {"when": "2026-11-05T09:00", "text": "Dentist"})[0]
+    assert brain.requests == [{"op": "reminder.add", "when": "2026-11-05T09:00", "text": "Dentist"}]
+    assert brain.asked == [], "the brain asks the user itself"
+    assert not call(server, "milo_remind", {"when": "2026-11-05T09:00"})[0]
+    assert wording.title("milo_remind", {"text": "Dentist"}) == "Setting the reminder “Dentist”"
+
+
+def test_the_files_tools_never_list_read_or_move_milos_control_files(home):
+    # ADR 0020: they run outside the worker's sandbox, so they keep off Milo's own files themselves.
+    from milo.adapters.connect.fake import FakeFiles, World
+    from milo.core.control import Protected
+
+    user = home / "fake" / "home"
+    milo = user / "Milo"
+    for name in ("routines", "memory", "secrets", "work"):
+        (milo / name).mkdir(parents=True)
+    (milo / "config.toml").write_text("[approvals.levels]\nsend = \"ask_first\"\n")
+    (milo / "routines" / "weekly.md").write_text("# Weekly")
+    (milo / "work" / "report.txt").write_text("the helper's report")
+    (user / "Downloads").mkdir()
+    (user / "Downloads" / "config.toml").write_text("planted rules")
+    (user / "Documents" / "Bills" / "link").symlink_to(milo / "config.toml")
+    files = FakeFiles(World(home / "fake"), Protected(milo))
+    for refused in (lambda: files.read(str(milo / "config.toml")),
+                    lambda: files.read(str(user / "Documents" / "Bills" / "link")),
+                    lambda: files.read(str(milo / "SECRETS" / "k")),
+                    lambda: files.list(str(milo / "routines")),
+                    lambda: files.move([str(milo / "routines" / "weekly.md")], str(user / "Downloads")),
+                    lambda: files.move([str(user / "Downloads" / "config.toml")], str(milo)),
+                    lambda: files.move([str(milo / "work" / "report.txt")], str(milo / "routines"))):
+        with pytest.raises(ToolError):
+            refused()
+    found = {Path(f["path"]).resolve() for f in files.find("")}
+    assert {p.name for p in found if p.is_relative_to(milo.resolve())} == {"report.txt"}, "only the work folder"
+    assert files.read(str(milo / "work" / "report.txt"))["text"] == "the helper's report"
+    assert files.move([str(milo / "work" / "report.txt")], str(user / "Documents"))["moved"]
+    assert (milo / "config.toml").read_text().startswith("[approvals.levels]")
+    assert (milo / "routines" / "weekly.md").exists()
+
+
+def test_a_folder_swapped_for_a_link_after_the_check_doesnt_redirect_a_move(home, monkeypatch):
+    # A helper can make links in its own folder and race a files_move: the folders are checked again through
+    # the handles the move uses, so a swap after the path check moves nothing into or out of Milo's files.
+    from milo.adapters.connect.fake import FakeFiles, World
+    from milo.core.control import Protected
+
+    user = home / "fake" / "home"
+    milo = user / "Milo"
+    (milo / "routines").mkdir(parents=True)
+    (milo / "routines" / "plan.md").write_text("# the user's routine")
+    out, inbox = milo / "work" / "out", milo / "work" / "inbox"
+    out.mkdir(parents=True)
+    inbox.mkdir()
+    (inbox / "plan.md").write_text("planted")
+    (inbox / "new.md").write_text("planted routine")
+    files = FakeFiles(World(home / "fake"), Protected(milo))
+
+    really_shared = _files.shared
+
+    def swap(folder, link_to):
+        def shared(*args):
+            if not folder.is_symlink():
+                folder.rename(folder.with_name(folder.name + "-old"))
+                folder.symlink_to(link_to, target_is_directory=True)
+                return False
+            return really_shared(*args)
+        monkeypatch.setattr(_files, "shared", shared)
+
+    swap(out, milo / "routines")
+    with pytest.raises(ToolError, match="Milo's own files"):
+        files.move([str(inbox / "new.md")], str(out))
+    assert not (milo / "routines" / "new.md").exists()
+    (user / "Documents" / "Sorted").mkdir()
+    swap(inbox, milo / "routines")
+    with pytest.raises(ToolError, match="Milo's own files"):
+        files.move([str(inbox / "plan.md")], str(user / "Documents" / "Sorted"))
+    assert (milo / "routines" / "plan.md").exists() and not (user / "Documents" / "Sorted" / "plan.md").exists()
+    monkeypatch.setattr(_files.Path, "home", lambda: user)
+    (user / "Dropbox").mkdir()
+    (user / "Documents" / "Later").mkdir()
+    swap(user / "Documents" / "Later", user / "Dropbox")
+    with pytest.raises(ToolError, match="outside|shared"):  # the swapped folder is not the one checked
+        files.move([str(inbox.with_name("inbox-old") / "new.md")], str(user / "Documents" / "Later"))
+    assert not list((user / "Dropbox").iterdir())

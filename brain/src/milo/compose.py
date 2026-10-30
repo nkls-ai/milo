@@ -18,9 +18,10 @@ from .core.ports import Harness, LiveModel, PlaybackTap, TimedTranscriber, Trans
 from .core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, CHANNELS, DIARIZERS, EMBEDDERS, HARNESSES, LIVE_MODELS,
                             STREAMING_TRANSCRIBERS, TEXT_CLEANERS, TRANSCRIBERS, VOICES, AdapterContext, ConfigError,
                             Registry)
-from .core.types import Emotion, LiveMode, MiloState, ToolServer
+from .core.types import Emotion, LiveMode, ToolServer
 from .services.app_bridge import AppBridge, AppEyes, AppHands
 from .services.approvals import ActionPolicy, Approvals
+from .services.attention import Attention
 from .services.backchannel import Backchannel
 from .services.background_stt import BackgroundStt
 from .services.barge_in import BargeIn
@@ -87,6 +88,7 @@ class Runtime:
     """Said when the voice or the hearing falls back to the Mac; they need the event loop once it runs."""
     meetings: MeetingService | None = None
     diarize_executor: ThreadPoolExecutor | None = None
+    attention: Attention | None = None
 
 
 @dataclass
@@ -100,220 +102,324 @@ class MemoryRuntime:
     sleep: SleepRunner | None
 
 
+class Parts:
+    """What the build steps have made so far. A step reads what earlier steps made and adds its own.
+
+    Reading a part no earlier step made raises BuildOrder at once, naming it, so a reordered step fails while
+    Milo starts, not later inside a callback. The few cycles (the server calls the brain, a helper's questions
+    reach the orchestrator) go through `later(name)`, which looks the part up when it is called."""
+
+    def __getattr__(self, name: str):
+        raise BuildOrder(f"compose: {name!r} is used before the step that builds it")
+
+    def get(self, name: str):
+        """The part, or None if no step made it (yet)."""
+        return self.__dict__.get(name)
+
+    def later(self, name: str):
+        """A function returning the part when called: for the cycles, which run only after the build."""
+        return lambda: getattr(self, name)
+
+
+class BuildOrder(RuntimeError):
+    """A build step used a part a later step makes."""
+
+
 def build(home: Path) -> Runtime:
-    # Lazy, so importing compose neither registers adapters nor touches the workspace.
+    """Build Milo's brain, one named step after another (BUILD_STEPS)."""
+    p = Parts()
+    p.home = home
+    for step in BUILD_STEPS:
+        step(p)
+    return Runtime(p.brain, p.server, p.heartbeat, p.transcriber, p.voice, p.stt_executor, p.tts_executor, p.harness,
+                   p.live_model, p.live_talk, p.tool_server, p.hands_server, p.helpers, p.mem, p.barge_in,
+                   p.backchannel, p.messages, p.notices, meetings=p.meetings, diarize_executor=p.diarize_executor,
+                   attention=p.attention)
+
+
+def _workspace(p: Parts) -> None:
+    """The workspace, its config, the clock and what every adapter gets."""
     from . import adapters
-    from .config_file import TomlConfigFile
-    from .memory.history import JsonlDictationHistory
-    from .memory.ledger import JsonlUsageLedger
-    from .memory.meetings import FileMeetingStore, JsonVoiceBook
-    from .memory.profile import MarkdownProfile
-    from .memory.reminders import MarkdownReminders
-    from .memory.routines import JsonStateFile, MarkdownRoutineBook
-    from .memory.remote import JsonRemoteState
-    from .memory.conversations import JsonlConversationStore, migrate
     from .memory.workspace import Workspace
 
-    workspace = Workspace(home)
-    workspace.ensure()
-    config = Config.load(workspace.config_path)
+    # Lazy, so importing compose neither registers adapters nor touches the workspace.
+    p.workspace = Workspace(p.home)
+    p.workspace.ensure()
+    p.config = Config.load(p.workspace.config_path)
     adapters.load_builtin()
-    clock = SystemClock()
-    hands_socket = workspace.hands_socket_path
+    p.clock = SystemClock()
     # The worker CLI starts the MCP server with the brain's own interpreter, so it needs no install step.
-    mac_tools = (sys.executable, "-m", "milo.mcp_server", "--socket", str(hands_socket)) if config.hands.enabled else ()
-    ctx = AdapterContext(home, workspace.state_dir, clock, mac_tools, _tool_servers(config, home))
+    p.mac_tools = (sys.executable, "-m", "milo.mcp_server", "--socket", str(p.workspace.hands_socket_path)) \
+        if p.config.hands.enabled else ()
+    p.ctx = AdapterContext(p.home, p.workspace.state_dir, p.clock, p.mac_tools, _tool_servers(p.home))
 
-    def create(registry: Registry, section: str):
-        name, options = config.pluggable(section)
-        return registry.create(name, options, ctx)
 
-    live_model = create(LIVE_MODELS, "chat")
-    harness = create(HARNESSES, "harness")
+def _create(p: Parts, registry: Registry, section: str):
+    name, options = p.config.pluggable(section)
+    return registry.create(name, options, p.ctx)
+
+
+def _engines(p: Parts) -> None:
+    """The engines config.toml names: chat model, worker, hearing, voice, audio, dictation cleanup."""
+    config = p.config
+    p.live_model = _create(p, LIVE_MODELS, "chat")
+    p.harness = _create(p, HARNESSES, "harness")
     # Helpers that don't work on the screen get the same worker without the Mac tools, so only one helper
     # at a time can reach the screen. Its own state folder keeps its MCP config apart.
-    background = None
-    if mac_tools:
-        background_ctx = AdapterContext(home, workspace.state_dir / "background", clock, (), ctx.tool_servers)
+    p.background = None
+    if p.mac_tools:
+        background_ctx = AdapterContext(p.home, p.workspace.state_dir / "background", p.clock, (), p.ctx.tool_servers)
         name, options = config.pluggable("harness")
-        background = HARNESSES.create(name, options, background_ctx)
-    transcriber = create(TRANSCRIBERS, "stt")
-    voice = FallbackVoice(create(VOICES, "tts"), _fallback_voice(config, ctx))
-    mic = create(AUDIO_INPUTS, "audio")
-    output = create(AUDIO_OUTPUTS, "audio")
-    cleaner = create(TEXT_CLEANERS, "dictation")
-    ledger = JsonlUsageLedger(workspace.usage_path, clock)
-    history = JsonlDictationHistory(workspace.dictation_history_path, clock) if config.dictation.keep_history else None
-    profile = MarkdownProfile(workspace.profile_path)
-    reminders = MarkdownReminders(workspace.reminders_path)
+        p.background = HARNESSES.create(name, options, background_ctx)
+    p.transcriber = _create(p, TRANSCRIBERS, "stt")
+    p.voice = FallbackVoice(_create(p, VOICES, "tts"), _fallback_voice(config, p.ctx))
+    p.mic = _create(p, AUDIO_INPUTS, "audio")
+    p.output = _create(p, AUDIO_OUTPUTS, "audio")
+    p.cleaner = _create(p, TEXT_CLEANERS, "dictation")
+    p.stt_executor = ThreadPoolExecutor(1, thread_name_prefix="stt")
+    p.tts_executor = ThreadPoolExecutor(1, thread_name_prefix="tts")
 
-    stt_executor = ThreadPoolExecutor(1, thread_name_prefix="stt")
-    tts_executor = ThreadPoolExecutor(1, thread_name_prefix="tts")
-    server = UnixSocketServer(workspace.socket_path, on_command=lambda c: brain.handle(c),
-                              on_connect=lambda: brain.greeting(), on_disconnect=lambda: brain.app_gone())
-    ui = UiState(server)
-    context = UserContext(clock)
-    mem = _memory(config, workspace, ctx, clock, ui, harness, ledger, context,
-                  busy=lambda: live_talk.busy or helpers.busy) if config.memory.enabled else None
+
+def _stores(p: Parts) -> None:
+    """The files in the workspace the services keep: usage, dictations, profile, reminders."""
+    from .memory.history import JsonlDictationHistory
+    from .memory.ledger import JsonlUsageLedger
+    from .memory.profile import MarkdownProfile
+    from .memory.reminders import MarkdownReminders
+
+    workspace = p.workspace
+    p.ledger = JsonlUsageLedger(workspace.usage_path, p.clock)
+    p.history = JsonlDictationHistory(workspace.dictation_history_path, p.clock) \
+        if p.config.dictation.keep_history else None
+    p.profile = MarkdownProfile(workspace.profile_path)
+    p.reminders = MarkdownReminders(workspace.reminders_path)
+
+
+def _presence(p: Parts) -> None:
+    """The socket to the app, what it shows, whether the user is busy, memory, the voice, the transcript and
+    the questions before an action."""
+    from .memory.conversations import JsonlConversationStore, migrate
+
+    config, clock, workspace = p.config, p.clock, p.workspace
+    p.server = UnixSocketServer(workspace.socket_path, on_command=lambda c: p.brain.handle(c),
+                                on_connect=lambda: p.brain.greeting(), on_disconnect=lambda: p.brain.app_gone())
+    p.ui = ui = UiState(p.server)
+    p.attention = attention = Attention(lambda: ui.state)  # the parts are attached as they are built
+    mic = p.mic
+    attention.attach(mic=lambda: mic.active)
+    p.context = UserContext(clock)
+    p.mem = mem = _memory(config, workspace, p.ctx, clock, ui, p.harness, p.ledger, p.context,
+                          busy=attention.at_work) if config.memory.enabled else None
     if mem is not None:
-        profile = mem.profile
+        p.profile = mem.profile
         if config.memory.dictations:
-            history = EpisodeDictations(history, mem.memory.record, now=clock.now)
-    idle_reset_s = config.chat.conversation_idle_reset_s
-    conversation = Conversation(harness, ledger, clock, idle_reset_s)
-    speaker = Speaker(voice, output, ui, tts_executor)
+            p.history = EpisodeDictations(p.history, mem.memory.record, now=clock.now)
+    p.conversation = Conversation(p.harness, p.ledger, clock, config.chat.conversation_idle_reset_s)
+    p.speaker = speaker = Speaker(p.voice, p.output, ui, p.tts_executor)
     speaker.silent = not config.ui.voice
+    attention.attach(voice=lambda: speaker.active)
     # Milo says it once when his usual voice or hearing can't be reached and the local one takes over.
-    notices = tuple(VoiceNotice(lambda text: speaker.say(text, Emotion.CONCERNED), text=text,
-                                busy=lambda: live_talk.busy or speaker.active or mic.active)
-                    for text in (VOICE_NOTICE, HEARING_NOTICE))
-    voice.on_switch = notices[0]
-    hearing = _cloud_hearing(config, ctx, notices[1])
-    backchannel = Backchannel(speaker, enabled=config.chat.backchannels)
-    rules = SplitRules(idle_s=idle_reset_s)
-    conversation_store = JsonlConversationStore(workspace.conversations_dir)
+    p.notices = tuple(VoiceNotice(lambda text: speaker.say(text, Emotion.CONCERNED), text=text,
+                                  busy=attention.using_voice)
+                      for text in (VOICE_NOTICE, HEARING_NOTICE))
+    p.voice.on_switch = p.notices[0]
+    p.hearing = _cloud_hearing(config, p.ctx, p.notices[1])
+    p.backchannel = Backchannel(speaker, enabled=config.chat.backchannels)
+    rules = SplitRules(idle_s=config.chat.conversation_idle_reset_s)
+    store = JsonlConversationStore(workspace.conversations_dir)
     try:
-        migrate(workspace.transcript_path, workspace.transcript_kept_path, conversation_store, rules)
+        migrate(workspace.transcript_path, workspace.transcript_kept_path, store, rules)
     except Exception:
         log.exception("could not move the old transcript into conversations; it stays where it is")
-    routines: Routines | None = None  # built below, once the helpers are
     episode_stubs = None
     if mem is not None:
-        episode_stubs = EpisodeTranscript(NO_TRANSCRIPT, mem.memory.record, now=clock.now,
-                                          app=lambda: context.app, people=mem.memory.people_in,
-                                          outside=lambda: mem.turns.outside,
-                                          elsewhere=lambda id: routines is not None and routines.is_run(id))
-    transcript = Transcript(ui, conversation_store, clock, rules=rules, recap_tokens=config.chat.recap_tokens,
-                            outside=lambda: live_talk.carries_outside or (mem is not None and mem.turns.outside),
-                            asking=lambda: approvals.pending, exists=lambda p: Path(p).expanduser().is_file(),
-                            on_finished=episode_stubs.append if episode_stubs is not None else None)
-    conversations = ConversationBrowser(transcript, conversation_store, ui, clock,
-                                        memory=mem.memory.search if mem is not None else None, reminders=reminders)
-    approvals = Approvals(ui, speaker, ActionPolicy(config.approval_levels), timeout_s=config.approvals.timeout_s,
-                          speak=config.approvals.speak, quiet=lambda: live_talk.busy or mic.active,
-                          transcript=transcript)
-    bridge = AppBridge(ui, connected=server.connected)
-    live_settings = LiveSettings(workspace.config_path, _live_settings, config.chat.updates,
-                                 config.harness.max_helpers)
-    updates = Updates(ui, live_settings.updates, clock,
-                      busy=lambda: live_talk.busy or mic.active or speaker.active or approvals.pending)
-    hands = hands_server = None
-    helpers: Orchestrator  # built below; the questions only reach it once a helper runs
-    if config.hands.enabled:
-        hands = HandsService(AppHands(bridge), HelperQuestions(approvals, lambda: helpers, screen=True), ui,
-                             transcript=transcript, applescript=config.hands.applescript, locale=_mac_locale())
-        hands_server = HandsSocketServer(hands_socket, hands.call)
+        context = p.context
+        episode_stubs = EpisodeTranscript(NO_TRANSCRIPT, mem.memory.record, now=clock.now, app=lambda: context.app,
+                                          people=mem.memory.people_in, outside=lambda: mem.turns.outside,
+                                          elsewhere=lambda id: p.get("routines") is not None and p.routines.is_run(id))
+    # The live talk and the questions are built later; these run only once a conversation does.
+    p.transcript = transcript = Transcript(
+        ui, store, clock, rules=rules, recap_tokens=config.chat.recap_tokens,
+        outside=lambda: p.live_talk.carries_outside or (mem is not None and mem.turns.outside),
+        asking=lambda: p.approvals.pending, exists=lambda path: Path(path).expanduser().is_file(),
+        on_finished=episode_stubs.append if episode_stubs is not None else None)
+    p.conversations = ConversationBrowser(transcript, store, ui, clock,
+                                          memory=mem.memory.search if mem is not None else None,
+                                          reminders=p.reminders)
+    p.approvals = approvals = Approvals(ui, speaker, ActionPolicy(config.approval_levels),
+                                        timeout_s=config.approvals.timeout_s, speak=config.approvals.speak,
+                                        quiet=attention.in_conversation, transcript=p.transcript)
+    attention.attach(question=lambda: approvals.pending)
+    p.bridge = AppBridge(p.server)  # each request to one app; one that hangs up fails what it owed at once
+    p.server.on_client_gone.append(p.bridge.app_gone)
+    p.live_settings = LiveSettings(workspace.config_path, _live_settings, config.chat.updates,
+                                   config.harness.max_helpers)
+    p.updates = Updates(ui, p.live_settings.updates, clock, busy=attention.occupied)
     switches = config.connections
-    enabled = [name for name in ("calendar", "reminders") if switches.enabled and getattr(switches, name)]
-    memory_requests = MemoryRequests(mem.memory, approvals, mem.profile.remember) if mem is not None else None
-    eyes = AppEyes(bridge)
+    p.enabled = [name for name in ("calendar", "reminders") if switches.enabled and getattr(switches, name)]
+
+
+def _helpers(p: Parts) -> None:
+    """Computer use, the helpers that do the real work, and the routines they follow."""
+    from .memory.routines import JsonStateFile, MarkdownRoutineBook
+
+    config, mem, workspace = p.config, p.mem, p.workspace
+    p.hands = p.hands_server = None
+    if config.hands.enabled:
+        # The questions reach the orchestrator, built below, only once a helper runs.
+        p.hands = HandsService(AppHands(p.bridge), HelperQuestions(p.approvals, p.later("helpers"), screen=True),
+                               p.ui, transcript=p.transcript, applescript=config.hands.applescript,
+                               locale=_mac_locale(), protected=workspace.protected)
+        p.hands_server = HandsSocketServer(workspace.hands_socket_path, p.hands.call)
+    p.memory_requests = MemoryRequests(mem.memory, p.approvals, mem.profile.remember) if mem is not None else None
+    p.eyes = AppEyes(p.bridge)
     if mem is not None:
-        eyes = EpisodeEyes(eyes, mem.memory.record, now=clock.now)
-    runner = TaskRunner(harness, ledger, clock, context, background=background, hands=hands)
-    helpers = Orchestrator(runner, speaker, ui, clock, transcript=transcript, max_helpers=live_settings.max_helpers,
-                           quiet=lambda: live_talk.busy or mic.active, updates=updates, milestones=Milestones(),
-                           inert=untrusted)
+        p.eyes = EpisodeEyes(p.eyes, mem.memory.record, now=p.clock.now)
+    runner = TaskRunner(p.harness, p.ledger, p.clock, p.context, background=p.background, hands=p.hands)
+    p.helpers = helpers = Orchestrator(runner, p.speaker, p.ui, p.clock, transcript=p.transcript,
+                                       max_helpers=p.live_settings.max_helpers, quiet=p.attention.in_conversation,
+                                       updates=p.updates, milestones=Milestones(), inert=untrusted)
+    p.attention.attach(helpers=lambda: helpers.busy)
+    p.routines = None
     if config.routines.enabled:
         book = MarkdownRoutineBook(workspace.routines_dir, workspace.routine_runs_path, workspace.routine_drafts_dir)
-        routines = Routines(book, JsonStateFile(workspace.routine_state_path), helpers, speaker, ui, clock,
-                            transcript=transcript, approvals=approvals, quiet=lambda: live_talk.busy or mic.active,
-                            max_runs_per_day=lambda: config.routines.max_runs_per_day,
-                            grace_s=config.routines.grace_hours * 3600, inert=untrusted)
+        p.routines = routines = Routines(
+            book, JsonStateFile(workspace.routine_state_path), helpers, p.speaker, p.ui, p.clock,
+            transcript=p.transcript, approvals=p.approvals, quiet=p.attention.in_conversation,
+            max_runs_per_day=lambda: config.routines.max_runs_per_day, grace_s=config.routines.grace_hours * 3600,
+            inert=untrusted)
         helpers.on_done.append(routines.seen)
         if mem is not None:  # a run's episode names the routine; the transcript's task stub skips it
             routines.on_episode = RoutineEpisodes(mem.memory.record, people=mem.memory.people_in)
-    meetings = diarize_executor = background_stt = None
-    if isinstance(transcriber, TimedTranscriber):
-        m = config.meetings
-        diarizer = DIARIZERS.create(m.diarizer, config.section("meetings").get(m.diarizer, {}), ctx) \
-            if m.diarizer else None
-        diarize_executor = ThreadPoolExecutor(1, thread_name_prefix="diarize") if diarizer else None
-        chat_name, chat_options = config.pluggable("chat")
 
-        async def calendar(start, end):
-            return await bridge.call("calendar.events", {"start": start.isoformat(timespec="minutes"),
-                                                         "end": end.isoformat(timespec="minutes"), "query": ""})
 
-        async def add_reminder(title, notes):
-            return await bridge.call("reminders.add", {"title": title, "notes": notes})
+def _meetings(p: Parts) -> None:
+    """Meeting notes, when the transcriber gives timings."""
+    from .memory.meetings import FileMeetingStore, JsonVoiceBook
 
-        live = (MiloState.LISTENING, MiloState.DICTATING, MiloState.TRANSCRIBING)
-        # Meeting passes wait while the user dictates or talks, and give way when a key goes down (Listening),
-        # so the user's words stay instant during a call.
-        background_stt = BackgroundStt(stt_executor, busy=lambda: mic.active or ui.state in live,
-                                       interrupt=transcriber.interrupt)
-        meetings = MeetingService(
-            FileMeetingStore(workspace.meetings_dir), ui, clock, background_stt, transcriber,
-            approvals=approvals, speaker=speaker, transcript=transcript, diarizer=diarizer,
-            diarize_executor=diarize_executor,
-            voices=JsonVoiceBook(workspace.meetings_dir / "voices.json", diarizer.model) if diarizer else None,
-            summarizer=lambda: LIVE_MODELS.create(chat_name, chat_options, ctx),
-            calendar=calendar if "calendar" in enabled else None,
-            add_reminder=add_reminder if "reminders" in enabled else None,
-            # careful: the draft comes from other people's words, so the helper's tools ask before changes too
-            draft_mail=(lambda task: helpers.submit(task, title="Follow-up mail", screen=False, careful=True))
-            if switches.enabled and switches.mail else None,
-            options=MeetingOptions(m.auto, m.keep_audio, m.offer_reminders, m.offer_mail, m.end_after_s),
-            connected=server.connected, private=lambda: mic.active or speaker.active,
-            quiet=lambda: live_talk.busy or mic.active,
-            on_episode=mem.memory.record if mem is not None else None,
-            match=diarizer.match if diarizer else 0.6)
-    live_talk = LiveTalk(live_model, speaker, ui, context, clock, profile, reminders, ledger,
-                         _persona(workspace.persona_path), idle_reset_s, helpers, transcript, eyes=eyes,
-                         approvals=approvals, memory=mem.turns if mem is not None else None,
-                         backchannel=backchannel, routines=routines, meetings=meetings)
-    helpers.on_result = live_talk.note
-    updates.speak = live_talk.speak_update
-    listening = Listening(mic, transcriber, stt_executor, ui, DictationService(cleaner, history, ui),
-                          live_talk, context, LiveMode(config.dictation.stream), hearing=hearing,
-                          yield_stt=background_stt.yield_now if background_stt is not None else lambda: None)
+    p.meetings = p.diarize_executor = p.background_stt = None
+    if not isinstance(p.transcriber, TimedTranscriber):
+        return
+    config, bridge, enabled, attention = p.config, p.bridge, p.enabled, p.attention
+    m = config.meetings
+    diarizer = DIARIZERS.create(m.diarizer, config.section("meetings").get(m.diarizer, {}), p.ctx) \
+        if m.diarizer else None
+    p.diarize_executor = ThreadPoolExecutor(1, thread_name_prefix="diarize") if diarizer else None
+    chat_name, chat_options = config.pluggable("chat")
+    ctx, helpers, switches = p.ctx, p.helpers, config.connections
 
-    barge_in = None
+    async def calendar(start, end):
+        return await bridge.call("calendar.events", {"start": start.isoformat(timespec="minutes"),
+                                                     "end": end.isoformat(timespec="minutes"), "query": ""})
+
+    async def add_reminder(title, notes):
+        return await bridge.call("reminders.add", {"title": title, "notes": notes})
+
+    # Meeting passes wait while the user dictates or talks, and give way when a key goes down (Listening),
+    # so the user's words stay instant during a call.
+    p.background_stt = BackgroundStt(p.stt_executor, busy=attention.user_speaking, interrupt=p.transcriber.interrupt)
+    p.meetings = MeetingService(
+        FileMeetingStore(p.workspace.meetings_dir), p.ui, p.clock, p.background_stt, p.transcriber,
+        approvals=p.approvals, speaker=p.speaker, transcript=p.transcript, diarizer=diarizer,
+        diarize_executor=p.diarize_executor,
+        voices=JsonVoiceBook(p.workspace.meetings_dir / "voices.json", diarizer.model) if diarizer else None,
+        summarizer=lambda: LIVE_MODELS.create(chat_name, chat_options, ctx),
+        calendar=calendar if "calendar" in enabled else None,
+        add_reminder=add_reminder if "reminders" in enabled else None,
+        # careful: the draft comes from other people's words, so the helper's tools ask before changes too
+        draft_mail=(lambda task: helpers.submit(task, title="Follow-up mail", screen=False, careful=True))
+        if switches.enabled and switches.mail else None,
+        options=MeetingOptions(m.auto, m.keep_audio, m.offer_reminders, m.offer_mail, m.end_after_s),
+        connected=p.server.connected, private=attention.private, quiet=attention.in_conversation,
+        on_episode=p.mem.memory.record if p.mem is not None else None,
+        match=diarizer.match if diarizer else 0.6)
+
+
+def _talk(p: Parts) -> None:
+    """The live conversation, the two keys that feed it, and barge-in."""
+    config, mem = p.config, p.mem
+    p.live_talk = live_talk = LiveTalk(
+        p.live_model, p.speaker, p.ui, p.context, p.clock, p.profile, p.reminders, p.ledger,
+        _persona(p.workspace.persona_path), config.chat.conversation_idle_reset_s, p.helpers, p.transcript,
+        eyes=p.eyes, approvals=p.approvals, memory=mem.turns if mem is not None else None,
+        backchannel=p.backchannel, routines=p.routines, meetings=p.meetings)
+    p.attention.attach(turn=lambda: live_talk.busy)
+    p.helpers.on_result = live_talk.note
+    p.updates.speak = live_talk.speak_update
+    background_stt = p.background_stt
+    p.listening = Listening(p.mic, p.transcriber, p.stt_executor, p.ui, DictationService(p.cleaner, p.history, p.ui),
+                            live_talk, p.context, LiveMode(config.dictation.stream), hearing=p.hearing,
+                            yield_stt=background_stt.yield_now if background_stt is not None else lambda: None)
+    p.barge_in = None
     if config.chat.voice_barge_in:
-        if isinstance(output, PlaybackTap):
+        if isinstance(p.output, PlaybackTap):
             # A mic of its own, so the talk key's recording never has to wait for it.
-            barge_in = BargeIn(create(AUDIO_INPUTS, "audio"), output, transcriber, stt_executor, ui, live_talk,
-                               speaker, mic_busy=lambda: mic.active)
+            p.barge_in = BargeIn(_create(p, AUDIO_INPUTS, "audio"), p.output, p.transcriber, p.stt_executor, p.ui,
+                                 live_talk, p.speaker, mic_busy=p.attention.recording)
         else:
             log.warning("[chat] voice_barge_in needs an audio output that reports what it played; it is off")
-    messages = None
-    if config.messages.enabled:
-        name, options = config.pluggable("messages")
-        channel = CHANNELS.create(name, options, ctx)
 
-        def show(text: str) -> None:
-            transcript.say(text, Emotion.CONCERNED)
-            speaker.say(text, Emotion.CONCERNED, speak=False)
 
-        m = config.messages
-        messages = MessageService(
-            channel, live_talk, approvals, JsonRemoteState(workspace.remote_state_path), speaker, ui, context, clock,
-            settings=MessageSettings(m.max_per_minute, m.away_after_min * 60, m.question_timeout_s,
-                                     brief_time(m.brief_at), m.max_file_mb, "calendar" in enabled,
-                                     "reminders" in enabled),
-            helpers=lambda: helpers.helpers, board=helpers.board, reminders=reminders, app=bridge.call,
-            guard=SettingsGuard([workspace.config_path, workspace.remote_state_path], [workspace.secrets_dir], show),
-            transcript=transcript, home=Path.home(), milo=home)
-        approvals.relays.append(messages)
-        helpers.watchers.append(messages.helper_changed)
-    tool_server = ToolSocketServer(workspace.tools_socket_path,
-                                   ToolRequests(HelperQuestions(approvals, lambda: helpers, screen=False), bridge,
-                                                enabled, memory_requests, phone=messages).handle)
+def _messages(p: Parts) -> None:
+    """Milo by message from the owner's phone."""
+    from .memory.remote import JsonRemoteState
 
-    heartbeat = None
-    if config.heartbeat.enabled:
-        from .proactive import build_engine
+    p.messages = None
+    if not p.config.messages.enabled:
+        return
+    workspace, transcript, speaker, enabled, helpers = p.workspace, p.transcript, p.speaker, p.enabled, p.helpers
+    name, options = p.config.pluggable("messages")
+    channel = CHANNELS.create(name, options, p.ctx)
 
-        engine = build_engine(config.section("heartbeat"), ctx, reminders)
-        heartbeat = HeartbeatRunner(engine, context, conversation, speaker, ui, mic, clock,
-                                    busy=lambda: live_talk.busy)
-        if routines is not None:
-            heartbeat.on_tick.append(routines.tick)
-        if messages is not None:
-            heartbeat.after_tick.append(messages.tick)
+    def show(text: str) -> None:
+        transcript.say(text, Emotion.CONCERNED)
+        speaker.say(text, Emotion.CONCERNED, speak=False)
+
+    m = p.config.messages
+    p.messages = messages = MessageService(
+        channel, p.live_talk, p.approvals, JsonRemoteState(workspace.remote_state_path), speaker, p.ui, p.context,
+        p.clock,
+        settings=MessageSettings(m.max_per_minute, m.away_after_min * 60, m.question_timeout_s,
+                                 brief_time(m.brief_at), m.max_file_mb, "calendar" in enabled, "reminders" in enabled),
+        helpers=lambda: helpers.helpers, board=helpers.board, reminders=p.reminders, app=p.bridge.call,
+        guard=SettingsGuard([workspace.config_path, workspace.remote_state_path], [workspace.secrets_dir], show),
+        transcript=transcript, home=Path.home(), milo=p.home)
+    p.approvals.relays.append(messages)
+    helpers.watchers.append(messages.helper_changed)
+
+
+def _tool_socket(p: Parts) -> None:
+    """run/tools.sock, where the helpers' tools ask the brain."""
+    questions = HelperQuestions(p.approvals, p.later("helpers"), screen=False)
+    p.tool_server = ToolSocketServer(p.workspace.tools_socket_path,
+                                     ToolRequests(questions, p.bridge, p.enabled, p.memory_requests,
+                                                  phone=p.messages, reminders=p.reminders).handle)
+
+
+def _heartbeat(p: Parts) -> None:
+    """The local heartbeat: reminders, nudges and the routines' schedule, without the LLM."""
+    p.heartbeat = None
+    if not p.config.heartbeat.enabled:
+        return
+    from .proactive import build_engine
+
+    engine = build_engine(p.config.section("heartbeat"), p.ctx, p.reminders)
+    p.heartbeat = HeartbeatRunner(engine, p.context, p.conversation, p.speaker, p.ui, p.mic, p.clock,
+                                  busy=p.attention.answering)
+    if p.routines is not None:
+        p.heartbeat.on_tick.append(p.routines.tick)
+    if p.messages is not None:
+        p.heartbeat.after_tick.append(p.messages.tick)
+
+
+def _brain(p: Parts) -> None:
+    """Settings that apply while Milo runs, and the Brain that routes the app's commands to all of the above."""
+    from .config_file import TomlConfigFile
+
+    listening, speaker, live_settings = p.listening, p.speaker, p.live_settings
 
     def use_ui(changed: Config) -> None:
-        brain.use_ui(changed.ui)
+        p.brain.use_ui(changed.ui)
 
     def use_voice(changed: Config) -> None:
         speaker.silent = not changed.ui.voice
@@ -327,14 +433,17 @@ def build(home: Path) -> Runtime:
     live = {("ui", "dictate_key"): use_ui, ("ui", "talk_key"): use_ui,
             ("ui", "whats_this_key"): use_ui, ("ui", "voice"): use_voice, ("dictation", "stream"): use_stream,
             ("chat", "updates"): use_updates}
-    settings = Settings(TomlConfigFile(workspace.config_path), config, ui, live)
-    brain = Brain(ui, listening, live_talk, context, heartbeat, config.ui, transcript, approvals=approvals,
-                  bridge=bridge, hands=hands, screens=workspace.screens_dir, helpers=helpers,
-                  memory=mem.memory if mem is not None else None, routines=routines, settings=settings,
-                  messages=messages, meetings=meetings, conversations=conversations)
-    return Runtime(brain, server, heartbeat, transcriber, voice, stt_executor, tts_executor, harness,
-                   live_model, live_talk, tool_server, hands_server, helpers, mem, barge_in, backchannel, messages,
-                   notices, meetings=meetings, diarize_executor=diarize_executor)
+    settings = Settings(TomlConfigFile(p.workspace.config_path), p.config, p.ui, live)
+    p.brain = Brain(p.ui, listening, p.live_talk, p.context, p.heartbeat, p.config.ui, p.transcript,
+                    approvals=p.approvals, bridge=p.bridge, hands=p.hands, screens=p.workspace.screens_dir,
+                    helpers=p.helpers, memory=p.mem.memory if p.mem is not None else None, routines=p.routines,
+                    settings=settings, messages=p.messages, meetings=p.meetings,
+                    conversations=p.conversations)
+
+
+BUILD_STEPS = (_workspace, _engines, _stores, _presence, _helpers, _meetings, _talk, _messages, _tool_socket,
+               _heartbeat, _brain)
+"""The order Milo is built in. Each step only reads what the steps before it made (see Parts)."""
 
 
 def _memory(config: Config, workspace, ctx: AdapterContext, clock, ui: UiState, harness: Harness, ledger,
@@ -373,11 +482,9 @@ def _memory(config: Config, workspace, ctx: AdapterContext, clock, ui: UiState, 
     return MemoryRuntime(memory, TurnMemory(memory), profile, executor, sleep)
 
 
-def _tool_servers(config: Config, home: Path) -> tuple[ToolServer, ...]:
-    """Milo's app connections (and memory tools) as an MCP server for the worker: this Python, so no `uv run`
-    on every task."""
-    if not config.connections.enabled and not config.memory.enabled:
-        return ()
+def _tool_servers(home: Path) -> tuple[ToolServer, ...]:
+    """Milo's app connections, memory tools and reminders as an MCP server for the worker: this Python, so no
+    `uv run` on every task. Always on: the worker can't write reminders.md itself (ADR 0020)."""
     return (ToolServer("milo", (sys.executable, "-m", "milo.connect"), (("MILO_HOME", str(home)),)),)
 
 
