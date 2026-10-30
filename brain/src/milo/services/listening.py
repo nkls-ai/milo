@@ -57,7 +57,7 @@ class Listening:
 
     @live_mode.setter
     def live_mode(self, mode: LiveMode) -> None:
-        """Takes effect from the next recording."""
+        """[dictation] stream changed in the Settings window or the menu. Takes effect from the next recording."""
         self._live_mode = mode
 
     def start(self, mode: ListenMode, tentative: bool = False) -> None:

@@ -1016,6 +1016,7 @@ dependencies = [
     { name = "sounddevice" },
     { name = "sqlite-vec" },
     { name = "tokenizers" },
+    { name = "tomlkit" },
 ]
 
 [package.optional-dependencies]
@@ -1038,6 +1039,7 @@ requires-dist = [
     { name = "soundfile", marker = "extra == 'omnivoice'", specifier = ">=0.14.0" },
     { name = "sqlite-vec", specifier = ">=0.1.9" },
     { name = "tokenizers", specifier = ">=0.23.3" },
+    { name = "tomlkit", specifier = ">=0.14.0" },
 ]
 provides-extras = ["omnivoice"]
 

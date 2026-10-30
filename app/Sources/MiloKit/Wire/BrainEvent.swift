@@ -54,17 +54,17 @@ public enum BrainEvent: Equatable, Sendable {
     case handsBorrow(on: Bool, what: String)
     /// Everything Milo knows about the user, for the "What Milo knows" window; sent after get_facts and each change.
     case facts([MemoryFact])
-    /// The dictation style in use, on connect and after a change.
-    case dictationStream(DictationStyle)
     /// The user's routines by name, and the recipe drafts waiting for a look.
     case routines([RoutineInfo], drafts: [RoutineDraft])
+    /// The settings and their choices, after `getSettings` and after every `setSetting`.
+    case settings(SettingsReport)
     case unknown(String)
 }
 
 extension BrainEvent: Decodable {
     private enum Key: String, CodingKey {
         case type, state, emotion, text, value, entries, entry, id, step, mode, on, tool, args, point, question, answer, op, what
-        case facts, stream
+        case facts
         case taskID = "task_id"
         case whatsThisKey = "whats_this_key"
         case dictateKey = "dictate_key"
@@ -73,6 +73,7 @@ extension BrainEvent: Decodable {
         case character
         case helpers
         case routines, drafts
+        case settings, restart, error
     }
 
     public init(from decoder: Decoder) throws {
@@ -122,13 +123,13 @@ extension BrainEvent: Decodable {
             self = .handsBorrow(on: try c.decode(Bool.self, forKey: .on),
                                 what: try c.decodeIfPresent(String.self, forKey: .what) ?? "")
         case "facts": self = .facts(try c.decode([MemoryFact].self, forKey: .facts))
-        case "dictation_stream":
-            // A style this app doesn't know yet: ignore the message rather than show a wrong checkmark.
-            self = DictationStyle(rawValue: try c.decode(String.self, forKey: .stream)).map { .dictationStream($0) }
-                ?? .unknown(type)
         case "routines":
             self = .routines(try c.decodeIfPresent([RoutineInfo].self, forKey: .routines) ?? [],
                              drafts: try c.decodeIfPresent([RoutineDraft].self, forKey: .drafts) ?? [])
+        case "settings":
+            self = .settings(SettingsReport(settings: try c.decode([Setting].self, forKey: .settings),
+                                            restart: try c.decodeIfPresent(Bool.self, forKey: .restart) ?? false,
+                                            error: try c.decodeIfPresent(String.self, forKey: .error) ?? ""))
         default: self = .unknown(type)
         }
     }

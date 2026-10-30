@@ -654,3 +654,25 @@ class MemoryState:
 
         self.data = copy.deepcopy(data)
         self.saves += 1
+
+
+class MemoryConfigFile:
+    """config.toml as a dict. A write that makes it invalid raises and keeps the old one, like the real file."""
+
+    def __init__(self, raw: dict | None = None):
+        self.raw = raw if raw is not None else {}
+        self.writes: list[tuple[str, str, object]] = []
+
+    def read(self):
+        from milo.config import Config
+
+        return Config(self.raw)
+
+    def write(self, section, key, value):
+        from milo.config import Config
+
+        raw = {**self.raw, section: {**self.raw.get(section, {}), key: value}}
+        config = Config(raw)
+        self.raw = raw
+        self.writes.append((section, key, value))
+        return config

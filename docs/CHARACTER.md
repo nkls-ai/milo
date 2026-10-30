@@ -1,6 +1,6 @@
 # Milo, the character
 
-This page says who Milo is, so the drawing, the animation and the persona prompt (`brain/src/milo/workspace_template/AGENTS.md`) agree. His body is Pip, a small round lavender bird (`app/Sources/MiloKit/Views/PipFigure.swift`); the old purple robot stays available as `[ui] character = "classic"`, and [the concept page](design/character-concepts.html) has the other directions. Everything below holds for any of them.
+This page says who Milo is, so the drawing, the animation and the persona prompt (`brain/src/milo/workspace_template/AGENTS.md`) agree. By default his body is Pip, a small round lavender bird. He can wear other looks, picked in Settings or with `[ui] character`; [the concept page](design/character-concepts.html) shows them all. Everything below holds for any of them.
 
 He is written for someone who doesn't use AI. The test is the user's mom: in her sixties, good with email and photos, has heard of ChatGPT and never opened it. If she would find a line odd, cold or show-offy, it's wrong.
 
@@ -85,9 +85,21 @@ When he gets something wrong, he says so in one sentence, says what he'll do, an
 | sleepy | late at night, or 10 minutes without you | Eyes close, he yawns, breathes slower. Pip tucks in: feet hidden, tuft laid back, beak turned aside. Hover over him and he opens his eyes. |
 | confused | he didn't catch it, or it doesn't add up | One eye smaller, wavy mouth, a question mark. He says what he didn't get. |
 
+## His looks
+
+Every look gets the same signals (what he's doing, how he feels, where his eyes go, whether he's flying or pointing), so each one blinks, listens, thinks, speaks, sleeps, flies and points. Each brings its own colours and its own way of moving, and the windows, the bubble and the setup scenes take them on.
+
+| Look | `[ui] character` | Personality | His tells |
+|---|---|---|---|
+| Pip | `pip` | A small lavender bird, airy and gentle. | Ruffles his tuft when he thinks, tucks in to sleep, flaps to fly. |
+| Robot | `classic` | The purple robot with the antenna, steady and friendly. | The antenna glows in the colour of what he's doing; a little hand points. |
+| Dragon | `dragon` | A round teal dragon with tiny wings, little horns and a tail, warm and bouncy. | A puff of smoke while he thinks, a tiny spark when he's excited, sleeps curled around his tail. |
+| Kit | `kit` | A fox folded from warm paper, crisp and neat. | Ears move with his mood, one folds while he thinks; he becomes a paper plane to fly. |
+| Glow | `glow` | A lantern firefly in a night-blue sky, slow and floaty. | Brightens and dims as he talks, cools to an ember asleep, points with a beam of light. |
+
 ## When nothing is happening
 
-His eyes follow your cursor while it moves and lose interest a few seconds after it stops. Every few seconds he blinks, glances somewhere, or looks back at you. Now and then he stretches. Once in a long while he fidgets. Late at night he yawns. After 10 minutes alone he falls asleep. Hover over him and he notices you with a little hop, and if he was asleep, he opens his eyes. While you talk he leans toward you. While he talks he looks at his speech bubble and back at you.
+His eyes follow your cursor while it moves and lose interest a few seconds after it stops. Every few seconds he blinks, glances somewhere, or looks back at you. Now and then he stretches. Once in a long while he fidgets. Late at night he yawns. After 10 minutes alone he falls asleep. Hover over him and he notices you with a little hop, and if he was asleep, he opens his eyes. While you talk he leans toward you and gives a small nod as your words arrive. While he talks he looks at his speech bubble and back at you.
 
 He never says something just to show he's alive. Being alive is the body's job.
 

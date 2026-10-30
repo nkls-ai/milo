@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from milo.core import events as ev
-from milo.core.types import Emotion, ListenMode, LiveMode, MiloState
+from milo.core.types import Emotion, ListenMode, MiloState
 from tests import fakes
 from milo.core import ports
 
@@ -38,8 +38,8 @@ OUTBOUND = {
     "helpers": lambda m: ev.Helpers(m["helpers"]),
     "hands_borrow": lambda m: ev.HandsBorrow(m["on"], m["what"]),
     "facts": lambda m: ev.Facts(m["facts"]),
-    "dictation_stream": lambda m: ev.DictationStream(m["stream"]),
     "routines": lambda m: ev.Routines(m["routines"], m["drafts"]),
+    "settings": lambda m: ev.SettingsReport(m["settings"], m["restart"], m["error"]),
 }
 
 
@@ -84,7 +84,8 @@ def test_parsed_values():
     assert ev.parse_command({"type": "stop_helper", "id": "c0ffee12ab34"}) == ev.StopHelper("c0ffee12ab34")
     with pytest.raises(ev.ProtocolError):
         ev.parse_command({"type": "stop_helper", "id": " "})
-    assert ev.parse_command({"type": "set_dictation_stream", "stream": "off"}) == ev.SetDictationStream(LiveMode.OFF)
+    assert ev.parse_command({"type": "set_setting", "section": "ui", "key": "voice", "value": False}) == \
+        ev.SetSetting("ui", "voice", False)
 
 
 @pytest.mark.parametrize("raw", [
@@ -94,7 +95,8 @@ def test_parsed_values():
     {"type": "hands_result", "id": "h", "ok": True, "result": []},
     {"type": "confirm_answer", "id": "q1", "yes": "no"}, {"type": "confirm_answer", "yes": True},
     {"type": "app_response", "ok": True},
-    {"type": "set_dictation_stream", "stream": "instant"}, {"type": "set_dictation_stream"},
+    {"type": "set_setting", "section": "ui", "key": "character"},
+    {"type": "set_setting", "section": "ui", "key": "character", "value": ["pip"]},
 ])
 def test_bad_commands_raise_protocol_error(raw):
     with pytest.raises(ev.ProtocolError):

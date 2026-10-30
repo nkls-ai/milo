@@ -3,6 +3,7 @@ import SwiftUI
 /// The Routines section at the top of the Milo window: a line that opens into the user's routines, each with
 /// its schedule, its last run and Run now. Closed, it takes one line; the conversation keeps the window.
 struct RoutinesPanel: View {
+    @Environment(\.miloTheme) private var theme
     let routines: [RoutineInfo]
     @Binding var open: Bool
     let act: (String, RoutineAction) -> Void
@@ -11,7 +12,7 @@ struct RoutinesPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Button { withAnimation(.easeOut(duration: 0.18)) { open.toggle() } } label: {
+            Button { withAnimation(theme.motion.spring) { open.toggle() } } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 9, weight: .bold))
@@ -46,8 +47,8 @@ struct RoutinesPanel: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .background(WindowColors.inset)
-        .overlay(alignment: .bottom) { Rectangle().fill(WindowColors.rule).frame(height: 1) }
+        .background(theme.ink.opacity(0.05))
+        .overlay(alignment: .bottom) { Rectangle().fill(theme.rule).frame(height: 1) }
     }
 
     /// The routine whose schedule comes up first.
@@ -69,6 +70,7 @@ struct RoutinesPanel: View {
 }
 
 struct RoutineRow: View {
+    @Environment(\.miloTheme) private var theme
     let routine: RoutineInfo
     let act: (RoutineAction) -> Void
 
@@ -77,7 +79,7 @@ struct RoutineRow: View {
             Image(systemName: routine.problem != nil ? "exclamationmark.triangle" :
                     routine.paused ? "pause.circle" : routine.schedule.isEmpty ? "list.bullet.rectangle" : "clock")
                 .font(.system(size: 13))
-                .foregroundStyle(routine.problem != nil ? WindowColors.failed : WindowColors.accent)
+                .foregroundStyle(routine.problem != nil ? WindowColors.failed : theme.primary)
                 .frame(width: 18)
                 .padding(.top, 1)
             VStack(alignment: .leading, spacing: 2) {
@@ -98,8 +100,8 @@ struct RoutineRow: View {
                         .padding(.horizontal, 9)
                         .padding(.vertical, 4)
                         .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .strokeBorder(WindowColors.accent.opacity(0.55), lineWidth: 1))
-                        .foregroundStyle(WindowColors.accent)
+                            .strokeBorder(theme.primary.opacity(0.55), lineWidth: 1))
+                        .foregroundStyle(theme.primary)
                 }
                 .buttonStyle(.plain)
                 .help(routine.inputs.isEmpty ? "Do it now" : "Do it now with the usual \(routine.inputs.joined(separator: ", "))")
@@ -153,6 +155,7 @@ struct RoutineRow: View {
 /// A recipe Milo wrote down, waiting for the user's look: its steps and inputs, Save, Change it, and a way to
 /// throw it away. Pinned above the text field, like a question.
 struct DraftCard: View {
+    @Environment(\.miloTheme) private var theme
     let draft: RoutineDraft
     let talkKey: String
     let save: () -> Void
@@ -191,12 +194,12 @@ struct DraftCard: View {
                     if !whole && !draft.inputs.isEmpty {
                         Text("Each time: " + draft.inputs.joined(separator: "; "))
                             .font(.system(size: 11.5, weight: .medium))
-                            .foregroundStyle(WindowColors.accent)
+                            .foregroundStyle(theme.primary)
                     }
                     if !whole && !draft.apps.isEmpty {
                         Text("Uses the screen with " + draft.apps.joined(separator: ", "))
                             .font(.system(size: 11.5, weight: .medium))
-                            .foregroundStyle(WindowColors.accent)
+                            .foregroundStyle(theme.primary)
                     }
                     if !whole { ForEach(Array(Self.lines(draft.steps).enumerated()), id: \.offset) { _, line in
                         Text(line.text)
@@ -210,7 +213,7 @@ struct DraftCard: View {
                 .padding(10)
             }
             .frame(maxHeight: 190)
-            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(WindowColors.field))
+            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(theme.card))
             HStack(spacing: 8) {
                 Button(whole ? "Show the steps" : "Show the whole file") { whole.toggle() }
                     .buttonStyle(.plain)
@@ -225,21 +228,21 @@ struct DraftCard: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
                     .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .strokeBorder(WindowColors.rule, lineWidth: 1))
+                        .strokeBorder(theme.rule, lineWidth: 1))
                 Button("Save", action: save)
                     .buttonStyle(.plain)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(theme.onPrimary)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 5)
-                    .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(WindowColors.accent))
+                    .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(theme.primary))
                     .keyboardShortcut(.defaultAction)
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(WindowColors.inset)
-        .overlay(alignment: .top) { Rectangle().fill(WindowColors.rule).frame(height: 1) }
+        .background(theme.ink.opacity(0.05))
+        .overlay(alignment: .top) { Rectangle().fill(theme.rule).frame(height: 1) }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Milo wrote down \(draft.name)")
     }

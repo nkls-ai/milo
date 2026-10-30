@@ -140,6 +140,24 @@ def test_milo_is_not_stopped_by_his_own_voice(tmp_path):
     assert not room.active, "the mic closes when he stops talking"
 
 
+def test_with_the_voice_off_the_mic_stays_closed(tmp_path):
+    s, room, barge_in = stack(tmp_path=tmp_path)
+    s.speaker.silent = True
+    opened = []
+    start = room.start
+    room.start = lambda on_level: (opened.append(1), start(on_level))
+
+    async def run():
+        watching = asyncio.create_task(barge_in.run())
+        try:
+            assert await s.speaker.say("One two three, four five.", Emotion.NEUTRAL) is True
+        finally:
+            watching.cancel()
+
+    asyncio.run(run())
+    assert opened == [] and barge_in.barge_ins == 0
+
+
 def test_the_user_talking_over_milo_stops_him_quickly_and_starts_a_turn(tmp_path):
     s, room, barge_in = stack(tmp_path=tmp_path)
     s.model.script.append(["[neutral] Sure, what is it?"])

@@ -302,6 +302,8 @@ class Utterance:
 
     async def _synthesize(self, chunk: str) -> Audio | None:
         speaker = self._speaker
+        if speaker.silent:
+            return None
         loop = asyncio.get_running_loop()
         try:
             return await loop.run_in_executor(speaker.executor, speaker.voice.synthesize, chunk)
@@ -336,6 +338,8 @@ class Speaker:
         self.current: Utterance | None = None
         self.held = False
         """hold() is in force: what is being said, and a reply that starts meanwhile, wait for resume()."""
+        self.silent = False
+        """[ui] voice off: replies show piece by piece at speaking pace, with no voice."""
 
     @property
     def active(self) -> bool:

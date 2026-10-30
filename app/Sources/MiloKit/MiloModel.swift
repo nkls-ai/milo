@@ -71,7 +71,7 @@ public final class MiloModel: ObservableObject {
         min(20, 4 + Double(text.count) / 15)
     }
 
-    /// Applies a display event. Dictation, ui_config and unknown events are not the model's business.
+    /// Applies a display event. Dictation, ui_config, settings and unknown events are not the model's business.
     public func apply(_ event: BrainEvent) {
         switch event {
         case let .state(new):
@@ -110,7 +110,7 @@ public final class MiloModel: ObservableObject {
             if list != routines { routines = list }
             if waiting != drafts { drafts = waiting }
         case .dictation, .uiConfig, .history, .entry, .replyDelta, .activity, .lookRequest, .handsRequest,
-             .handsSession, .flyTo, .appRequest, .handsBorrow, .facts, .dictationStream, .unknown:
+             .handsSession, .flyTo, .appRequest, .handsBorrow, .facts, .settings, .unknown:
             break
         }
     }

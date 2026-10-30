@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any, ClassVar
 
-from .types import Emotion, ListenMode, LiveMode, MiloState, ScreenCapture
+from .types import Emotion, ListenMode, MiloState, ScreenCapture
 
 
 class ProtocolError(ValueError):
@@ -254,14 +254,6 @@ class Facts(Event):
 
 
 @dataclass(frozen=True)
-class DictationStream(Event):
-    """The current [dictation] stream ("off", "preview" or "type"), on connect and after a change."""
-
-    type: ClassVar[str] = "dictation_stream"
-    stream: str
-
-
-@dataclass(frozen=True)
 class Routines(Event):
     """The user's routines for the Milo window, by name, and the recipe drafts waiting for a look.
 
@@ -274,6 +266,21 @@ class Routines(Event):
     type: ClassVar[str] = "routines"
     routines: list[dict]
     drafts: list[dict]
+
+
+@dataclass(frozen=True)
+class SettingsReport(Event):
+    """What the Settings window shows. Sent on `get_settings` and after every `set_setting`.
+
+    Each setting is {section, key, value, options, labels, live}: `options` lists the allowed values (empty
+    for free text or a switch) and `labels` names them in plain words. `live` false: a change applies after
+    a restart. `restart`: a saved change is waiting for one. `error`: why the last change was not saved.
+    """
+
+    type: ClassVar[str] = "settings"
+    settings: list[dict]
+    restart: bool = False
+    error: str = ""
 
 
 # ---- app -> brain
@@ -431,14 +438,6 @@ class EditFact(Command):
     text: str
 
 
-@dataclass(frozen=True)
-class SetDictationStream(Command):
-    """The user picked a dictation style in the menu. The brain uses it from the next recording and saves it."""
-
-    type: ClassVar[str] = "set_dictation_stream"
-    stream: LiveMode
-
-
 ROUTINE_ACTIONS = ("run", "pause", "resume", "delete")
 
 
@@ -458,6 +457,23 @@ class RoutineDraftAnswer(Command):
     type: ClassVar[str] = "routine_draft_answer"
     id: str
     save: bool
+
+
+@dataclass(frozen=True)
+class GetSettings(Command):
+    """The Settings window opened: send `settings`."""
+
+    type: ClassVar[str] = "get_settings"
+
+
+@dataclass(frozen=True)
+class SetSetting(Command):
+    """Change one setting in config.toml, e.g. section "ui", key "character", value "dragon"."""
+
+    type: ClassVar[str] = "set_setting"
+    section: str
+    key: str
+    value: Any
 
 
 def parse_command(raw: object) -> Command:
@@ -515,8 +531,6 @@ def parse_command(raw: object) -> Command:
                 return ForgetFact(_required(raw, "id"))
             case "edit_fact":
                 return EditFact(_required(raw, "id"), _required(raw, "text"))
-            case "set_dictation_stream":
-                return SetDictationStream(LiveMode(raw["stream"]))
             case "routine":
                 action = str(raw["action"])
                 if action not in ROUTINE_ACTIONS:
@@ -526,6 +540,13 @@ def parse_command(raw: object) -> Command:
                 if not isinstance(raw["save"], bool):
                     raise ProtocolError("save must be true or false")
                 return RoutineDraftAnswer(str(raw["id"]), raw["save"])
+            case "get_settings":
+                return GetSettings()
+            case "set_setting":
+                value = raw["value"]
+                if not isinstance(value, str | bool | int | float):
+                    raise ProtocolError("value must be text, a number or true/false")
+                return SetSetting(str(raw["section"]), str(raw["key"]), value)
     except (KeyError, TypeError, ValueError) as e:
         raise ProtocolError(f"bad {kind} message: {e}") from None
     raise ProtocolError(f"unknown message type {kind!r}")

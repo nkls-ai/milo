@@ -10,9 +10,9 @@
 - Run the eval on Codex as the worker too, and on a few German phrasings.
 - Thumbs up/down on unprompted nudges, stored in memory, so rules learn what you care about.
 - Context-aware dictation formatting by frontmost app (casual in Slack, formal in Mail), via a local model `TextCleaner`.
-- A stable signing identity so macOS permissions survive rebuilds.
 
-- Pip's idle CPU is too high: measured 6.5% for Milo.app on screen, asleep at night (2026-10-30, 03:35), against the robot's ~0.4%. Find what keeps redrawing while he sleeps (the sleeping pose, the "z", the 15 Hz clock) and stop the clock when nothing moves. One frame of Pip costs 1.3 ms against the robot's 1.7 ms, so the clock rate is the likely cause, not the drawing.
+- Idle CPU awake is still above 1%: about 1.8 to 3% for a release build with nobody touching the Mac (2026-10-30, on a busy machine; asleep 0.04%, before the skin system 7.2%). Repeating motion is in Core Animation now; what's left is each pose change (blinks, glances, the eyes following the cursor) redrawing the whole figure and every looping part's own hosting view, plus the springs' frames. Next: draw the eyes in their own small layer so a blink or a glance redraws only them.
+- Setup window: Automation is checked against Mail only, and macOS can only say while Mail is open. Check Notes too.
 - Pip pointing near the left screen edge: the bubble hangs to his left and can be cut off. Move the bubble to his right when he perches there.
 - Pip: a fold or flap animation when he takes off and lands, instead of starting mid-flap.
 

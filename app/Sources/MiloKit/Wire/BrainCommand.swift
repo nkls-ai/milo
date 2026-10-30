@@ -35,12 +35,14 @@ public enum BrainCommand: Equatable, Sendable {
     case forgetFact(id: String)
     /// The user changed fact `id` to `text`.
     case editFact(id: String, text: String)
-    /// The user picked a dictation style in the menu; the brain uses it from the next recording and saves it.
-    case setDictationStream(DictationStyle)
     /// A button in the Routines section: run, pause, resume or delete the routine `id`.
     case routine(id: String, action: RoutineAction)
     /// Save on the recipe draft `id` (true), or throw it away (false).
     case routineDraftAnswer(id: String, save: Bool)
+    /// The Settings window opened: send the settings.
+    case getSettings
+    /// Change one setting, e.g. section "ui", key "character", value "dragon".
+    case setSetting(section: String, key: String, value: JSONValue)
 }
 
 /// What the app did with an `app_request`: a JSON result, or a plain-language error for the user.
@@ -51,7 +53,8 @@ public enum AppOutcome: Equatable, Sendable {
 
 extension BrainCommand: Encodable {
     private enum Key: String, CodingKey {
-        case type, mode, text, app, on, tentative, speak, id, capture, ok, result, error, reason, yes, stream, action, save
+        case type, mode, text, app, on, tentative, speak, id, capture, ok, result, error, reason, yes, action, save
+        case section, key, value
         case idleSeconds = "idle_s"
     }
 
@@ -124,9 +127,6 @@ extension BrainCommand: Encodable {
             try c.encode("edit_fact", forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(text, forKey: .text)
-        case let .setDictationStream(style):
-            try c.encode("set_dictation_stream", forKey: .type)
-            try c.encode(style, forKey: .stream)
         case let .routine(id, action):
             try c.encode("routine", forKey: .type)
             try c.encode(id, forKey: .id)
@@ -135,6 +135,13 @@ extension BrainCommand: Encodable {
             try c.encode("routine_draft_answer", forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(save, forKey: .save)
+        case .getSettings:
+            try c.encode("get_settings", forKey: .type)
+        case let .setSetting(section, key, value):
+            try c.encode("set_setting", forKey: .type)
+            try c.encode(section, forKey: .section)
+            try c.encode(key, forKey: .key)
+            try c.encode(value, forKey: .value)
         }
     }
 }

@@ -18,141 +18,52 @@ enum PipPalette {
 }
 
 /// Pip, the small lavender bird. Drawn in a 120 pt box with his body centred at (60, 66) and his feet on
-/// y = 107. Same inputs as `CharacterFigure` plus the flight. One clock drives breathing, the tuft and
-/// the pointing wing: 15 Hz, 40 Hz only while his wings flap, paused while hidden.
-struct PipFigure: View {
-    var state: MiloState
-    var emotion: Emotion
-    var asleep: Bool
-    var level: Double
-    var connected: Bool
-    var pose: LifePose
-    var flight: Flight = .perched
-    var floating = true
-    /// Fixes the clock, for renders.
-    var time: Double?
-    @State private var hops = 0
+/// y = 107. He breathes, ruffles his tuft, flaps and nudges his pointing wing with `Looping`, so nothing
+/// redraws him between pose changes.
+struct PipFigure: Skin {
+    var look: SkinLook
 
-    private var flapping: Bool {
-        if case .flying = flight { true } else { false }
-    }
-
-    private var shown: Emotion {
-        if asleep && !pose.hovered { return .sleepy }
-        if pose.pleased && emotion == .neutral && state == .idle { return .happy }
-        return emotion
+    static func idleLoop(_ look: SkinLook) -> Loop? {
+        guard !look.airborne else { return nil }
+        let feet = UnitPoint(x: 0.5, y: 107 / 120)
+        if look.thinking {
+            // A slow sway from side to side while he ponders.
+            return Loop(period: 2.8, keys: [.init(at: 0, sy: 0.994, angle: -3), .init(at: 0.5, sy: 1.006, angle: 3),
+                                            .init(at: 1, sy: 0.994, angle: -3)], pivot: feet)
+        }
+        return look.sleeping ? .breath(period: 5.5, amount: 0.022, pivot: feet) : .breath(period: 3.6, amount: 0.012, pivot: feet)
     }
 
     var body: some View {
-        Group {
-            if let time {
-                bird(time: time)
-            } else {
-                TimelineView(.animation(minimumInterval: flapping ? 1.0 / 40 : 1.0 / 15, paused: !floating)) {
-                    bird(time: $0.date.timeIntervalSinceReferenceDate)
-                }
-            }
+        ZStack {
+            ListeningRing(look: look)
+            GroundShadow(look: look)
+            PipBody(look: PipLook(look))
+            Marks(look: look, at: CGPoint(x: 100, y: 22), sleepColor: PipPalette.crest)
         }
         .frame(width: 120, height: 120)
-        .opacity(connected ? 1 : 0.55)
-        .saturation(connected ? 1 : 0.2)
-        .onChange(of: shown) { old, new in
-            if (new == .happy || new == .excited) && old != .happy && old != .excited { hops += 1 }
-        }
-    }
-
-    private func bird(time: Double) -> some View {
-        let look = PipLook(state: state, emotion: shown, level: level, pose: pose, flight: flight, time: time)
-        return ZStack {
-            if state == .listening || state == .dictating {
-                ListeningRing(color: state == .listening ? Palette.talk : Palette.dictate, level: level)
-            }
-            Ellipse()
-                .fill(Color.black.opacity(look.airborne ? 0 : 0.16))
-                .frame(width: 46, height: 6)
-                .blur(radius: 2)
-                .position(x: 60, y: 108.5)
-            PipBody(look: look)
-                .keyframeAnimator(initialValue: 0.0, trigger: hops) { content, lift in
-                    content.offset(y: lift)
-                } keyframes: { _ in
-                    KeyframeTrack {
-                        SpringKeyframe(-9, duration: 0.17, spring: .snappy)
-                        SpringKeyframe(0, duration: 0.2, spring: .bouncy)
-                        SpringKeyframe(-3.5, duration: 0.12, spring: .snappy)
-                        SpringKeyframe(0, duration: 0.2, spring: .smooth)
-                    }
-                }
-            Extras(emotion: shown, time: time, sleepColor: PipPalette.crest)
-                .offset(x: -2, y: 8)
-        }
     }
 }
 
-/// Everything about Pip's pose at one moment, worked out once so the parts stay simple.
+/// Pip's own reading of the look: his tuft and wings.
 struct PipLook {
-    var state: MiloState
-    var emotion: Emotion
-    var level: Double
-    var pose: LifePose
-    var flight: Flight
-    var time: Double
+    var skin: SkinLook
 
-    var airborne: Bool { flight.airborne }
-    var sleeping: Bool { emotion == .sleepy && !pose.yawn }
-    var speaking: Bool { state == .speaking }
+    init(_ skin: SkinLook) { self.skin = skin }
 
-    /// Eyes and beak follow the gaze a little further than the eyes alone, which reads as a turned head.
-    var gaze: CGVector {
-        switch flight {
-        case let .pointing(toward): CGVector(dx: toward.dx * 0.8, dy: toward.dy * 0.8)
-        case let .flying(heading): CGVector(dx: heading.dx * 0.6, dy: heading.dy * 0.3)
-        case .perched: sleeping ? .zero : pose.gaze
-        }
-    }
-
-    var breath: Double {
-        let period = sleeping ? 5.5 : 3.6
-        return sin(time * 2 * .pi / period) * (sleeping ? 0.022 : 0.012)
-    }
-
-    /// Degrees, clockwise. Leaning toward the user while listening, a slow sway while thinking.
-    var tilt: Double {
-        switch flight {
-        case let .flying(heading): return heading.dx * 12
-        case let .pointing(toward): return toward.dx * 5
-        case .perched: break
-        }
-        var degrees = pose.lean * 6 + pose.tilt
-        if state == .thinking || state == .transcribing { degrees += sin(time * 2 * .pi / 2.8) * 3 }
-        if emotion == .confused { degrees -= 8 }
-        if emotion == .concerned { degrees -= 3 }
-        if sleeping { degrees += 4 }
-        return degrees
-    }
-
-    /// Vertical squash and stretch: positive is taller.
-    var stretch: Double {
-        var s = pose.squash
-        if sleeping { s -= 0.06 }
-        if emotion == .sad { s -= 0.035 }
-        if speaking { s -= level * 0.025 }
-        return s
-    }
-
-    /// Points up; a stretch lifts him off his feet a little, which reads as a hop.
-    var lift: Double {
-        if airborne { return 0 }
-        return -max(0, pose.squash) * 55 + (sleeping ? 3 : 0) + (emotion == .sad ? 2 : 0)
-    }
-
-    /// How open the beak is, 0...1.
-    var beakOpen: Double {
-        if pose.yawn { return 1 }
-        if speaking { return min(1, level * 1.1) }
-        if emotion == .excited { return 0.3 }
-        return 0
-    }
+    var emotion: Emotion { skin.emotion }
+    var state: MiloState { skin.state }
+    var pose: LifePose { skin.pose }
+    var flight: Flight { skin.flight }
+    var level: Double { skin.level }
+    var airborne: Bool { skin.airborne }
+    var sleeping: Bool { skin.sleeping }
+    var speaking: Bool { skin.speaking }
+    var gaze: CGVector { skin.gaze }
+    var tilt: Double { skin.tilt }
+    var stretch: Double { skin.stretch }
+    var lift: Double { skin.lift }
+    var beakOpen: Double { skin.mouthOpen }
 
     /// Rotations of the three tuft feathers in degrees, and how tall they stand.
     var crest: (angles: [Double], scale: Double) {
@@ -173,17 +84,18 @@ struct PipLook {
         default:
             break
         }
-        if state == .thinking || state == .transcribing {
-            // Ruffles: each feather on its own slow beat.
-            for i in angles.indices {
-                let beat = 0.9 + Double(i) * 0.23
-                angles[i] += sin(time * 2 * .pi / beat + Double(i)) * 9
-            }
-            scale *= 1.06
-        }
-        if state == .listening || state == .dictating { scale *= 1.08 + level * 0.25 }
+        if skin.thinking { scale *= 1.06 }
+        if skin.listening { scale *= 1.08 + level * 0.25 }
         if airborne { angles = angles.map { $0 + 22 } }
         return (angles, scale)
+    }
+
+    /// Each tuft feather ruffles on its own slow beat while he thinks.
+    func ruffle(_ i: Int) -> Loop? {
+        guard skin.thinking else { return nil }
+        let beat = 0.9 + Double(i) * 0.23
+        return Loop(period: beat, keys: [.init(at: 0, angle: -9), .init(at: 0.5, angle: 9), .init(at: 1, angle: -9)],
+                    pivot: .bottom, phase: Double(i) * 0.3)
     }
 
     /// Wing rotations in degrees around the shoulder (clockwise), and the length of each.
@@ -192,17 +104,15 @@ struct PipLook {
         var leftLength = 1.0, rightLength = 1.0
         switch flight {
         case .flying:
-            let beat = 0.5 + 0.5 * sin(time * 2 * .pi * 4.2)
-            left = 25 + beat * 70
-            right = -left
+            left = 60
+            right = -60
         case let .pointing(toward):
             let angle = atan2(-toward.dx, toward.dy) * 180 / .pi
-            let nudge = sin(time * 2 * .pi / 1.6) * 3
             if toward.dx <= 0 {
-                left = angle + nudge
+                left = angle
                 leftLength = 1.14
             } else {
-                right = angle - 360 * (angle > 0 ? 1 : 0) + nudge
+                right = angle - 360 * (angle > 0 ? 1 : 0)
                 rightLength = 1.14
             }
         case .perched:
@@ -216,10 +126,29 @@ struct PipLook {
                 left = 10
                 right = -10
             }
-            if emotion == .excited { let flutter = sin(time * 2 * .pi * 3) * 8; left += flutter; right -= flutter }
             if emotion == .concerned || emotion == .sad { left -= 4; right += 4 }
         }
         return (left, right, leftLength, rightLength)
+    }
+
+    /// The wing's own motion around its shoulder: a flap in flight, a flutter when excited, a nudge toward
+    /// what he points at. `left` mirrors the angles for the other wing.
+    func wingLoop(left: Bool) -> Loop? {
+        let sign = left ? 1.0 : -1.0
+        let shoulder = UnitPoint(x: 0.5, y: 0)
+        switch flight {
+        case .flying:
+            return Loop(period: 1 / 4.2, keys: [.init(at: 0, angle: -35 * sign), .init(at: 0.5, angle: 35 * sign),
+                                                .init(at: 1, angle: -35 * sign)], pivot: shoulder)
+        case let .pointing(toward):
+            guard (toward.dx <= 0) == left else { return nil }
+            return Loop(period: 1.6, keys: [.init(at: 0, angle: -3), .init(at: 0.5, angle: 3), .init(at: 1, angle: -3)],
+                        pivot: shoulder)
+        case .perched:
+            guard emotion == .excited else { return nil }
+            return Loop(period: 1 / 3, keys: [.init(at: 0, angle: -8 * sign), .init(at: 0.5, angle: 8 * sign),
+                                              .init(at: 1, angle: -8 * sign)], pivot: shoulder)
+        }
     }
 }
 
@@ -243,27 +172,34 @@ private struct PipBody: View {
                 .position(x: 60, y: 102)
                 .opacity(look.airborne || look.sleeping ? 0 : 1)
             ForEach(0..<3, id: \.self) { i in
-                Feather()
-                    .fill(PipPalette.crest)
-                    .frame(width: [6.0, 7.5, 6.0][i], height: [15.0, 19, 13][i] * crest.scale)
-                    .rotationEffect(.degrees(crest.angles[i]), anchor: .bottom)
-                    .position(x: 56 + Double(i) * 4.5 + gaze.dx * 1.5,
-                              y: 37 - [15.0, 19, 13][i] * crest.scale / 2)
+                let size = CGSize(width: [6.0, 7.5, 6.0][i], height: [15.0, 19, 13][i] * crest.scale)
+                Looping(look.ruffle(i), frozen: look.skin.frozen, time: look.skin.time) {
+                    Feather().fill(PipPalette.crest).frame(width: size.width, height: size.height)
+                }
+                .frame(width: size.width, height: size.height)
+                .rotationEffect(.degrees(crest.angles[i]), anchor: .bottom)
+                .position(x: 56 + Double(i) * 4.5 + gaze.dx * 1.5, y: 37 - size.height / 2)
             }
             torso
-            Wing()
-                .fill(LinearGradient(colors: [PipPalette.wing, PipPalette.wingDark], startPoint: .top, endPoint: .bottom))
-                .overlay(WingFeathers().stroke(PipPalette.bodyLight.opacity(0.25), style: StrokeStyle(lineWidth: 1, lineCap: .round)))
-                .frame(width: 16, height: 33 * wings.leftLength)
-                .rotationEffect(.degrees(wings.left), anchor: .top)
-                .position(x: 29.5, y: 59 + 33 * wings.leftLength / 2)
-            Wing()
-                .fill(LinearGradient(colors: [PipPalette.wing, PipPalette.wingDark], startPoint: .top, endPoint: .bottom))
-                .overlay(WingFeathers().stroke(PipPalette.bodyLight.opacity(0.25), style: StrokeStyle(lineWidth: 1, lineCap: .round)))
-                .frame(width: 16, height: 33 * wings.rightLength)
-                .scaleEffect(x: -1)
-                .rotationEffect(.degrees(wings.right), anchor: .top)
-                .position(x: 90.5, y: 59 + 33 * wings.rightLength / 2)
+            Looping(look.wingLoop(left: true), frozen: look.skin.frozen, time: look.skin.time) {
+                Wing()
+                    .fill(LinearGradient(colors: [PipPalette.wing, PipPalette.wingDark], startPoint: .top, endPoint: .bottom))
+                    .overlay(WingFeathers().stroke(PipPalette.bodyLight.opacity(0.25), style: StrokeStyle(lineWidth: 1, lineCap: .round)))
+                    .frame(width: 16, height: 33 * wings.leftLength)
+            }
+            .frame(width: 16, height: 33 * wings.leftLength)
+            .rotationEffect(.degrees(wings.left), anchor: .top)
+            .position(x: 29.5, y: 59 + 33 * wings.leftLength / 2)
+            Looping(look.wingLoop(left: false), frozen: look.skin.frozen, time: look.skin.time) {
+                Wing()
+                    .fill(LinearGradient(colors: [PipPalette.wing, PipPalette.wingDark], startPoint: .top, endPoint: .bottom))
+                    .overlay(WingFeathers().stroke(PipPalette.bodyLight.opacity(0.25), style: StrokeStyle(lineWidth: 1, lineCap: .round)))
+                    .frame(width: 16, height: 33 * wings.rightLength)
+                    .scaleEffect(x: -1)
+            }
+            .frame(width: 16, height: 33 * wings.rightLength)
+            .rotationEffect(.degrees(wings.right), anchor: .top)
+            .position(x: 90.5, y: 59 + 33 * wings.rightLength / 2)
             PipFace(look: look)
                 .offset(x: gaze.dx * 3.2 + (look.sleeping ? 5 : 0), y: gaze.dy * 2.2 + (look.sleeping ? 4 : 0))
         }
@@ -280,7 +216,7 @@ private struct PipBody: View {
         .animation(.easeOut(duration: 0.08), value: look.level)
     }
 
-    /// Body and belly. They breathe; the feet and wings stay put.
+    /// Body and belly. They widen a little with his voice.
     private var torso: some View {
         ZStack {
             Egg()
@@ -304,8 +240,7 @@ private struct PipBody: View {
         .frame(width: 76, height: 72)
         .clipShape(Egg())
         .shadow(color: PipPalette.bodyDark.opacity(0.35), radius: 6, y: 4)
-        .scaleEffect(x: 1 + look.breath * 0.5 + look.level * 0.02 * (look.speaking ? 1 : 0), y: 1 + look.breath,
-                     anchor: .bottom)
+        .scaleEffect(x: 1 + look.level * 0.02 * (look.speaking ? 1 : 0), anchor: .bottom)
         .position(x: 60, y: 66)
     }
 }
@@ -426,25 +361,6 @@ private struct PipBeak: View {
         .frame(width: 14, height: 16, alignment: .top)
         .scaleEffect(sleeping ? 0.8 : 1)
         .rotationEffect(.degrees(sleeping ? 14 : 0))
-    }
-}
-
-/// The soft ring behind Pip while he records, in the colour of the mode.
-private struct ListeningRing: View {
-    var color: Color
-    var level: Double
-    @State private var pulse = false
-
-    var body: some View {
-        Circle()
-            .stroke(color.opacity(0.5), lineWidth: 2.5)
-            .frame(width: 104, height: 104)
-            .scaleEffect(pulse ? 1.1 + level * 0.18 : 0.94)
-            .opacity(pulse ? 0.2 : 0.85)
-            .animation(.easeOut(duration: 0.9).repeatForever(autoreverses: false), value: pulse)
-            .position(x: 60, y: 64)
-            .onAppear { pulse = true }
-            .onDisappear { pulse = false }
     }
 }
 

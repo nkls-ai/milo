@@ -1,7 +1,7 @@
-import AppKit
 import SwiftUI
 
 struct BubbleView: View {
+    @Environment(\.miloTheme) private var theme
     @ObservedObject var model: MiloModel
 
     var body: some View {
@@ -14,13 +14,14 @@ struct BubbleView: View {
                         .lineLimit(2)
                 }
                 content
+                    .foregroundStyle(theme.ink)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
             .frame(maxWidth: 270, alignment: .leading)
-            .background(BubbleShape().fill(Color(nsColor: .windowBackgroundColor).opacity(0.96)))
-            .overlay(BubbleShape().stroke(Color.primary.opacity(0.08), lineWidth: 1))
-            .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
+            .background(BubbleShape().fill(theme.tint.opacity(0.97)))
+            .overlay(BubbleShape().stroke(theme.rule, lineWidth: 1))
+            .shadow(color: theme.primary.opacity(0.22), radius: 12, y: 5)
             .padding(.trailing, 40)
             .transition(.scale(scale: 0.6, anchor: .bottomTrailing).combined(with: .opacity))
         }
@@ -32,16 +33,16 @@ struct BubbleView: View {
         }
         switch model.state {
         case .listening, .dictating:
-            let color = model.state == .dictating ? Palette.dictate : Palette.talk
+            let color = model.state == .dictating ? theme.accent : theme.primary
             return AnyView(HStack(spacing: 8) {
                 LevelBars(level: model.level, color: color)
                 Text(model.state == .dictating ? "Dictating…" : "Listening…")
                     .font(.system(size: 13, weight: .medium))
             })
         case .transcribing where model.bubble == nil:
-            return AnyView(ThinkingDots(color: Palette.dictate))
+            return AnyView(ThinkingDots(color: theme.accent))
         case .thinking where model.bubble == nil:
-            return AnyView(ThinkingDots(color: Palette.think))
+            return AnyView(ThinkingDots(color: theme.primary))
         default:
             guard let text = model.bubble else { return nil }
             return AnyView(ScrollView {
@@ -92,26 +93,21 @@ struct AnswerButtons: View {
 /// Drawn by hand: the system's prominent style turns grey in a window without focus, and Milo's
 /// floating panel never takes focus.
 struct AnswerButtonStyle: ButtonStyle {
+    @Environment(\.miloTheme) private var theme
     let prominent: Bool
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 13.5, weight: .semibold, design: .rounded))
-            .foregroundStyle(prominent ? Color.white : Color.primary)
+            .foregroundStyle(prominent ? theme.onPrimary : theme.ink)
             .frame(minWidth: 64)
             .padding(.vertical, 7)
             .padding(.horizontal, 10)
             .background(RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(prominent ? Palette.dictate.blended(dark: 0.25) : Color.primary.opacity(0.08)))
-            .opacity(configuration.isPressed ? 0.7 : 1)
+                .fill(prominent ? theme.primary : theme.ink.opacity(0.08)))
+            .scaleEffect(configuration.isPressed ? 0.95 : 1)
+            .animation(theme.motion.spring, value: configuration.isPressed)
             .contentShape(Rectangle())
-    }
-}
-
-private extension Color {
-    /// A shade darker, so white text on Milo's green stays readable.
-    func blended(dark fraction: CGFloat) -> Color {
-        Color(nsColor: NSColor(self).blended(withFraction: fraction, of: .black) ?? NSColor(self))
     }
 }
 

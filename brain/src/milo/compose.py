@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING
 
 from .brain import Brain
 from .config import Config
-from .config_edit import set_value
 from .core.clock import SystemClock
 from .core.ports import Harness, LiveModel, PlaybackTap, Transcriber, Voice
 from .core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, EMBEDDERS, HARNESSES, LIVE_MODELS, TEXT_CLEANERS,
@@ -42,6 +41,7 @@ from .services.tool_requests import ToolRequests
 from .services.transcript import Transcript
 from .services.ui_state import UiState
 from .services.updates import LiveSettings, Milestones, Updates
+from .settings import Settings
 from .transport.hands_socket import HandsSocketServer
 from .transport.tool_socket import ToolSocketServer
 from .transport.unix_socket import UnixSocketServer
@@ -88,6 +88,7 @@ class MemoryRuntime:
 def build(home: Path) -> Runtime:
     # Lazy, so importing compose neither registers adapters nor touches the workspace.
     from . import adapters
+    from .config_file import TomlConfigFile
     from .memory.history import JsonlDictationHistory
     from .memory.ledger import JsonlUsageLedger
     from .memory.profile import MarkdownProfile
@@ -144,6 +145,7 @@ def build(home: Path) -> Runtime:
     idle_reset_s = config.chat.conversation_idle_reset_s
     conversation = Conversation(harness, ledger, clock, idle_reset_s)
     speaker = Speaker(voice, output, ui, tts_executor)
+    speaker.silent = not config.ui.voice
     backchannel = Backchannel(speaker, enabled=config.chat.backchannels)
     transcript_store = JsonlTranscript(workspace.transcript_path)
     routines: Routines | None = None  # built below, once the helpers are
@@ -157,8 +159,9 @@ def build(home: Path) -> Runtime:
                           speak=config.approvals.speak, quiet=lambda: live_talk.busy or mic.active,
                           transcript=transcript)
     bridge = AppBridge(ui, connected=server.connected)
-    settings = LiveSettings(workspace.config_path, _live_settings, config.chat.updates, config.harness.max_helpers)
-    updates = Updates(ui, settings.updates, clock,
+    live_settings = LiveSettings(workspace.config_path, _live_settings, config.chat.updates,
+                                 config.harness.max_helpers)
+    updates = Updates(ui, live_settings.updates, clock,
                       busy=lambda: live_talk.busy or mic.active or speaker.active or approvals.pending)
     hands = hands_server = None
     helpers: Orchestrator  # built below; the questions only reach it once a helper runs
@@ -176,7 +179,7 @@ def build(home: Path) -> Runtime:
                                    ToolRequests(HelperQuestions(approvals, lambda: helpers, screen=False), bridge,
                                                 enabled, memory_requests).handle)
     runner = TaskRunner(harness, ledger, clock, context, background=background, hands=hands)
-    helpers = Orchestrator(runner, speaker, ui, clock, transcript=transcript, max_helpers=settings.max_helpers,
+    helpers = Orchestrator(runner, speaker, ui, clock, transcript=transcript, max_helpers=live_settings.max_helpers,
                            quiet=lambda: live_talk.busy or mic.active, updates=updates, milestones=Milestones(),
                            inert=untrusted)
     if config.routines.enabled:
@@ -216,11 +219,25 @@ def build(home: Path) -> Runtime:
         if routines is not None:
             heartbeat.on_tick.append(routines.tick)
 
+    def use_ui(changed: Config) -> None:
+        brain.use_ui(changed.ui)
+
+    def use_voice(changed: Config) -> None:
+        speaker.silent = not changed.ui.voice
+
+    def use_stream(changed: Config) -> None:
+        listening.live_mode = LiveMode(changed.dictation.stream)
+
+    def use_updates(changed: Config) -> None:
+        live_settings.use(changed.chat.updates, changed.harness.max_helpers)
+
+    live = {("ui", "character"): use_ui, ("ui", "dictate_key"): use_ui, ("ui", "talk_key"): use_ui,
+            ("ui", "whats_this_key"): use_ui, ("ui", "voice"): use_voice, ("dictation", "stream"): use_stream,
+            ("chat", "updates"): use_updates}
+    settings = Settings(TomlConfigFile(workspace.config_path), config, ui, live)
     brain = Brain(ui, listening, live_talk, context, heartbeat, config.ui, transcript, approvals=approvals,
                   bridge=bridge, hands=hands, screens=workspace.screens_dir, helpers=helpers,
-                  memory=mem.memory if mem is not None else None,
-                  save_stream=lambda stream: set_value(workspace.config_path, "dictation", "stream", stream),
-                  routines=routines)
+                  memory=mem.memory if mem is not None else None, routines=routines, settings=settings)
     return Runtime(brain, server, heartbeat, transcriber, voice, stt_executor, tts_executor, harness,
                    live_model, live_talk, tool_server, hands_server, helpers, mem, barge_in, backchannel)
 

@@ -48,7 +48,7 @@ struct HelperRenderTests {
         model.apply(.helpers(helpers))
         if let bubble { model.show(bubble) }
         let view = ZStack {
-            PipRenderTests.Wallpaper(dark: dark)
+            SkinRenderTests.Wallpaper(dark: dark)
             OverlayView(model: model)
         }
         .frame(width: OverlayPanel.size.width, height: OverlayPanel.size.height)
