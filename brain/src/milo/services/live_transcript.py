@@ -14,7 +14,6 @@ import time
 from collections.abc import Callable, Iterable
 from concurrent.futures import Executor
 from dataclasses import dataclass
-from functools import partial
 from typing import NamedTuple
 
 import numpy as np
@@ -25,6 +24,16 @@ from milo.core.ports import AudioInput, EventSink, Transcriber
 from milo.core.types import STT_SAMPLE_RATE, Audio, Interrupted
 
 log = logging.getLogger("milo.live_transcript")
+
+QUIET_MIN_RMS = 0.002
+QUIET_NOISE_RATIO = 2.5
+"""A frame might hold a voice from 2.5 times the room's floor (but at least QUIET_MIN_RMS), well below the
+speech threshold. A false alarm costs one more pass; missing a soft word loses it."""
+MIN_VOICED_FRAMES = 2
+MIN_WORDS_PER_S = 1.5
+"""The safety net's line. Test dictations had 3.5 to 7 words per second of speech the segmenter heard."""
+QUIET_RUN = 3  # frames: a pause needs at least this much true quiet to be cut in
+LEAD_S = 0.3
 
 
 class Cut(NamedTuple):
@@ -44,11 +53,14 @@ class PauseSegmenter:
     speech is trimmed to `lead_s`. A phrase that has run for `long_s` closes at a shorter pause,
     `long_pause_s`, so a long dictation still comes in phrases of a few seconds. One longer than `max_s`
     without any pause is cut at its quietest frame, which keeps every pass inside one Whisper window.
+
+    The speech threshold is made for finding pauses, not for deciding what holds words: a soft voice can
+    stay below it. `voiced()` is the lenient check for that, a little above the room's floor.
     """
 
     def __init__(self, sample_rate: int = STT_SAMPLE_RATE, *, pause_s: float = 0.7, long_s: float = 6.0,
                  long_pause_s: float = 0.3, max_s: float = 12.0, min_speech_s: float = 0.2, lead_s: float = 0.3,
-                 min_rms: float = 0.008, max_rms: float = 0.03, noise_ratio: float = 3.0, frame_s: float = 0.03):
+                 min_rms: float = 0.004, max_rms: float = 0.03, noise_ratio: float = 2.5, frame_s: float = 0.03):
         self._frame = int(sample_rate * frame_s)
         self._pause = max(2, round(pause_s / frame_s))
         self._long = round(long_s / frame_s)
@@ -66,6 +78,7 @@ class PauseSegmenter:
         self._speech = 0  # speech frames in the open phrase
         self._silence = 0  # silent frames at its end
         self._speech_end = 0  # frame after the last speech frame of the whole recording
+        self._speech_total = 0  # speech frames in the whole recording
 
     @property
     def open_start(self) -> int:
@@ -80,6 +93,30 @@ class PauseSegmenter:
     def speech_end(self) -> int:
         """Sample index just after the last frame loud enough to be speech."""
         return self._speech_end * self._frame
+
+    @property
+    def speech_s(self) -> float:
+        """Seconds of speech in the whole recording so far."""
+        return self._speech_total * self._frame / STT_SAMPLE_RATE
+
+    @property
+    def frame(self) -> int:
+        return self._frame
+
+    def voiced(self, audio: Audio) -> np.ndarray:
+        """For each whole frame of `audio`: might it hold a voice? Lenient: anything clearly above the room."""
+        n = len(audio) // self._frame
+        if n == 0:
+            return np.zeros(0, dtype=bool)
+        frames = np.asarray(audio[:n * self._frame], dtype=np.float32).reshape(n, self._frame)
+        return np.sqrt(np.mean(np.square(frames), axis=1)) >= self._quiet()
+
+    def _quiet(self) -> float:
+        noise = self._noise or 0.0
+        # Well below the speech threshold, but above the room even where that threshold is near the floor.
+        # Never above it: with no quiet frame yet, the "floor" is the voice itself.
+        threshold = self._threshold()
+        return min(threshold, max(QUIET_MIN_RMS, noise * 1.3, min(threshold * 0.6, noise * QUIET_NOISE_RATIO)))
 
     @property
     def silence_s(self) -> float:
@@ -107,15 +144,17 @@ class PauseSegmenter:
         self._levels.append(level)
         if level >= self._threshold():
             self._speech += 1
+            self._speech_total += 1
             self._silence = 0
             self._speech_end = self._open + len(self._levels)
         else:
             self._silence += 1
         pause = self._long_pause if len(self._levels) - self._silence >= self._long else self._pause
         if self._silence >= pause:
-            if self.open_has_speech:
-                return self._cut(len(self._levels) - self._silence + pause // 2)
-            self._speech = 0  # only a click or a breath: drop it with the silence
+            if not self.open_has_speech:
+                self._speech = 0  # only a click or a breath: drop it with the silence
+            elif (at := self._quiet_middle(len(self._levels) - self._silence)) is not None:
+                return self._cut(at)
         if len(self._levels) >= self._max:
             if self.open_has_speech:
                 half = len(self._levels) // 2
@@ -126,6 +165,16 @@ class PauseSegmenter:
             self._open += drop
             del self._levels[:drop]
         return None
+
+    def _quiet_middle(self, start: int) -> int | None:
+        """The middle of the longest run of truly quiet frames from frame `start` on, where a pause can be
+        cut. None if there is none: the "pause" is a soft voice, and cutting would split its words."""
+        quiet, best, run = self._quiet(), None, 0
+        for i in range(start, len(self._levels)):
+            run = run + 1 if self._levels[i] < quiet else 0
+            if run >= QUIET_RUN and (best is None or run > best[1]):
+                best = (i - run + 1, run)
+        return None if best is None else best[0] + best[1] // 2
 
     def _cut(self, at: int) -> Cut:
         """Close the open phrase `at` frames in; the frames after it open the next one."""
@@ -177,20 +226,28 @@ class LiveTranscript:
        a quick pass. If the user speaks again, the guess is dropped. If they let go first, it is the end.
     3. Preview the open phrase with the fast model, once `min_new_s` more audio came in.
 
+    No audio is skipped: a phrase's clip starts where the last one ended, trimmed only up to the first frame
+    the segmenter's lenient `voiced()` check hears (a soft word below the speech threshold still counts),
+    and a guess only stands if nothing voiced lies outside it.
+
     `show` sends the words so far as a Partial: committed text, then the guess or preview of the open
     phrase. Commits and guesses always run before previews and start as soon as they are due, so the full
     model is never behind by more than one preview pass (about 0.05 s). A preview needs `gap_s` of idle
     GPU before it, which leaves room for speech synthesis, and none starts once the open phrase has gone
     quiet: the guess is about to come.
 
-    finish() is the release: it interrupts a commit or preview in flight (a guess is let finish, it may be the
-    end), commits what is left in quick passes and returns the whole text.
+    finish() is the release: it interrupts a commit or preview in flight (a guess is let finish if nothing was
+    said after it: it may be the end), transcribes everything left in one quick pass and returns the whole
+    text. A quick pass that hears nothing
+    in voiced audio is done again at full accuracy, and if the text is still short for the speech (fewer
+    than `min_words_per_s` words per second of it), one full pass over the whole recording decides.
     """
 
     def __init__(self, mic: AudioInput, stt: Transcriber, executor: Executor, sink: EventSink,
                  segmenter: PauseSegmenter, *, on_phrase: Callable[[str], object] | None = None,
                  show: bool = True, poll_s: float = 0.1, gap_s: float = 0.15, settle_s: float = 0.25,
-                 min_new_s: float = 0.5, monotonic: Callable[[], float] = time.monotonic):
+                 min_new_s: float = 0.5, min_words_per_s: float | None = None,
+                 monotonic: Callable[[], float] = time.monotonic):
         self._mic = mic
         self._stt = stt
         self._executor = executor
@@ -202,8 +259,10 @@ class LiveTranscript:
         self._gap_s = gap_s
         self._settle_s = settle_s
         self._min_new = int(min_new_s * STT_SAMPLE_RATE)
+        self._min_words_per_s = MIN_WORDS_PER_S if min_words_per_s is None else min_words_per_s
         self._monotonic = monotonic
         self._heard = 0  # samples fed to the segmenter
+        self._covered = 0  # samples up to the end of the last committed phrase
         self._pending: list[Cut] = []  # closed phrases not yet committed
         self.phrases: list[str] = []  # committed text, one entry per phrase
         self._guess: _Guess | None = None
@@ -214,6 +273,7 @@ class LiveTranscript:
         self._interruptible = False
         self._idle_since = float("-inf")  # when the last pass ended
         self._closing = False
+        self._guessing: int | None = None  # the end of the guess in flight
         self._task: asyncio.Task | None = None
 
     @property
@@ -226,23 +286,23 @@ class LiveTranscript:
 
     async def finish(self, audio: Audio) -> str:
         """The rest of `audio` (the whole recording) transcribed after the phrases already committed.
-        Returns all of it. Everything left runs in quick passes: the user is waiting now."""
-        await self._stop()
+        Returns all of it. Whatever is left, closed phrases and the open one, goes in one quick pass: the
+        user is waiting now. None if a guess holds all of it."""
+        await self._stop(audio)
         self._listen(audio[self._heard:])
-        if self._heard_nothing():
-            # The segmenter heard no speech at all; maybe the voice was very quiet. One pass over everything.
-            self._commit(await self._pass(self._stt.transcribe, audio, "", quick=True))
-            return self.text
-        while self._pending:
-            await self._commit_next(lambda start, end: audio[start:end], quick=True)
-        seg = self._segmenter
-        if seg.open_has_speech:
-            guess, self._guess, self._preview = self._guess, None, ""
-            if guess is not None and guess.start == seg.open_start and seg.speech_end <= guess.end:
-                log.debug("release: the guess covers the last phrase")
-                self._commit(guess.text)
-            else:
-                self._commit(await self._pass(self._stt.transcribe, audio[seg.open_start:], self.text, quick=True))
+        guess, self._guess, self._preview = self._guess, None, ""
+        rest = audio[self._covered:]
+        start = self._voice_start(rest)
+        if start is None:
+            self._show()
+        elif guess is not None and self._guess_covers(guess, rest, len(audio)):
+            log.debug("release: the guess covers the rest")
+            self._commit(guess.text)
+        else:
+            self._commit(await self._sure(rest[start:]))
+        self._pending.clear()
+        self._covered = len(audio)
+        await self._check_length(audio)
         return self.text
 
     def abort(self) -> None:
@@ -251,14 +311,17 @@ class LiveTranscript:
         if self._task is not None:
             self._task.cancel()
 
-    async def _stop(self) -> None:
+    async def _stop(self, audio: Audio) -> None:
+        """End the live passes. A guess in flight is let finish if nothing voiced came after it: it may be the
+        end. Anything else in flight is interrupted."""
         self._closing = True
         task = self._task
         if task is None:
             return
+        guessing = self._guessing
         if not self._passing:
             task.cancel()
-        elif self._interruptible:
+        elif self._interruptible or (guessing is not None and self._has_voice(audio[guessing:])):
             self._stt.interrupt()
         await asyncio.wait({task})
 
@@ -280,7 +343,7 @@ class LiveTranscript:
         self._pending.extend(self._segmenter.feed(new))
         guess = self._guess
         if guess is not None:
-            closed = next((cut for cut in self._pending if cut.start == guess.start), None)
+            closed = self._pending[0] if self._pending else None  # guesses are only made with nothing pending
             if (closed.speech_end if closed is not None else self._segmenter.speech_end) > guess.end:
                 self._guess = None  # the user went on talking
 
@@ -288,12 +351,19 @@ class LiveTranscript:
         """Run the most urgent pass, if any."""
         seg = self._segmenter
         if self._pending:
-            await self._commit_next(lambda start, end: self._mic.peek(start)[:end - start], quick=False)
+            await self._commit_next()
         elif seg.open_has_speech and seg.silence_s >= self._settle_s and self._guess is None:
-            start, end = seg.open_start, self._heard
-            text = await self._pass(self._stt.transcribe, self._mic.peek(start)[:end - start], self.text,
-                                    quick=True, interruptible=False)
-            if seg.open_start == start and seg.speech_end <= end:  # kept on release too: it may be the end
+            covered, end, open_start = self._covered, self._heard, seg.open_start
+            audio = self._mic.peek(covered)[:end - covered]
+            voice = self._voice_start(audio)
+            start = covered + (voice if voice is not None else open_start - covered)
+            self._guessing = end
+            try:
+                text = await self._pass(self._stt.transcribe, audio[start - covered:], self.text,
+                                        quick=True, interruptible=False)
+            finally:
+                self._guessing = None
+            if seg.open_start == open_start and seg.speech_end <= end:  # kept on release too: it may be the end
                 self._guess = _Guess(start, end, text)
                 self._show()
         elif (seg.open_has_speech and self._show_live and self._heard - self._previewed >= self._min_new
@@ -305,21 +375,73 @@ class LiveTranscript:
                 self._preview = text
                 self._show()
 
-    async def _commit_next(self, clip: Callable[[int, int], Audio], *, quick: bool) -> None:
-        """Commit the oldest closed phrase; `clip(start, end)` gives its audio. A quick commit takes a guess
-        still standing for the same phrase as its text: nothing was said after it. A full one does the
-        phrase again at full accuracy."""
-        start, end, _ = self._pending[0]
-        guess = self._guess
-        if quick and guess is not None and guess.start == start:
+    async def _commit_next(self) -> None:
+        """Commit the oldest closed phrase at full accuracy. It runs from the end of the last one, less silence.
+        A guess that holds all of it is the commit: the same model already heard the same audio. The guess
+        may end past the cut (it came before the pause was long enough to close the phrase); then it covers
+        up to its own end."""
+        cut, guess, covered = self._pending[0], self._guess, self._covered
+        end = max(cut.end, guess.end) if guess is not None else cut.end
+        audio = self._mic.peek(covered)[:end - covered]
+        if guess is not None and self._guess_covers(guess, audio, end):
             text = guess.text
         else:
-            text = await self._pass(self._stt.transcribe, clip(start, end), self.text, quick=quick)
-        self._pending.pop(0)
-        if self._guess is not None and self._guess.start == start:
+            end, audio = cut.end, audio[:cut.end - covered]
+            voice = self._voice_start(audio)
+            start = covered + voice if voice is not None else cut.start
+            text = await self._pass(self._stt.transcribe, audio[start - covered:], self.text)
+        self._covered = end
+        while self._pending and self._pending[0].end <= end:
+            self._pending.pop(0)
+        if self._guess is not None and self._guess.start < end:
             self._guess = None
         self._preview = ""
         self._commit(text)
+
+    def _guess_covers(self, guess: _Guess, audio: Audio, end: int) -> bool:
+        """Does `guess` hold every voiced frame of `audio`, the recording from the last commit up to `end`?"""
+        covered = self._covered
+        return (covered <= guess.start <= guess.end <= end
+                and not self._has_voice(audio[:guess.start - covered])
+                and not self._has_voice(audio[guess.end - covered:]))
+
+    def _voice_start(self, audio: Audio) -> int | None:
+        """Where a clip of `audio` should start: a short lead before its first voiced frame. None: no voice."""
+        voiced = self._segmenter.voiced(audio)
+        if voiced.sum() < MIN_VOICED_FRAMES:
+            return None
+        lead = int(LEAD_S * STT_SAMPLE_RATE)
+        return max(0, int(np.argmax(voiced)) * self._segmenter.frame - lead)
+
+    def _has_voice(self, audio: Audio) -> bool:
+        return int(self._segmenter.voiced(audio).sum()) >= MIN_VOICED_FRAMES
+
+    async def _sure(self, audio: Audio) -> str:
+        """A quick pass; if it heard nothing in audio with a voice, the full model again at full accuracy."""
+        text = await self._pass(self._stt.transcribe, audio, self.text, quick=True)
+        if not text and self._has_voice(audio):
+            log.info("a quick pass heard nothing in %.1fs with a voice; again at full accuracy",
+                     len(audio) / STT_SAMPLE_RATE)
+            text = await self._pass(self._stt.transcribe, audio, self.text)
+        return text
+
+    async def _check_length(self, audio: Audio) -> None:
+        """The safety net: text short for the speech heard means words went missing somewhere. One full pass
+        over the whole recording, as with stream = "off", and its text wins if it has more words. Typed
+        phrases are in the app already, so type mode only logs it."""
+        speech_s = self._segmenter.speech_s
+        words = len(self.text.split())
+        if speech_s < 1.0 or words >= self._min_words_per_s * speech_s:
+            return
+        if self._on_phrase is not None:
+            log.warning("typed %d words for %.1fs of speech; some may be missing", words, speech_s)
+            return
+        whole = await self._pass(self._stt.transcribe, audio, "")
+        log.warning("%d words for %.1fs of speech looked short; the whole recording gave %d", words, speech_s,
+                    len(whole.split()))
+        if len(whole.split()) > words:
+            self.phrases = [whole]
+            self._show()
 
     def _commit(self, text: str) -> None:
         text = text.strip()
@@ -329,21 +451,22 @@ class LiveTranscript:
                 self._on_phrase(text)
         self._show()
 
-    def _heard_nothing(self) -> bool:
-        return not self.phrases and not self._pending and not self._segmenter.open_has_speech
-
     async def _pass(self, fn: Callable[..., str], audio: Audio, before: str | None, *, quick: bool = False,
                     interruptible: bool = True) -> str:
-        """Run `fn` on the STT executor. `before` None: a preview (no context, always quick)."""
+        """Run `fn` on the STT executor. `before` None: a preview (no context, always quick). A live pass
+        still waiting for the STT thread (behind Transcriber.wake) when the release comes is skipped."""
         started = self._monotonic()
         self._passing = True
         self._interruptible = interruptible
+        closing = self._closing
+
+        def run() -> str:
+            if interruptible and self._closing and not closing:
+                raise Interrupted()
+            return fn(audio) if before is None else fn(audio, before, quick=quick)
+
         try:
-            if before is None:
-                text = await asyncio.get_running_loop().run_in_executor(self._executor, fn, audio)
-            else:
-                text = await asyncio.get_running_loop().run_in_executor(
-                    self._executor, partial(fn, audio, before, quick=quick))
+            text = await asyncio.get_running_loop().run_in_executor(self._executor, run)
         finally:
             self._passing = False
             self._idle_since = self._monotonic()
@@ -361,4 +484,3 @@ class LiveTranscript:
         if text != self._shown:
             self._shown = text
             self._sink.emit(Partial(text))
-

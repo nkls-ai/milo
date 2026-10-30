@@ -64,3 +64,29 @@ def test_the_microphone_hears_the_file_in_real_time(tmp_path):
     heard = mic.stop()
     assert len(heard) == int(1.5 * STT_SAMPLE_RATE) and heard[-1] == 0, "silence after the file ends"
     assert not mic.active
+
+
+def test_a_new_file_is_heard_from_the_next_recording(tmp_path):
+    path = tmp_path / "mic.wav"
+    write_wav(path, np.full(STT_SAMPLE_RATE, 0.1, np.float32), STT_SAMPLE_RATE)
+    clock = Clock()
+    mic = WavMicrophone(path, clock=clock)
+    write_wav(path, np.full(STT_SAMPLE_RATE * 2, 0.2, np.float32), STT_SAMPLE_RATE)
+    mic.start(lambda level: None)
+    clock.now += 1.0
+    assert abs(mic.stop()[0] - 0.2) < 1e-3
+
+
+def test_a_mic_that_opens_after_the_key_went_down_misses_what_was_said_before(tmp_path):
+    path = tmp_path / "mic.wav"
+    write_wav(path, np.arange(STT_SAMPLE_RATE * 2, dtype=np.float32) / (STT_SAMPLE_RATE * 4), STT_SAMPLE_RATE)
+    import time
+
+    path.with_suffix(".json").write_text(json.dumps({"pressed_at": time.time() - 0.5}))
+    clock = Clock()
+    mic = WavMicrophone(path, clock=clock)
+    mic.start(lambda level: None)
+    clock.now += 1.0
+    heard = mic.stop()
+    assert len(heard) == STT_SAMPLE_RATE
+    assert abs(heard[0] - 0.125) < 0.01, "it begins half a second into the file: that much was said already"

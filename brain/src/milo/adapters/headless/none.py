@@ -1,4 +1,5 @@
-"""`use = "none"` for [stt], [tts] and [audio]: no model loads, no device opens, nothing is ever heard."""
+"""`use = "none"` for [stt], [tts], [audio] and [chat]: no model loads, no device opens, nothing is ever heard
+and Milo never answers. For workspaces that test one part of him, like dictation."""
 
 from __future__ import annotations
 
@@ -9,8 +10,9 @@ from typing import Any
 import numpy as np
 
 from milo.core.ports import LevelCallback
-from milo.core.registry import AUDIO_INPUTS, AUDIO_OUTPUTS, TRANSCRIBERS, VOICES, AdapterContext, options_from
-from milo.core.types import Audio, STT_SAMPLE_RATE
+from milo.core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, LIVE_MODELS, TRANSCRIBERS, VOICES, AdapterContext,
+                                options_from)
+from milo.core.types import Audio, STT_SAMPLE_RATE, Usage
 
 
 class NoTranscriber:
@@ -92,3 +94,31 @@ def _mic(options: Mapping[str, Any], ctx: AdapterContext) -> NoMicrophone:
 @AUDIO_OUTPUTS.register("none")
 def _speaker(options: Mapping[str, Any], ctx: AdapterContext) -> NoSpeaker:
     return NoSpeaker()
+
+
+class NoChat:
+    """A chat model that never says anything."""
+
+    name = "none"
+
+    def __init__(self):
+        self.last_usage = Usage()
+
+    async def start(self, system_prompt: str) -> None:
+        pass
+
+    async def turn(self, text: str, images=()):
+        return
+        yield
+
+    async def interrupt(self) -> None:
+        pass
+
+    async def close(self) -> None:
+        pass
+
+
+@LIVE_MODELS.register("none")
+def _chat(options: Mapping[str, Any], ctx: AdapterContext) -> NoChat:
+    options_from(NoOptions, options, "chat.none")
+    return NoChat()

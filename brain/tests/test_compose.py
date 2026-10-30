@@ -148,9 +148,9 @@ def test_heartbeat_disabled_builds_no_runner(build):
 
 
 @pytest.mark.parametrize("section, available", [
-    ("chat", "claude_live"),
+    ("chat", "claude_live, none"),
     ("harness", "claude, codex"),
-    ("stt", "mlx_whisper, none"),
+    ("stt", "mlx_whisper, none, tones"),
     ("tts", "elevenlabs, none, omnivoice, say"),
     ("audio", "none, sounddevice, wav"),
     ("dictation", "fillers, plain"),

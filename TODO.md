@@ -52,5 +52,5 @@
 - Wake word ("hey Milo") with a small local model.
 - Rive or sprite animations instead of SwiftUI shapes.
 - Usage readout in the menu (`JsonlUsageLedger.today_totals()` exists).
-- Mic pre-roll buffer. Skipped for now: a ring buffer needs the input stream running all the time, which keeps the macOS orange mic indicator on permanently. Recording already starts at key-down (before the 250 ms hold check shows anything), and a double tap records from the first tap.
+- Mic pre-roll buffer. Skipped for now: a ring buffer needs the input stream running all the time, which keeps the macOS orange mic indicator on permanently. Recording already starts at key-down (the app shows it 80 ms later), and a double tap records from the first tap.
 - Dev: a rebuilt app joins whatever brain holds the lock, even one running older code. build-app.sh now stops this checkout's brain; better would be the brain reporting its build and the app restarting a brain from another build.
