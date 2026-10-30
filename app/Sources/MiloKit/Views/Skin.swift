@@ -13,6 +13,10 @@ struct FigureInput: Equatable {
     var flight: Flight = .perched
     /// Words heard so far in the recording in progress. Each new one may earn a small nod.
     var words = 0
+    /// A yes-or-no question is waiting on the user.
+    var asking = false
+    /// He is working in a window (perched on it) or driving the mouse and keys.
+    var working = false
 
     /// The feeling the face shows: sleepy while asleep, a smile while the cursor first arrives.
     var shown: Emotion {
