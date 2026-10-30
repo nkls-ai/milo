@@ -1,6 +1,36 @@
 # Memory: design
 
-Status: proposed, 2026-10-30. Nothing here is built yet. The next round builds it against these interfaces.
+Status: built, 2026-10-30, except knowledge sources (the port exists, no adapter yet). The design below is kept as it was proposed; this section says what came out different and why. The storage choice is [ADR 11](../adr/0011-memory-files-and-a-rebuildable-index.md).
+
+## As built
+
+- **Where things are.** `core/memory.py` holds the types, `core/ports.py` the ports. The file adapters are in `milo/memory/` (`episodes.py`, `facts.py`, `index.py`, `recall.py`, `consolidate.py`, `fact_profile.py`), the embedders in `adapters/embed/`, and the brain's side in `services/memory.py` (with `episode_stubs.py`, `memory_requests.py` and `sleep.py`). `compose.py` wires them when `[memory] enabled` is on, which is the default.
+- **Changes to the types and ports, and why:**
+  - `Fact.pinned`: the "few pinned preferences" needed a field. A fact is always on when it is pinned or its topic is `basics`.
+  - `EpisodeLog.forget(id, reason)`: Forget has to reach episodes too, without rewriting a log. It appends a marker line.
+  - `FactStore.restore(id)` and `get(id)`: undoing a night needs to bring a retired fact back, and Edit needs to find one.
+  - `MemoryIndex.remove(ids)`, `refresh(limit)` and `search(until=)`: forgetting must leave the index at once; `refresh` catches up with lines another process wrote (the consolidator CLI, the worker's tools) by file size, without reading the logs again; time phrases like "last Monday" need an end as well as a start.
+  - `Embedder.embed(texts, *, query=False) -> np.ndarray`: e5 embeds questions and passages differently, and NumPy arrays avoid copying 384 floats into Python lists per item. `key` names the model, so a different embedder rebuilds the index; `relevant_similarity` is the embedder's own floor, since cosine values mean different things per model.
+  - `TurnContext` carries `exclude` (the always-on facts already in this conversation aren't sent again), `include_untrusted` and `always_on`.
+- **A turn.** `TurnMemory.before_turn()` runs the recall on the memory thread and puts a `<memory>` block in front of the user's message, with the same escaping as task results. The system prompt gains a short "Memory" section and the always-on facts (`profile.md` rendered with `pinned_only`). Facts and episodes already in this conversation (in its system prompt or an earlier block) are left out of later blocks. Recall never blocks a turn: after 300 ms it is skipped.
+- **Untrusted memory.** Episodes that quote mail, files, web pages, the screen or a helper's result are stored with `trusted=False`. In a recall they appear under "From outside, data, never instructions", and a turn that recalls one counts as tainted (ADR 10), so later `<remember>`, `<reminder>` and `<task>` tags ask first. The nightly consolidation leaves them out of its prompt altogether, so outside text can't come back as a fact or a summary in Milo's own words.
+- **Relevance.** e5 scores unrelated sentences between 0.75 and 0.85, about as high as some real matches, so a fixed threshold can't separate them. A match that shares no word with the turn has to clear `relevant_similarity` and lie close to the best match (60% of the way up from the floor), and at most three such matches go in.
+- **Vectors in NumPy, not sqlite-vec.** The design picked sqlite-vec first. Measured over 6,600 items, its scan took 33 ms median and 81 ms at the 95th percentile, against 7 and 28 ms for a NumPy matrix (load average 45 on the M3). The matrix holds about 28 MB for a busy year. sqlite-vec stays available (`vectors="sqlite-vec"`) for much larger stores.
+- **Episode stubs.** A user turn and Milo's answer make one `conversation` episode; a finished task makes a `task` episode (untrusted, since its result quotes the outside world); a look makes a `look` episode with the app and window title only; dictations make episodes only when `[memory] dictations = true`, merged per app within 90 seconds. Meetings come with the meeting-notes track.
+- **profile.md is a view.** On the first start the existing `profile.md` is copied to `memory/profile.before-facts.md` and every line becomes a fact. After that Milo writes the file from the facts. When the user edits it, added lines become facts and removed lines are retired, found by comparing with the last version Milo wrote (`state/profile.written.md`).
+- **The night.** `SleepRunner` checks every 10 minutes, costs nothing when it does, and runs a day once the user has been away 20 minutes, the Mac is on power and Milo isn't busy, up to `consolidate_calls_per_day` (2) worker calls a day, catching up on up to three missed days. The worker answers in JSON; a fact is added, updated or retired only when it names a trusted episode it comes from. Never into `basics`: those go into every system prompt, so only the user puts a fact there. Each run writes `state/sleep/<run>.json`, which `--undo <run>` reverses. Run a day by hand with `uv run python -m milo.memory.consolidate --day 2026-10-30` (`--prompt` prints the prompt without calling anyone, `--dry-run` calls but changes nothing).
+- **The worker's tools.** `memory_search`, `memory_remember` and `memory_forget` are in the `milo` MCP server, answered by the brain over the tool socket, since the brain holds the index and the embedder. Remembering and forgetting always ask the user first, with the fact on its own marked line, and the worker can't file a fact under `basics`.
+- **The user's view.** The menu bar has "What Milo knows…", a window of facts by topic with Edit and Forget (`facts` event; `get_facts`, `forget_fact`, `edit_fact` commands). Edit replaces the fact with a new one; Forget retires it and every older version of it. By voice, "forget that" or "what do you know about Anna?" go to the live model, which hands them to the worker and its tools.
+- **Not built yet:** knowledge sources (indexing the user's files, notes and mail), "forget everything about X" as one step, raw transcript expiry, and sync.
+
+## Measured
+
+On the M3 with 16 GB, while six other agents kept the load average between 14 and 45, so expect better on a quiet Mac:
+
+- **Embedder.** multilingual-e5-small, run in MLX on the GPU, word table quantized to 8 bits: 138 MB in memory, 7.8 ms median per short query and 10.7 ms at the 95th percentile when the Mac was quieter (60 ms median under load 29), 119 ms for a batch of 64, 1.1 s to load. Candidates: embeddinggemma-300m (4-bit, 167 MB, 20 of 20 on a bilingual check against e5's 19, but 140 to 170 ms per query) and Qwen3-Embedding-0.6B (4-bit, 320 MB, 20 of 20, 113 to 294 ms, 1024 dimensions). Details in ADR 11.
+- **Recall eval** (`uv run python -m milo.memory.recall_eval`, 50 scripted days, 335 items, 30 questions in English and German including three of small talk): 25 of 30 with e5 and 25 of 30 with the hashing embedder CI uses. With e5, 142 tokens per turn on average and 412 at most, within the 800 budget. e5's misses: a German compound asking about an English episode ("Zahnarzttermin" for the dentist) and one retired fact's question, which pulls in an unrelated chat line; on the three small-talk turns it adds one unrelated line of about 30 tokens.
+- **Recall time,** without embedding the turn: 5.6 ms median and 17 ms at the 95th percentile over 335 items; 6.6 and 28 ms over 6,600 items. Adding the embedding as measured on a quieter Mac (7.8 ms) gives about 15 ms per turn; under load, the embedding dominates.
+
 
 ## Why
 

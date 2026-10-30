@@ -25,6 +25,12 @@
 - Looking: send the screenshot only when the window text isn't enough, to save tokens on text-heavy windows.
 - Milo window: persist a task when it starts, so one cut off by a brain restart still shows (now it is lost).
 
+- Memory: knowledge sources (folders, Notes, Mail, meeting notes) behind the `KnowledgeSource` port, off until the user turns each on.
+- Memory: "forget everything about X" as one step (now one fact at a time, or by the worker after a search).
+- Memory: run the recall eval again on a quiet Mac, and try a larger embedder for German-English matches once memory allows (e5-small misses "Zahnarzttermin" for an English dentist episode).
+- Memory: try the nightly consolidation on a real day with Codex and with Claude, and read the journal it writes.
+- Memory: expire raw transcripts after a while (the design suggests 90 days) once episode summaries hold up.
+
 ## Later
 - Wake word ("hey Milo") with a small local model.
 - Rive or sprite animations instead of SwiftUI shapes.
