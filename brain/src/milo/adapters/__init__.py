@@ -21,6 +21,8 @@ BUILTIN = (
     "connect.mac",
     "connect.fake",
     "headless.none",
+    "channel.telegram",
+    "channel.imessage",
 )
 
 
