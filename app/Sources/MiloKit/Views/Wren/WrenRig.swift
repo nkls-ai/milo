@@ -164,7 +164,7 @@ enum WrenRig {
         }, z: 3))
 
         // The scarf's loose end, swinging from the knot, and the knot over it
-        let sy = Self.scarfY - p.scarfUp * 10
+        let sy = Self.scarfY - p.scarfUp * 4
         let knotX = fx(th + 32)
         let knotY = sy + 6 + (1 - pow((knotX - 100) / 60, 2)) * 2
         let endLen = 25 * (1 + p.scarfToss * 0.25)
@@ -184,7 +184,7 @@ enum WrenRig {
         // Face
         var face: [WrenPart] = []
         let gx = p.gazeX * 4.5, gy = p.gazeY * 3.5
-        let eyeY = Self.eyeHeight + gy - p.scarfUp * 4
+        let eyeY = Self.eyeHeight + gy - p.scarfUp * 3
         let eyes: [(Character, Double)] = [("L", th - Self.eyeAngle), ("R", th + Self.eyeAngle)]
         let bodyCenter = CGPoint(x: 84 + t * 12, y: 98)
         if p.blush > 0.01 {
@@ -225,7 +225,7 @@ enum WrenRig {
             }, transform: CGAffineTransform(translationX: x, y: eyeY - 18.5 - raise).rotated(by: rad(tilt)), z: side == "L" ? 3 : 4))
         }
         // Beak: thin and a touch long; the tip swings toward the turn.
-        let bx = fx(th) + gx * 1.1, by = Self.eyeHeight + 8.5 + gy - p.scarfUp * 6
+        let bx = fx(th) + gx * 1.1, by = Self.eyeHeight + 8.5 + gy - p.scarfUp * 3
         let tip = t * 9 + p.gazeX * 2
         // in twentieths: finer steps don't show, and each step redraws the beak
         let open = (min(1, max(0, p.beak)) * 20).rounded() / 20
@@ -361,7 +361,7 @@ enum WrenRig {
         softEllipse(ctx, center: CGPoint(x: 76 + t * 8, y: top + 16), rx: 24, ry: 12, color: CGColor(gray: 1, alpha: 1),
                     alpha: 0.36, rotation: -24)
         // scarf band, with the soft shadow it casts on him
-        let sy = scarfY - scarfUp * 10
+        let sy = scarfY - scarfUp * 4
         let band = CGMutablePath()
         band.move(to: CGPoint(x: 34, y: sy - 6))
         band.addQuadCurve(to: CGPoint(x: 166, y: sy - 6), control: CGPoint(x: 100, y: sy + 8))
