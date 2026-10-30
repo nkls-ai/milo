@@ -34,11 +34,17 @@ struct WindowRenderTests {
             try render(.live, name: "narrow-\(mode)", dark: dark, size: CGSize(width: 440, height: 580))
             try render(.live, name: "narrow-sidebar-\(mode)", dark: dark, size: CGSize(width: 440, height: 580),
                        sidebar: true)
+            try render(.usage, name: "usage-\(mode)", dark: dark, usage: UsageModel(report: Month.report()),
+                       size: CGSize(width: 900, height: 1100))
+            try render(.usage, name: "usage-new-\(mode)", dark: dark, usage: UsageModel(report: Month.report(empty: true)))
+            try render(.usage, name: "usage-narrow-\(mode)", dark: dark, usage: UsageModel(report: Month.report()),
+                       size: CGSize(width: 440, height: 1300))
         }
     }
 
     private func render(_ page: WindowPage, name: String, dark: Bool, busy: Bool = false, empty: Bool = false,
-                        search: String = "", size: CGSize = CGSize(width: 780, height: 580), sidebar: Bool = false) throws {
+                        search: String = "", usage: UsageModel = UsageModel(),
+                        size: CGSize = CGSize(width: 780, height: 580), sidebar: Bool = false) throws {
         let model = MiloModel(scheduler: ManualScheduler())
         model.connected = true
         let transcript = empty ? TranscriptModel() : Day.transcript()
@@ -64,7 +70,7 @@ struct WindowRenderTests {
         route.sidebarShown = sidebar
         let view = ConversationView(transcript: transcript, model: model,
                                     settings: ConversationSettings(talkKey: "right ⌥"), route: route,
-                                    actions: WindowActions(reveal: { _ in }))
+                                    actions: WindowActions(reveal: { _ in }), usage: usage)
             .themed(by: model)
             .frame(width: size.width, height: size.height)
         let host = NSHostingView(rootView: view)
@@ -185,5 +191,41 @@ enum Day {
     static func transcript() -> TranscriptModel {
         TranscriptModel(entries: budget, conversations: conversations, current: "c-budget",
                         opened: ["c-photos": photos, "c-hamburg": hamburg])
+    }
+}
+
+/// A month with Milo: talking most days, a few big tasks, dictating into Slack and Mail, quiet weekends.
+enum Month {
+    static func report(empty: Bool = false) -> UsageReport {
+        let calendar = Calendar.current
+        let days = (0..<30).map { i -> UsageDay in
+            let date = calendar.date(byAdding: .day, value: i - 29, to: Day.now)!
+            let c = calendar.dateComponents([.year, .month, .day], from: date)
+            let day = String(format: "%04d-%02d-%02d", c.year!, c.month!, c.day!)
+            let weekend = calendar.isDateInWeekend(date)
+            if empty || (i < 6) { return UsageDay(day: day) }
+            let wave = (i * 37) % 11
+            let calls = weekend ? wave % 3 : 4 + wave
+            let input = calls * 9_000 + (i % 5 == 0 ? 60_000 : 0)
+            return UsageDay(day: day, calls: calls, inputTokens: input, cachedInputTokens: input * 7 / 10,
+                            outputTokens: calls * 140, dictations: weekend ? 1 : 6 + wave, words: weekend ? 12 : 80 + wave * 21)
+        }
+        return UsageReport(
+            span: 30, today: days.last!.day, since: empty ? "" : days[6].day, daily: days,
+            sources: empty ? [] : [UsageSource(source: "task", calls: 21, tokens: 1_310_000),
+                                   UsageSource(source: "chat", calls: 164, tokens: 842_000),
+                                   UsageSource(source: "memory", calls: 9, tokens: 96_000)],
+            apps: empty ? [] : [UsageApp(app: "Slack", dictations: 88, words: 2_140),
+                                UsageApp(app: "Mail", dictations: 41, words: 1_610),
+                                UsageApp(app: "Notes", dictations: 17, words: 530),
+                                UsageApp(app: "", dictations: 3, words: 40)],
+            accounts: empty ? [] : [
+                UsageAccount(service: "Claude", uses: ["Talking"], plan: "Max", who: "you@example.com"),
+                UsageAccount(service: "ChatGPT", uses: ["Tasks"], detail: "Signed in with ChatGPT"),
+                UsageAccount(service: "ElevenLabs", uses: ["Milo's voice", "Hearing you"], state: .unknown,
+                             detail: "Can't see the plan: the API key lacks the user_read permission."),
+                UsageAccount(service: "This Mac", uses: ["Dictation"], state: .local,
+                             detail: "Whisper, nothing leaves the Mac"),
+            ])
     }
 }

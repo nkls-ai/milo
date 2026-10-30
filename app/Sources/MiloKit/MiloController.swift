@@ -43,6 +43,8 @@ public final class MiloController {
     public let knowledge = KnowledgeModel()
     /// What the Settings window shows and changes. The menu's "Dictation style" reads and changes it too.
     public let settingsModel = SettingsModel()
+    /// What the Usage page in the Milo window shows.
+    public let usage = UsageModel()
     /// Looking at the screen and the worker's actions on it; nil without those ports.
     public let screen: ScreenController?
     /// Calls and meeting recordings; nil without a recorder.
@@ -97,6 +99,7 @@ public final class MiloController {
         model.onRoutine = { [weak self] id, action in self?.brain.send(.routine(id: id, action: action)) }
         model.onDraftAnswer = { [weak self] id, save in self?.brain.send(.routineDraftAnswer(id: id, save: save)) }
         settingsModel.send = { [weak self] in self?.brain.send($0) }
+        usage.send = { [weak self] in self?.brain.send($0) }
         brain.onEvent = { [weak self] in self?.received($0) }
         brain.onConnectionChange = { [weak self] in self?.connectionChanged($0) }
         // Development brains are started by hand; only launch one if nothing answers.
@@ -185,6 +188,8 @@ public final class MiloController {
             knowledge.apply(event)
         case let .settings(report):
             settingsModel.apply(report)
+        case let .usage(report):
+            usage.apply(report)
         case let .appRequest(id, op, args):
             guard let connections else {
                 brain.send(.appResponse(id: id, outcome: .failure(Self.noConnections)))

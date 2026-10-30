@@ -148,6 +148,39 @@ private final class Harness {
         #expect(h.controller.settingsModel.value("ui", "character") == "dragon", "an error alone keeps the values")
     }
 
+    // MARK: Usage
+
+    @Test func theUsagePageAsksForItsRangeAndDropsAnswersForAnOldOne() {
+        let h = Harness()
+        h.brain.connect()
+        h.brain.clearSent()
+        let usage = h.controller.usage
+        usage.refresh()
+        #expect(usage.loading)
+        usage.show(span: 7)
+        #expect(h.brain.sent == [.getUsage(span: 30), .getUsage(span: 7)])
+
+        h.brain.emit(.usage(UsageReport(span: 30, today: "2026-10-30", daily: [UsageDay(day: "2026-10-30")])))
+        #expect(usage.report == nil && usage.loading, "the answer for 30 days came after the user picked 7")
+        let week = UsageReport(span: 7, today: "2026-10-30", daily: [UsageDay(day: "2026-10-30", calls: 2)])
+        h.brain.emit(.usage(week))
+        #expect(usage.report == week && !usage.loading)
+    }
+
+    @Test func aStreakCountsDaysInARowAndTodayMayStillBeEmpty() {
+        func report(_ active: [Bool]) -> UsageReport {
+            UsageReport(span: active.count, today: "2026-10-30", daily: active.enumerated().map {
+                UsageDay(day: "2026-10-\(String(format: "%02d", 31 - active.count + $0.offset))", dictations: $0.element ? 1 : 0)
+            })
+        }
+        #expect(report([true, true, true]).streak == 3)
+        #expect(report([true, true, false]).streak == 2, "nothing yet today doesn't break it")
+        #expect(report([true, false, true]).streak == 1)
+        #expect(report([true, false, false]).streak == 0)
+        #expect(report([false]).streak == 0)
+        #expect(report([true, false, true, true]).activeDays == 3)
+    }
+
     private static func stream(_ value: String) -> SettingsReport {
         SettingsReport(settings: [Setting(section: "dictation", key: "stream", value: .string(value),
                                           options: ["off", "preview", "type"])])

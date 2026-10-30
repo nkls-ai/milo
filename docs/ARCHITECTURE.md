@@ -99,6 +99,7 @@ Beyond `milo.core.ports`, these entry points are fixed:
 | `milo.memory.recall.HybridRecaller(index, facts, tuning)` | memory | `Recaller`. `render(recall, now)` makes the `<memory>` block. |
 | `milo.services.memory.Memory` / `TurnMemory` | services | The brain's memory: recall on the memory thread with a 300 ms limit, search, forget, edit, the `facts` event. `TurnMemory.before_turn()` is the live chat's hook. |
 | `milo.memory.ledger.JsonlUsageLedger(path, clock)` | memory | `UsageLedger`. Appends one JSON line per harness call. |
+| `milo.memory.usage_log.JsonlUsageHistory(usage_path, dictation_path)` | memory | `UsageHistory`. Reads the ledger and the dictation history back for the Usage page. |
 | `milo.memory.history.JsonlDictationHistory(path, clock)` | memory | `DictationHistory`. |
 | `milo.memory.transcript.JsonlTranscript(path)` | memory | `TranscriptStore` over `state/transcript.jsonl`. `tail(n)` reads the file backwards block by block, so its cost doesn't grow with the file. Only the migration reads it now. |
 | `milo.memory.conversations.JsonlConversationStore(root)` | memory | `ConversationStore` over `state/conversations/YYYY-MM/<id>.jsonl`, one file per conversation, and `index.jsonl`, a cache of their headers that it rebuilds when files and index disagree. `migrate(transcript, kept, store, rules)` splits an old `transcript.jsonl` into conversations once, keeping every line, then renames it to `transcript.before-conversations.jsonl`. |
@@ -249,7 +250,16 @@ The window has the conversations down its left side and a page beside them: Toda
 - **Today.** What waits for the user (Milo's question, a recipe draft), what Milo is working on, today's reminders, what got done today and the last conversation to pick up.
 - **Questions.** While Milo waits for a yes or no, the bubble shows the question with Yes and No buttons and stays up, and a bar above the text field and the Today page show it too.
 - **Typing.** The text field sends `text`. The window's "speak replies" toggle (off by default, kept in UserDefaults) adds `"speak": false`, and Milo then answers in the bubble and the window without audio.
-- **Keys.** ⌘1 Today, ⌘N a new conversation, ⌘F search, ⌘[ back, ⌥⌘↑ and ⌥⌘↓ the conversation above or below, ⌘L the text field, ⌘0 the sidebar in a window narrower than 600 pt, Esc clears the search or leaves a task.
+- **Keys.** ⌘1 Today, ⌘2 Usage, ⌘N a new conversation, ⌘F search, ⌘[ back, ⌥⌘↑ and ⌥⌘↓ the conversation above or below, ⌘L the text field, ⌘0 the sidebar in a window narrower than 600 pt, Esc clears the search or leaves a task.
+
+## Usage
+
+The Usage page in the Milo window (⌘2, under Today in the sidebar) shows tokens and dictations per day over 7, 30 or 90 days, where the tokens went (talking, tasks, memory upkeep), which apps got the dictated words, and the accounts Milo uses. It costs no model call.
+
+- **Protocol.** The app sends `get_usage {span}` when the page opens and when the range changes. The brain answers with `usage {span, today, since, daily, sources, apps, accounts}`: every day of the range (calls, input tokens with the cached ones inside, cached, output, dictations, words), tokens per `source`, the top 6 apps by words, and one row per service `{service, uses, state, plan, who, detail}`. No dictated text leaves the brain, only counts and app names. The app keeps only the answer for the range it shows.
+- **Reading.** `memory.usage_log.JsonlUsageHistory` reads `state/usage.jsonl` and `dictation-history.jsonl` back, skipping lines before the range by their date prefix before parsing; `core.usage.summarize` totals them. Both files only grow, one short line per call or dictation, so a year of heavy use is a few milliseconds of reading. With `[dictation] keep_history = false` there are no dictation counts.
+- **Accounts.** `adapters.accounts.CliAccounts` asks the services `config.toml` picks: `claude auth status` (signed in, email, plan), `codex login status` (how it is signed in; Codex doesn't say the plan), and ElevenLabs' `/v1/user/subscription` with the key in a header (plan and credits, but only for a key with the `user_read` permission; otherwise the row says so). Local parts show as "This Mac". Each check has a 5 s limit, and a failure becomes a row that says why.
+- **Never in the way.** `UsageService` answers on a task of its own and reads on worker threads, so a key press right after opening the page isn't held up. The page gets the numbers at once; the account check, reused for 10 minutes, follows in a second `usage`.
 
 ## Settings
 

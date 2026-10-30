@@ -26,6 +26,7 @@ public struct ConversationView: View {
     @ObservedObject var settings: ConversationSettings
     @ObservedObject var route: WindowRoute
     let actions: WindowActions
+    @ObservedObject var usage: UsageModel
     @FocusState private var searching: Bool
     @AppStorage("speakTypedReplies") private var speakReplies = false
     @State private var pendingSearch: Task<Void, Never>?
@@ -34,12 +35,13 @@ public struct ConversationView: View {
     static let sidebarWidth: CGFloat = 236
 
     public init(transcript: TranscriptModel, model: MiloModel, settings: ConversationSettings, route: WindowRoute,
-                actions: WindowActions) {
+                actions: WindowActions, usage: UsageModel = UsageModel()) {
         self.transcript = transcript
         self.model = model
         self.settings = settings
         self.route = route
         self.actions = actions
+        self.usage = usage
     }
 
     /// Just the conversation going on, for the narrow window of old and for tests.
@@ -129,6 +131,8 @@ public struct ConversationView: View {
                     route.go(.live)
                 }
             }
+        case .usage:
+            UsageView(usage: usage, model: model)
         case .live:
             conversation(transcript.current)
         case let .conversation(id):
@@ -153,7 +157,7 @@ public struct ConversationView: View {
     private var narrowBar: some View {
         HStack(spacing: 6) {
             BarButton(icon: "sidebar.left", help: "Show the conversations (⌘0)") { route.sidebarShown.toggle() }
-            if route.page != .today && route.page != .live {
+            if route.page != .today && route.page != .live && route.page != .usage {
                 BarButton(icon: "chevron.left", help: "Back (⌘[)", action: route.goBack)
             }
             Spacer()
@@ -172,6 +176,7 @@ public struct ConversationView: View {
     private var shortcuts: some View {
         ZStack {
             Button("Today") { route.go(.today) }.keyboardShortcut("1", modifiers: .command)
+            Button("Usage") { route.go(.usage) }.keyboardShortcut("2", modifiers: .command)
             Button("New conversation") { actions.newConversation(); route.go(.live) }
                 .keyboardShortcut("n", modifiers: .command)
             Button("Search") { route.sidebarShown = true; searching = true }.keyboardShortcut("f", modifiers: .command)
