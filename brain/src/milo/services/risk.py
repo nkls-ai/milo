@@ -110,6 +110,8 @@ def classify(tool: str, args: dict, target: dict) -> Verdict:
     if tool in ("type", "key", "ax_set_value") and apps & set(_CODE_APPS):
         return Verdict(Risk.ASK, "run a command")
     if tool in ("click", "ax_press"):
+        if target.get("unresolved"):
+            return Verdict(Risk.ASK, "click something I can't name")
         return _words(title)
     if tool == "key":
         combo = normalize_combo(str(args.get("combo", "")))

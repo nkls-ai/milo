@@ -59,12 +59,43 @@ enum AX {
         attribute(systemWide, kAXFocusedUIElementAttribute)
     }
 
+    /// The element of another app under `point`. Milo's own windows (the frame, the character) are looked
+    /// through, so the safety check sees what the click will really hit. nil if nothing can be named.
     static func element(at point: CGPoint) -> AXUIElement? {
         var element: AXUIElement?
-        guard AXUIElementCopyElementAtPosition(systemWide, Float(point.x), Float(point.y), &element) == .success else {
-            return nil
+        if AXUIElementCopyElementAtPosition(systemWide, Float(point.x), Float(point.y), &element) == .success,
+           let element, pid(element) != getpid() {
+            return element
         }
-        return element
+        guard let owner = windowOwner(at: point) else { return nil }
+        var inner: AXUIElement?
+        guard AXUIElementCopyElementAtPosition(application(owner), Float(point.x), Float(point.y), &inner) == .success
+        else { return nil }
+        return inner
+    }
+
+    /// The process owning the frontmost ordinary window under `point`, Milo's skipped.
+    static func windowOwner(at point: CGPoint) -> pid_t? {
+        let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+            as? [[String: Any]] ?? []
+        for window in info {  // front to back
+            guard let pid = window[kCGWindowOwnerPID as String] as? pid_t, pid != getpid(),
+                  (window[kCGWindowLayer as String] as? Int) == 0,
+                  let bounds = window[kCGWindowBounds as String] as? NSDictionary,
+                  let rect = CGRect(dictionaryRepresentation: bounds), rect.contains(point) else { continue }
+            return pid
+        }
+        return nil
+    }
+
+    /// Password managers: Milo never reads or looks at them.
+    static let secretApps: Set<String> = ["com.apple.keychainaccess", "com.apple.Passwords", "com.1password.1password",
+                                          "com.agilebits.onepassword7", "com.bitwarden.desktop", "com.lastpass.LastPass",
+                                          "com.dashlane.dashlanephonefinal", "org.keepassxc.keepassxc"]
+    static let secretRefused = "That's a password app. Milo never reads or looks at it."
+
+    static func isSecret(_ app: NSRunningApplication?) -> Bool {
+        app?.bundleIdentifier.map(secretApps.contains) ?? false
     }
 
     /// What a person would call it: its title, description or (for fields that aren't secret) its value.

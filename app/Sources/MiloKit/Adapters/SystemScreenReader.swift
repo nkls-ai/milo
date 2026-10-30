@@ -19,6 +19,9 @@ public final class SystemScreenReader: ScreenReader {
 
     public func capture(selection: Bool, completion: @escaping (ScreenCapture) -> Void) {
         let front = apps.front()
+        if AX.isSecret(front) {
+            return completion(ScreenCapture(app: front?.localizedName ?? "", error: AX.secretRefused))
+        }
         queue.async { [shots] in
             var capture = ScreenCapture(app: front?.localizedName ?? "")
             var errors: [String] = []

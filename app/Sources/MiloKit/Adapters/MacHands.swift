@@ -13,6 +13,8 @@ public final class MacHands: HandsExecutor {
     private var elements: [String: AXUIElement] = [:]
     /// The last screenshot, so click and scroll can turn its pixels into screen points.
     private var lastShot: ScreenShots.Shot?
+    /// The app that had the keyboard focus when type or key was checked; the action refuses if it moved.
+    private var checkedFocus: pid_t?
     private var script: Process?
     private let lock = NSLock()
 
@@ -92,11 +94,15 @@ public final class MacHands: HandsExecutor {
                 point = Self.pointerLocation()
             }
             element = point.flatMap(AX.element)
+            if element == nil && point != nil && args["tool"]?.string == "click" {
+                return ["unresolved": true, "point": point.map { .object(["x": .number($0.x), "y": .number($0.y)]) } ?? .null]
+            }
         case "ax_press", "ax_set_value":
             element = args["element"]?.string.flatMap { elements[$0] }
             point = element.flatMap(AX.frame).map { CGPoint(x: $0.midX, y: $0.midY) }
         case "type", "key":
             element = AX.focused()
+            checkedFocus = element.map(AX.pid)
             point = element.flatMap(AX.frame).map { CGPoint(x: $0.midX, y: $0.midY) }
         case "open_app":
             let name = args["name"]?.string ?? ""
@@ -157,6 +163,7 @@ public final class MacHands: HandsExecutor {
             return app
         } ?? front
         guard let app else { throw HandsFailure("No app is in front.") }
+        guard !AX.isSecret(app) else { throw HandsFailure(AX.secretRefused) }
         guard let window = AX.window(of: AX.application(app.processIdentifier)) else {
             throw HandsFailure("\(app.localizedName ?? "That app") has no window open.")
         }
@@ -249,6 +256,7 @@ public final class MacHands: HandsExecutor {
     }
 
     private func screenshot(front: NSRunningApplication?, finish: @escaping (Result<[String: JSONValue], HandsFailure>) -> Void) {
+        if AX.isSecret(front) { return finish(.failure(HandsFailure(AX.secretRefused))) }
         var center: CGPoint?
         if AXIsProcessTrusted(), let front, let window = AX.window(of: AX.application(front.processIdentifier)),
            let frame = AX.frame(window) {
@@ -285,8 +293,22 @@ public final class MacHands: HandsExecutor {
         return ["text": .string(clicks == 2 ? "Double-clicked." : "Clicked.")]
     }
 
+    /// The keyboard goes where it was checked to go, and never into a password field or a password app.
+    private func checkFocus(allowSecure: Bool = false) throws {
+        let focused = AX.focused()
+        if let checked = checkedFocus, focused.map(AX.pid) != checked {
+            throw HandsFailure("The keyboard focus moved to another app since I checked. Look again first.")
+        }
+        if let focused, AX.isSecret(NSRunningApplication(processIdentifier: AX.pid(focused))) {
+            throw HandsFailure(AX.secretRefused)
+        }
+        if !allowSecure, let focused, AX.isSecure(focused) {
+            throw HandsFailure("Milo never types into password fields.")
+        }
+    }
+
     private func type(_ text: String) throws -> [String: JSONValue] {
-        if let focused = AX.focused(), AX.isSecure(focused) { throw HandsFailure("Milo never types into password fields.") }
+        try checkFocus()
         let units = Array(text.utf16)
         for start in stride(from: 0, to: units.count, by: 16) {
             let chunk = Array(units[start..<min(start + 16, units.count)])
@@ -304,6 +326,9 @@ public final class MacHands: HandsExecutor {
         guard let parsed = KeyCombo(combo) else {
             throw HandsFailure("I don't know the key \(combo). Use names like return, tab, escape, cmd+s.")
         }
+        // In a password field only moving on is allowed: tab, shift+tab, escape.
+        let movesOn = [48, 53].contains(parsed.keyCode) && parsed.modifiers.subtracting(.shift).isEmpty
+        try checkFocus(allowSecure: movesOn)
         var flags: CGEventFlags = []
         if parsed.modifiers.contains(.command) { flags.insert(.maskCommand) }
         if parsed.modifiers.contains(.shift) { flags.insert(.maskShift) }
