@@ -39,7 +39,8 @@
     {"type": "facts", "facts": [
       {"id": "01JBF6Z3Q8M2X4K7N9P0R5T6VW", "text": "The user's name is Niklas.", "topic": "basics", "since": "2026-10-30T09:12:00", "pinned": true},
       {"id": "01JBF7A1B2C3D4E5F6G7H8J9KM", "text": "Anna is the user's sister. Her birthday is March 3.", "topic": "people", "since": "2026-10-30T18:05:41", "pinned": false}
-    ]}
+    ]},
+    {"type": "dictation_stream", "stream": "preview"}
   ],
   "app_to_brain": [
     {"type": "listen_start", "mode": "dictate"},
@@ -66,6 +67,7 @@
     {"type": "hands_result", "id": "hands-7", "ok": false, "result": {"borrow": "mouse"}, "error": "Excel doesn't take clicks in the background."},
     {"type": "get_facts"},
     {"type": "forget_fact", "id": "01JBF7A1B2C3D4E5F6G7H8J9KM"},
-    {"type": "edit_fact", "id": "01JBF7A1B2C3D4E5F6G7H8J9KM", "text": "Anna is the user's sister. Her birthday is March 4."}
+    {"type": "edit_fact", "id": "01JBF7A1B2C3D4E5F6G7H8J9KM", "text": "Anna is the user's sister. Her birthday is March 4."},
+    {"type": "set_dictation_stream", "stream": "type"}
   ]
 }

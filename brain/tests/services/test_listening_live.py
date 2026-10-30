@@ -17,13 +17,17 @@ class HearingStt:
     def warm(self) -> None:
         pass
 
-    def transcribe(self, audio) -> str:
+    def transcribe(self, audio, before: str = "", *, quick: bool = False) -> str:
+        """Each phrase as Whisper writes it: a capital first letter."""
         self.calls.append(len(audio))
-        return hear(audio)
+        return hear(audio).capitalize()
 
     def preview(self, audio) -> str:
         self.previews.append(len(audio))
         return hear(audio)
+
+    def interrupt(self) -> None:
+        pass
 
 
 def wired(live: LiveMode) -> tuple[Stack, Listening, GrowingMic, HearingStt]:
@@ -77,7 +81,7 @@ def test_a_release_before_the_confirm_still_counts():
     assert s.states() == [MiloState.TRANSCRIBING, MiloState.IDLE]
 
 
-def test_preview_shows_words_live_and_pastes_one_final_pass_over_everything():
+def test_preview_shows_words_live_and_pastes_the_committed_phrases_on_release():
     s, listening, mic, stt = wired(LiveMode.PREVIEW)
 
     async def run():
@@ -90,11 +94,26 @@ def test_preview_shows_words_live_and_pastes_one_final_pass_over_everything():
         await listening.stop()
 
     asyncio.run(run())
-    assert "alpha bravo" in [e.text for e in s.sink.of(Partial)]
+    assert [e.text for e in s.sink.of(Partial)] == ["Alpha", "Alpha bravo", "Alpha Bravo"]
     assert s.sink.of(Dictation) == [Dictation("ALPHA BRAVO")]
-    assert stt.calls == [len(mic.audio)], "live passes use the fast model; the final pass covers everything"
+    assert len(stt.calls) == 2 and max(stt.calls) < len(mic.audio), "one full pass per phrase, none over everything"
     assert stt.previews
     assert s.history.entries == [("ALPHA BRAVO", "Notes")]
+
+
+def test_off_transcribes_the_whole_recording_on_release():
+    s, listening, mic, stt = wired(LiveMode.OFF)
+
+    async def run():
+        listening.start(ListenMode.DICTATE)
+        mic.say(tone("alpha", 1), quiet(1), tone("bravo", 1))
+        await asyncio.sleep(0.5)
+        await listening.stop()
+
+    asyncio.run(run())
+    assert s.sink.of(Partial) == [] and stt.previews == []
+    assert stt.calls == [len(mic.audio)]
+    assert s.sink.of(Dictation) == [Dictation("ALPHA BRAVO")]
 
 
 def test_type_mode_pastes_at_pauses_and_only_the_tail_on_release():
@@ -117,7 +136,7 @@ def test_type_mode_pastes_at_pauses_and_only_the_tail_on_release():
     assert s.states()[-1] is MiloState.IDLE
 
 
-def test_talk_shows_a_preview_but_types_nothing():
+def test_talk_shows_the_same_live_words_but_types_nothing():
     s, listening, mic, _ = wired(LiveMode.TYPE)
 
     async def run():
@@ -127,9 +146,27 @@ def test_talk_shows_a_preview_but_types_nothing():
         listening.cancel()
 
     asyncio.run(run())
-    assert [e.text for e in s.sink.of(Partial)][-1] == "alpha"
+    assert [e.text for e in s.sink.of(Partial)][-1] == "Alpha"
     assert s.sink.of(Dictation) == []
     assert s.states() == [MiloState.LISTENING, MiloState.IDLE]
+
+
+def test_talk_hands_the_committed_text_to_milo_without_a_pass_after_release():
+    s, listening, mic, stt = wired(LiveMode.PREVIEW)
+
+    async def run():
+        listening.start(ListenMode.TALK)
+        mic.say(tone("alpha", 1), quiet(1), tone("bravo", 1), quiet(0.5))
+        await asyncio.sleep(0.6)
+        passes = len(stt.calls)
+        await listening.stop()
+        await settle()
+        return passes
+
+    passes = asyncio.run(run())
+    assert len(stt.calls) == passes, "the last phrase was already guessed while the user was silent"
+    assert s.model.turns[0].endswith("\nAlpha Bravo")
+    assert s.sink.of(Dictation) == []
 
 
 def test_levels_flow_only_once_shown():

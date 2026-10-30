@@ -35,6 +35,8 @@ public enum BrainCommand: Equatable, Sendable {
     case forgetFact(id: String)
     /// The user changed fact `id` to `text`.
     case editFact(id: String, text: String)
+    /// The user picked a dictation style in the menu; the brain uses it from the next recording and saves it.
+    case setDictationStream(DictationStyle)
 }
 
 /// What the app did with an `app_request`: a JSON result, or a plain-language error for the user.
@@ -45,7 +47,7 @@ public enum AppOutcome: Equatable, Sendable {
 
 extension BrainCommand: Encodable {
     private enum Key: String, CodingKey {
-        case type, mode, text, app, on, tentative, speak, id, capture, ok, result, error, reason, yes
+        case type, mode, text, app, on, tentative, speak, id, capture, ok, result, error, reason, yes, stream
         case idleSeconds = "idle_s"
     }
 
@@ -118,6 +120,9 @@ extension BrainCommand: Encodable {
             try c.encode("edit_fact", forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(text, forKey: .text)
+        case let .setDictationStream(style):
+            try c.encode("set_dictation_stream", forKey: .type)
+            try c.encode(style, forKey: .stream)
         }
     }
 }

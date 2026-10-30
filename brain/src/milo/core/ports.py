@@ -60,13 +60,22 @@ class Transcriber(Protocol):
         """Load models so the first call is fast. Blocking; called on a worker thread."""
         ...
 
-    def transcribe(self, audio: Audio) -> str:
-        """16 kHz mono audio to text. Returns "" for silence or noise. Blocking."""
+    def transcribe(self, audio: Audio, before: str = "", *, quick: bool = False) -> str:
+        """16 kHz mono audio to text. Returns "" for silence or noise. Blocking.
+
+        `before` is what the user said just before this audio in the same recording, when it is one
+        phrase of a longer one; the engine may keep that phrase's language. `quick`: someone is waiting,
+        so trade a little accuracy for speed. Raises Interrupted if interrupt() ended it."""
         ...
 
     def preview(self, audio: Audio) -> str:
         """Like transcribe(), but fast and rougher: live words while the user still speaks. Never pasted.
         An engine without a fast mode returns transcribe(audio)."""
+        ...
+
+    def interrupt(self) -> None:
+        """End the pass running now as soon as possible, with Interrupted. Safe from any thread; does
+        nothing if no pass runs or the engine can't stop one."""
         ...
 
 

@@ -23,3 +23,13 @@ public enum ListenMode: String, CaseIterable, Sendable, Encodable {
     /// Speech is a turn in the conversation with Milo.
     case talk
 }
+
+/// What dictation does while the user speaks (`[dictation] stream`). Raw values are the wire strings.
+public enum DictationStyle: String, CaseIterable, Sendable, Encodable {
+    /// Nothing until the key is let go, then one pass over the whole recording.
+    case off
+    /// The words show next to Milo while the user speaks; the text is pasted on release.
+    case preview
+    /// Each phrase is typed into the app at the pause after it.
+    case type
+}

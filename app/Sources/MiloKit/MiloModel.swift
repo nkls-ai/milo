@@ -99,7 +99,7 @@ public final class MiloModel: ObservableObject {
         case let .helpers(list):
             if list != helpers { helpers = list }
         case .dictation, .uiConfig, .history, .entry, .replyDelta, .activity, .lookRequest, .handsRequest,
-             .handsSession, .flyTo, .appRequest, .handsBorrow, .facts, .unknown:
+             .handsSession, .flyTo, .appRequest, .handsBorrow, .facts, .dictationStream, .unknown:
             break
         }
     }

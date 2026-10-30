@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from .brain import Brain
 from .config import Config
+from .config_edit import set_value
 from .core.clock import SystemClock
 from .core.ports import Harness, LiveModel, PlaybackTap, Transcriber, Voice
 from .core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, EMBEDDERS, HARNESSES, LIVE_MODELS, TEXT_CLEANERS,
@@ -202,7 +203,8 @@ def build(home: Path) -> Runtime:
 
     brain = Brain(ui, listening, live_talk, context, heartbeat, config.ui, transcript, approvals=approvals,
                   bridge=bridge, hands=hands, screens=workspace.screens_dir, helpers=helpers,
-                  memory=mem.memory if mem is not None else None)
+                  memory=mem.memory if mem is not None else None,
+                  save_stream=lambda stream: set_value(workspace.config_path, "dictation", "stream", stream))
     return Runtime(brain, server, heartbeat, transcriber, voice, stt_executor, tts_executor, harness,
                    live_model, live_talk, tool_server, hands_server, helpers, mem, barge_in, backchannel)
 

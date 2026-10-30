@@ -48,7 +48,7 @@ Milo already runs Claude Code and Codex as his worker. The cheapest first versio
 - Hands-free: double-tap the dictate key to lock recording on, tap it again to stop and paste, `esc` to cancel. Holding still works as before. The talk key gets the same lock.
 - Live transcription while you speak, with a setting:
   - `off`: transcribe on release (today's behaviour).
-  - `preview`: words appear next to Milo as you speak. On release a final pass over the whole recording gets pasted. Same accuracy as today, and you can see it working.
+  - `preview`: words appear next to Milo as you speak. The full model transcribes each phrase at the pause after it, so on release only the last words are left. Same accuracy as one pass over everything, and talking to Milo works the same way.
   - `type`: text lands in the focused app at each pause while you are still talking. Feels fastest. Earlier segments don't get corrected later.
 - A short mic pre-roll so the first syllable is never clipped.
 

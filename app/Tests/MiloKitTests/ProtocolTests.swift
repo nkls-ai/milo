@@ -82,6 +82,7 @@ private func entries(_ key: String) throws -> [[String: Any]] {
                 MemoryFact(id: "01JBF7A1B2C3D4E5F6G7H8J9KM", text: "Anna is the user's sister. Her birthday is March 3.",
                            topic: "people", since: "2026-10-30T18:05:41"),
             ]),
+            .dictationStream(.preview),
         ])
     }
 
@@ -117,6 +118,7 @@ private func entries(_ key: String) throws -> [[String: Any]] {
                          error: "Excel doesn't take clicks in the background."),
             .getFacts, .forgetFact(id: "01JBF7A1B2C3D4E5F6G7H8J9KM"),
             .editFact(id: "01JBF7A1B2C3D4E5F6G7H8J9KM", text: "Anna is the user's sister. Her birthday is March 4."),
+            .setDictationStream(.type),
         ]
         let encoder = JSONEncoder()
         let encoded = try commands.map { command in
@@ -129,6 +131,11 @@ private func entries(_ key: String) throws -> [[String: Any]] {
         for (command, object) in zip(commands, encoded) where !expected.contains(object) {
             Issue.record("\(command) encodes to \(object), which protocol/messages.json doesn't list")
         }
+    }
+
+    @Test func anUnknownDictationStyleIsIgnored() throws {
+        let data = Data(#"{"type": "dictation_stream", "stream": "telepathy"}"#.utf8)
+        #expect(try JSONDecoder().decode(BrainEvent.self, from: data) == .unknown("dictation_stream"))
     }
 
     @Test func unknownTypeDecodesToUnknown() throws {

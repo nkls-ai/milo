@@ -1,7 +1,14 @@
 import AppKit
 
 /// The menu bar item.
-public final class StatusMenu: NSObject {
+public final class StatusMenu: NSObject, NSMenuDelegate {
+    /// The "Dictation style" choices, in menu order, with plain names.
+    static let dictationStyles: [(DictationStyle, String)] = [
+        (.preview, "Show the words, paste when I let go"),
+        (.type, "Type as I speak"),
+        (.off, "Paste when I let go, show nothing"),
+    ]
+
     private let controller: MiloController
     private let panel: OverlayPanel
     private let window: ConversationWindow
@@ -10,6 +17,7 @@ public final class StatusMenu: NSObject {
     private let hintItem: NSMenuItem
     private var muteItem: NSMenuItem!
     private lazy var knowledge = KnowledgeWindow(controller: controller)
+    private var styleMenu: NSMenu!
 
     public init(controller: MiloController, panel: OverlayPanel, window: ConversationWindow, paths: MiloPaths) {
         self.controller = controller
@@ -31,6 +39,13 @@ public final class StatusMenu: NSObject {
         muteItem = add(menu, "Mute proactive nudges", #selector(toggleMute))
         add(menu, "Show / hide Milo", #selector(toggleVisible))
         add(menu, "Move Milo back to the corner", #selector(resetPosition))
+        styleMenu = NSMenu()
+        styleMenu.delegate = self
+        styleMenu.autoenablesItems = false
+        for (style, title) in Self.dictationStyles {
+            add(styleMenu, title, #selector(pickDictationStyle(_:))).representedObject = style.rawValue
+        }
+        menu.addItem(withTitle: "Dictation style", action: nil, keyEquivalent: "").submenu = styleMenu
         menu.addItem(.separator())
         add(menu, "Open Milo folder", #selector(openHome))
         add(menu, "Open brain log", #selector(openLog))
@@ -55,6 +70,20 @@ public final class StatusMenu: NSObject {
     @objc private func toggleMute() {
         controller.toggleMute()
         muteItem.state = controller.muted ? .on : .off
+    }
+
+    /// Ticks the style the brain uses each time the submenu opens.
+    public func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu === styleMenu else { return }
+        for item in menu.items {
+            item.state = item.representedObject as? String == controller.dictationStyle?.rawValue ? .on : .off
+            item.isEnabled = controller.dictationStyle != nil  // no brain yet: nothing to switch
+        }
+    }
+
+    @objc private func pickDictationStyle(_ item: NSMenuItem) {
+        guard let raw = item.representedObject as? String, let style = DictationStyle(rawValue: raw) else { return }
+        controller.setDictationStyle(style)
     }
 
     @objc private func toggleVisible() { panel.toggleVisible() }

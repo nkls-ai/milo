@@ -38,7 +38,7 @@
 - Memory: expire raw transcripts after a while (the design suggests 90 days) once episode summaries hold up.
 
 - Voice barge-in (`[chat] voice_barge_in`): try it with the MacBook speakers in a real room, then with headphones, and tune `TalkDetector` on what it gets wrong. Turn it on by default once a few days of use show no false stops. It only listens while Milo speaks; talking while he thinks still needs the key.
-- First sound is about 1.5 to 2.5 s after the user's words, and most of it is OmniVoice's first piece (each diffusion step costs 200 to 500 ms even for a short piece, and the audio decoder another 0.3 s). Ideas not yet measured: start the chat turn on the committed words before the key comes up (needs the live transcript's final phrases), and a per-call cache of the voice reference's encoder pass.
+- First sound is about 1.5 to 2.5 s after the user's words, and most of it is OmniVoice's first piece (each diffusion step costs 200 to 500 ms even for a short piece, and the audio decoder another 0.3 s). Idea not yet measured: a per-call cache of the voice reference's encoder pass. Starting the chat turn on the committed words before the key comes up is possible now (the live transcript commits phrases while the user speaks, and the words are ready about 0.5 s after release), but a message sent to the running model can't be taken back if the user goes on talking, so it would need a throwaway conversation per guess.
 - OmniVoice garbled one 6-step render out of about 40 in a Whisper check ("Goodnight..."). If it happens in use, 8 steps when the GPU is free.
 
 ## Later
@@ -46,5 +46,4 @@
 - Rive or sprite animations instead of SwiftUI shapes.
 - Usage readout in the menu (`JsonlUsageLedger.today_totals()` exists).
 - Mic pre-roll buffer. Skipped for now: a ring buffer needs the input stream running all the time, which keeps the macOS orange mic indicator on permanently. Recording already starts at key-down (before the 250 ms hold check shows anything), and a double tap records from the first tap.
-- The final pass over a long hands-free recording is slow (about 1.5 s per 30 s). The live phrases come from the small preview model, so they can't simply be reused; transcribing closed phrases with the full model while the user still speaks would, at the cost of a busier GPU.
 - Dev: a rebuilt app joins whatever brain holds the lock, even one running older code. build-app.sh now stops this checkout's brain; better would be the brain reporting its build and the app restarting a brain from another build.
