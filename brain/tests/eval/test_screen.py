@@ -38,3 +38,5 @@ def test_cleanup_says_yes_only_to_closing_quitting_and_deleting_in_its_own_apps(
     assert not _cleanup_answer(("Numbers",), "I'm about to click “Send” in Mail. Go ahead?", Run())
     assert not _cleanup_answer(("Numbers",), "Run a script in Numbers? It's in my window.", Run())
     assert not _cleanup_answer((), "May I use Numbers for this? You'll see each step.", Run())
+    assert _cleanup_answer(("Numbers",), "Close the Numbers document you made without saving it?", Run())
+    assert not _cleanup_answer(("Mail",), "Delete the draft and send the reply?", Run())

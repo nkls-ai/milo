@@ -368,6 +368,8 @@ def _cleanup_answer(apps: tuple[str, ...], question: str, run: Run) -> bool:
         return False
     if re.fullmatch(rf"May I use ({named}) for this\? You'll see each step\.", question):
         return True  # the careful gate; every step after it is checked on its own
+    if re.match(r"(Close|Quit|Delete) ", question) and not _CLEANUP_SCRIPT_BAD.search(question):
+        return True  # the chat model starting the cleanup task; again every step is checked on its own
     if re.fullmatch(rf"I'm about to click “(Delete|Don['’]t Save)” in ({named})\. Go ahead\?", question):
         return True
     if not re.fullmatch(rf"Run a script in ({named})\? It's in my window\.", question):
