@@ -103,3 +103,11 @@ def test_tab_and_linefeed_are_never_said_to_an_app(script):
     import re
     said = [line for line in _inside_tell(script) if re.search(r"(?<!AppleScript's )\b(tab|linefeed)\b", line)]
     assert said == []
+
+
+@pytest.mark.parametrize("script", [
+    write_script(EXCEL, WEEK, new_document=True), write_script(NUMBERS, WEEK, new_document=True),
+    documents.write_script("TextEdit", "hi"), documents.write_script("Pages", "hi")])
+def test_the_app_comes_to_the_front_only_after_the_new_document_is_made(script):
+    # activate on an app that isn't running opened a blank Numbers document of its own, left open after cleanup.
+    assert script.index("make new") < script.index("activate")

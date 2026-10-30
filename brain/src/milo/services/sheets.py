@@ -218,6 +218,10 @@ return out & linefeed & "filled" & tab & filled
 """
 
 
+# Each script brings the app to the front only at the end: `activate` on an app that isn't running yet makes it
+# open its own blank document too, which nobody would close.
+
+
 def write_script(app: str, rows: list, start: str = "A1", *, new_document: bool = False, header: bool = False,
                  bold: str = "", money: str = "", decimals: str = "", locale: str = "") -> str:
     """Fill the front sheet (of a new document if asked) with `rows` from `start`. Formula cells start with =.
@@ -231,7 +235,7 @@ def write_script(app: str, rows: list, start: str = "A1", *, new_document: bool 
     moneys, decimal_ranges = ranges(money), ranges(decimals)
     formulas = _formula_cells(rows, start)
     if app == EXCEL:
-        lines = ['tell application "Microsoft Excel"', "  activate"]
+        lines = ['tell application "Microsoft Excel"']
         if new_document:
             lines.append("  set wb to make new workbook")
         else:
@@ -243,12 +247,14 @@ def write_script(app: str, rows: list, start: str = "A1", *, new_document: bool 
         lines += [f'  set bold of font object of range "{r}" of ws to true' for r in bolds]
         lines += [f'  set number format of range "{r}" of ws to {literal("0.00")}' for r in decimal_ranges]
         lines += [f'  set number format of range "{r}" of ws to {literal(excel_money(locale))}' for r in moneys]
-        lines += [f'  autofit columns of range "{b.range}" of ws',
+        lines += [f'  autofit columns of range "{b.range}" of ws', "  activate",
                   "  set docName to name of wb", "  set sheetName to name of ws", "end tell"]
         return "\n".join(lines) + "\n" + _NAMES + "return out\n"
-    lines = ['tell application "Numbers"', "  activate"]
+    lines = ['tell application "Numbers"']
     if new_document:
-        lines.append("  set doc to make new document")
+        lines = [_NUMBERS_STARTS, 'tell application "Numbers"',
+                 "  if blankDoc is missing value then", "    set doc to make new document",
+                 "  else", "    set doc to blankDoc", "  end if"]
     else:
         lines += ['  if (count of documents) is 0 then error "Numbers has no document open."',
                   "  set doc to front document"]
@@ -271,9 +277,32 @@ def write_script(app: str, rows: list, start: str = "A1", *, new_document: bool 
                                                                                           else 0:]]
     lines += [f'    set format of range "{r}" to number' for r in decimal_ranges]
     lines += [f'    set format of range "{r}" to currency' for r in moneys]
-    lines += ["  end tell", "  set docName to name of doc", "  set sheetName to name of active sheet of doc",
+    lines += ["  end tell", "  activate", "  set docName to name of doc", "  set sheetName to name of active sheet of doc",
               "end tell"]
     return "\n".join(lines) + "\n" + _NAMES + "return out\n"
+
+
+# Numbers opens a blank document of its own a few seconds after it starts. When the script is what starts it,
+# that document is the new one: a second would stay open after Milo closes his. It counts only if it is the
+# only document and empty, so a document Numbers brings back from last time is never written into.
+_NUMBERS_STARTS = """\
+set blankDoc to missing value
+if application "Numbers" is not running then
+  tell application "Numbers"
+    repeat 80 times
+      if (count of documents) > 0 then exit repeat
+      delay 0.1
+    end repeat
+    if (count of documents) is 1 then
+      set d to document 1
+      set filled to false
+      repeat with v in (value of every cell of table 1 of active sheet of d)
+        if contents of v is not missing value then set filled to true
+      end repeat
+      if not filled then set blankDoc to d
+    end if
+  end tell
+end if"""
 
 
 def read_script(app: str, range: str = "") -> str:

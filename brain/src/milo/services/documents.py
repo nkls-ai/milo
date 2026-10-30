@@ -25,5 +25,6 @@ def write_script(app: str, text: str) -> str:
         make = f"  set doc to make new document\n  set body text of doc to {literal(text)}\n"
     else:
         raise HandsError(f"write_document works in {' and '.join(APPS)}, not {app!r}.")
-    return (f'tell application "{app}"\n  activate\n' + make
-            + '  set docName to name of doc\nend tell\nreturn "document" & tab & docName\n')
+    # `activate` last: on an app that isn't running yet it would open a blank document of its own too.
+    return (f'tell application "{app}"\n' + make
+            + '  activate\n  set docName to name of doc\nend tell\nreturn "document" & tab & docName\n')
