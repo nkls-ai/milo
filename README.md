@@ -56,6 +56,12 @@ The 30-task eval runs Milo on a made-up calendar, inbox, notes and files with a 
 cd brain && uv run python -m milo.eval
 ```
 
+The on-screen eval runs real tasks on your real Mac with a second Milo.app: a budget table in Excel and in Numbers, filing the newest PDF from a test Downloads folder, and a Mail reply draft that it deletes again. It prints a score and the time of every step, and closes what it opened without saving. Run it only while you're not using the Mac:
+
+```sh
+cd brain && uv run python -m milo.eval.screen --only excel,numbers,file
+```
+
 ## Docs
 
 - [Architecture](docs/ARCHITECTURE.md): processes, ports and adapters, how to add an engine
