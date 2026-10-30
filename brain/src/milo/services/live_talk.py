@@ -563,8 +563,8 @@ class LiveTalk:
         """Save facts and reminders, start tasks the reply asked for, and start a look.
 
         Some tags wait for the user's yes, because text from outside could have talked the model into them:
-        every tag once task results are in the conversation (until a fresh conversation starts), and a task
-        in the reply to screen data. A task the user asks for in a later turn of a conversation that has seen
+        every tag once task results are in the conversation (until a fresh conversation starts), and a task or
+        a reminder in the reply to screen data. A task the user asks for in a later turn of a conversation that has seen
         the screen starts without a question but runs careful: its tools ask before changes too, not only
         before anything that sends, deletes, buys or overwrites. Opening an app or making a new document
         never asks. Without a way to ask, tags that need a yes are dropped. A reply to screen data never
@@ -583,9 +583,9 @@ class LiveTalk:
         for fact in () if screen else parser.remembers:
             effects.append((f"Should I remember this: {fact}?", "", lambda fact=fact: self._remember(fact),
                             self._tainted))
-        for due, what in parser.reminders:
+        for due, what in parser.reminders:  # open reminders go into later system prompts: screen text asks too
             effects.append((f"Should I remind you on {due:%A %-d %B at %H:%M}: {what}?", "",
-                            lambda due=due, what=what: self._remind(due, what), self._tainted))
+                            lambda due=due, what=what: self._remind(due, what), self._tainted or screen))
         for task in parser.tasks:
             question = task_question(task.description)
             # The whole task shows under the short question in the window: the user approves all of it.

@@ -254,6 +254,14 @@ The Settings window changes a few keys of `~/Milo/config.toml` through the brain
 - **Screen Recording** only counts after a restart, so once its page was opened the row offers Restart Milo, which relaunches the app.
 - **Scenes.** Each row plays a short loop of what Milo does with the permission, drawn with the active skin (`Views/SetupScenes.swift`), only while the window is open; with Reduce Motion each shows its last step still.
 
+## The overlay, moment to moment
+
+The overlay reacts to the keys before the brain does. `MiloController` shows each push-to-talk output on the model in the same call that sends it (`MiloModel.press`, `hold`, `release`, `cancelPress`), so the view commits within about 2 ms of the key (`ResponseLatencyTests`), a round trip and a 250 ms hold ahead of the brain's own state. One capsule over Milo (`Views/VoiceCapsule`, its look picked by `VoicePhase.of`) changes shape from step to step: a small light at key down (only a light, since it may still be a tap or a right-Option shortcut), the level meter and the words so far once the hold is real, "Got it" for 0.6 s at key up, dots while the words are worked out and while he thinks ("Still on it" after 6 s), and "Pasted" for 1.4 s after dictation lands. It springs in with the skin's motion and leaves in 0.12 s.
+
+The bubble (`Views/BubbleView`) holds his answer, a question with Yes and No, or a note with a button that fixes what it is about (`BubbleAction`, "Fix it" opens the permissions window). It hugs short text. While he speaks, `SpeechReveal` lays out each piece the brain sends, hidden, and shows its words at the speed he talks, learned from how long each piece took, so lines never reflow. The mic and voice level live in their own `MiloModel.live`, which only the figure and the meter watch.
+
+Shared sizes (radii, text width, edge, shadow) are in `Views/Surface.swift`. Increase Contrast makes the paper opaque and the edges real lines; Reduce Motion turns scales into fades and stops the dots and the outline from moving. `OverlayRenderTests` renders every moment in light and dark.
+
 ## Themes
 
 Every skin brings a theme, and every surface around Milo uses it: the bubble, the live words, the Milo window, the Settings and setup windows, the menu bar sign. Other overlays (the cursor, the working outline, helpers) should use it too.
@@ -323,7 +331,8 @@ app/
   Tests/MiloKitTests Swift Testing; decodes protocol/messages.json, drives the controller with fakes.
                      MILO_RENDER_DIR=/tmp/milo-render swift test --filter ConversationRender renders the
                      window offscreen into PNGs. MILO_RENDER_DIR=... --filter SkinRender renders every skin
-                     in every state (MILO_SKINS=dragon,kit to pick), --filter SettingsRender the Settings and
+                     in every state (MILO_SKINS=dragon,kit to pick), --filter OverlayRender the bubble and the
+                     voice capsule in every moment, --filter SettingsRender the Settings and
                      setup windows in every skin, --filter HelperRender the birds and the helpers list;
                      MILO_PROBE_DIR=... --filter OverlayProbe puts the overlay on screen, measures its CPU
                      and what a pose change costs per skin, and flies him to a point and back

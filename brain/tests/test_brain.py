@@ -448,3 +448,15 @@ def test_a_style_that_cant_be_saved_is_not_used_and_the_report_says_why():
     [report] = s.sink.of(SettingsReport)
     assert report.error
     assert [r["value"] for r in report.settings if (r["section"], r["key"]) == ("dictation", "stream")] != ["type"]
+
+
+def test_an_app_that_goes_away_mid_recording_takes_the_recording_with_it():
+    # The app crashed or was restarted while a key was held: its key-up never comes. The mic must not stay on,
+    # and the next app's key presses must not be ignored as "already recording".
+    s = Stack(transcriber=FakeTranscriber("hello"))
+    run(s, ListenStart(ListenMode.DICTATE))
+    assert s.mic.active
+    s.brain.app_gone()
+    assert not s.mic.active and s.ui.state is MiloState.IDLE
+    run(s, ListenStart(ListenMode.DICTATE), ListenStop())
+    assert s.mic.starts == 2 and [e.text for e in s.sink.of(Dictation)] == ["HELLO"]

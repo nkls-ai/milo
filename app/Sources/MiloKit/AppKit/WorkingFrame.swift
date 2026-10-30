@@ -47,27 +47,15 @@ public final class WorkingFrame {
 }
 
 struct WorkingFrameView: View {
+    static let label = "Milo is using your mouse. Move it or press esc to take over."
     var theme = Theme.for(.pip)
-    @State private var glow = false
 
     var body: some View {
         ZStack(alignment: .top) {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(LinearGradient(colors: [theme.glow, theme.accent, theme.primary],
-                                             startPoint: .topLeading, endPoint: .bottomTrailing),
-                              lineWidth: 5)
-                .opacity(glow ? 0.85 : 0.45)
-                .blur(radius: 1.5)
-            Text("Milo is borrowing your mouse · move it or press esc to take over")
-                .font(.system(size: 12, weight: .medium))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 5)
-                .background(Capsule().fill(.regularMaterial))
+            WorkingEdge(theme: theme, radius: 14, width: 5, blur: 1.5)
+            WorkingTag(text: Self.label, theme: theme)
                 .padding(.top, 34)
         }
         .ignoresSafeArea()
-        .onAppear {
-            withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) { glow = true }
-        }
     }
 }
