@@ -122,6 +122,14 @@ def test_the_night_never_learns_again_what_the_user_had_forgotten(tmp_path):
     assert all("sister" not in f.text for f in facts.current())
 
 
+def test_a_short_forgotten_fact_is_matched_too():
+    from milo.memory.consolidate import _resembles, _words
+
+    assert _resembles(_words("Likes jazz."), _words("The user likes jazz a lot."))
+    assert not _resembles(_words("Likes jazz."), _words("The user likes tea."))
+    assert not _resembles(set(), _words("anything"))
+
+
 def test_answers_are_found_inside_say_or_a_code_fence():
     assert parse('{"emotion": "neutral", "say": "{\\"add\\": []}"}') == {"add": []}
     assert parse('Here:\n```json\n{"journal": "x"}\n```') == {"journal": "x"}
