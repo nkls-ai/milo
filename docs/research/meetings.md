@@ -118,13 +118,13 @@ All on the M3 with 16 GB, while other agents ran builds and models (load average
 | What | Result |
 |---|---|
 | Speakers found, generated 6-voice meeting (5 others + the user) | 5 of 5 |
-| Speech given to the right speaker | 96.4% |
-| Word error, call track, German + English | 3.0% |
-| Echo of the call kept on the user's track | 0 lines |
+| Speech given to the right speaker | 96.4% (1.2 min), 98.7% (3.6 min), 99.3% (9.7 min) |
+| Word error, call track, German + English | 3.0% to 3.7% |
+| Echo of the call kept on the user's track | 0 of 12 lines, 1 of 33 |
 | Processing, models already loaded | 0.57x to 1.21x the meeting's length, depending on load |
-| LAG_LINE |
+| Speech to transcript, chunks arriving in real time (3.6 min call) | median 42 s, 90% 54 s, max 62 s: the 30 s chunk fills, then a 7 to 12 s pass under load |
 | Memory over 1 h of call, service and store with fake models | flat, 303 MB at minute 5 and 45, 255 MB at 55 |
-| SOAK_LINE |
+| Memory over a 9.7 min call with the real models (160 lines, 99.3% attributed, WER 3.4%) | 1.65 to 2.4 GB resident plus MLX, going up and down with MLX's buffer cache, no upward trend; processed in 0.60x the call |
 | Models loaded | about 1 GB resident (Whisper large-v3-turbo + TitaNet-small) |
 
 The remaining mistakes are short replies ("Yes, exactly.", under 1 s) that go to the nearest voice, and a pass cut that splits "one more / thing" across two lines.
@@ -134,5 +134,6 @@ The remaining mistakes are short replies ("Yes, exactly.", under 1 s) that go to
 - The process tap and its permission prompt. Creating a tap records what the Mac plays, and the rules for this work forbid recording real audio. The tap code builds against the macOS 15.5 SDK and follows AudioCap step by step, but it hasn't run. The first real test is a call with a test account.
 - The ScreenCaptureKit fallback, for the same reason.
 - Call detection with a real Zoom, Teams, Meet or FaceTime call. The classifier is tested on bundle ids and titles, and the Core Audio process list was read on this Mac (no app used the mic at the time).
+- An hour with the real models in one go. The model lock allows about 15 minutes, so the hour ran with the test fakes (flat at 303 MB) and the real models ran for 9.7 minutes.
 - Diarization of real voices over a real call connection. The numbers above are `say` voices, which are cleaner and more distinct than people on a bad line. The voice-match threshold (0.6) will likely need tuning on real calls.
 - German speaker-embedding quality in general: no published benchmark covers it.
