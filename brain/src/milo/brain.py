@@ -71,6 +71,11 @@ class Brain:
                 *self._history(), *([self._helpers.snapshot()] if self._helpers is not None else []),
                 *([self._messages.status()] if self._messages is not None else [])]
 
+    def app_gone(self) -> None:
+        """No app is connected any more (it quit or crashed). A recording it started can't be stopped by its key
+        any more: drop it, so the mic doesn't stay on and the next key press isn't ignored."""
+        self._listening.cancel()
+
     def use_ui(self, ui_settings: UiSettings) -> None:
         """Keys or look changed in the Settings window: tell the app now and on every later connect."""
         self._ui_settings = ui_settings

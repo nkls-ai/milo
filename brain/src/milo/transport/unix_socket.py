@@ -15,19 +15,23 @@ log = logging.getLogger("milo.transport")
 
 CommandHandler = Callable[[Command], Awaitable[None]]
 ConnectHandler = Callable[[], Iterable[Event]]
+DisconnectHandler = Callable[[], None]
 
 
 class UnixSocketServer:
     """JSON lines over a Unix socket. As an EventSink it broadcasts every event to every connected app.
 
     `on_connect` returns the events a new client needs to draw the current state; they go to that
-    client only. Commands from one client are handled in order.
+    client only. `on_disconnect` runs when the last client hangs up. Commands from one client are handled
+    in order.
     """
 
-    def __init__(self, path: Path, on_command: CommandHandler, on_connect: ConnectHandler):
+    def __init__(self, path: Path, on_command: CommandHandler, on_connect: ConnectHandler,
+                 on_disconnect: DisconnectHandler = lambda: None):
         self.path = path
         self._on_command = on_command
         self._on_connect = on_connect
+        self._on_disconnect = on_disconnect
         self._clients: set[asyncio.StreamWriter] = set()
         self._server: asyncio.Server | None = None
 
@@ -102,6 +106,11 @@ class UnixSocketServer:
         finally:
             self._clients.discard(writer)
             writer.close()
+            if self._server is not None and not self.connected():
+                try:
+                    self._on_disconnect()
+                except Exception:
+                    log.exception("handling the app's disconnect failed")
 
     async def _handle_line(self, line: bytes) -> None:
         if not line.strip():

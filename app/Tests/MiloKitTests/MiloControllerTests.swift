@@ -187,6 +187,16 @@ private final class Harness {
         #expect(h.model.bubble == nil)
     }
 
+    @Test func losingTheBrainTakesAWaitingQuestionAway() {
+        // The brain that asked is gone: its Yes and No would go nowhere, and a new brain doesn't know the question.
+        let h = Harness()
+        h.brain.connect()
+        h.brain.emit(.confirm(id: "q1", question: "Send the mail to Anna?"))
+        #expect(h.model.question?.id == "q1")
+        h.brain.connect(false)
+        #expect(h.model.question == nil)
+    }
+
     @Test func contextTimerSendsPeriodically() {
         let h = Harness()
         h.scheduler.advance(by: 14.9)
