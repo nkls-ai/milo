@@ -31,8 +31,9 @@ Tools that act on the user's Mac. The user may be watching; every action shows i
 For the calendar, reminders, mail, notes, shortcuts and files, use Milo's own tools (calendar_, mail_, \
 files_ and so on) if you have them, not these. For other apps, use the fastest route that can do the job, \
 in this order:
-1. sheet_write and sheet_read for tables in Excel and Numbers: one call makes a new document and fills it.
-2. run_applescript for other scriptable apps (TextEdit, Pages, Keynote, Safari).
+1. sheet_write and sheet_read for tables in Excel and Numbers: one call makes a new document and fills it. \
+write_document for a new text document in TextEdit or Pages.
+2. run_applescript for other scriptable apps (Keynote, Safari, Finder). Every script waits for the user's yes.
 3. ax_find or ax_tree to find a window's buttons and fields, then ax_press and ax_set_value.
 4. screenshot, then click, type, key and scroll, only when nothing above works.
 Opening apps, reading and making new documents never wait for the user. Actions that send, delete, buy, pay \
@@ -95,6 +96,10 @@ TOOLS: tuple[Tool, ...] = (
     Tool("sheet_read", "Read the cells of the front sheet in Excel or Numbers, with column letters and row "
          "numbers; formulas show as formulas in Excel." + _UNTRUSTED,
          {"app": _SHEET_APP, "range": _s("A range like \"A1:D20\". Default: every used cell.")}, ("app",)),
+    Tool("write_document", "Make a new document in TextEdit or Pages holding the given text, and show it. For "
+         "letters, lists and notes the user wants as a document. Never touches the user's other documents.",
+         {"app": {"type": "string", "enum": ["TextEdit", "Pages"], "description": "The app."},
+          "text": _s("The whole text. Line breaks are kept.")}, ("app", "text"), acts=True),
     Tool("window_text", "Read the visible text of an app's front window through Accessibility. Fast, no "
          "screenshot. Prefer it over screenshot to find out what a window shows." + _UNTRUSTED, _APP),
     Tool("ax_tree", "List the buttons, fields and other controls of an app's front window, each with an "
@@ -111,11 +116,11 @@ TOOLS: tuple[Tool, ...] = (
          "Never works on password fields.",
          {"element": _s("Element id from ax_tree."), "text": _s("The new value.")}, ("element", "text"),
          acts=True),
-    Tool("run_applescript", "Run AppleScript in Milo, for scriptable apps the other tools don't cover (TextEdit, "
-         "Pages, Keynote, Safari). For tables use sheet_write; for mail, notes, calendar, reminders and files use "
-         "Milo's own tools if you have them. A script that only makes or fills a new document in TextEdit, "
-         "Pages, Keynote, Word or the like runs at once; anything else waits for the user's yes, so do the "
-         "whole job in one script rather than many small ones. Scripts about passwords never run. Up to 30 s.",
+    Tool("run_applescript", "Run AppleScript in Milo, for scriptable apps the other tools don't cover (Keynote, "
+         "Safari, Finder). For tables use sheet_write, for a new text document write_document; for mail, notes, "
+         "calendar, reminders and files use Milo's own tools if you have them. Each script waits for the "
+         "user's yes, so do the whole job in one script rather than many small ones. Scripts about passwords "
+         "never run. Up to 30 s.",
          {"script": _s("The AppleScript source.")}, ("script",), acts=True),
     Tool("screenshot", "Take a screenshot of the display with the front window. Slow and costly: use it only "
          "when window_text and ax_tree can't tell you enough. click and scroll take x and y in this "

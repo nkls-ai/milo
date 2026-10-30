@@ -217,15 +217,11 @@ def test_replacing_filled_cells_in_the_users_document_asks():
     assert t.steps()[-1] == ("Filling in cells in “Budget 2026”", "failed")
 
 
-def test_empty_cells_in_the_users_document_fill_without_a_question_unless_careful():
+def test_empty_cells_in_the_users_document_fill_without_a_question():
     empty = {"text": "document\tBudget\nsheet\tMai\nfilled\t0"}
     t = Setup(FakeHands(results={"run_applescript": [empty, {"text": "document\tBudget\nsheet\tMai"}]}))
     t.call("sheet_write", {"app": "Numbers", "rows": [[1]]})
     assert t.confirm.asked == []
-    careful = Setup(FakeHands(results={"run_applescript": [empty]}), FakeConfirm(False))
-    careful.service.begin(careful.task, careful=True)
-    careful.fails("sheet_write", {"app": "Numbers", "rows": [[1]]})
-    assert careful.confirm.asked == ["Change “Budget” in Numbers?"]
 
 
 def test_sheet_read_comes_back_as_marked_screen_data_with_cell_addresses():
@@ -256,11 +252,28 @@ def test_ax_find_filters_the_tree_and_keeps_the_ids():
     assert "Nothing like that" in t.call("ax_find", {"text": "Delete"}).text
 
 
-def test_a_careful_task_asks_before_a_new_document_script():
-    script = 'tell application "TextEdit" to make new document'
-    t = Setup(confirm=FakeConfirm(True))
-    t.call("run_applescript", {"script": script})
-    assert t.confirm.asked == []
+def test_a_new_text_document_is_one_script_without_a_question():
+    t = Setup(FakeHands(results={"run_applescript": {"text": "document\tUntitled"}}))
+    out = t.call("write_document", {"app": "TextEdit", "text": 'Dear "Anna"'})
+    assert t.confirm.asked == [] and [tool for tool, _ in t.port.calls] == ["run_applescript"]
+    assert 'make new document with properties {text:"Dear \\"Anna\\""}' in scripts(t)[0]
+    assert out.text == "Made a new document “Untitled” in TextEdit with the text."
+    assert t.steps()[0] == ("Writing a new document in TextEdit", "running")
+
+
+def test_a_careful_task_asks_once_per_app_before_it_changes_anything_there():
+    t = Setup(FakeHands(targets={"type": {"app": "Notes"}, "ax_press": {"app": "Notes", "title": "Bold"},
+                                 "click": {"app": "Safari", "title": "Reload"}},
+                        results={"run_applescript": {"text": "document\tUntitled"}}), FakeConfirm(True, False))
     t.service.begin(t.task, careful=True)
-    t.call("run_applescript", {"script": script})
-    assert t.confirm.asked == ["Run a script in TextEdit? It's in my window."]
+    t.call("open_app", {"name": "Notes"})
+    t.call("write_document", {"app": "TextEdit", "text": "hi"})
+    assert t.confirm.asked == [], "opening an app and making a new document never ask"
+    t.call("type", {"text": "groceries"})
+    t.call("ax_press", {"element": "e3"})
+    assert t.confirm.asked == ["May I use Notes for this? You'll see each step."]
+    assert "The user said no" in t.fails("click", {"x": 1, "y": 2})
+    assert t.confirm.asked[-1] == "May I use Safari for this? You'll see each step."
+    t.service.begin(t.task)
+    t.call("click", {"x": 1, "y": 2})
+    assert len(t.confirm.asked) == 2, "a normal task doesn't ask"

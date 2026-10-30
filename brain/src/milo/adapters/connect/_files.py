@@ -21,6 +21,11 @@ READABLE = PLAIN | TEXTUTIL | {".pdf", ".xlsx", ".eml"}
 TIMEOUT_S = 30
 
 OUTSIDE = "That file is outside the folders Milo may look in."
+SHARED = "That folder is shared or synced to the internet, so I don't move files into it. The user can do that."
+# Top-level folders of the home that other people or the internet can see. ~/Library (iCloud Drive and the
+# cloud storage apps) is out of reach anyway.
+_SHARED = ("public", "sites", "dropbox", "google drive", "my drive", "onedrive", "box", "box sync", "icloud drive",
+           "nextcloud", "owncloud", "pcloud drive", "mega", "sync")
 
 # PDFKit through JavaScript for Automation: no permission prompt, no extra package.
 _PDF_JXA = """
@@ -94,6 +99,8 @@ def move(paths: list[str], into: str, scope: Path) -> dict:
         raise ToolError("Say which files to move.")
     files = [checked(p, scope) for p in paths]
     dest = folder(into, scope, must_exist=False)
+    if shared(dest):
+        raise ToolError(SHARED)
     clashes = [f.name for f in files if (dest / f.name).exists() and (dest / f.name).resolve() != f]
     if clashes:
         raise ToolError(f"There is already a file called {clashes[0]} in that folder, so I moved nothing.")
@@ -109,6 +116,16 @@ def move(paths: list[str], into: str, scope: Path) -> dict:
             os.rename(f, target)
         moved.append(describe(target, scope))
     return {"moved": moved, "folder": describe_folder(dest)}
+
+
+def shared(path: Path, home: Path | None = None) -> bool:
+    """`path` is in a folder of the home that is shared or synced: ~/Public, ~/Dropbox, ~/OneDrive - Work, ..."""
+    try:
+        top = path.resolve().relative_to((home or Path.home()).resolve()).parts[:1]
+    except ValueError:
+        return False
+    name = top[0].casefold() if top else ""
+    return any(name == s or name.startswith(s + " ") or name.startswith(s + "-") for s in _SHARED)
 
 
 def describe_folder(path: Path) -> str:

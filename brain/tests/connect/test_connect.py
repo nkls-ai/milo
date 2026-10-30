@@ -343,3 +343,12 @@ def test_questions_name_every_recipient_and_the_shortcut_input(home):
         "Write a draft to Anna <anna@example.com>, boss@example.com? It stays in Mail until you send it."
     ok, text = call(server, "mail_draft", {"to": ["anna@example.com\nevil@example.com"], "body": "x"})
     assert not ok and text == "each entry of to must be one line"
+
+
+def test_files_never_move_into_shared_or_synced_folders(tmp_path):
+    home = tmp_path / "home"
+    for name in ("Public", "Dropbox", "OneDrive - Work", "Documents"):
+        (home / name).mkdir(parents=True)
+    assert _files.shared(home / "Public" / "Drop Box", home)
+    assert _files.shared(home / "OneDrive - Work" / "x", home) and _files.shared(home / "Dropbox", home)
+    assert not _files.shared(home / "Documents" / "Invoices", home) and not _files.shared(tmp_path / "x", home)
