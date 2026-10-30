@@ -522,3 +522,22 @@ def test_what_counts_as_reading_outside_text(kind, title, outside):
     from milo.services.helpers import reads_outside
 
     assert reads_outside(Step("s", kind, title, "", StepStatus.DONE)) is outside
+
+
+def test_a_tool_socket_caller_can_only_name_the_apps_the_connection_tools_change():
+    from milo.core.types import ActionLevel, Decision
+
+    class Recording:
+        scopes = []
+
+        async def approve(self, kind, summary, *, scope=None):
+            self.scopes.append(scope)
+            return Decision(True, ActionLevel.CHANGE, "auto")
+
+    approvals = Recording()
+    requests = ToolRequests(approvals, Stack().bridge)
+    for app in ("Microsoft Excel", "Notes", ""):
+        asyncio.run(requests.handle({"op": "approve", "kind": "change", "summary": "x?", "app": app}))
+    excel, notes, none = approvals.scopes
+    assert excel is None, "a caller can't borrow Excel's Allow always"
+    assert notes == Scope((AppRef("Notes", "com.apple.Notes"),)) and none is None

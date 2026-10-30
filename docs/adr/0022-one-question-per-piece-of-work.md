@@ -46,7 +46,7 @@ Terminals and other programs that run commands, System Settings, password manage
 
 Routines (on a schedule or by name), meeting follow-ups and anything else Milo starts on his own are never `user_asked`: their instructions weren't said by the user just now. Looking at the screen never asked in any mode. ADR 6's `<look/>` captures at once; what asked after a look was the task from the reply to it, and that is what auto mode lets through.
 
-**Wire.** `confirm` gets `always` (true: show Allow, Allow always, No). `confirm_answer` gets `always`. `confirm_done` may say `"always"`. The tool socket's `approve` takes an optional `app`. `Decision.answer` may be `"always"`, or `"allowed"` when an earlier Allow covered it and nobody was asked.
+**Wire.** `confirm` gets `always` (true: show Allow, Allow always, No). `confirm_answer` gets `always`. `confirm_done` may say `"always"`. The tool socket's `approve` takes an optional `app`, one of the apps the connection tools change things in (Notes, Finder); any other name gets no scope, so a caller can't borrow another app's Allow. `Decision.answer` may be `"always"`, or `"allowed"` when an earlier Allow covered it and nobody was asked.
 
 **Seeing it.** While auto mode is on, the menu bar shows "auto" next to Milo, with "Auto mode: Milo doesn't ask first" and "Turn off auto mode" in the menu. The Settings row says in one line what auto means.
 

@@ -25,6 +25,9 @@ APP_OPS: dict[str, tuple[str, str]] = {
     "reminders.complete": ("reminders", "change"),
 }
 APPS = {"calendar": AppRef("Calendar", "com.apple.iCal"), "reminders": AppRef("Reminders", "com.apple.reminders")}
+# The apps an `approve` may name: the ones Milo's connection tools change things in (connect/server.py APPS).
+# Anything else gets no scope, so a caller can't borrow the Allow (or Allow always) of an app it doesn't work in.
+APPROVE_APPS = {"Notes": AppRef("Notes", "com.apple.Notes"), "Finder": AppRef("Finder", "com.apple.finder")}
 REFUSED = {"no": "The user said no.", "timeout": "The user didn't answer, so it wasn't done.",
            "refused": "Milo isn't allowed to do this."}
 
@@ -80,9 +83,9 @@ class ToolRequests:
         try:
             match op:
                 case "approve":
-                    app = str(request.get("app") or "").strip()
+                    app = APPROVE_APPS.get(str(request.get("app") or "").strip())
                     decision = await self._approvals.approve(str(request["kind"]), _summary(request),
-                                                             scope=Scope((AppRef(app),)) if app else None)
+                                                             scope=Scope((app,)) if app else None)
                     return _ok(decision.to_dict())
                 case "confirm":
                     return _ok({"yes": await self._approvals.confirm(_summary(request))})
