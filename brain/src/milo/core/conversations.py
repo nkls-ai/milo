@@ -275,10 +275,11 @@ def recap(info: ConversationInfo, entries: Sequence[dict], *, budget_tokens: int
     """The <earlier_conversation> block for a conversation the user picked up again, and whether it is trusted.
 
     Newest lines first until the budget is spent, then shown oldest first. Everything is made inert like a
-    task result. Untrusted when the conversation carried outside text or a task's result is in it.
+    task result. Untrusted when the conversation carried outside text or a task's result is in it, and always
+    for meeting notes and routine runs: what other people said, and what a run read.
     """
     lines: list[str] = []
-    trusted = not info.outside
+    trusted = info.kind == "chat" and not info.outside
     for entry in entries:
         kind = entry.get("kind")
         text = _inert(" ".join(str(entry.get("text", "")).split()))

@@ -312,7 +312,9 @@ class Transcript:
             self._texts.append(entry.text)
         info = self.info(entry.conversation)
         if info is not None:
-            if self._outside() or (entry.kind is EntryKind.TASK and entry.result):
+            # Milo's replies are what can quote outside text; the user's own words never do, and the first of a new
+            # conversation would otherwise catch the taint the chat model still holds from the last one.
+            if (entry.kind is EntryKind.MILO and self._outside()) or (entry.kind is EntryKind.TASK and entry.result):
                 info = replace(info, outside=True)
             try:
                 info = self._store.append(_settled(info), data)

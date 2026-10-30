@@ -202,6 +202,12 @@ class LiveTalk:
         self._hold_timer: asyncio.TimerHandle | None = None
 
     @property
+    def carries_outside(self) -> bool:
+        """The chat model's conversation has seen the screen or outside text (a task result, meeting notes,
+        an untrusted memory): its replies may quote it, so the conversation they land in counts as outside."""
+        return self._tainted or self._saw_screen or bool(self._notes)
+
+    @property
     def busy(self) -> bool:
         """A turn is running: Milo is thinking or still speaking his answer."""
         return self._turn is not None and not self._turn.done()
