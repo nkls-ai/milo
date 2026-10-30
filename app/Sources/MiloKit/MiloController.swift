@@ -32,6 +32,8 @@ public final class MiloController {
     public let model: MiloModel
     /// The conversation the Milo window shows.
     public let transcript = TranscriptModel()
+    /// What the "What Milo knows" window shows.
+    public let knowledge = KnowledgeModel()
     /// Looking at the screen and the worker's actions on it; nil without those ports.
     public let screen: ScreenController?
     public private(set) var muted = false
@@ -134,6 +136,8 @@ public final class MiloController {
             onBindingsChange?(next)
         case .history, .entry, .replyDelta, .activity:
             transcript.apply(event)
+        case .facts:
+            knowledge.apply(event)
         case let .appRequest(id, op, args):
             guard let connections else {
                 brain.send(.appResponse(id: id, outcome: .failure(Self.noConnections)))
@@ -157,6 +161,21 @@ public final class MiloController {
     /// The Milo window opened. Reads the brain's in-memory tail; no model call.
     public func requestHistory() {
         brain.send(.getHistory)
+    }
+
+    /// The "What Milo knows" window opened. Reads the brain's fact list; no model call.
+    public func requestFacts() {
+        brain.send(.getFacts)
+    }
+
+    public func forgetFact(id: String) {
+        brain.send(.forgetFact(id: id))
+    }
+
+    public func editFact(id: String, text: String) {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        brain.send(.editFact(id: id, text: text))
     }
 
     private func connectionChanged(_ up: Bool) {

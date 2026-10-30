@@ -68,6 +68,12 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .appRequest(id: "a41f", op: "calendar.add_event", args: .object([
                 "title": .string("Doctor"), "start": .string("2026-11-05T15:00:00"), "end": .string("2026-11-05T16:00:00"),
             ])),
+            .facts([
+                MemoryFact(id: "01JBF6Z3Q8M2X4K7N9P0R5T6VW", text: "The user's name is Niklas.", topic: "basics",
+                           since: "2026-10-30T09:12:00", pinned: true),
+                MemoryFact(id: "01JBF7A1B2C3D4E5F6G7H8J9KM", text: "Anna is the user's sister. Her birthday is March 3.",
+                           topic: "people", since: "2026-10-30T18:05:41"),
+            ]),
         ])
     }
 
@@ -98,6 +104,8 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             ]))),
             .appResponse(id: "a42f", outcome: .failure(
                 "Milo isn't allowed to use your calendar. Turn it on in System Settings › Privacy & Security › Calendars.")),
+            .getFacts, .forgetFact(id: "01JBF7A1B2C3D4E5F6G7H8J9KM"),
+            .editFact(id: "01JBF7A1B2C3D4E5F6G7H8J9KM", text: "Anna is the user's sister. Her birthday is March 4."),
         ]
         let encoder = JSONEncoder()
         let encoded = try commands.map { command in

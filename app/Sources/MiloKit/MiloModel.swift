@@ -87,7 +87,7 @@ public final class MiloModel: ObservableObject {
             question = nil
             scheduleBubbleHide()
         case .dictation, .uiConfig, .history, .entry, .replyDelta, .activity, .lookRequest, .handsRequest,
-             .handsSession, .flyTo, .appRequest, .unknown:
+             .handsSession, .flyTo, .appRequest, .facts, .unknown:
             break
         }
     }
