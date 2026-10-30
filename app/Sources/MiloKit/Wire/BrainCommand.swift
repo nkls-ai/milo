@@ -29,6 +29,12 @@ public enum BrainCommand: Equatable, Sendable {
     case appResponse(id: String, outcome: AppOutcome)
     /// The user clicked Stop on the helper `id`.
     case stopHelper(id: String)
+    /// The "What Milo knows" window opened: send the facts.
+    case getFacts
+    /// The user clicked Forget on fact `id`.
+    case forgetFact(id: String)
+    /// The user changed fact `id` to `text`.
+    case editFact(id: String, text: String)
 }
 
 /// What the app did with an `app_request`: a JSON result, or a plain-language error for the user.
@@ -103,6 +109,15 @@ extension BrainCommand: Encodable {
         case let .stopHelper(id):
             try c.encode("stop_helper", forKey: .type)
             try c.encode(id, forKey: .id)
+        case .getFacts:
+            try c.encode("get_facts", forKey: .type)
+        case let .forgetFact(id):
+            try c.encode("forget_fact", forKey: .type)
+            try c.encode(id, forKey: .id)
+        case let .editFact(id, text):
+            try c.encode("edit_fact", forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(text, forKey: .text)
         }
     }
 }

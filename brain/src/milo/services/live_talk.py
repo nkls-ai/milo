@@ -16,6 +16,7 @@ from milo.core.types import Emotion, HarnessError, MiloState, ScreenCapture
 from .approvals import Approvals
 from .context import UserContext
 from .conversation import stamp
+from .memory import Recalled, TurnMemory
 from .reply_stream import ReplyParser
 from .screen import look_prompt
 from .speaker import Speaker, Utterance
@@ -147,8 +148,10 @@ class LiveTalk:
                  profile: ProfileMemory, reminders: ReminderBook, ledger: UsageLedger,
                  persona: Callable[[], str], idle_reset_s: float, tasks: Orchestrator,
                  transcript: Transcript | None = None, eyes: ScreenEyes | None = None,
-                 approvals: Approvals | None = None):
+                 approvals: Approvals | None = None, memory: TurnMemory | None = None):
         self._model = model
+        self._memory = memory
+        """Recalls what each turn needs (services/memory.py). None: Milo remembers only the profile."""
         self._eyes = eyes
         self._approvals = approvals
         self._saw_screen = False
@@ -291,10 +294,11 @@ class LiveTalk:
         notes, self._notes = self._notes, []
         try:
             await self._ensure_conversation()
-            self._tainted = self._tainted or bool(notes)
+            recalled = await self._recall(text, screen, outside=self._tainted or bool(notes) or self._saw_screen)
+            self._tainted = self._tainted or bool(notes) or not recalled.trusted
             self._saw_screen = self._saw_screen or screen
             self._streaming = True
-            async for delta in self._model.turn(self._prompt(text, notes), images):
+            async for delta in self._model.turn(self._prompt(text, [*notes, recalled.block]), images):
                 if first_at is None:
                     first_at = self._clock.monotonic()
                     if self._ui_looking:
@@ -397,12 +401,16 @@ class LiveTalk:
                 self._system, self._last_turn_at = system, None
                 self._saw_screen = False
                 self._tainted = False
+                if self._memory is not None:
+                    self._memory.new_conversation()
 
     def _system_prompt(self) -> str:
         parts = [self._persona().strip() or DEFAULT_PERSONA, REPLY_RULES.strip()]
         if self._eyes is not None:
             parts.append(LOOK_RULES.strip())
         parts.append(HELPER_RULES.strip())
+        if self._memory is not None:
+            parts.append(self._memory.rules.strip())
         profile = self._profile.read().strip()
         if profile:
             parts.append(f"## What you know about the user\n\n{profile}")
@@ -414,7 +422,16 @@ class LiveTalk:
 
     def _prompt(self, text: str, notes: list[str]) -> str:
         helpers = self._tasks.board()
-        return stamp("\n".join([*notes, *([helpers] if helpers else []), text]), self._clock.now(), self._context.app)
+        lines = [*(n for n in notes if n), *([helpers] if helpers else []), text]
+        return stamp("\n".join(lines), self._clock.now(), self._context.app)
+
+    async def _recall(self, text: str, screen: bool, *, outside: bool) -> Recalled:
+        """The <memory> block for this turn. A reply to screen data already had one with the question."""
+        if self._memory is None or screen:
+            if self._memory is not None:
+                self._memory.outside = True  # the reply may quote the screen
+            return Recalled("", True)
+        return await self._memory.before_turn(text, self._context.app, outside=outside)
 
     def _apply(self, parser: ReplyParser, *, screen: bool = False) -> None:
         """Save facts and reminders, start tasks the reply asked for, and start a look.

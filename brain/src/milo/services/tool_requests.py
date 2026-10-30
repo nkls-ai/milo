@@ -8,6 +8,7 @@ from milo.core.wording import question
 
 from .app_bridge import AppBridge, AppError
 from .approvals import Approvals
+from .memory_requests import MemoryRequests
 
 log = logging.getLogger("milo.tool_requests")
 
@@ -38,10 +39,13 @@ class ToolRequests:
       from the arguments that go to the app, never taken from the caller.
     """
 
-    def __init__(self, approvals: Approvals, bridge: AppBridge, enabled: Collection[str] = ("calendar", "reminders")):
+    def __init__(self, approvals: Approvals, bridge: AppBridge, enabled: Collection[str] = ("calendar", "reminders"),
+                 memory: MemoryRequests | None = None):
         self._approvals = approvals
         self._bridge = bridge
         self._enabled = frozenset(enabled)
+        self._memory = memory
+        """`memory.*` ops: the worker's memory tools (services/memory_requests.py). None: memory is off."""
 
     async def handle(self, request: dict) -> dict:
         """{"ok": true, "result": ...} or {"ok": false, "error": "plain words"}. Never raises."""
@@ -67,6 +71,8 @@ class ToolRequests:
                     if not decision.allowed:
                         return _error(REFUSED.get(decision.answer, REFUSED["refused"]))
                     return _ok(await self._bridge.call(name, args))
+                case str() if op.startswith("memory.") and self._memory is not None:
+                    return await self._memory.handle(op, request)
         except AppError as e:
             return _error(str(e))
         except KeyError as e:

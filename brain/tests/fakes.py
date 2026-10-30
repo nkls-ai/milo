@@ -449,3 +449,111 @@ class FakeConfirm:
     async def confirm(self, summary: str) -> bool:
         self.asked.append(summary)
         return self.answers.popleft() if self.answers else False
+
+
+class MemoryEpisodeLog:
+    """EpisodeLog in a list. Same rules as the file: a newer line with the same id wins, forget hides."""
+
+    def __init__(self):
+        self.lines: list = []
+        self.forgotten: set[str] = set()
+
+    def append(self, episode) -> None:
+        self.lines.append(episode)
+
+    def between(self, start, end) -> list:
+        latest = {e.id: e for e in self.lines}
+        return sorted((e for e in latest.values() if start <= e.at < end and e.id not in self.forgotten),
+                      key=lambda e: (e.at, e.id))
+
+    def forget(self, id: str, reason: str) -> None:
+        if not any(e.id == id for e in self.lines):
+            raise KeyError(id)
+        self.forgotten.add(id)
+
+
+class MemoryFactStore:
+    """FactStore in a dict."""
+
+    def __init__(self, *facts):
+        self.facts: dict = {}
+        self.log: list[tuple[str, str, str]] = []
+        for fact in facts:
+            self.add(fact)
+
+    def current(self) -> list:
+        replaced = {f.replaces for f in self.facts.values() if f.replaces and not f.retired}
+        return [f for f in self.facts.values() if not f.retired and f.id not in replaced]
+
+    def add(self, fact, *, by: str = "") -> None:
+        self.facts[fact.id] = fact
+        self.log.append(("add", fact.id, by))
+
+    def retire(self, id: str, reason: str, *, by: str = "") -> None:
+        from dataclasses import replace
+        self.facts[id] = replace(self.facts[id], retired=True)
+        self.log.append(("retire", id, by))
+
+    def restore(self, id: str, reason: str, *, by: str = "") -> None:
+        from dataclasses import replace
+        self.facts[id] = replace(self.facts[id], retired=False)
+        self.log.append(("restore", id, by))
+
+    def get(self, id: str):
+        return self.facts.get(id)
+
+    def forgotten(self) -> list:
+        ids = [id for op, id, by in reversed(self.log) if op == "retire" and by in ("you", "worker")]
+        return [self.facts[id] for id in dict.fromkeys(ids) if self.facts[id].retired]
+
+
+class FakeMemoryIndex:
+    """MemoryIndex over a dict: words shared with the query make a hit. refresh() follows the fake logs."""
+
+    def __init__(self, facts=None, episodes=None):
+        self.items: dict = {}
+        self.facts = facts
+        self.episodes = episodes
+        self.searches: list[str] = []
+
+    def upsert(self, items) -> None:
+        for item in items:
+            self.items[item.id] = item
+
+    def remove(self, ids) -> None:
+        for id in ids:
+            self.items.pop(id, None)
+
+    def search(self, query, *, kinds=(), since=None, until=None, limit=20) -> list:
+        from milo.core.memory import Hit
+        from milo.memory.index import terms
+
+        self.searches.append(query)
+        words = set(terms(query))
+        found = []
+        for item in self.items.values():
+            if (kinds and item.kind not in kinds) or (since and item.at < since) or (until and item.at >= until):
+                continue
+            shared = len(words & set(terms(item.text)))
+            if shared or since is not None:
+                found.append((shared, item))
+        found.sort(key=lambda x: -x[0])
+        return [Hit(item, 1 / (60 + rank), rank if shared else None, None, 0.0)
+                for rank, (shared, item) in enumerate(found[:limit])]
+
+    def rebuild(self) -> None:
+        self.items.clear()
+        self.refresh()
+
+    def refresh(self, limit=None) -> int:
+        from datetime import datetime
+
+        from milo.core.memory import IndexItem
+
+        want = {}
+        if self.facts is not None:
+            want |= {f.id: IndexItem.of_fact(f) for f in self.facts.current()}
+        if self.episodes is not None:
+            want |= {e.id: IndexItem.of_episode(e) for e in self.episodes.between(datetime.min, datetime.max)}
+        self.items = want
+        return 0  # all at once, so it is up to date after one call

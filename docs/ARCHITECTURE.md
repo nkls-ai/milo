@@ -27,10 +27,14 @@ brain/src/milo/
     connect/      mac (Calendar and Reminders through the app, Mail and Notes through AppleScript,
                   Shortcuts, Spotlight files), fake (a made-up world in ~/Milo/fake)
     headless/     none: no microphone, no voice, no speaker, for tests and the eval
+    embed/        mlx_e5 (multilingual-e5-small in MLX), hash (hashed words, no model; tests and CI)
   connect/        the MCP tool server the worker loads (python -m milo.connect)
   eval/           the 30-task eval (python -m milo.eval) and the on-screen eval (python -m milo.eval.screen)
   memory/         Workspace paths and bootstrap, profile.md, reminders.md, usage ledger, dictation history,
-                  transcript (the Milo window's conversation)
+                  transcript (the Milo window's conversation), and long-term memory: episodes and facts
+                  (append-only JSONL), fact_profile (profile.md as a view of the facts), index (FTS5 and
+                  vectors in state/memory.sqlite), recall, when (time phrases), consolidate (the night),
+                  recall_eval
   proactive/      heartbeat engine, daily LLM budget, rules (one class per rule, registered by name)
   services/       use cases built only on ports: listening (push-to-talk, barge-in), dictation,
                   live_transcript (pause segmenter and partial passes while recording),
@@ -41,7 +45,9 @@ brain/src/milo/
                   (action levels and yes-or-no questions), app_bridge (requests to the app and their answers:
                   AppEyes, AppHands, Calendar and Reminders work), tool_requests (what the tool socket may do),
                   screen (screen data for the chat model), hands + risk (checking and logging the worker's Mac
-                  actions), sheets + documents (the AppleScript behind sheet_write and write_document), plus small shared pieces: ui_state, context (latest app/idle report), levels
+                  actions), sheets + documents (the AppleScript behind sheet_write and write_document), memory (recall for each turn, search, forget, edit), episode_stubs (episodes
+                  of turns, tasks, looks and dictations), memory_requests (the worker's memory tools), sleep
+                  (when the night's consolidation runs), plus small shared pieces: ui_state, context (latest app/idle report), levels
                   (throttled meters), quiet (wait for a turn to end), fallback_voice
   transport/      Unix socket JSONL servers: brain.sock (an EventSink), hands.sock, and the tool socket and its
                   client
@@ -67,9 +73,13 @@ Beyond `milo.core.ports`, these entry points are fixed:
 | Function / class | Owner | Contract |
 |---|---|---|
 | `milo.adapters.load_builtin() -> None` | adapters | Imports every built-in adapter module so it registers. Idempotent. Heavy imports (torch, mlx) stay inside methods, never at module import. |
-| `milo.memory.workspace.Workspace(home)` | memory | `.ensure()` copies the template without overwriting, and creates dirs. Path properties: `config_path`, `reminders_path`, `profile_path`, `persona_path`, `state_dir`, `log_dir`, `socket_path`, `lock_path`, `usage_path`, `dictation_history_path`, `transcript_path`, `heartbeat_state_path`, `hands_socket_path`, `screens_dir`, `tools_socket_path`. |
+| `milo.memory.workspace.Workspace(home)` | memory | `.ensure()` copies the template without overwriting, and creates dirs. Path properties: `config_path`, `reminders_path`, `profile_path`, `persona_path`, `state_dir`, `log_dir`, `socket_path`, `lock_path`, `usage_path`, `dictation_history_path`, `transcript_path`, `heartbeat_state_path`, `hands_socket_path`, `screens_dir`, `tools_socket_path`, and for memory `episodes_dir`, `facts_path`, `journal_dir`, `memory_index_path`, `profile_snapshot_path`, `sleep_state_path`. |
 | `milo.memory.reminders.MarkdownReminders(path)` | memory | `ReminderBook`. Re-parses only when mtime changes. `add(due, text)` appends a line. Shared by the heartbeat and LiveTalk. |
-| `milo.memory.profile.MarkdownProfile(path)` | memory | `ProfileMemory` over `memory/profile.md`. |
+| `milo.memory.profile.MarkdownProfile(path)` | memory | `ProfileMemory` over `memory/profile.md`. Used only with `[memory] enabled = false`. |
+| `milo.memory.fact_profile.FactProfile(facts, path, snapshot, clock)` | memory | `ProfileMemory` as a view of the `FactStore`: `read()` renders facts, `remember()` adds one, the user's edits to `profile.md` become fact changes. `migrate()` turns an old `profile.md` into facts once. |
+| `milo.memory.index.SqliteMemoryIndex(path, embedder, facts, episodes)` | memory | `MemoryIndex` over `state/memory.sqlite`, a cache of the logs. `refresh(limit)` catches up with lines written since. |
+| `milo.memory.recall.HybridRecaller(index, facts, tuning)` | memory | `Recaller`. `render(recall, now)` makes the `<memory>` block. |
+| `milo.services.memory.Memory` / `TurnMemory` | services | The brain's memory: recall on the memory thread with a 300 ms limit, search, forget, edit, the `facts` event. `TurnMemory.before_turn()` is the live chat's hook. |
 | `milo.memory.ledger.JsonlUsageLedger(path, clock)` | memory | `UsageLedger`. Appends one JSON line per harness call. |
 | `milo.memory.history.JsonlDictationHistory(path, clock)` | memory | `DictationHistory`. |
 | `milo.memory.transcript.JsonlTranscript(path)` | memory | `TranscriptStore` over `state/transcript.jsonl`. `tail(n)` reads the file backwards block by block, so its cost doesn't grow with the file. |
@@ -81,10 +91,20 @@ Beyond `milo.core.ports`, these entry points are fixed:
 
 Typed and spoken turns take the same path through `LiveTalk`:
 
-1. **Chat model.** `[chat] use = "claude_live"` keeps one `claude -p --input-format stream-json` process running with no tools. Its system prompt is `persona.md`, the reply rules, `memory/profile.md` and the open reminders. The conversation stays open between turns. After `[chat] conversation_idle_reset_s` (600 s) of silence the next turn starts a fresh one, which also reloads the persona and profile. At boot `server.py` warms it, so the first turn skips the process start.
+1. **Chat model.** `[chat] use = "claude_live"` keeps one `claude -p --input-format stream-json` process running with no tools. Its system prompt is `persona.md`, the reply rules, the memory rules, the always-on facts (the basics and pinned ones) and the open reminders. Each turn then carries a `<memory>` block in front of the user's words: what `TurnMemory.before_turn()` recalled for it (see Memory below). The conversation stays open between turns. After `[chat] conversation_idle_reset_s` (600 s) of silence the next turn starts a fresh one, which also reloads the persona and profile. At boot `server.py` warms it, so the first turn skips the process start.
 2. **Reply stream.** Each user message is prefixed with `[weekday date time, frontmost app: X]`. The model starts its reply with an emotion tag such as `[happy]` and may add `<remember>fact</remember>`, `<reminder>YYYY-MM-DD HH:MM text</reminder>`, `<task title="..." screen="yes|no">description</task>`, `<steer helper="2">change</steer>` and `<stop helper="2"/>`. `ReplyParser` reads the text deltas as they arrive, sets the face once the emotion is known, holds back anything that could still turn into a tag, and passes the rest on as speech. When the stream ends, LiveTalk saves facts to the profile and reminders to `reminders.md`, and hands tasks, steers and stops to the `Orchestrator`.
 3. **Speech.** A `Speaker.utterance` has one worker. It asks `SpeechChunker` for the next piece, synthesizes it on the TTS thread and feeds it to a single open `AudioOutput` stream. Feeding doesn't block, so the next piece synthesizes while this one plays. The first piece ends at the first clause or sentence end with five or more words (or after twelve words), so Milo starts talking early but leaves the next piece time to get ready. Every later piece gets a budget: the characters the voice can synthesize while the queued audio plays, from `SynthesisPace`, a least-squares fit of a fixed cost per call plus a cost per character over the last pieces. The piece ends at the furthest sentence or clause boundary within the budget (a boundary up to 40% past it beats a cut mid-clause), never under 45 characters, because OmniVoice re-reads its 2 s voice reference on every call and shorter pieces synthesize slower than they play. A gap in playback is logged as `speech gap`. The bubble grows as each piece is fed. If synthesis fails, the text still shows and silence of about the right length plays. Barge-in calls `Voice.cancel()`, which OmniVoice honours between diffusion steps, so the TTS thread is free for the next reply within a fraction of a second.
 4. **Barge-in.** Pressing the talk key while Milo thinks or speaks calls `LiveTalk.interrupt()`: it cancels the turn, interrupts the model and the audio stream, and the mic opens straight away. A new typed turn does the same. Side effects of an interrupted reply are dropped.
+
+## Memory
+
+Milo remembers episodes (what happened) and facts (what is true about the user) for years. See the [design](design/memory.md) and [ADR 15](adr/0015-memory-files-and-a-rebuildable-index.md).
+
+- **Files.** `memory/episodes/YYYY-MM.jsonl` and `memory/facts.jsonl` are append-only logs and the only truth. `memory/profile.md` is written from the facts; the user may edit it. `state/memory.sqlite` is a search index that rebuilds itself from the logs.
+- **During the day.** `EpisodeTranscript` (around the transcript store) makes an episode of each user turn with Milo's answer and of each task; `EpisodeEyes` of each look; `EpisodeDictations` of dictations if `[memory] dictations` is on. `<remember>` and the worker's `memory_remember` add facts. The index catches up on the memory thread in batches.
+- **Each turn.** The recall runs hybrid search (FTS5 words, with German and English words for each other, and e5 vectors, merged by reciprocal rank fusion), boosts recent episodes, the current app and named people, adds the episodes of a time phrase ("yesterday", "letzte Woche"), and fits the result into `[memory] recall_tokens` (800). Outside episodes come marked as data and taint the conversation (ADR 10). No model call.
+- **At night.** `SleepRunner` consolidates each finished day with one worker call: better summaries, new, changed and retired facts, and a journal section. Every change is a log line; `python -m milo.memory.consolidate --undo <run>` takes a night back.
+- **The user's view.** "What Milo knows…" in the menu bar lists the facts by topic with Edit and Forget. The worker has `memory_search`, `memory_remember` and `memory_forget` in the `milo` MCP server; the latter two ask the user first.
 
 ## Helpers
 

@@ -160,3 +160,20 @@ whats_this_key = "ctrl+option+m"
 # Risky steps (Send, Delete, every script) ask first, like [approvals], and wait its timeout_s.
 enabled = true
 applescript = true                # let it drive scriptable apps (Finder, Numbers, Safari) with AppleScript
+
+[memory]
+# Milo remembers conversations, tasks and what you tell him, and each turn brings along only what
+# matters to it. Everything stays on this Mac in ~/Milo/memory. See "What Milo knows" in the menu bar.
+enabled = true
+recall_tokens = 800               # how much memory goes along with each turn, at most (about 4 characters a token)
+embedder = "mlx_e5"               # mlx_e5 (a small model, 140 MB, finds meaning) | hash (no model, finds words)
+dictations = false                # also remember what you dictate into other apps
+# Once a night, while the Mac is idle and plugged in, Milo sums up the day, learns new facts and fixes
+# old ones, and writes memory/journal/<day>.md. That costs a worker call or two a day.
+consolidate = true
+consolidate_calls_per_day = 2     # hard cap; 0 turns it off
+
+[memory.mlx_e5]
+model = "intfloat/multilingual-e5-small"
+device = "gpu"                    # gpu | cpu
+

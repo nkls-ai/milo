@@ -178,3 +178,38 @@ def test_an_unknown_heartbeat_key_fails_at_build(build):
 def test_an_unknown_adapter_option_names_its_table(build):
     with pytest.raises(ConfigError, match=r"\[tts.say\].*pitch"):
         build(cheap().replace('[tts.say]\nvoice = ""', '[tts.say]\nvoice = ""\npitch = 3'))
+
+
+def test_memory_is_wired_and_the_old_profile_moves_into_facts(build, tmp_path):
+    from milo.adapters.embed.mlx_e5 import MlxE5
+    from milo.memory.fact_profile import BACKUP
+
+    home = tmp_path / "Milo"
+    (home / "memory").mkdir(parents=True)
+    (home / "memory" / "profile.md").write_text("# About the user\n\n## People\n- Anna is the user's sister.\n")
+    runtime, home = build(cheap(**{"memory.recall_tokens": 500}))
+    memory = runtime.memory
+    assert memory is not None and memory.memory.recall_tokens == 500
+    assert isinstance(memory.memory._embedder, MlxE5) and memory.memory._embedder._net is None, "loads on warm"
+    assert [f.text for f in memory.memory.facts.current()] == ["Anna is the user's sister."]
+    assert (home / "memory" / BACKUP).exists() and "facts.jsonl" in (home / "memory" / "profile.md").read_text()
+    assert runtime.live_talk._memory is memory.turns and runtime.live_talk._profile is memory.profile
+    assert memory.sleep is not None and memory.sleep.calls_per_day == 2
+    assert not (home / "state" / "memory.sqlite").exists(), "the index opens on the memory thread"
+    memory.executor.shutdown(wait=False)
+
+
+def test_memory_can_be_switched_off_and_keeps_the_tools_server_for_it(build):
+    runtime, _ = build(cheap(**{"memory.enabled": False}))
+    assert runtime.memory is None and runtime.live_talk._memory is None
+    runtime, _ = build(cheap(**{"connections.enabled": False, "memory.consolidate": False}))
+    assert [s.name for s in runtime.harness.tool_servers] == ["milo"], "the memory tools still need it"
+    assert runtime.memory.sleep is None
+    runtime.memory.executor.shutdown(wait=False)
+
+
+def test_a_bad_memory_setting_fails_at_build(build):
+    with pytest.raises(ConfigError, match="recall_tokens"):
+        build(cheap(**{"memory.recall_tokens": 99999}))
+    with pytest.raises(ConfigError, match="embedder"):
+        build(cheap(**{"memory.embedder": "nope"}))

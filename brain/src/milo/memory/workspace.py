@@ -6,7 +6,7 @@ from importlib import resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
 
-_DIRS = ("run", "state", "logs", "memory/journal")
+_DIRS = ("run", "state", "logs", "memory/journal", "memory/episodes")
 
 
 class Workspace:
@@ -88,6 +88,35 @@ class Workspace:
     @property
     def heartbeat_state_path(self) -> Path:
         return self.state_dir / "heartbeat.json"
+
+    @property
+    def episodes_dir(self) -> Path:
+        """memory/episodes/YYYY-MM.jsonl: what happened, append-only."""
+        return self.memory_dir / "episodes"
+
+    @property
+    def facts_path(self) -> Path:
+        """memory/facts.jsonl: every change to what Milo knows, append-only. profile.md is rendered from it."""
+        return self.memory_dir / "facts.jsonl"
+
+    @property
+    def journal_dir(self) -> Path:
+        return self.memory_dir / "journal"
+
+    @property
+    def memory_index_path(self) -> Path:
+        """The search index over memory. A cache: deleting it is safe, Milo builds it again."""
+        return self.state_dir / "memory.sqlite"
+
+    @property
+    def profile_snapshot_path(self) -> Path:
+        """profile.md as Milo last wrote it, to tell the user's edits from his own."""
+        return self.state_dir / "profile.written.md"
+
+    @property
+    def sleep_state_path(self) -> Path:
+        """Which days the nightly consolidation has done, and its call budget."""
+        return self.state_dir / "sleep.json"
 
 
 def _copy_missing(src: Traversable, dst: Path) -> None:

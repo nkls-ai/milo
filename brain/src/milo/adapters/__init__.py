@@ -21,6 +21,8 @@ BUILTIN = (
     "connect.mac",
     "connect.fake",
     "headless.none",
+    "embed.mlx_e5",
+    "embed.hashing",
 )
 
 

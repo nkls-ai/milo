@@ -6,9 +6,10 @@ import logging
 from pathlib import Path
 
 from .config import UiSettings
-from .core.events import (AppResponse, Command, ConfirmAnswer, ContextUpdate, EmotionChanged, Event, GetHistory,
-                          HandsResult, HandsStop, ListenCancel, ListenConfirm, ListenStart, ListenStop, LookResult,
-                          Mute, StateChanged, StopHelper, TextInput, UiConfig, WhatsThis)
+from .core.events import (AppResponse, Command, ConfirmAnswer, ContextUpdate, EditFact, EmotionChanged, Event,
+                          Facts, ForgetFact, GetFacts, GetHistory, HandsResult, HandsStop, ListenCancel, ListenConfirm,
+                          ListenStart, ListenStop, LookResult, Mute, StateChanged, StopHelper, TextInput, UiConfig,
+                          WhatsThis)
 from .services.app_bridge import AppBridge
 from .services.approvals import Approvals
 from .services.context import UserContext
@@ -16,6 +17,7 @@ from .services.hands import HandsService
 from .services.heartbeat_runner import HeartbeatRunner
 from .services.listening import Listening
 from .services.live_talk import LiveTalk
+from .services.memory import Memory
 from .services.orchestrator import Orchestrator
 from .services.screen import checked, inside
 from .services.transcript import Transcript
@@ -34,7 +36,8 @@ class Brain:
                  heartbeat: HeartbeatRunner | None, ui_settings: UiSettings, transcript: Transcript | None = None,
                  *, approvals: Approvals | None = None, bridge: AppBridge | None = None,
                  hands: HandsService | None = None, screens: Path | None = None,
-                 helpers: Orchestrator | None = None):
+                 helpers: Orchestrator | None = None, memory: Memory | None = None):
+        self._memory = memory
         self._hands = hands
         self._helpers = helpers
         self._screens = screens
@@ -100,8 +103,25 @@ class Brain:
             case AppResponse():
                 if self._bridge is not None:
                     self._bridge.resolve(command)
+            case GetFacts() | ForgetFact() | EditFact():
+                self._facts(command)
             case _:
                 log.warning("no handler for %s", command.type)
+
+    def _facts(self, command: Command) -> None:
+        """The "What Milo knows" screen: list, forget, edit. The user's own clicks, so nobody asks again."""
+        if self._memory is None:
+            self._ui.emit(Facts([]))
+            return
+        match command:
+            case ForgetFact(id):
+                if self._memory.forget(id, "the user forgot it in What Milo knows") is None:
+                    self._ui.emit(self._memory.facts_event())
+            case EditFact(id, text):
+                if self._memory.edit_fact(id, text) is None:
+                    self._ui.emit(self._memory.facts_event())
+            case _:
+                self._ui.emit(self._memory.facts_event())
 
     def _answer(self, id: str, value: object) -> None:
         if self._bridge is not None:

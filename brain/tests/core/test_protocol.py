@@ -37,6 +37,7 @@ OUTBOUND = {
     "app_request": lambda m: ev.AppRequest(m["id"], m["op"], m["args"]),
     "helpers": lambda m: ev.Helpers(m["helpers"]),
     "hands_borrow": lambda m: ev.HandsBorrow(m["on"], m["what"]),
+    "facts": lambda m: ev.Facts(m["facts"]),
 }
 
 
@@ -109,3 +110,14 @@ def test_bad_commands_raise_protocol_error(raw):
 ])
 def test_fakes_satisfy_their_ports(fake, port):
     assert isinstance(fake, port)
+
+
+def test_memory_commands_parse_into_their_values():
+    assert ev.parse_command({"type": "get_facts"}) == ev.GetFacts()
+    assert ev.parse_command({"type": "forget_fact", "id": "f1"}) == ev.ForgetFact("f1")
+    assert ev.parse_command({"type": "edit_fact", "id": "f1", "text": "  Anna  is my sister. "}) == \
+        ev.EditFact("f1", "Anna is my sister.")
+    for bad in ({"type": "forget_fact", "id": " "}, {"type": "edit_fact", "id": "f1", "text": ""},
+                {"type": "edit_fact", "id": "f1"}):
+        with pytest.raises(ev.ProtocolError):
+            ev.parse_command(bad)
