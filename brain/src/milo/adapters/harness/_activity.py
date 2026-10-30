@@ -30,7 +30,7 @@ _SEGMENT = re.compile(r"\s*(?:&&|\|\||;|\|)\s*")
 _TELL_APP = re.compile(r'tell application "([^"]+)"')
 _READERS = ("cat", "head", "tail", "less", "more", "bat", "nl", "wc", "file", "stat", "xxd", "strings")
 _RUNNERS = ("python", "python3", "node", "uv", "ruby", "perl", "swift", "bun", "deno", "npx")
-_SKIPPED_CLAUDE_TOOLS = ("TodoWrite", "ToolSearch", "EnterPlanMode", "ExitPlanMode")
+_SKIPPED_CLAUDE_TOOLS = ("TodoWrite", "ToolSearch", "EnterPlanMode", "ExitPlanMode", "StructuredOutput")
 # Tools Milo's own Mac MCP server will offer (Phase 2), so computer use reads well from day one.
 _KNOWN_TOOLS = {
     "screenshot": "Looking at the screen",

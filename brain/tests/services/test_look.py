@@ -156,7 +156,7 @@ def test_a_task_from_a_screen_turn_needs_the_users_yes():
     s = Stack(eyes=FakeEyes(EXCEL), model=FakeLiveModel(
         ["[thinking] Let me look. <look/>"], ["[happy] I'll fill it in. <task>Fill column C in Budget.xlsx</task>"]))
     asked = answering(s, False, "look at this and fill it in")
-    assert asked == ["Should I go ahead with this: Fill column C in Budget.xlsx?"]
+    assert asked == ["Fill column C in Budget.xlsx?"]
     assert s.harness.calls == []
     s2 = Stack(eyes=FakeEyes(EXCEL), model=FakeLiveModel(
         ["[thinking] <look/>"], ["[happy] On it. <task>Fill column C</task>"]))
@@ -164,9 +164,11 @@ def test_a_task_from_a_screen_turn_needs_the_users_yes():
     assert len(s2.harness.calls) == 1
 
 
-def test_after_a_look_every_task_in_that_conversation_needs_a_yes():
+def test_a_task_the_user_asks_for_after_a_look_just_starts():
+    # The morning of 2026-10-30: Milo had looked at System Settings, then "open Excel and make a table" asked
+    # about the whole task description and timed out. The worker's tools ask before anything risky.
     s = Stack(eyes=FakeEyes(EXCEL), model=FakeLiveModel(
-        ["[thinking] <look/>"], ["[neutral] It's a budget."], ["[happy] On it. <task>Email the budget</task>"]))
-    assert answering(s, False, "look at this", "now email it to Anna") == [
-        "Should I go ahead with this: Email the budget?"]
-    assert s.harness.calls == []
+        ["[thinking] <look/>"], ["[neutral] It's a budget."],
+        ["[happy] On it. <task>Open Excel and make a budget table. One row per weekday.</task>"]))
+    assert answering(s, False, "look at this", "open Excel and make a table for the week") == []
+    assert len(s.harness.calls) == 1
