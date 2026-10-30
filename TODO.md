@@ -12,7 +12,7 @@
 - Context-aware dictation formatting by frontmost app (casual in Slack, formal in Mail), via a local model `TextCleaner`.
 - A stable signing identity so macOS permissions survive rebuilds.
 
-- Pip: measure idle CPU on screen in the real app. The offscreen probe (`MILO_PROBE_DIR=... swift test --filter OverlayProbe`) can't make its window count as visible from a non-GUI shell; one frame of Pip costs 1.3 ms against the robot's 1.7 ms on the same 15 Hz clock.
+- Pip's idle CPU is too high: measured 6.5% for Milo.app on screen, asleep at night (2026-10-30, 03:35), against the robot's ~0.4%. Find what keeps redrawing while he sleeps (the sleeping pose, the "z", the 15 Hz clock) and stop the clock when nothing moves. One frame of Pip costs 1.3 ms against the robot's 1.7 ms, so the clock rate is the likely cause, not the drawing.
 - Pip pointing near the left screen edge: the bubble hangs to his left and can be cut off. Move the bubble to his right when he perches there.
 - Pip: a fold or flap animation when he takes off and lands, instead of starting mid-flap.
 
