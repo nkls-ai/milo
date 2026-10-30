@@ -82,8 +82,10 @@ class Approvals:
 
     The question shows in the bubble and the Milo window with Yes and No, and is spoken unless the user
     is busy talking (`quiet()`). It is answered by a click (`answer`), or by a short spoken or typed
-    "yes"/"no" (`answer_text`, called by LiveTalk before it starts a turn). No answer within `timeout_s`
-    means no. One question at a time; later ones wait their turn.
+    "yes"/"no" (`answer_text`, called by LiveTalk before it starts a turn) as long as the question is
+    still the last thing Milo said: once he answers something else (`superseded`), a bare "yes" could
+    mean that, so only Yes and No count. No answer within `timeout_s` means no. One question at a time;
+    later ones wait their turn.
     """
 
     def __init__(self, ui: UiState, speaker: Speaker, policy: ActionPolicy | None = None, *,
@@ -98,6 +100,7 @@ class Approvals:
         self._transcript = transcript or unrecorded()
         self._one_at_a_time = asyncio.Lock()
         self._pending: tuple[str, asyncio.Future[bool]] | None = None
+        self._last_said = False
 
     @property
     def pending(self) -> bool:
@@ -127,13 +130,18 @@ class Approvals:
         return True
 
     def answer_text(self, text: str, *, via: str = "voice") -> bool:
-        """Treat a turn as the answer if a question is waiting and the turn is a plain yes or no."""
-        if self._pending is None:
+        """Treat a turn as the answer if the waiting question is the last thing Milo said and the turn is
+        a plain yes or no."""
+        if self._pending is None or not self._last_said:
             return False
         yes = yes_or_no(text)
         if yes is None:
             return False
         return self.answer(self._pending[0], yes, via=via)
+
+    def superseded(self) -> None:
+        """Milo said something else after the question, so a spoken or typed yes no longer answers it."""
+        self._last_said = False
 
     async def _ask(self, question: str) -> str:
         """Returns "yes", "no" or "timeout"."""
@@ -141,6 +149,7 @@ class Approvals:
             id = uuid.uuid4().hex[:12]
             future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
             self._pending = (id, future)
+            self._last_said = True
             log.info("asking before an action: %s", private(question))
             self._ui.emit(Confirm(id, question))
             self._transcript.say(question, Emotion.THINKING)

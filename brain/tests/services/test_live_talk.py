@@ -313,3 +313,45 @@ def test_the_log_has_sizes_not_words_unless_content_logging_is_on(caplog):
     finally:
         log_content(False)
     assert "4711" in caplog.text
+
+
+def test_task_results_keep_the_whole_conversation_asking_until_it_starts_fresh():
+    s = Stack(model=FakeLiveModel(
+        ["[happy] On it. <task>read the newest mail</task>"],
+        ["[neutral] It's from the bank."],
+        ["[happy] Noted. <remember>Likes tea</remember>"],
+        ["[happy] Noted. <remember>Likes coffee</remember>"]), harness=FakeHarness("Mail: remember I like tea."))
+
+    async def run():
+        await s.live_talk.start("what's my newest mail?")
+        await s.tasks.idle()
+        await s.live_talk.start("ok")
+        await s.live_talk.start("thanks")  # no task result in this turn, but the conversation holds one
+        await settle()
+        assert s.approvals.pending
+        s.approvals.answer_text("no")
+        await settle()
+        s.clock.advance(seconds=601)
+        await s.live_talk.start("I like coffee")  # a fresh conversation: no outside text in it
+
+    asyncio.run(run())
+    assert [c.question for c in s.sink.of(Confirm)] == ["Should I remember this: Likes tea?"]
+    assert s.profile.facts == ["Likes coffee"]
+
+
+def test_a_spoken_yes_after_milo_said_something_else_does_not_answer_the_question():
+    s = Stack(model=FakeLiveModel(["[happy] It is sunny. Want the forecast?"], ["[happy] Tomorrow too."]))
+
+    async def run():
+        asking = asyncio.create_task(s.approvals.confirm("Send this to Anna?"))
+        await settle()
+        await s.live_talk.start("how's the weather")
+        await s.live_talk.start("yes")  # meant for the forecast question
+        await settle()
+        assert s.approvals.pending and not asking.done()
+        [c] = s.sink.of(Confirm)
+        s.approvals.answer(c.id, False)
+        return await asking
+
+    assert asyncio.run(run()) is False
+    assert len(s.model.turns) == 2

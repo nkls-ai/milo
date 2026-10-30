@@ -91,6 +91,10 @@ class Reply:
         return Reply(Emotion.parse(emotion), say, usage, session_id)
 
 
+class ToolError(Exception):
+    """An app connection couldn't do what was asked. The message is plain language, fit for the user."""
+
+
 class HarnessError(Exception):
     """A harness call failed. `transient` says whether retrying later can help."""
 

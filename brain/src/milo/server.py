@@ -71,6 +71,7 @@ def _setup_logging(log_file: Path, settings: LoggingSettings) -> None:
 
 async def _serve(runtime: Runtime) -> None:
     await runtime.server.start()
+    await runtime.tool_server.start()
     log.info("brain up (chat=%s, harness=%s)", runtime.live_model.name, runtime.harness.name)
     warming = asyncio.create_task(_warm_all({
         "stt": (runtime.stt_executor, runtime.transcriber.warm),
@@ -86,6 +87,7 @@ async def _serve(runtime: Runtime) -> None:
             task.cancel()
         runtime.stt_executor.shutdown(wait=False, cancel_futures=True)
         runtime.tts_executor.shutdown(wait=False, cancel_futures=True)
+        await runtime.tool_server.close()
         await _close(runtime)
 
 

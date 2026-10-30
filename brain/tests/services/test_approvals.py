@@ -170,3 +170,25 @@ def test_the_app_bridge_reports_app_errors_and_a_missing_app_plainly():
             await silent.call("reminders.list", {})
 
     asyncio.run(run())
+
+
+def test_app_ops_check_the_switch_and_apply_their_level_on_this_side():
+    s = Stack()
+    s.approvals.policy = ActionPolicy({"change": "ask_first"})
+    requests = ToolRequests(s.approvals, s.bridge, enabled=["calendar"])
+
+    async def run():
+        off = await requests.handle({"op": "app", "name": "reminders.list", "args": {}})
+        adding = asyncio.create_task(requests.handle({"op": "app", "name": "calendar.add_event",
+                                                      "args": {"title": "Doctor"},
+                                                      "summary": "Put “Doctor” in your calendar?"}))
+        await settle()
+        [c] = s.sink.of(Confirm)
+        assert c.question == "Put “Doctor” in your calendar?"
+        s.approvals.answer(c.id, False)
+        return off, await adding
+
+    off, refused = asyncio.run(run())
+    assert off == {"ok": False, "error": "The reminders connection is switched off in Milo's settings."}
+    assert refused == {"ok": False, "error": "The user said no."}
+    assert not s.sink.of(AppRequest), "nothing reached the app"

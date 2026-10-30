@@ -95,6 +95,8 @@ class LiveTalk:
         self._last_turn_at: float | None = None
         self._starting = asyncio.Lock()  # warm() at boot and the first turn may race
         self._notes: list[str] = []
+        self._tainted = False
+        """Task results entered the running conversation, so outside text can steer every later reply in it."""
         self._asking: set[asyncio.Task] = set()
 
     @property
@@ -137,7 +139,7 @@ class LiveTalk:
         """A background task finished. The next user message carries the result, so Milo knows about it.
 
         The result may quote mail, web pages or files, so it goes in as delimited, escaped data, and the
-        tags in the reply to that message wait for the user's yes (see _apply).
+        tags in every later reply of this conversation wait for the user's yes (see _apply).
         """
         self._notes.append(f"<task_result>\nTask: {untrusted(description)}\nResult: {untrusted(result)}\n</task_result>")
 
@@ -161,6 +163,7 @@ class LiveTalk:
         notes, self._notes = self._notes, []
         try:
             await self._ensure_conversation()
+            self._tainted = self._tainted or bool(notes)
             self._streaming = True
             async for delta in self._model.turn(self._prompt(text, notes)):
                 if first_at is None:
@@ -199,7 +202,9 @@ class LiveTalk:
         self._end_reply(shown, parser)
         self._log(started, first_at, parser.spoken)
         self._ledger.record("chat", self._model.name, self._model.last_usage)
-        self._apply(parser, ask=bool(notes))
+        self._apply(parser, ask=self._tainted)
+        if self._approvals is not None and parser.spoken.strip():
+            self._approvals.superseded()
         if not speak:
             if parser.spoken.strip():
                 await self._speaker.say(parser.spoken, parser.emotion, speak=False)
@@ -251,6 +256,7 @@ class LiveTalk:
             if self._system is None or idle or unused_but_stale:
                 await self._model.start(system)
                 self._system, self._last_turn_at = system, None
+                self._tainted = False
 
     def _system_prompt(self) -> str:
         parts = [self._persona().strip() or DEFAULT_PERSONA, REPLY_RULES.strip()]
@@ -269,8 +275,9 @@ class LiveTalk:
     def _apply(self, parser: ReplyParser, *, ask: bool) -> None:
         """Save facts and reminders and start tasks the reply asked for.
 
-        ask=True when the turn carried task results: text from outside could have talked the model into
-        these tags, so each one waits for the user's yes, and without a way to ask they are dropped.
+        ask=True once task results are in the conversation: text from outside could have talked the model
+        into these tags, so each one waits for the user's yes until a fresh conversation starts. Without a
+        way to ask they are dropped.
         """
         effects: list[tuple[str, Callable[[], None]]] = []
         for fact in parser.remembers:

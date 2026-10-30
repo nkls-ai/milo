@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +14,9 @@ from .core.clock import SystemClock
 from .core.ports import Harness, LiveModel, Transcriber, Voice
 from .core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, HARNESSES, LIVE_MODELS, TEXT_CLEANERS, TRANSCRIBERS,
                             VOICES, AdapterContext, ConfigError, Registry)
+from .core.types import ToolServer
+from .services.app_bridge import AppBridge
+from .services.approvals import ActionPolicy, Approvals
 from .services.context import UserContext
 from .services.conversation import Conversation
 from .services.dictation import DictationService
@@ -22,8 +26,10 @@ from .services.listening import Listening
 from .services.live_talk import LiveTalk
 from .services.speaker import Speaker
 from .services.task_runner import TaskRunner
+from .services.tool_requests import ToolRequests
 from .services.transcript import Transcript
 from .services.ui_state import UiState
+from .transport.tool_socket import ToolSocketServer
 from .transport.unix_socket import UnixSocketServer
 
 log = logging.getLogger("milo.compose")
@@ -43,6 +49,7 @@ class Runtime:
     harness: Harness
     live_model: LiveModel
     live_talk: LiveTalk
+    tool_server: ToolSocketServer
 
 
 def build(home: Path) -> Runtime:
@@ -60,7 +67,7 @@ def build(home: Path) -> Runtime:
     config = Config.load(workspace.config_path)
     adapters.load_builtin()
     clock = SystemClock()
-    ctx = AdapterContext(home, workspace.state_dir, clock)
+    ctx = AdapterContext(home, workspace.state_dir, clock, _tool_servers(config, home))
 
     def create(registry: Registry, section: str):
         name, options = config.pluggable(section)
@@ -90,8 +97,15 @@ def build(home: Path) -> Runtime:
     transcript = Transcript(ui, JsonlTranscript(workspace.transcript_path), clock)
     tasks = TaskRunner(conversation, speaker, context, quiet=lambda: live_talk.busy or mic.active,
                        transcript=transcript)
+    approvals = Approvals(ui, speaker, ActionPolicy(config.approval_levels), timeout_s=config.approvals.timeout_s,
+                          speak=config.approvals.speak, quiet=lambda: live_talk.busy or mic.active,
+                          transcript=transcript)
+    bridge = AppBridge(ui, connected=lambda: server.connected)
+    switches = config.connections
+    enabled = [name for name in ("calendar", "reminders") if switches.enabled and getattr(switches, name)]
+    tool_server = ToolSocketServer(workspace.tools_socket_path, ToolRequests(approvals, bridge, enabled).handle)
     live_talk = LiveTalk(live_model, speaker, ui, context, clock, profile, reminders, ledger,
-                         _persona(workspace.persona_path), idle_reset_s, tasks, transcript)
+                         _persona(workspace.persona_path), idle_reset_s, tasks, transcript, approvals)
     tasks.on_result = live_talk.note
     listening = Listening(mic, transcriber, stt_executor, ui, DictationService(cleaner, history, ui),
                           live_talk, context)
@@ -104,9 +118,16 @@ def build(home: Path) -> Runtime:
         heartbeat = HeartbeatRunner(engine, context, conversation, speaker, ui, mic, clock,
                                     busy=lambda: live_talk.busy)
 
-    brain = Brain(ui, listening, live_talk, context, heartbeat, config.ui, transcript)
+    brain = Brain(ui, listening, live_talk, context, heartbeat, config.ui, transcript, approvals, bridge)
     return Runtime(brain, server, heartbeat, transcriber, voice, stt_executor, tts_executor, harness,
-                   live_model, live_talk)
+                   live_model, live_talk, tool_server)
+
+
+def _tool_servers(config: Config, home: Path) -> tuple[ToolServer, ...]:
+    """Milo's app connections as an MCP server for the worker: this Python, so no `uv run` on every task."""
+    if not config.connections.enabled:
+        return ()
+    return (ToolServer("milo", (sys.executable, "-m", "milo.connect"), (("MILO_HOME", str(home)),)),)
 
 
 def _persona(path: Path):

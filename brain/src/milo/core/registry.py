@@ -19,8 +19,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 if TYPE_CHECKING:
-    from .ports import (AudioInput, AudioOutput, Clock, Harness, LiveModel, ProactiveRule, TextCleaner,
-                        Transcriber, Voice)
+    from .ports import (AudioInput, AudioOutput, Clock, Connections, Harness, LiveModel, ProactiveRule,
+                        TextCleaner, Transcriber, Voice)
+    from .types import ToolServer
 
 T = TypeVar("T")
 O = TypeVar("O")
@@ -37,6 +38,8 @@ class AdapterContext:
     home: Path
     state_dir: Path
     clock: Clock
+    tool_servers: tuple[ToolServer, ...] = ()
+    """MCP servers the worker harness gives its agent (Milo's app connections)."""
 
 
 Factory = Callable[[Mapping[str, Any], AdapterContext], T]
@@ -88,3 +91,4 @@ AUDIO_INPUTS: Registry[AudioInput] = Registry("audio input")
 AUDIO_OUTPUTS: Registry[AudioOutput] = Registry("audio output")
 TEXT_CLEANERS: Registry[TextCleaner] = Registry("dictation cleaner")
 RULES: Registry[ProactiveRule] = Registry("heartbeat rule")
+CONNECTIONS: Registry[Connections] = Registry("connections")
