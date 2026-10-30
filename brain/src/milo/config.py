@@ -216,7 +216,11 @@ class LoggingSettings:
 
 @dataclass(frozen=True)
 class SttSettings:
-    pass
+    talk: str = ""
+    """A cloud service that listens along while you talk to Milo ("elevenlabs"), so his answer starts sooner.
+    Empty: everything is transcribed on this Mac."""
+    cloud_dictation: bool = False
+    """Dictation goes to that service too. Off: dictation never leaves this Mac."""
 
 
 @dataclass(frozen=True)
@@ -267,6 +271,7 @@ class Config:
         self.chat: ChatSettings = settings["chat"]
         self.harness: HarnessSettings = settings["harness"]
         self.tts: TtsSettings = settings["tts"]
+        self.stt: SttSettings = settings["stt"]
         self.dictation: DictationSettings = settings["dictation"]
         self.connections: ConnectionSettings = settings["connections"]
         self.messages: MessagesSettings = settings["messages"]

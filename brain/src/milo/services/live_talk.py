@@ -331,8 +331,10 @@ class LiveTalk:
         """The user started talking to Milo: get the conversation ready while they speak.
 
         After `idle_reset_s` of silence the next turn starts a fresh conversation, a new model process that
-        takes 1 to 3 s before its first word. Starting it now hides that behind the user's own words.
+        takes 1 to 3 s before its first word. Starting it now hides that behind the user's own words. A streaming
+        voice opens its connection now too.
         """
+        self._speaker.prepare()
         if (self._preparing is None or self._preparing.done()) and self._needs_fresh_conversation():
             self._preparing = asyncio.create_task(self._prepare())
 

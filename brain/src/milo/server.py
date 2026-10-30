@@ -86,6 +86,8 @@ def _setup_logging(log_file: Path, settings: LoggingSettings) -> None:
 async def _serve(runtime: Runtime) -> None:
     # The app stops its brain with SIGTERM (uv passes that on, not SIGINT). Shut down as for Ctrl-C.
     asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, asyncio.current_task().cancel)
+    for notice in runtime.notices:
+        notice.loop = asyncio.get_running_loop()
     await runtime.server.start()
     await runtime.tool_server.start()
     if runtime.hands_server is not None:

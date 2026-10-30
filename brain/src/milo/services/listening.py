@@ -5,11 +5,12 @@ import logging
 import time
 from concurrent.futures import Executor
 
-from milo.core.events import Status
+from milo.core.events import Partial, Status
 from milo.core.logtext import private
 from milo.core.ports import AudioInput, Transcriber
 from milo.core.types import STT_SAMPLE_RATE, ListenMode, LiveMode, MiloState
 
+from .cloud_hearing import CloudHearing, CloudRecording
 from .context import UserContext
 from .dictation import DictationService, TypedDictation
 from .levels import throttled_levels
@@ -33,11 +34,15 @@ class Listening:
 
     A tentative start records without showing anything (no state, no levels, no barge-in) until confirm()
     or stop(), because the key press may still turn out to be a tap.
+
+    `hearing` streams talk recordings (and dictation, if allowed) to a cloud transcriber while they are made.
+    Its guesses are the live words and its text wins, so the local model stays idle (and paged out); if it
+    fails, the whole recording is transcribed here on release.
     """
 
     def __init__(self, mic: AudioInput, transcriber: Transcriber, executor: Executor, ui: UiState,
                  dictation: DictationService, live_talk: LiveTalk, context: UserContext,
-                 live: LiveMode = LiveMode.OFF):
+                 live: LiveMode = LiveMode.OFF, hearing: CloudHearing | None = None):
         self._mic = mic
         self._transcriber = transcriber
         self._executor = executor
@@ -50,6 +55,8 @@ class Listening:
         self._shown = False
         self._live: LiveTranscript | None = None
         self._typed: TypedDictation | None = None
+        self._hearing = hearing
+        self._cloud: CloudRecording | None = None
 
     @property
     def live_mode(self) -> LiveMode:
@@ -76,7 +83,8 @@ class Listening:
             return
         self._mode = mode
         self._shown = False
-        self._wake()
+        if not self._goes_to_cloud(mode):
+            self._wake()
         if not tentative:
             self._show()
 
@@ -87,6 +95,12 @@ class Listening:
                 log.warning("waking the speech model failed: %s", woken.exception())
 
         asyncio.get_running_loop().run_in_executor(self._executor, self._transcriber.wake).add_done_callback(failed)
+
+    def _goes_to_cloud(self, mode: ListenMode | None) -> bool:
+        """config.toml lets this recording leave the Mac (typed dictation never does: it pastes phrase by phrase)."""
+        if self._hearing is None:
+            return False
+        return mode is ListenMode.TALK or (self._hearing.dictation and self._live_mode is not LiveMode.TYPE)
 
     def confirm(self) -> None:
         """Show a tentative recording: the key is held, or a double tap locked it on."""
@@ -100,7 +114,13 @@ class Listening:
         self._shown = True
         dictate = self._mode is ListenMode.DICTATE
         self._ui.set_state(MiloState.DICTATING if dictate else MiloState.LISTENING)
-        if self._live_mode is LiveMode.OFF:
+        if self._goes_to_cloud(self._mode):
+            self._cloud = self._hearing.start(
+                self._mic, on_partial=(lambda text: self._ui.emit(Partial(text))) if self._live_mode is not LiveMode.OFF
+                else None)
+            if self._cloud is None:  # the cloud is resting after a failure: this one is transcribed here
+                self._wake()
+        if self._live_mode is LiveMode.OFF or self._cloud is not None:
             return
         self._typed = self._dictation.typed() if dictate and self._live_mode is LiveMode.TYPE else None
         self._live = LiveTranscript(self._mic, self._transcriber, self._executor, self._ui, PauseSegmenter(),
@@ -113,14 +133,20 @@ class Listening:
         mode, self._mode = self._mode, None
         live, self._live = self._live, None
         typed, self._typed = self._typed, None
+        cloud, self._cloud = self._cloud, None
         if not self._shown and mode is ListenMode.TALK:
             self._live_talk.hold()  # released before the confirm arrived: still a real hold
         self._shown = False
         audio = self._mic.stop()
         self._ui.set_state(MiloState.TRANSCRIBING)
         started = time.monotonic()
+        text = await self._hearing.transcribe(cloud, audio) if cloud is not None else None
+        by_cloud = text is not None
         try:
-            if live is not None:
+            if by_cloud:
+                if live is not None:
+                    live.abort()  # its words were only for the pill
+            elif live is not None:
                 text = await live.finish(audio)
             else:
                 text = await asyncio.get_running_loop().run_in_executor(
@@ -134,8 +160,8 @@ class Listening:
                 self._live_talk.interrupt(rest=False)
             self._ui.rest()
             return
-        log.info("stt %.2fs audio, ready %.2fs after release: %s", len(audio) / STT_SAMPLE_RATE,
-                 time.monotonic() - started, private(text))
+        log.info("stt %.2fs audio, ready %.2fs after release%s: %s", len(audio) / STT_SAMPLE_RATE,
+                 time.monotonic() - started, " (cloud)" if by_cloud else "", private(text))
         text = text.strip()
         if typed is not None:
             typed.finish(self._context.app)
@@ -156,6 +182,9 @@ class Listening:
             live.abort()
         if typed is not None:
             typed.finish(self._context.app)
+        cloud, self._cloud = self._cloud, None
+        if cloud is not None:
+            cloud.cancel()
         if self._mic.active:
             self._mic.stop()
         mode, self._mode = self._mode, None

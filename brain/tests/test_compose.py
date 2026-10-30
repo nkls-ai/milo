@@ -151,7 +151,7 @@ def test_heartbeat_disabled_builds_no_runner(build):
     ("chat", "claude_live"),
     ("harness", "claude, codex"),
     ("stt", "mlx_whisper, none"),
-    ("tts", "none, omnivoice, say"),
+    ("tts", "elevenlabs, none, omnivoice, say"),
     ("audio", "none, sounddevice, wav"),
     ("dictation", "fillers, plain"),
 ])
@@ -161,7 +161,7 @@ def test_a_bogus_use_name_lists_the_available_ones(build, section, available):
 
 
 def test_a_bogus_fallback_voice_fails_at_build_not_when_the_primary_breaks(build):
-    with pytest.raises(ConfigError, match=r"fallback.*'sya'; available: none, omnivoice, say"):
+    with pytest.raises(ConfigError, match=r"fallback.*'sya'; available: elevenlabs, none, omnivoice, say"):
         build(cheap(**{"tts.fallback": "sya"}))
 
 
@@ -213,6 +213,37 @@ def test_a_bad_memory_setting_fails_at_build(build):
         build(cheap(**{"memory.recall_tokens": 99999}))
     with pytest.raises(ConfigError, match="embedder"):
         build(cheap(**{"memory.embedder": "nope"}))
+
+
+def test_the_cloud_voice_and_hearing_are_built_from_config(build):
+    from milo.adapters.stt.elevenlabs_scribe import ScribeRealtime
+    from milo.adapters.tts.elevenlabs import ElevenLabsVoice
+
+    text = set_key(cheap(**{"stt.talk": "elevenlabs", "stt.elevenlabs.keyterms": ["Milo"],
+                            "tts.elevenlabs.voice_id": "abc"}), "tts", "use", "elevenlabs")
+    runtime, home = build(text)
+    assert isinstance(runtime.voice.current, ElevenLabsVoice) and runtime.voice.current.voice_id == "abc"
+    assert runtime.voice.current.key_file == home / "secrets" / "elevenlabs.key"
+    hearing = runtime.brain._listening._hearing
+    assert isinstance(hearing._engine, ScribeRealtime) and hearing._engine.keyterms == ("Milo",)
+    assert not hearing.dictation, "dictation stays on the Mac unless cloud_dictation says otherwise"
+    assert len(runtime.notices) == 2
+
+
+def test_with_elevenlabs_speaking_omnivoice_is_not_even_built_until_it_fails(build):
+    text = set_key(cheap(**{"tts.fallback": "omnivoice"}), "tts", "use", "elevenlabs")
+    runtime, home = build(text)
+    (home / "secrets").mkdir(exist_ok=True)
+    (home / "secrets" / "elevenlabs.key").write_text("sk_test")
+    runtime.voice.warm()
+    assert runtime.voice._fallback is None, "OmniVoice's GBs stay out of memory while ElevenLabs works"
+
+
+def test_talk_stays_local_by_default_and_a_bogus_service_fails_at_build(build):
+    runtime, _ = build(cheap())
+    assert runtime.brain._listening._hearing is None
+    with pytest.raises(ConfigError, match="streaming stt engine 'bogus'"):
+        build(cheap(**{"stt.talk": "bogus"}))
 
 
 def test_messages_are_off_until_switched_on(build):

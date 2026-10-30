@@ -87,6 +87,35 @@ class Transcriber(Protocol):
 
 
 @runtime_checkable
+class TranscriptionSession(Protocol):
+    """One recording streamed to a transcriber while it is made, so the text is ready right after it ends."""
+
+    def feed(self, audio: Audio) -> None:
+        """More 16 kHz mono samples, straight after the last. Doesn't block."""
+        ...
+
+    async def finish(self) -> str:
+        """The recording is over: the whole text ("" for silence). Raises VoiceUnavailable if the engine can't
+        say; then the caller transcribes the recording another way."""
+        ...
+
+    def cancel(self) -> None:
+        """Drop the recording. Nothing more is sent."""
+        ...
+
+
+@runtime_checkable
+class StreamingTranscriber(Protocol):
+    """A transcriber that listens along while the user speaks (a cloud service). Used only where config.toml
+    allows audio to leave the Mac."""
+
+    def session(self, on_partial: Callable[[str], None] | None = None) -> TranscriptionSession:
+        """Start a recording's session now (it connects while the user speaks). On the event loop.
+        `on_partial` gets the words so far whenever the service has a new guess, for the live words."""
+        ...
+
+
+@runtime_checkable
 class Voice(Protocol):
     sample_rate: int
 
@@ -102,6 +131,48 @@ class Voice(Protocol):
         Safe from any thread. An aborted synthesize() raises; one started afterwards is unaffected.
         Engines that can't abort may do nothing.
         """
+        ...
+
+
+@runtime_checkable
+class VoiceStream(Protocol):
+    """One reply spoken as one continuous delivery: pieces go in as they are written, audio comes out as it is
+    made, and every piece is spoken with the earlier ones as context, so pitch and pace carry across them.
+
+    Used on the event loop. Iterating yields (piece, audio): the index of the piece the samples belong to, in the
+    order send() got them, and mono samples at the voice's `sample_rate`. Empty audio says all of that piece has
+    come. It ends once finish() was called and all audio has come, and raises VoiceUnavailable if the engine
+    can't go on (the caller says the rest another way).
+    """
+
+    def send(self, text: str) -> None:
+        """Queue the next piece. The engine starts on it at once; doesn't block."""
+        ...
+
+    def finish(self) -> None:
+        """No more pieces are coming."""
+        ...
+
+    def cancel(self) -> None:
+        """Stop now and drop audio not yet yielded. Iteration ends."""
+        ...
+
+    def __aiter__(self) -> AsyncIterator[tuple[int, Audio]]: ...
+
+
+@runtime_checkable
+class StreamingVoice(Voice, Protocol):
+    """A Voice that can also speak text while it is still being written (see VoiceStream)."""
+
+    first_audio_s: float
+    """About how long from send() to the first audio, from recent streams. Tells a backchannel to wait."""
+
+    def stream(self) -> VoiceStream | None:
+        """A new delivery, or None when streaming isn't available now: then synthesize() piece by piece."""
+        ...
+
+    def prepare(self) -> None:
+        """The user started talking: make the next stream fast (open the connection). Never blocks or raises."""
         ...
 
 

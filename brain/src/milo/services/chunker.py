@@ -19,14 +19,19 @@ _WORD = re.compile(r"\S+(?=\s)")
 class SpeechChunker:
     """Cuts streamed text into pieces for TTS, sized so the next piece is ready before the audio runs out.
 
-    The first piece goes early so Milo starts talking: at the first clause or sentence end once there are
+    `sentences=True` is for a streaming voice, which speaks every piece of a reply as one delivery and is faster
+    than real time: each piece is every whole sentence there is so far (a clause boundary only past MAX_CHARS),
+    sent the moment its sentence ends. Clauses on their own break the voice's prosody, and budgets don't apply.
+
+    Otherwise the first piece goes early so Milo starts talking: at the first clause or sentence end once there are
     FIRST_MIN_WORDS words, or after FIRST_MAX_WORDS words if no punctuation comes. Every later piece gets a
     budget, the characters the voice can synthesize while the queued audio plays, and ends at the furthest
     sentence or clause boundary that fits it. Without one it waits for the next boundary, up to MAX_CHARS,
     instead of cutting mid-clause.
     """
 
-    def __init__(self):
+    def __init__(self, *, sentences: bool = False):
+        self.sentences = sentences
         self._buf = ""
         self._first = True
 
@@ -45,12 +50,15 @@ class SpeechChunker:
         if self.empty:
             self._buf = ""
             return None
-        if self._first:
+        if self.sentences:
+            cut = self._sentence_cut(self._buf)
+        elif self._first:
             cut = self._first_cut(self._buf)
         else:
             cut = self._budget_cut(self._buf, min(MAX_CHARS, max(MIN_BUDGET, MAX_CHARS if budget is None else budget)))
         if cut is None and final:
-            cut = len(self._buf) if self._first or len(self._buf) <= MAX_CHARS else _hard_cut(self._buf, MAX_CHARS)
+            whole = self._first or self.sentences or len(self._buf) <= MAX_CHARS
+            cut = len(self._buf) if whole else _hard_cut(self._buf, MAX_CHARS)
         if cut is None:
             return None
         chunk, self._buf = _tidy(self._buf[:cut]), self._buf[cut:].lstrip()
@@ -76,6 +84,17 @@ class SpeechChunker:
             if i == FIRST_MAX_WORDS:
                 return m.end()
         return _hard_cut(text, MAX_CHARS) if len(text) >= MAX_CHARS else None
+
+    @staticmethod
+    def _sentence_cut(text: str) -> int | None:
+        ends = [m.end() for m in _SENTENCE.finditer(text) if not text[m.end()].islower()]
+        fitting = [e for e in ends if e <= MAX_CHARS]
+        if fitting:
+            return fitting[-1]
+        if ends or len(text) > MAX_CHARS:
+            clauses = [m.end() for m in _CLAUSE.finditer(text) if m.end() <= MAX_CHARS]
+            return clauses[-1] if clauses else _hard_cut(text, MAX_CHARS)
+        return None
 
     @staticmethod
     def _budget_cut(text: str, budget: int) -> int | None:
