@@ -8,9 +8,9 @@ first answered, when the worker started, every step with its time, and when the 
 the result and asks Milo to clean up (close what he opened without saving, delete the test draft).
 
 It uses the real screen, Excel, Numbers and Mail, so run it only while nobody is using the Mac. It never sends
-mail: the mail case writes a draft and deletes it again, and the runner refuses any question during cleanup
-whose step mentions sending. Answers to Milo's questions: none are expected for these tasks; any question is
-counted and answered no, except during cleanup.
+mail: the mail case writes a draft and deletes it again. None of the tasks should need a question; any
+question is counted and answered no. During cleanup the runner says yes only to closing without saving, quitting or
+deleting in the case's own apps (`_cleanup_answer`), and no to everything else.
 
 The eval starts the brain itself, so Apple's Automation permission for Mail (and the other apps) is checked
 against the terminal that runs it, not Milo. Allow it there first, or macOS asks in the middle of a case.
@@ -132,6 +132,8 @@ class ScreenCase:
     say: Callable[[Path], str]
     check: Callable[[Run, Path], tuple[bool, str]]
     cleanup: str = ""
+    apps: tuple[str, ...] = ()
+    """The apps cleanup may close, quit or delete in."""
     setup: Callable[[Path], None] = lambda files: None
 
 
@@ -270,20 +272,21 @@ CASES = (
     ScreenCase("excel", lambda f: "Open Excel and make a table with a row for each day of the week, a Budget column, "
                "1500 split over the days, and a total.", _check_table("Microsoft Excel"),
                "Close the Excel workbook you just made without saving it. If Excel has no other workbook open, "
-               "quit Excel without saving."),
+               "quit Excel without saving.", apps=("Microsoft Excel",)),
     ScreenCase("numbers", lambda f: "Open Numbers and make a table with a row for each day of the week, a Budget "
                "column, 1500 split over the days, and a total.", _check_table("Numbers"),
                "Close the Numbers document you just made without saving it. If Numbers has no other document "
-               "open, quit Numbers without saving."),
+               "open, quit Numbers without saving.", apps=("Numbers",)),
     ScreenCase("file", lambda f: f"File the newest PDF in my Downloads folder ({f}/Downloads) into a folder called "
                f"Invoices in {f}.", _check_filed, setup=_setup_files),
     ScreenCase("mail", lambda f: "Write a reply to the newest email in my inbox saying thanks, I'll get back to you "
                "tomorrow. Just make the draft.", _check_draft,
-               "Delete the reply draft you just made in Mail; it was only a test. Don't send anything."),
+               "Delete the reply draft you just made in Mail; it was only a test. Don't send anything.",
+               apps=("Mail",)),
 )
 
 
-async def converse(reader, writer, text: str, *, cleanup: bool = False,
+async def converse(reader, writer, text: str, *, cleanup: tuple[str, ...] | None = None,
                    timeout_s: float = CASE_TIMEOUT_S) -> Run:
     """Type `text` to Milo and follow the turn and its task until things are quiet."""
     run = Run()
@@ -343,7 +346,7 @@ async def converse(reader, writer, text: str, *, cleanup: bool = False,
         elif kind == "confirm":
             run.questions.append(event["question"])
             asked = True
-            yes = cleanup and _safe_to_approve(run)
+            yes = cleanup is not None and _cleanup_answer(cleanup, event["question"], run)
             writer.write((json.dumps({"type": "confirm_answer", "id": event["id"], "yes": yes}) + "\n").encode())
             await writer.drain()
         elif kind == "confirm_done":
@@ -352,11 +355,28 @@ async def converse(reader, writer, text: str, *, cleanup: bool = False,
     return run
 
 
-def _safe_to_approve(run: Run) -> bool:
-    """During cleanup: yes, unless the step waiting for the answer could send something."""
+# During cleanup the runner says yes only to these, in the case's own apps; everything else is a no.
+_CLEANUP_SCRIPT_BAD = re.compile(r"\b(send|forward|share|reply|redirect|do shell script|keystroke|key code|"
+                                 r"save in|make new|set content|password|keychain)\b", re.IGNORECASE)
+_CLEANUP_SCRIPT_GOOD = re.compile(r"\b(close\b.*\bsaving no|quit|delete)\b", re.IGNORECASE)
+
+
+def _cleanup_answer(apps: tuple[str, ...], question: str, run: Run) -> bool:
+    """Yes only for closing without saving, quitting, or deleting, in `apps`, and only what the step shows."""
+    named = "|".join(re.escape(a) for a in apps)
+    if not named:
+        return False
+    if re.fullmatch(rf"May I use ({named}) for this\? You'll see each step\.", question):
+        return True  # the careful gate; every step after it is checked on its own
+    if re.fullmatch(rf"I'm about to click “(Delete|Don['’]t Save)” in ({named})\. Go ahead\?", question):
+        return True
+    if not re.fullmatch(rf"Run a script in ({named})\? It's in my window\.", question):
+        return False
     waiting = [s for s in run.step_list() if s.status == "running"]
-    detail = waiting[-1].detail if waiting else ""
-    return not re.search(r"\b(send|forward|share)\b", detail, re.IGNORECASE)
+    script = waiting[-1].detail if waiting else ""
+    told = set(re.findall(r'tell application "([^"]+)"', script))
+    return (bool(script) and told <= set(apps) and bool(_CLEANUP_SCRIPT_GOOD.search(script))
+            and not _CLEANUP_SCRIPT_BAD.search(script))
 
 
 def report(case: ScreenCase, run: Run, ok: bool, note: str) -> str:
@@ -417,7 +437,7 @@ async def run_all(cases: list[ScreenCase], app: Path, home: Path, files: Path) -
             print(report(case, run, ok, note), flush=True)
             results.append((case.id, ok, run))
             if case.cleanup:
-                tidy = await converse(reader, writer, case.cleanup, cleanup=True)
+                tidy = await converse(reader, writer, case.cleanup, cleanup=case.apps)
                 print(f"           cleanup {tidy.seconds:.1f}s: {tidy.task_result[:200] or tidy.replies[-1:]}",
                       flush=True)
         writer.close()
