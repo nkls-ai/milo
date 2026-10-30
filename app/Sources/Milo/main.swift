@@ -17,7 +17,8 @@ let controller = MiloController(
     model: model,
     brain: UnixSocketBrainClient(socketPath: paths.socket.path),
     launcher: UVBrainLauncher(
-        configuration: .init(brainDir: brainDir, logURL: paths.brainStdoutLog), scheduler: scheduler),
+        configuration: .init(brainDir: brainDir, logURL: paths.brainStdoutLog, lockURL: paths.brainLock),
+        scheduler: scheduler),
     inserter: PasteboardInserter(scheduler: scheduler),
     keys: NSEventKeySource(),
     context: WorkspaceContextProvider(),

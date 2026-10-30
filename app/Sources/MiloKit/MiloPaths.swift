@@ -16,6 +16,8 @@ public struct MiloPaths: Sendable {
     }
 
     public var socket: URL { home.appendingPathComponent("run/brain.sock") }
+    /// Held by the running brain; see UVBrainLauncher.
+    public var brainLock: URL { home.appendingPathComponent("run/brain.lock") }
     public var brainLog: URL { home.appendingPathComponent("logs/brain.log") }
     /// Where a brain launched by the app writes stdout and stderr.
     public var brainStdoutLog: URL { home.appendingPathComponent("logs/brain.stdout.log") }

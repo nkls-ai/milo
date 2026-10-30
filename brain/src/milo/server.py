@@ -5,12 +5,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import signal
 from collections.abc import Awaitable, Callable
 from concurrent.futures import Executor
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .core.registry import ConfigError
+from .transport import instance_lock
 
 if TYPE_CHECKING:
     from .compose import Runtime
@@ -32,6 +34,12 @@ def main() -> None:
     workspace = Workspace(home)
     workspace.ensure()
     _setup_logging(workspace.log_dir / "brain.log")
+    # Before anything heavy loads. Held until the process is gone, models and all.
+    try:
+        instance_lock.acquire(workspace.lock_path)
+    except instance_lock.AlreadyRunning as e:
+        log.error("%s", e)
+        raise SystemExit(str(e)) from None
 
     from . import compose
 
@@ -42,8 +50,13 @@ def main() -> None:
         raise SystemExit(f"config error: {e}") from None
     try:
         asyncio.run(_serve(runtime))
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, asyncio.CancelledError):
         pass
+    log.info("brain stopped")
+    # Skip joining the STT and TTS threads: one may be loading a model for another 30 s, and the app
+    # waits for this process to end before it starts the next brain.
+    logging.shutdown()
+    os._exit(0)
 
 
 def _setup_logging(log_file: Path) -> None:
@@ -57,6 +70,8 @@ def _setup_logging(log_file: Path) -> None:
 
 
 async def _serve(runtime: Runtime) -> None:
+    # The app stops its brain with SIGTERM (uv passes that on, not SIGINT). Shut down as for Ctrl-C.
+    asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, asyncio.current_task().cancel)
     await runtime.server.start()
     log.info("brain up (chat=%s, harness=%s)", runtime.live_model.name, runtime.harness.name)
     warming = asyncio.create_task(_warm_all({
