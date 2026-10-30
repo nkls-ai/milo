@@ -230,6 +230,15 @@ def test_the_cloud_voice_and_hearing_are_built_from_config(build):
     assert len(runtime.notices) == 2
 
 
+def test_with_elevenlabs_speaking_omnivoice_is_not_even_built_until_it_fails(build):
+    text = set_key(cheap(**{"tts.fallback": "omnivoice"}), "tts", "use", "elevenlabs")
+    runtime, home = build(text)
+    (home / "secrets").mkdir(exist_ok=True)
+    (home / "secrets" / "elevenlabs.key").write_text("sk_test")
+    runtime.voice.warm()
+    assert runtime.voice._fallback is None, "OmniVoice's GBs stay out of memory while ElevenLabs works"
+
+
 def test_talk_stays_local_by_default_and_a_bogus_service_fails_at_build(build):
     runtime, _ = build(cheap())
     assert runtime.brain._listening._hearing is None
