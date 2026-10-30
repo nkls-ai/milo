@@ -14,6 +14,7 @@ from milo.core.types import Audio, Emotion, MiloState
 
 from .chunker import SpeechChunker
 from .levels import throttled_levels
+from .speech_audio import END_PAD_S, pause_after, shape, silence
 from .ui_state import UiState
 
 log = logging.getLogger("milo.speaker")
@@ -57,6 +58,10 @@ class Utterance:
     A single worker cuts the next piece, synthesizes it on the TTS thread and feeds the audio to the output.
     feed() doesn't block, so the next piece synthesizes while this one plays. Each piece is sized from the
     audio still queued and the voice's measured speed, so it is ready before the queue runs dry.
+
+    Each piece is trimmed to its speech and levelled (`speech_audio`), and the pause before the next one depends
+    on how this one ended: a sentence pause after a full stop, a breath after a comma. Time the next piece spent
+    synthesizing counts towards that pause, so a late piece doesn't add a pause on top of the wait.
     """
 
     def __init__(self, speaker: Speaker):
@@ -68,6 +73,7 @@ class Utterance:
         self._closed = False
         self._interrupted = False
         self._play_end = 0.0  # loop time when the queued audio will have played
+        self._pause = 0.0  # the pause the last piece asked for before the next
         self.shown = ""
         """The text in the bubble so far: every piece whose audio has been fed."""
 
@@ -139,22 +145,34 @@ class Utterance:
                     audio = np.zeros(int(SECONDS_PER_CHAR_WITHOUT_AUDIO * len(piece) * sample_rate), np.float32)
                 else:
                     speaker.pace.learn(len(piece), loop.time() - started)
+                    audio = shape(audio, sample_rate)
                 if not ui.speaking:
                     ui.speaking = True
                     ui.set_state(MiloState.SPEAKING)
-                now = loop.time()
-                if self._play_end and now > self._play_end + 0.05:
-                    log.info("speech gap %.2fs before %s", now - self._play_end, private(piece[:40]))
-                self._play_end = max(now, self._play_end) + len(audio) / sample_rate
-                speaker.output.feed(audio)
+                self._feed(audio, piece, loop)
                 self.shown = f"{self.shown} {piece}".strip()
                 ui.emit(Bubble(self.shown))
+            if self._play_end:
+                speaker.output.feed(silence(END_PAD_S, sample_rate))
             return await speaker.output.drain()
         finally:
             if speaker.current is self:
                 ui.speaking = False
                 if ui.state is MiloState.SPEAKING:
                     ui.rest()
+
+    def _feed(self, audio: Audio, piece: str, loop: asyncio.AbstractEventLoop) -> None:
+        """Queue a piece after the pause the previous one asked for, less the time already spent waiting."""
+        sample_rate = self._speaker.voice.sample_rate
+        now = loop.time()
+        if self._play_end:
+            waited = max(0.0, now - self._play_end)
+            if waited > self._pause + 0.05:
+                log.info("speech gap %.2fs before %s", waited - self._pause, private(piece[:40]))
+            audio = np.concatenate([silence(self._pause - waited, sample_rate), audio])
+        self._pause = pause_after(piece)
+        self._play_end = max(now, self._play_end) + len(audio) / sample_rate
+        self._speaker.output.feed(audio)
 
     async def _synthesize(self, chunk: str) -> Audio | None:
         speaker = self._speaker

@@ -4,8 +4,13 @@ from milo.core.events import Bubble, EmotionChanged, Level, StateChanged
 from milo.core.types import Emotion, MiloState
 from milo.services.levels import throttled_levels
 from milo.services.speaker import SECONDS_PER_CHAR_WITHOUT_AUDIO
+from milo.services.speech_audio import CLAUSE_PAUSE_S, END_PAD_S, SENTENCE_PAUSE_S
 from tests.fakes import FakeAudioOutput, FakeVoice, RecordingSink
 from tests.services.stack import Stack, settle
+
+
+def samples(seconds: float) -> int:
+    return int(round(seconds * FakeVoice.sample_rate))
 
 
 def test_say_speaks_chunk_by_chunk_on_one_stream_with_a_growing_bubble():
@@ -19,7 +24,9 @@ def test_say_speaks_chunk_by_chunk_on_one_stream_with_a_growing_bubble():
     assert s.voice.spoken == ["Hello there, my good old friend.", "How are you?"]
     assert len(s.output.streams) == 1, "one stream per utterance, so chunks play without gaps"
     assert s.output.streams[0]["sample_rate"] == FakeVoice.sample_rate
-    assert s.output.fed == [10 * len("Hello there, my good old friend."), 10 * len("How are you?")]
+    assert s.output.fed == [10 * len("Hello there, my good old friend."),
+                            samples(SENTENCE_PAUSE_S) + 10 * len("How are you?"), samples(END_PAD_S)], \
+        "a sentence pause before the second piece, and room for the device to play out the last syllable"
     assert s.bubbles() == ["Hello there, my good old friend.", "Hello there, my good old friend. How are you?"]
     assert s.states() == [MiloState.SPEAKING, MiloState.IDLE]
     assert s.sink.of(EmotionChanged) == [EmotionChanged(Emotion.HAPPY)]
@@ -48,7 +55,9 @@ def test_an_utterance_speaks_text_as_it_arrives():
         await finishing
 
     asyncio.run(run())
-    assert len(s.output.streams) == 1 and len(s.output.fed) == 2
+    assert len(s.output.streams) == 1
+    assert s.output.fed == [10 * len("Oh wow, that is great,"), samples(CLAUSE_PAUSE_S) + 10 * len("really"),
+                            samples(END_PAD_S)], "a breath after the comma"
 
 
 def test_interrupt_stops_speech_and_drops_the_rest():
@@ -94,7 +103,8 @@ def test_tts_failure_still_shows_the_text_and_plays_silence_for_its_length():
     asyncio.run(run())
     assert s.bubbles() == ["Hi there, how are you.", "Hi there, how are you. Yo."]
     silence = lambda text: int(SECONDS_PER_CHAR_WITHOUT_AUDIO * len(text) * FakeVoice.sample_rate)
-    assert s.output.fed == [silence("Hi there, how are you."), silence("Yo.")]
+    assert s.output.fed == [silence("Hi there, how are you."), samples(SENTENCE_PAUSE_S) + silence("Yo."),
+                            samples(END_PAD_S)]
     assert s.states() == [MiloState.SPEAKING, MiloState.IDLE]
 
 
