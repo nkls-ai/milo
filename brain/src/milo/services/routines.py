@@ -11,7 +11,7 @@ A routine is a recipe in words (milo.core.routines), kept in ~/Milo/routines. Th
 - lists, renames, pauses and deletes them, by voice through the talker's <routine> tags and from the window.
 
 A recipe runs only as the user last saw it: one that changed since (a hand edit, or a worker writing into the
-folder) asks before it runs. See ADR 0015.
+folder) asks before it runs. See ADR 0016.
 """
 
 from __future__ import annotations

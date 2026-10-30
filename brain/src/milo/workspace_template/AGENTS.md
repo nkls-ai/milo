@@ -69,6 +69,10 @@ To set a reminder, append a line to `reminders.md` in exactly this format:
 
 Milo's heartbeat fires these locally at the given time without calling you, so this costs nothing. Use the user's local time. Mark done reminders with `[x]`.
 
+## Routines
+
+`routines/` holds the user's routines: recipes Milo keeps for work done again. Leave them alone unless your task is to write or follow one. When you follow one, do every step, check what its `Check:` line says, and stop and say what's different when something doesn't match instead of finding another way. Steps marked "(asks first)" wait for a yes.
+
 ## Limits
 
 You run inside a sandbox that can write only this folder, apart from what Milo's tools do for you. If the user asks for something outside it, explain what you would need.

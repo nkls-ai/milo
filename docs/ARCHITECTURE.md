@@ -17,7 +17,7 @@ Only one brain runs per workspace. It takes an `flock` on `~/Milo/run/brain.lock
 brain/src/milo/
   core/           types, ports (Protocols), wire events, registries, clock, hands (the milo-mac tools and
                   their schemas), wording (plain titles and questions for app actions), logtext (what the log
-                  may say). Depends on nothing.
+                  may say), routines (the recipe format and plain-word schedules). Depends on nothing.
   adapters/       concrete engines, each registering itself by name
     harness/      codex, claude (agent harnesses), claude_live (the streaming chat model)
     stt/          mlx_whisper
@@ -30,7 +30,7 @@ brain/src/milo/
   connect/        the MCP tool server the worker loads (python -m milo.connect)
   eval/           the 30-task eval (python -m milo.eval) and the on-screen eval (python -m milo.eval.screen)
   memory/         Workspace paths and bootstrap, profile.md, reminders.md, usage ledger, dictation history,
-                  transcript (the Milo window's conversation)
+                  transcript (the Milo window's conversation), routines (the recipe folder and its state)
   proactive/      heartbeat engine, daily LLM budget, rules (one class per rule, registered by name)
   services/       use cases built only on ports: listening (push-to-talk, barge-in), dictation,
                   live_transcript (pause segmenter and partial passes while recording),
@@ -41,7 +41,8 @@ brain/src/milo/
                   (action levels and yes-or-no questions), app_bridge (requests to the app and their answers:
                   AppEyes, AppHands, Calendar and Reminders work), tool_requests (what the tool socket may do),
                   screen (screen data for the chat model), hands + risk (checking and logging the worker's Mac
-                  actions), sheets + documents (the AppleScript behind sheet_write and write_document), plus small shared pieces: ui_state, context (latest app/idle report), levels
+                  actions), sheets + documents (the AppleScript behind sheet_write and write_document), routines (writing, running and scheduling
+                  recipes, see ADR 16), plus small shared pieces: ui_state, context (latest app/idle report), levels
                   (throttled meters), quiet (wait for a turn to end), fallback_voice
   transport/      Unix socket JSONL servers: brain.sock (an EventSink), hands.sock, and the tool socket and its
                   client
@@ -67,7 +68,8 @@ Beyond `milo.core.ports`, these entry points are fixed:
 | Function / class | Owner | Contract |
 |---|---|---|
 | `milo.adapters.load_builtin() -> None` | adapters | Imports every built-in adapter module so it registers. Idempotent. Heavy imports (torch, mlx) stay inside methods, never at module import. |
-| `milo.memory.workspace.Workspace(home)` | memory | `.ensure()` copies the template without overwriting, and creates dirs. Path properties: `config_path`, `reminders_path`, `profile_path`, `persona_path`, `state_dir`, `log_dir`, `socket_path`, `lock_path`, `usage_path`, `dictation_history_path`, `transcript_path`, `heartbeat_state_path`, `hands_socket_path`, `screens_dir`, `tools_socket_path`. |
+| `milo.memory.workspace.Workspace(home)` | memory | `.ensure()` copies the template without overwriting, and creates dirs. Path properties: `config_path`, `reminders_path`, `profile_path`, `persona_path`, `state_dir`, `log_dir`, `socket_path`, `lock_path`, `usage_path`, `dictation_history_path`, `transcript_path`, `heartbeat_state_path`, `hands_socket_path`, `screens_dir`, `tools_socket_path`, `routines_dir`, `routine_runs_path`, `routine_state_path`, `routine_drafts_dir`. |
+| `milo.memory.routines.MarkdownRoutineBook(folder, runs, drafts)` | memory | `RoutineBook` over `routines/*.md`. Re-parses a file only when its mtime or size changes. `update(slug, fields)` rewrites front matter lines in place; `delete` moves the file to `routines/deleted/`. |
 | `milo.memory.reminders.MarkdownReminders(path)` | memory | `ReminderBook`. Re-parses only when mtime changes. `add(due, text)` appends a line. Shared by the heartbeat and LiveTalk. |
 | `milo.memory.profile.MarkdownProfile(path)` | memory | `ProfileMemory` over `memory/profile.md`. |
 | `milo.memory.ledger.JsonlUsageLedger(path, clock)` | memory | `UsageLedger`. Appends one JSON line per harness call. |
@@ -100,6 +102,16 @@ The chat model, the talker, has no tools and never waits for work. Work that nee
 - **The app.** The `helpers` event lists every active helper and, for 8 s, the ones that just ended (step changes coalesced to every 0.25 s). The overlay shows a small bird per helper next to Milo, the Milo window a list with steps and Stop.
 
 Task results reach the chat model as `<task_result>` blocks with `<` and `>` escaped, and the reply rules say they are data. Once a result is in the conversation, LiveTalk asks before it acts on any later tag in it, until the conversation resets. See [ADR 10](adr/0010-untrusted-results-and-a-private-log.md).
+
+## Routines
+
+A routine is a recipe in words that a helper follows again: `~/Milo/routines/<slug>.md`, Markdown with front matter (`name`, `description`, `inputs`, `schedule`, `apps`, `paused`, `last_run`, `version`) and a body with Goal, Steps with `Check:` lines, and Ask first. `services/routines.py` owns them. See [ADR 16](adr/0016-routines.md).
+
+- **Tags.** The talker writes `<routine do="create|save|change|run|schedule|rename|pause|resume|delete" name="...">`. The system prompt lists the routines by name and schedule, with names inert like task results. Create never asks (the draft is looked at before it counts); the others follow the task rule of a tainted conversation.
+- **Create.** A careful helper writes a draft to `state/routine-drafts/` from the last finished helper's task, steps and result. The brain normalizes it and sends it in the `routines` event; the window's draft card shows the steps, inputs and apps, or the whole file, with Save and Change it (`routine_draft_answer`).
+- **Run.** A helper gets the recipe and the inputs (`month: October`, a bare value for a single input, or the defaults). A recipe changed since it was saved, or a schedule set outside Milo, asks before it runs. `last_run` and `state/routine-runs.jsonl` record each run.
+- **Schedules.** `HeartbeatRunner.on_tick` calls `Routines.tick`, which costs no model call. Missed runs coalesce into one, run at wake within `[routines] grace_hours` and are reported after it. `[routines] max_runs_per_day` caps scheduled runs.
+- **The window.** A Routines section above the conversation lists them with their schedule, next and last run, Run now and a menu for pause, resume and delete (`routine`).
 
 ## Looking and computer use
 
@@ -161,6 +173,7 @@ app/
   Sources/MiloKit/   protocols, wire types, controller, hotkey state machine, views (all testable).
                      The Milo window: TranscriptModel, Views/ConversationView + ActivityView,
                      Views/HelperViews (the birds next to Milo and the helpers list, Wire/Helper),
+                     Views/RoutineViews (the Routines section and the recipe draft card, Wire/Routine),
                      AppKit/ConversationWindow. Screen/: ScreenController and TakeoverDetector.
                      Hotkeys/KeyCombo. Adapters/: Accessibility, SystemScreenReader, ScreenShots,
                      MacHands (delivery through Accessibility, borrow the real pointer otherwise),
