@@ -121,7 +121,7 @@ enum WrenRig {
         // Tail: one barred feather fan cocked up behind his back, on the side he faces away from.
         let back = t > 0.02 ? -1.0 : 1.0
         let tailL = 74 * (1 - p.fly * 0.3)
-        let tailW = 7.5 + max(p.tailFan, p.fly) * 3.5
+        let tailW = ((7.5 + max(p.tailFan, p.fly) * 3.5) * 4).rounded() / 4
         let tailAngle = back * (27 + p.tail * 0.8 + abs(t) * 10 + p.fly * 42)
         parts.append(WrenPart(id: .tail, box: CGRect(x: -16, y: -tailL - 8, width: 32, height: tailL + 12),
                               key: keys(tailL, tailW, small ? 1 : 0), draw: { ctx in
@@ -222,7 +222,8 @@ enum WrenRig {
         // Beak: thin and a touch long; the tip swings toward the turn.
         let bx = fx(th) + gx * 1.1, by = 109 + gy - p.scarfUp * 6
         let tip = t * 9 + p.gazeX * 2
-        let open = min(1, max(0, p.beak))
+        // in twentieths: finer steps don't show, and each step redraws the beak
+        let open = (min(1, max(0, p.beak)) * 20).rounded() / 20
         face.append(WrenPart(id: .beak, box: CGRect(x: -12, y: -8, width: 24, height: 30),
                              key: keys(open, tip, t), draw: { ctx in
             drawBeak(ctx, open: open, tip: tip, turn: t)

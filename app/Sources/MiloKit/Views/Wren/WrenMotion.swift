@@ -80,6 +80,10 @@ struct WrenMotion {
 
     static let step = 1.0 / 240
 
+    /// Each channel's spring as stiffness and damping per unit mass.
+    private static let stiffness = WrenChannel.allCases.map { pow(2 * .pi / $0.spring.response, 2) }
+    private static let damping = WrenChannel.allCases.map { 4 * .pi * $0.spring.damping / $0.spring.response }
+
     /// Blink: shut in 70 ms, held 40 ms, open again in 120 ms.
     static let blinkTimes = (close: 0.07, hold: 0.04, open: 0.12)
 
@@ -166,11 +170,8 @@ struct WrenMotion {
         time += h
         let aim = aimed()
         for c in WrenChannel.allCases {
-            let (response, damping) = c.spring
-            let k = pow(2 * .pi / response, 2)
-            let d = 4 * .pi * damping / response
             let i = c.rawValue
-            let a = -k * (value[i] - aim[c]) - d * velocity[i]
+            let a = -Self.stiffness[i] * (value[i] - aim[c]) - Self.damping[i] * velocity[i]
             velocity[i] += a * h
         }
         throwLooseParts(h)

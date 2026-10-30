@@ -38,14 +38,18 @@ struct CharacterFigure: View {
     var size: CGFloat
     /// Fixes the clock, for renders: a still drawing of the pose this input settles into.
     var time: Double?
+    /// The overlay's live level: the rig follows it directly, without redrawing this view 20 times a second.
+    var live: LiveLevel?
 
     init(for style: CharacterStyle = .milo, state: MiloState = .idle, emotion: Emotion = .neutral, asleep: Bool = false,
          level: Double = 0, connected: Bool = true, pose: LifePose = LifePose(), flight: Flight = .perched,
-         words: Int = 0, asking: Bool = false, working: Bool = false, size: CGFloat = 120, time: Double? = nil) {
+         words: Int = 0, asking: Bool = false, working: Bool = false, size: CGFloat = 120, time: Double? = nil,
+         live: LiveLevel? = nil) {
         self.init(for: style, input: FigureInput(state: state, emotion: emotion, asleep: asleep, level: level,
                                                  connected: connected, pose: pose, flight: flight, words: words,
                                                  asking: asking, working: working),
                   size: size, time: time)
+        self.live = live
     }
 
     init(for style: CharacterStyle = .milo, input: FigureInput, size: CGFloat = 120, time: Double? = nil) {
@@ -59,7 +63,7 @@ struct CharacterFigure: View {
     private var small: Bool { size < 60 }
 
     var body: some View {
-        WrenFigure(input: input, small: small, still: time != nil)
+        WrenFigure(input: input, live: live, small: small, still: time != nil)
             .overlay { FigureMarks(input: input, small: small, frozen: time != nil, time: time ?? 0).scaleEffect(size / 120) }
             .frame(width: size, height: size)
             .opacity(input.connected ? 1 : 0.55)

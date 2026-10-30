@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import QuartzCore
 import SwiftUI
 
@@ -11,6 +12,9 @@ final class WrenView: NSView {
     private var motion = WrenMotion()
     private var input: FigureInput?
     var small = false
+    /// The live mic or voice level, read here rather than through SwiftUI: it changes 20 times a second.
+    private var levels: AnyCancellable?
+    private var level: Double?
 
     private let stage = CALayer()
     private let breath = CALayer()
@@ -65,9 +69,22 @@ final class WrenView: NSView {
 
     private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
+    /// Follows `live` for the level instead of the input's.
+    func follow(_ live: LiveLevel?) {
+        guard let live else { levels = nil; level = nil; return }
+        guard levels == nil else { return }
+        levels = live.$level.removeDuplicates().sink { [weak self] value in
+            guard let self, let input = self.input else { return }
+            self.level = value
+            self.update(input)
+        }
+    }
+
     func update(_ input: FigureInput) {
         let first = self.input == nil
         self.input = input
+        var input = input
+        if let level { input.level = level }
         director.direct(input, small: small, motion: &motion, at: CACurrentMediaTime(), reduceMotion: reduceMotion)
         if first || reduceMotion && !motion.playing.isEmpty {
             motion.snap()
@@ -146,7 +163,8 @@ final class WrenView: NSView {
     }
 
     private func beat() {
-        guard let input else { return }
+        guard var input else { return }
+        if let level { input.level = level }
         director.direct(input, small: small, motion: &motion, at: CACurrentMediaTime(), reduceMotion: reduceMotion)
         run()
     }
@@ -154,6 +172,8 @@ final class WrenView: NSView {
     private func startLink() {
         guard link == nil else { return }
         let link = displayLink(target: self, selector: #selector(tick(_:)))
+        // 60 at most: a ProMotion screen would double the work for motion this size.
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
         link.add(to: .main, forMode: .common)
         self.link = link
         lastTick = nil
@@ -169,7 +189,8 @@ final class WrenView: NSView {
         let now = link.targetTimestamp
         let dt = lastTick.map { now - $0 } ?? 1.0 / 60
         lastTick = now
-        if let input, director.wake <= CACurrentMediaTime() {
+        if var input, director.wake <= CACurrentMediaTime() {
+            if let level { input.level = level }
             director.direct(input, small: small, motion: &motion, at: CACurrentMediaTime(), reduceMotion: reduceMotion)
         }
         motion.advance(by: dt)
@@ -294,6 +315,8 @@ final class WrenView: NSView {
 /// Milo in SwiftUI: the live layer rig, or a still drawing when `time` fixes the clock (renders).
 struct WrenFigure: View {
     var input: FigureInput
+    /// The overlay's live level, followed by the rig itself; nil uses `input.level`.
+    var live: LiveLevel?
     var small: Bool
     /// Renders: draw the pose this input settles into, without the live rig.
     var still: Bool
@@ -307,7 +330,7 @@ struct WrenFigure: View {
                 }
             }
         } else {
-            WrenLive(input: input, small: small)
+            WrenLive(input: input, live: live, small: small)
         }
     }
 
@@ -321,6 +344,7 @@ struct WrenFigure: View {
 
 private struct WrenLive: NSViewRepresentable {
     var input: FigureInput
+    var live: LiveLevel?
     var small: Bool
 
     func makeNSView(context: Context) -> WrenView {
@@ -331,6 +355,7 @@ private struct WrenLive: NSViewRepresentable {
 
     func updateNSView(_ view: WrenView, context: Context) {
         view.small = small
+        view.follow(live)
         view.update(input)
     }
 }

@@ -32,8 +32,17 @@ struct OverlayProbeTests {
         report.append("asleep cpu: \(String(format: "%.2f", cpu(over: 20)))%")
         model.drowsy = false
         pump(2)
-        // The brain sends the level about 20 times a second while he listens or speaks.
-        for state in [MiloState.listening, .speaking] {
+        // The brain sends the level about 20 times a second while he listens or speaks. First the whole
+        // overlay (with the voice capsule's meter), then the figure alone in a window of its own.
+        let alone = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 132, height: 132), styleMask: [.borderless],
+                             backing: .buffered, defer: false)
+        let figureModel = MiloModel(scheduler: MainQueueScheduler())
+        figureModel.connected = true
+        alone.contentView = NSHostingView(rootView: CharacterView(model: figureModel))
+        alone.backgroundColor = .clear
+        for (label, model, window) in [("overlay", model, panel as NSWindow), ("figure alone", figureModel, alone)] {
+          window.orderFrontRegardless()
+          for state in [MiloState.listening, .speaking] {
             model.apply(.state(state))
             var t = 0.0
             let voice = Timer(timeInterval: 0.05, repeats: true) { _ in
@@ -43,12 +52,14 @@ struct OverlayProbeTests {
             }
             RunLoop.main.add(voice, forMode: .common)
             pump(1)
-            if state == .speaking { try snapshot(panel, "probe-speaking") }
-            report.append("\(state) cpu: \(String(format: "%.2f", cpu(over: 15)))%")
+            if state == .speaking && window === panel { try snapshot(panel, "probe-speaking") }
+            report.append("\(label) \(state) cpu: \(String(format: "%.2f", cpu(over: 15)))%")
             voice.invalidate()
+          }
+          model.apply(.state(.idle))
+          if window !== panel { window.orderOut(nil) }
+          pump(2)
         }
-        model.apply(.state(.idle))
-        pump(2)
 
         let home = panel.frame.origin
         let primary = NSScreen.screens[0].frame

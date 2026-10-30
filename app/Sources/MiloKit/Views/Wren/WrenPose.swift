@@ -105,7 +105,7 @@ enum WrenChannel: Int, CaseIterable {
         case .lidL, .lidR, .lowerL, .lowerR: (0.12, 0.9)
         case .eyeL, .eyeR: (0.18, 0.7)
         case .browL, .browR, .browTiltL, .browTiltR: (0.2, 0.62)
-        case .beak: (0.07, 0.62)                   // follows the voice, a little lively
+        case .beak: (0.1, 0.7)                     // follows the voice: quick, but never a snap
         case .blush: (0.6, 1)
         case .squash: (0.2, 0.42)                  // squash and stretch overshoots
         case .lift: (0.26, 0.6)
