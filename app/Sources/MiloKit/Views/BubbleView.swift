@@ -66,6 +66,7 @@ struct MessageView: View {
             if let action {
                 Button(action.title, action: act)
                     .buttonStyle(AnswerButtonStyle(prominent: true))
+                    .accessibilityHint(action.hint)
                     .padding(.top, 4)
             }
         }

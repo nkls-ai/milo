@@ -33,7 +33,8 @@ public struct OverlayView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         .animation(motion, value: model.bubble)
         .animation(motion, value: model.state)
-        .animation(motion, value: model.voicePhase)
+        // In with the skin's spring, out quickly: a tap or a ⌥-shortcut must not leave a fading light behind.
+        .animation(model.voicePhase == nil ? .easeOut(duration: 0.12) : motion, value: model.voicePhase)
         .animation(motion, value: model.question)
         .animation(motion, value: model.looking)
         .animation(motion, value: model.recording)

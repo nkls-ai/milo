@@ -276,4 +276,11 @@ public enum BubbleAction: Equatable, Sendable {
         case .permissions: "Fix it"
         }
     }
+
+    /// What the button does, for VoiceOver.
+    public var hint: String {
+        switch self {
+        case .permissions: "Opens Milo's permissions window"
+        }
+    }
 }
