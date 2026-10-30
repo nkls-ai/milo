@@ -192,6 +192,8 @@ def confirm_question(tool: str, args: dict, target: dict, reason: str) -> str:
     what = _clip(str(target.get("title") or ""), 40)
     if tool in ("click", "ax_press") and what:
         return f"I'm about to click “{what}”{in_app}. Go ahead?"
+    if tool == "type":
+        return f"I'm about to type “{_clip(str(args['text']), 60)}”{in_app}, which may {reason}. Go ahead?"
     if tool == "key":
         return f"I'm about to press {_pretty_combo(str(args['combo']))}{in_app}, which may {reason}. Go ahead?"
     if tool == "run_applescript":

@@ -2,8 +2,11 @@
 
 Pure: it reads the tool, its arguments and what the app said the action would touch (`target`, from the
 describe step: app, title, role, secure). It errs towards asking. A button or script that mentions
-sending, deleting, paying and the like asks first; password fields, the keychain and security settings
-are off limits.
+sending, deleting, paying and the like asks first, and so does anything that could run code: typing into a
+terminal, AppleScript that runs a shell, UI scripting or other scripts, and any change in System Settings.
+Password fields, the keychain and security settings are off limits. A word list can be talked around by a
+determined agent; it is a brake, not a sandbox, so everything the worker does also shows in the Milo
+window and stops when the user touches the mouse.
 """
 
 from __future__ import annotations
@@ -41,11 +44,17 @@ _RISKY_WORDS = (
 _RISKY = re.compile(r"(?<!\w)(" + "|".join(re.escape(w) for w in sorted(_RISKY_WORDS, key=len, reverse=True))
                     + r")(?!\w)", re.IGNORECASE)
 _SECRET = re.compile(r"(?<!\w)(password|passwort|kennwort|passcode|keychain|schlüsselbund)(?!\w)", re.IGNORECASE)
-_SHELL = re.compile(r"\bdo\s+shell\s+script\b", re.IGNORECASE)
-_SECURITY_APPS = ("System Settings", "System Preferences", "Systemeinstellungen", "Keychain Access",
-                  "Schlüsselbundverwaltung", "Passwords", "Passwörter")
-_SECURITY_WORDS = re.compile(r"(privacy|security|datenschutz|sicherheit|filevault|firewall|password|passwort)",
-                             re.IGNORECASE)
+# Scripts that run code or type anywhere: a shell, another script, raw Apple events, UI scripting, terminals.
+_CODE = re.compile(r"\b(do\s+shell\s+script|do\s+script|run\s+script|load\s+script|osascript|system\s+events)\b|«event"
+                   r"|application\s+\"(terminal|iterm2?|warp|ghostty|script editor|automator|shortcuts)\"",
+                   re.IGNORECASE)
+_SETTINGS_APPS = ("system settings", "system preferences", "systemeinstellungen")
+_SECRET_APPS = ("keychain access", "schlüsselbundverwaltung", "passwords", "passwörter")
+_SECURITY_WORDS = re.compile(r"(privacy|security|datenschutz|sicherheit|filevault|firewall|password|passwort"
+                             r"|login items|anmeldeobjekte|users|benutzer)", re.IGNORECASE)
+# Typing into these runs commands.
+_CODE_APPS = ("terminal", "iterm", "iterm2", "warp", "ghostty", "alacritty", "kitty", "wezterm", "hyper",
+              "script editor", "skripteditor", "automator", "shortcuts", "kurzbefehle")
 
 _MODIFIER_ORDER = ("ctrl", "option", "shift", "cmd")
 _ALIASES = {"command": "cmd", "⌘": "cmd", "control": "ctrl", "⌃": "ctrl", "alt": "option", "opt": "option",
@@ -68,12 +77,19 @@ def normalize_combo(combo: str) -> str:
 
 
 def classify(tool: str, args: dict, target: dict) -> Verdict:
-    app = str(target.get("app") or "")
+    app = str(target.get("app") or "").strip().lower()
     title = " ".join(str(target.get(k) or "") for k in ("title", "description")).strip()
     if tool in ("type", "ax_set_value") and target.get("secure"):
         return Verdict(Risk.NEVER, "a password field")
-    if tool in ("click", "ax_press", "ax_set_value", "type", "key") and _security_setting(app, title):
-        return Verdict(Risk.NEVER, "a security setting")
+    if tool in ("click", "ax_press", "ax_set_value", "type", "key", "scroll"):
+        if app in _SECRET_APPS or (app in _SETTINGS_APPS and _SECURITY_WORDS.search(title)):
+            return Verdict(Risk.NEVER, "a security setting")
+        if app in _SETTINGS_APPS:
+            return Verdict(Risk.ASK, "change a system setting")
+    if tool == "open_app" and str(args.get("name", "")).strip().lower() in _CODE_APPS:
+        return Verdict(Risk.ASK, "open a program that runs commands")
+    if tool in ("type", "key", "ax_set_value") and app in _CODE_APPS:
+        return Verdict(Risk.ASK, "run a command")
     if tool in ("click", "ax_press"):
         return _words(title)
     if tool == "key":
@@ -87,8 +103,8 @@ def classify(tool: str, args: dict, target: dict) -> Verdict:
         script = str(args.get("script", ""))
         if _SECRET.search(script):
             return Verdict(Risk.NEVER, "passwords")
-        if _SHELL.search(script):
-            return Verdict(Risk.ASK, "a shell command")
+        if _CODE.search(script):
+            return Verdict(Risk.ASK, "run other programs or type for you")
         return _words(script)
     return OK
 
@@ -96,9 +112,3 @@ def classify(tool: str, args: dict, target: dict) -> Verdict:
 def _words(text: str) -> Verdict:
     m = _RISKY.search(text)
     return Verdict(Risk.ASK, m.group(1).lower()) if m else OK
-
-
-def _security_setting(app: str, title: str) -> bool:
-    if app in ("Keychain Access", "Schlüsselbundverwaltung", "Passwords", "Passwörter"):
-        return True
-    return app in _SECURITY_APPS and bool(_SECURITY_WORDS.search(title))

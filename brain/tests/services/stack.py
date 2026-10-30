@@ -77,7 +77,7 @@ class Stack:
                                 poll_s=0.005, hands=self.hands)
         self.live_talk = LiveTalk(self.model, self.speaker, self.ui, self.context, self.clock, self.profile,
                                   self.reminders, self.ledger, lambda: self.persona, self.idle_reset_s, self.tasks,
-                                  eyes=self.eyes)
+                                  eyes=self.eyes, confirm=self.confirm)
         self.tasks.on_result = self.live_talk.note
         self.dictation = DictationService(UpperCleaner(), self.history, self.ui)
         self.listening = Listening(self.mic, self.transcriber, executor, self.ui, self.dictation, self.live_talk,

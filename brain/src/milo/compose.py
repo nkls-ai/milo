@@ -97,16 +97,17 @@ def build(home: Path) -> Runtime:
     speaker = Speaker(voice, output, ui, tts_executor)
     transcript = Transcript(ui, JsonlTranscript(workspace.transcript_path), clock)
     bridge = AppBridge(ui, connected=server.connected)
+    confirm = BubbleConfirm(bridge, ui, timeout_s=config.hands.confirm_timeout_s)
     hands = hands_server = None
     if config.hands.enabled:
-        confirm = BubbleConfirm(bridge, ui, timeout_s=config.hands.confirm_timeout_s)
         hands = HandsService(AppHands(bridge), confirm, ui, transcript=transcript,
                              applescript=config.hands.applescript)
         hands_server = HandsSocketServer(hands_socket, hands.call)
     tasks = TaskRunner(conversation, speaker, context, quiet=lambda: live_talk.busy or mic.active,
                        transcript=transcript, hands=hands)
     live_talk = LiveTalk(live_model, speaker, ui, context, clock, profile, reminders, ledger,
-                         _persona(workspace.persona_path), idle_reset_s, tasks, transcript, eyes=AppEyes(bridge))
+                         _persona(workspace.persona_path), idle_reset_s, tasks, transcript, eyes=AppEyes(bridge),
+                         confirm=confirm)
     tasks.on_result = live_talk.note
     listening = Listening(mic, transcriber, stt_executor, ui, DictationService(cleaner, history, ui),
                           live_talk, context)

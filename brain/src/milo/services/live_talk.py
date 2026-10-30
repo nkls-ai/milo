@@ -6,7 +6,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from milo.core.events import Bubble, Heard, Looking
-from milo.core.ports import Clock, LiveModel, ProfileMemory, ReminderBook, ScreenEyes, UsageLedger
+from milo.core.ports import Clock, ConfirmGate, LiveModel, ProfileMemory, ReminderBook, ScreenEyes, UsageLedger
 from milo.core.types import Emotion, HarnessError, MiloState, ScreenCapture
 
 from .context import UserContext
@@ -71,9 +71,12 @@ class LiveTalk:
     def __init__(self, model: LiveModel, speaker: Speaker, ui: UiState, context: UserContext, clock: Clock,
                  profile: ProfileMemory, reminders: ReminderBook, ledger: UsageLedger,
                  persona: Callable[[], str], idle_reset_s: float, tasks: TaskRunner,
-                 transcript: Transcript | None = None, eyes: ScreenEyes | None = None):
+                 transcript: Transcript | None = None, eyes: ScreenEyes | None = None,
+                 confirm: ConfirmGate | None = None):
         self._model = model
         self._eyes = eyes
+        self._confirm = confirm
+        self._asking: set[asyncio.Task] = set()
         self._look_started: asyncio.Task[ScreenCapture] | None = None
         self._ui_looking = False
         self._transcript = transcript or unrecorded()
@@ -317,7 +320,21 @@ class LiveTalk:
             except Exception:
                 log.exception("could not save the reminder: %s %s", due, what)
         for description in parser.tasks:
+            if not screen:
+                self._tasks.submit(description)
+            elif self._confirm is not None:
+                # Text on the screen may be written to start work; only the user's yes may.
+                asking = asyncio.create_task(self._confirmed_task(description))
+                self._asking.add(asking)
+                asking.add_done_callback(self._asking.discard)
+            else:
+                log.warning("dropping a task from a turn with screen data, nobody to confirm it: %s", description)
+
+    async def _confirmed_task(self, description: str) -> None:
+        if await self._confirm.confirm(f"Shall I go ahead: {_clip(description, 160)}?"):
             self._tasks.submit(description)
+        else:
+            log.info("the user didn't confirm a task from a screen turn: %s", description)
 
     def _hiccup(self) -> None:
         self._system = None  # the conversation may be broken: start a fresh one next turn
@@ -334,3 +351,7 @@ class LiveTalk:
         log.info("chat %s turn %.1fs, first delta %s, %d in (%d cached), %d out: %r", self._model.name,
                  self._clock.monotonic() - started, first, u.input_tokens, u.cached_input_tokens,
                  u.output_tokens, spoken)
+
+
+def _clip(text: str, n: int) -> str:
+    return text if len(text) <= n else text[:n - 1].rstrip() + "…"

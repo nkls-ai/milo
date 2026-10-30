@@ -135,3 +135,22 @@ def test_only_screenshots_in_the_screens_folder_count(tmp_path):
     assert checked(ScreenCapture(image=str(screens / ".." / "secret.png")), screens).image == ""
     assert checked(ScreenCapture(image=str(screens / "missing.png")), screens).image == ""
     assert checked(ScreenCapture(image=str(ok)), None).image == ""
+
+
+def test_a_task_from_a_screen_turn_needs_the_users_yes():
+    s = Stack(eyes=FakeEyes(EXCEL), model=FakeLiveModel(
+        ["[thinking] Let me look. <look/>"], ["[happy] I'll fill it in. <task>Fill column C in Budget.xlsx</task>"]))
+    s.confirm.answers.append(False)
+    talk(s, "look at this and fill it in")
+    assert s.confirm.asked == ["Shall I go ahead: Fill column C in Budget.xlsx?"]
+    assert s.harness.calls == []
+    s2 = Stack(eyes=FakeEyes(EXCEL), model=FakeLiveModel(
+        ["[thinking] <look/>"], ["[happy] On it. <task>Fill column C</task>"]))
+    s2.confirm.answers.append(True)
+    talk(s2, "fill this in")
+
+    async def done():
+        await s2.tasks.idle()
+
+    asyncio.run(done())
+    assert len(s2.harness.calls) == 1
