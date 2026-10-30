@@ -1,0 +1,149 @@
+---
+import Character from '../Character.astro';
+---
+<section class="section asks-section" id="asks" aria-labelledby="asks-title">
+  <div class="wrap feature flip">
+    <div class="section-head">
+      <h2 id="asks-title">He asks before anything you can't undo.</h2>
+      <p>Sending, deleting, buying: he stops and asks first, in one plain sentence with a yes or a no. No answer within a minute counts as no.</p>
+      <p>Things you can undo, like moving a file or writing a draft, he just does. Asking all the time would teach you to say yes without reading.</p>
+      <p class="note">Some things he never does at all: passwords, bank transfers and security settings.</p>
+    </div>
+
+    <div class="asks" data-asks data-has-milo>
+      <div class="asks-scene">
+        <div class="window asks-win" data-scene="mail">
+          <div class="window-bar"><span class="lights"><i></i><i></i><i></i></span><span class="window-title">Photos from Sunday</span></div>
+          <div class="asks-mail">
+            <p class="mail-line"><span>To:</span> Anna</p>
+            <p class="mail-text">Here are the photos from Sunday. The one with the cake is my favourite.</p>
+            <div class="thumbs" aria-hidden="true">{Array.from({ length: 7 }, (_, i) => <i style={`--h:${(i * 47) % 360}`}></i>)}<b>+7</b></div>
+          </div>
+        </div>
+        <div class="window asks-win" data-scene="photos" hidden>
+          <div class="window-bar"><span class="lights"><i></i><i></i><i></i></span><span class="window-title">Photos, Holiday 2019</span></div>
+          <div class="photo-grid" aria-hidden="true">{Array.from({ length: 40 }, (_, i) => <i style={`--h:${(i * 29 + 200) % 360};--l:${70 + (i % 5) * 4}%`}></i>)}</div>
+        </div>
+        <div class="window asks-win" data-scene="shop" hidden>
+          <div class="window-bar"><span class="lights"><i></i><i></i><i></i></span><span class="window-title">Basket</span></div>
+          <div class="shop">
+            <div class="shop-item"><span class="ink" aria-hidden="true"></span><span><b>Printer ink, black and colour</b><br /><span class="note">Pack of 4</span></span><b>€34.00</b></div>
+            <div class="shop-total"><span>Total</span><b>€34.00</b></div>
+          </div>
+        </div>
+
+        <div class="asks-talk">
+        <div class="bubble asks-q" role="group" aria-labelledby="asks-question">
+          <p id="asks-question" data-question>I'm about to send this to Anna. Send it?</p>
+          <p class="asks-a" data-answer aria-live="polite"></p>
+          <div class="asks-btns" data-btns>
+            <button class="btn btn-small" type="button" data-yes>Send</button>
+            <button class="btn btn-small btn-quiet" type="button" data-no>Don't send</button>
+          </div>
+        </div>
+        <div class="asks-milo">
+          <Character id="asks" pose="waiting" label="Milo waiting for your answer" />
+        </div>
+        </div>
+      </div>
+      <button class="replay" type="button" data-another>
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Another example
+      </button>
+    </div>
+  </div>
+</section>
+
+<style>
+  .asks-scene { position: relative; }
+  .asks-win { width: 86%; }
+  .asks-win[hidden] { display: none; }
+  .asks-mail { padding: 0.4rem 1.3rem 1.3rem; }
+  .mail-line { padding: 0.5rem 0; border-bottom: 1px solid var(--rule); font-size: 0.95rem; }
+  .mail-line span { color: var(--ink-3); }
+  .mail-text { padding: 0.9rem 0; font-size: 1rem; }
+  .thumbs { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+  .thumbs i, .thumbs b { width: 2.8rem; height: 2.1rem; border-radius: 0.3rem; background: linear-gradient(150deg, hsl(var(--h) 60% 78%), hsl(calc(var(--h) + 40) 50% 62%)); }
+  .thumbs b { display: grid; place-items: center; background: var(--paper-2); color: var(--ink-2); font-size: 0.8rem; }
+  .photo-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 3px; padding: 0.6rem; }
+  .photo-grid i { aspect-ratio: 1; border-radius: 2px; background: linear-gradient(160deg, hsl(var(--h) 45% var(--l)), hsl(calc(var(--h) + 30) 40% calc(var(--l) - 18%))); }
+  .shop { padding: 1rem 1.3rem; }
+  .shop-item { display: grid; grid-template-columns: auto 1fr auto; gap: 0.9rem; align-items: center; padding-bottom: 0.9rem; border-bottom: 1px solid var(--rule); }
+  .ink { width: 2.6rem; height: 2.6rem; border-radius: 0.4rem; background: conic-gradient(#222 0 25%, #1fb5d6 0 50%, #e2338a 0 75%, #f4d21f 0); }
+  .shop-total { display: flex; justify-content: space-between; padding-top: 0.9rem; }
+
+  .asks-talk { display: flex; align-items: end; justify-content: end; gap: 0.2rem; margin-top: -1.4rem; position: relative; }
+  .asks-milo { width: clamp(8rem, 15vw, 10rem); flex: none; }
+  .asks-q {
+    width: min(21rem, 100%);
+    max-width: none;
+    margin-bottom: clamp(5rem, 9vw, 6.5rem);
+    padding: 1rem 1.1rem;
+    font-size: 1.06rem;
+  }
+  .asks-a { font-weight: 700; color: var(--lavender-deep); }
+  .asks-a:empty { display: none; }
+  .asks-btns { display: flex; gap: 0.5rem; margin-top: 0.8rem; flex-wrap: wrap; }
+  .asks-btns[hidden] { display: none; }
+  @media (max-width: 30rem) {
+    .asks-win { width: 100%; }
+    .asks-talk { margin-top: 0.8rem; }
+    .asks-milo { width: 6.5rem; }
+    .asks-q { margin-bottom: 3.6rem; margin-right: -0.6rem; }
+  }
+</style>
+
+<script>
+  import { reduce, chatter, $, $$, type MiloEl } from '../../scripts/demo';
+
+  const root = $(document, '[data-asks]');
+  const m = $<MiloEl>(root, 'milo-character');
+  const q = $(root, '[data-question]');
+  const a = $(root, '[data-answer]');
+  const btns = $(root, '[data-btns]');
+  const yes = $<HTMLButtonElement>(root, '[data-yes]');
+  const no = $<HTMLButtonElement>(root, '[data-no]');
+  const scenes = $$(root, '[data-scene]');
+
+  const cases = [
+    { scene: 'mail', q: "I'm about to send this to Anna. Send it?", yes: 'Send', no: "Don't send", ifYes: 'Sent.', ifNo: "Okay. It's in your drafts." },
+    { scene: 'photos', q: "That deletes all 40 photos, and they won't be in the bin. Go ahead?", yes: 'Delete them', no: 'Keep them', ifYes: 'Deleted, all 40.', ifNo: 'Left them alone.', worry: true },
+    { scene: 'shop', q: 'This orders the printer ink for €34. Order it?', yes: 'Order', no: "Don't order", ifYes: 'Ordered. The receipt is in your mail.', ifNo: 'Not ordered. It stays in the basket.' },
+  ];
+  let i = 0;
+  let ticking = 0;
+
+  // While he waits for a yes, his tail ticks.
+  const tick = () => {
+    clearInterval(ticking);
+    if (reduce) return;
+    ticking = window.setInterval(() => { if (!a.textContent) m.play('tick'); }, 1500);
+  };
+
+  function show(n: number) {
+    i = n % cases.length;
+    const c = cases[i];
+    for (const s of scenes) s.hidden = s.dataset.scene !== c.scene;
+    q.textContent = c.q;
+    a.textContent = '';
+    yes.textContent = c.yes;
+    no.textContent = c.no;
+    btns.hidden = false;
+    m.pose = c.worry ? 'concerned' : 'waiting';
+    tick();
+  }
+  function answer(ok: boolean) {
+    const c = cases[i];
+    clearInterval(ticking);
+    btns.hidden = true;
+    a.textContent = ok ? c.ifYes : c.ifNo;
+    m.pose = ok ? 'happy' : 'idle';
+    chatter(m, 900);
+    $<HTMLButtonElement>(root, '[data-another]').focus({ preventScroll: true });
+  }
+  yes.addEventListener('click', () => answer(true));
+  no.addEventListener('click', () => answer(false));
+  $(root, '[data-another]').addEventListener('click', () => show(i + 1));
+  new IntersectionObserver(([e]) => { if (e.isIntersecting && !a.textContent) tick(); else if (!e.isIntersecting) clearInterval(ticking); }).observe(root);
+  show(0);
+</script>

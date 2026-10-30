@@ -1,0 +1,179 @@
+---
+import Character from '../Character.astro';
+import Replay from '../Replay.astro';
+
+const jobs = [
+  { id: 'h1', task: 'Find the September electricity bill' },
+  { id: 'h2', task: 'Write a packing list for Lisbon' },
+  { id: 'h3', task: 'Find the duplicate photos' },
+];
+---
+<section class="section" id="helpers" aria-labelledby="helpers-title">
+  <div class="wrap feature">
+    <div class="section-head">
+      <h2 id="helpers-title">Several jobs at once.</h2>
+      <p>Give him a few things to do and small helper Milos carry one each, while he keeps talking with you. You can see who's doing what, ask how far they've got, or stop one.</p>
+    </div>
+
+    <div class="helpers" data-helpers data-has-milo>
+      <div class="helpers-boss">
+        <Character id="boss" pose="idle" label="Milo, handing out the jobs" />
+        <p class="bubble boss-bubble" data-boss aria-live="polite">Three jobs. I'll hand them out.</p>
+      </div>
+      <ul class="jobs" aria-label="Helpers at work">
+        {jobs.map((j) => (
+          <li class="job" data-job={j.id}>
+            <span class="job-bird"><Character id={j.id} pose="idle" small /></span>
+            <span class="job-text">
+              <b>{j.task}</b>
+              <span class="job-step" data-step>Waiting</span>
+              <span class="job-bar" aria-hidden="true"><i data-bar></i></span>
+            </span>
+            <button type="button" class="job-stop" data-stop aria-label={`Stop: ${j.task}`}>Stop</button>
+          </li>
+        ))}
+      </ul>
+      <Replay />
+    </div>
+  </div>
+</section>
+
+<style>
+  .helpers {
+    display: grid; gap: 1.5rem;
+    background: var(--paper-2);
+    border-radius: 1.6rem;
+    padding: clamp(1.25rem, 3vw, 2.25rem);
+    box-shadow: inset 0 0 0 1px var(--rule);
+  }
+  .helpers-boss { position: relative; display: flex; align-items: end; gap: 1rem; min-height: 7rem; }
+  .helpers-boss :global(milo-character) { width: clamp(6rem, 12vw, 7.5rem); flex: none; }
+  .boss-bubble { margin-bottom: 3.2rem; }
+  .boss-bubble::after { right: auto; left: -0.3rem; bottom: 0.9rem; transform: rotate(135deg); }
+  .jobs { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.7rem; }
+  .job {
+    display: grid; grid-template-columns: auto 1fr auto; gap: 0.9rem; align-items: center;
+    background: var(--card);
+    border-radius: 1rem;
+    padding: 0.8rem 0.9rem 0.8rem 0.7rem;
+    box-shadow: var(--shadow-pop);
+    transition: opacity 300ms, transform 400ms var(--ease-spring);
+  }
+  .job.is-waiting { opacity: 0.55; }
+  .job-bird { width: 3.4rem; height: 3.4rem; display: block; }
+  .job-bird :global(milo-character) { width: 100%; }
+  .job-text { display: grid; gap: 0.2rem; min-width: 0; }
+  .job-text b { font-size: 1rem; line-height: 1.3; }
+  .job-step { font-size: 0.92rem; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .job.is-done .job-step { color: var(--ok); font-weight: 600; }
+  .job.is-stopped .job-step { color: var(--ink-3); }
+  .job-bar { height: 4px; border-radius: 2px; background: var(--lavender-wash); overflow: hidden; margin-top: 0.25rem; }
+  .job-bar i { display: block; height: 100%; width: 0; background: var(--lavender); border-radius: inherit; transition: width 600ms var(--ease-out); }
+  .job.is-done .job-bar i { background: var(--ok); }
+  .job.is-stopped .job-bar i { background: var(--ink-3); }
+  .job-stop {
+    border: 0; border-radius: var(--radius-pill);
+    padding: 0.35rem 0.8rem; font-size: 0.85rem; font-weight: 650;
+    background: transparent; color: var(--ink-2);
+    box-shadow: inset 0 0 0 1.5px var(--rule-strong);
+  }
+  .job-stop:hover { color: var(--ink); background: var(--paper-2); }
+  .job-stop[hidden] { display: none; }
+  .job.is-waiting .job-stop, .job.is-done .job-stop { visibility: hidden; }
+  .job-stop:disabled { opacity: 0.6; cursor: default; box-shadow: none; }
+  @media (max-width: 30rem) {
+    .job { grid-template-columns: auto 1fr; }
+    .job-stop { grid-column: 2; justify-self: start; }
+    .job.is-waiting .job-stop, .job.is-done .job-stop { display: none; }
+  }
+</style>
+
+<script>
+  import { demo, chatter, $, $$, type MiloEl, type Ctx } from '../../scripts/demo';
+
+  const root = $(document, '[data-helpers]');
+  const boss = $<MiloEl>(root, '.helpers-boss milo-character');
+  const bossSays = $(root, '[data-boss]');
+  const plans: Record<string, { steps: string[]; done: string; stopped: string; at: number[] }> = {
+    h1: { steps: ['Looking in your Downloads', 'Checking your mail', 'Found it in a mail from Stadtwerke'], done: 'Done. Saved it to Documents, Bills.', stopped: 'Stopped. It had looked in Downloads.', at: [0, 1800, 3600] },
+    h2: { steps: ['Looking up the weather for Lisbon', 'Writing the list in Notes'], done: "Done. It's in Notes, warm clothes and one jumper.", stopped: 'Stopped. Nothing written yet.', at: [600, 3000] },
+    h3: { steps: ['Looking through 2,318 photos', 'Found 41 doubles, putting them in an album'], done: 'Done. 41 doubles, in an album called Doubles.', stopped: 'Stopped. Nothing was moved.', at: [1200, 4400] },
+  };
+  const jobs = $$(root, '[data-job]').map((el) => ({
+    el,
+    id: el.dataset.job!,
+    bird: $<MiloEl>(el, 'milo-character'),
+    step: $(el, '[data-step]'),
+    bar: $(el, '[data-bar]'),
+    stop: $<HTMLButtonElement>(el, '[data-stop]'),
+    stopped: false,
+  }));
+
+  async function work(j: (typeof jobs)[number], ctx: Ctx, t0: number) {
+    const plan = plans[j.id];
+    const n = plan.steps.length;
+    for (let s = 0; s < n; s++) {
+      const due = t0 + plan.at[s] - performance.now();
+      if (due > 0) await ctx.wait(due);
+      if (j.stopped) return;
+      if (s === 0) {
+        j.el.classList.remove('is-waiting');
+        j.el.classList.add('is-working');
+        j.bird.pose = 'busy';
+        j.bird.play('toss');
+      }
+      j.step.textContent = plan.steps[s];
+      j.bar.style.width = `${((s + 1) / (n + 1)) * 100}%`;
+    }
+    await ctx.wait(1600 + Math.random() * 600);
+    if (j.stopped) return;
+    j.el.classList.remove('is-working');
+    j.el.classList.add('is-done');
+    j.step.textContent = plan.done;
+    j.bar.style.width = '100%';
+    j.bird.pose = 'happy';
+    j.bird.play('hop');
+  }
+
+  demo(root, async (ctx) => {
+    boss.pose = 'speaking';
+    chatter(boss, 1000);
+    await ctx.wait(1100);
+    boss.pose = 'idle';
+    const t0 = performance.now();
+    await Promise.all(jobs.map((j) => work(j, ctx, t0)));
+    await ctx.wait(400);
+    const left = jobs.filter((j) => !j.stopped).length;
+    bossSays.textContent = left === 3 ? 'All three done.' : left === 0 ? 'All stopped. Nothing half-done.' : `${left} done, ${3 - left} stopped.`;
+    boss.pose = 'proud';
+    chatter(boss, 800);
+    await ctx.wait(2000);
+    boss.pose = 'idle';
+  }, {
+    reset() {
+      bossSays.textContent = "Three jobs. I'll hand them out.";
+      for (const j of jobs) {
+        j.stopped = false;
+        j.el.className = 'job is-waiting';
+        j.step.textContent = 'Waiting';
+        j.bar.style.width = '0';
+        j.bird.pose = 'idle';
+        j.stop.disabled = false;
+        j.stop.textContent = 'Stop';
+      }
+    },
+  });
+
+  for (const j of jobs) {
+    j.stop.addEventListener('click', () => {
+      if (!j.el.classList.contains('is-working')) return;
+      j.stopped = true;
+      j.el.classList.remove('is-working');
+      j.el.classList.add('is-stopped');
+      j.step.textContent = plans[j.id].stopped;
+      j.bird.pose = 'idle';
+      j.stop.disabled = true;
+      j.stop.textContent = 'Stopped';
+    });
+  }
+</script>

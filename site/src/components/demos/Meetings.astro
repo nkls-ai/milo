@@ -1,0 +1,172 @@
+---
+import Character from '../Character.astro';
+import Replay from '../Replay.astro';
+---
+<section class="section" id="meetings" aria-labelledby="meetings-title">
+  <div class="wrap feature flip">
+    <div class="section-head">
+      <h2 id="meetings-title">Notes from your calls, without a bot joining.</h2>
+      <p>When a call starts, he asks once if he should take notes. A red dot shows the whole time he listens. Afterwards you get a short summary, what was decided, and your to-dos, ready for Reminders.</p>
+      <p class="note">The notes stay on your Mac unless you share them. Recording people needs their OK in many places, so he gives you a line to tell them.</p>
+    </div>
+
+    <div class="meet" data-meet data-has-milo>
+      <div class="window">
+        <div class="window-bar">
+          <span class="lights"><i></i><i></i><i></i></span>
+          <span class="window-title">Call with Anna and Tom</span>
+          <span class="rec" data-rec aria-hidden="true"><i></i>Taking notes</span>
+        </div>
+        <div class="meet-body">
+          <div class="tiles" aria-hidden="true">
+            <span class="tile" style="--h:262"><b>A</b>Anna</span>
+            <span class="tile" style="--h:32"><b>T</b>Tom</span>
+            <span class="tile you" style="--h:200"><b>Y</b>You</span>
+          </div>
+          <ol class="lines" data-lines aria-label="Transcript"></ol>
+          <div class="notes" data-notes hidden>
+            <h3>Party planning</h3>
+            <p class="notes-sum">The party is on the 14th, at yours. Anna, Tom and you split the jobs.</p>
+            <p class="notes-h">Your to-dos</p>
+            <ul class="todos">
+              <li><span>Send the invitations by Friday</span><button type="button" class="todo-add" data-add>Add to Reminders</button></li>
+            </ul>
+            <p class="notes-h">Others</p>
+            <ul class="others"><li>Tom picks up the cake on Saturday morning.</li><li>Anna brings the chairs from the club.</li></ul>
+          </div>
+        </div>
+      </div>
+      <div class="meet-ask" data-ask>
+        <p class="bubble"><span data-ask-text>Looks like a meeting. Should I take notes?</span>
+          <span class="meet-btns" data-ask-btns><button type="button" class="btn btn-small" data-take>Take notes</button><button type="button" class="btn btn-small btn-quiet" data-skip>Not this time</button></span>
+        </p>
+        <Character id="meet" pose="waiting" label="Milo asking whether to take notes" />
+      </div>
+      <Replay />
+    </div>
+  </div>
+</section>
+
+<style>
+  .meet { position: relative; }
+  .rec { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--rec); font-size: 0.78rem; font-weight: 700; opacity: 0; transition: opacity 200ms; }
+  .rec i { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--rec); animation: rec 1.6s ease-in-out infinite; }
+  @keyframes rec { 50% { opacity: 0.35; } }
+  .meet[data-rec] .rec { opacity: 1; }
+  .meet .window-title { margin-right: 0; }
+  .meet-body { padding: 1rem; min-height: 21rem; display: grid; align-content: start; gap: 1rem; }
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
+  .tile {
+    aspect-ratio: 16 / 10;
+    border-radius: 0.6rem;
+    display: grid; place-items: center; align-content: center; gap: 0.2rem;
+    background: linear-gradient(160deg, hsl(var(--h) 40% 30%), hsl(var(--h) 35% 20%));
+    color: #fff; font-size: 0.78rem; font-weight: 600;
+  }
+  .tile b { width: 2.1rem; height: 2.1rem; border-radius: 50%; display: grid; place-items: center; background: hsl(var(--h) 50% 62%); font-size: 0.95rem; }
+  .tile.speaking { box-shadow: 0 0 0 2px #fff, 0 0 0 4px hsl(var(--h) 60% 60%); }
+  .lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; font-size: 0.95rem; }
+  .lines :global(li) { animation: step-in 300ms var(--ease-out) both; }
+  .lines :global(b) { color: var(--lavender-deep); margin-right: 0.35rem; }
+  @keyframes step-in { from { opacity: 0; transform: translateY(0.3rem); } }
+  .notes { background: var(--card-2); border-radius: 0.7rem; padding: 1rem 1.1rem; box-shadow: inset 0 0 0 1px var(--rule); animation: step-in 400ms var(--ease-out) both; }
+  .notes[hidden] { display: none; }
+  .notes h3 { font-size: 1.25rem; }
+  .notes-sum { margin-top: 0.4rem; font-size: 0.98rem; }
+  .notes-h { margin-top: 0.9rem; font-size: 0.82rem; font-weight: 700; color: var(--ink-3); }
+  .todos, .others { list-style: none; padding: 0; margin: 0.35rem 0 0; display: grid; gap: 0.35rem; font-size: 0.95rem; }
+  .todos li { display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+  .todo-add { border: 0; border-radius: var(--radius-pill); padding: 0.25rem 0.7rem; font-size: 0.82rem; font-weight: 700; background: var(--lavender-wash); color: var(--lavender-deep); }
+  .todo-add:hover { background: var(--lavender-soft); }
+  .todo-add[aria-pressed='true'] { background: transparent; color: var(--ok); }
+  .others li::before { content: '· '; color: var(--ink-3); }
+  .meet-ask { display: flex; align-items: end; justify-content: end; gap: 0.4rem; margin-top: -1.2rem; margin-right: -0.5rem; position: relative; z-index: 2; pointer-events: none; }
+  .meet-ask > * { pointer-events: auto; }
+  .meet-ask :global(milo-character) { width: clamp(5.5rem, 10vw, 7rem); flex: none; }
+  .meet-ask .bubble { margin-bottom: 3.6rem; max-width: 20rem; }
+  .meet-btns { display: flex; gap: 0.4rem; margin-top: 0.6rem; flex-wrap: wrap; }
+  .meet-btns[hidden] { display: none; }
+</style>
+
+<script>
+  import { demo, chatter, $, $$, type MiloEl } from '../../scripts/demo';
+  const root = $(document, '[data-meet]');
+  const lines = $(root, '[data-lines]');
+  const notes = $(root, '[data-notes]');
+  const askText = $(root, '[data-ask-text]');
+  const askBtns = $(root, '[data-ask-btns]');
+  const m = $<MiloEl>(root, 'milo-character');
+  const tiles = $$(root, '.tile');
+  const add = $<HTMLButtonElement>(root, '[data-add]');
+
+  const talk: [number, string, string][] = [
+    [0, 'Anna', "So we're agreed, the party is on the 14th?"],
+    [2, 'You', "Yes, at ours. I'll send the invitations by Friday."],
+    [1, 'Tom', 'I can pick up the cake on Saturday morning.'],
+    [0, 'Anna', "Then I'll bring the chairs from the club."],
+  ];
+
+  let answer: ((take: boolean) => void) | null = null;
+  $(root, '[data-take]').addEventListener('click', () => answer?.(true));
+  $(root, '[data-skip]').addEventListener('click', () => answer?.(false));
+  add.addEventListener('click', () => {
+    const on = add.getAttribute('aria-pressed') !== 'true';
+    add.setAttribute('aria-pressed', String(on));
+    add.textContent = on ? 'Added to Reminders' : 'Add to Reminders';
+  });
+
+  demo(root, async (ctx) => {
+    m.pose = 'waiting';
+    const take = await new Promise<boolean>((ok) => {
+      answer = ok;
+      ctx.wait(2800).then(() => ok(true), () => ok(false));
+    });
+    answer = null;
+    if (!ctx.live) return;
+    askBtns.hidden = true;
+    if (!take) {
+      askText.textContent = "Okay. I won't listen to this one.";
+      m.pose = 'idle';
+      return;
+    }
+    askText.textContent = 'Taking notes. I put a line in the chat to let them know.';
+    m.pose = 'happy';
+    chatter(m, 900);
+    root.dataset.rec = '';
+    await ctx.wait(1300);
+    m.pose = 'listening';
+    for (const [who, name, text] of talk) {
+      tiles.forEach((t, i) => t.classList.toggle('speaking', i === who));
+      const li = document.createElement('li');
+      li.innerHTML = `<b></b>`;
+      li.firstElementChild!.textContent = name;
+      li.append(text);
+      lines.append(li);
+      await ctx.wait(1500);
+    }
+    tiles.forEach((t) => t.classList.remove('speaking'));
+    delete root.dataset.rec;
+    m.pose = 'thinking';
+    askText.textContent = 'Call ended. Writing it up.';
+    await ctx.wait(1200);
+    lines.hidden = true;
+    notes.hidden = false;
+    m.pose = 'proud';
+    askText.textContent = 'Done. One to-do is yours.';
+    chatter(m, 800);
+    await ctx.wait(1800);
+    m.pose = 'idle';
+  }, {
+    threshold: 0.5,
+    reset() {
+      lines.textContent = '';
+      lines.hidden = false;
+      notes.hidden = true;
+      askBtns.hidden = false;
+      askText.textContent = 'Looks like a meeting. Should I take notes?';
+      add.setAttribute('aria-pressed', 'false');
+      add.textContent = 'Add to Reminders';
+      delete root.dataset.rec;
+    },
+  });
+</script>

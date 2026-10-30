@@ -1,0 +1,245 @@
+---
+import Character from '../Character.astro';
+import Replay from '../Replay.astro';
+
+const rows = [
+  ['Electricity', 64, 71],
+  ['Water', 38, 38],
+  ['Phone', 29, 29],
+  ['Internet', 35, 35],
+  ['Groceries', 412, 389],
+  ['Insurance', 72, 72],
+] as const;
+---
+<section class="section" id="work" aria-labelledby="work-title">
+  <div class="wrap feature">
+    <div class="section-head">
+      <h2 id="work-title">He works where you can see him.</h2>
+      <p>Ask for something on the computer and he does it in front of you, with his own pointer. The window he's in gets an outline, and he says what he's doing in plain words.</p>
+      <p>Move your mouse or press <kbd>esc</kbd>, and he stops on the spot.</p>
+      <p class="note work-try">Try it: move your mouse over the sheet while he works.</p>
+    </div>
+
+    <div class="work" data-work data-has-milo>
+      <div class="work-stage">
+        <div class="work-outline" aria-hidden="true">
+          <span class="work-tag"><span>Milo is working here</span><button type="button" class="work-stop" data-stop tabindex="-1">Stop</button></span>
+        </div>
+        <div class="window sheet" data-sheet>
+          <div class="window-bar"><span class="lights"><i></i><i></i><i></i></span><span class="window-title">Household 2026.xlsx</span></div>
+          <div class="fx"><span class="fx-cell" data-fx-cell>D2</span><span class="fx-sign">fx</span><span class="fx-val" data-fx></span></div>
+          <div class="grid-wrap">
+            <table class="grid" aria-label="A household budget with costs for September and October">
+              <thead>
+                <tr><th class="corner" scope="col"><span class="sr-only">Row</span></th><th scope="col">A</th><th scope="col">B</th><th scope="col">C</th><th scope="col">D</th></tr>
+              </thead>
+              <tbody>
+                <tr class="hdr"><th scope="row">1</th><td>Item</td><td class="n">September</td><td class="n">October</td><td class="n">Total</td></tr>
+                {rows.map(([name, a, b], i) => (
+                  <tr><th scope="row">{i + 2}</th><td>{name}</td><td class="n">€{a}</td><td class="n">€{b}</td><td class="n out" data-out={a + b}></td></tr>
+                ))}
+                <tr class="sum"><th scope="row">8</th><td>Total</td><td></td><td></td><td class="n out" data-out={rows.reduce((s, [, a, b]) => s + a + b, 0)} data-sum></td></tr>
+              </tbody>
+            </table>
+            <span class="sel" data-sel aria-hidden="true"></span>
+            <span class="mcursor" data-cursor aria-hidden="true">
+              <svg viewBox="0 0 18 28" width="18" height="28"><path d="M1 1 L1 23 L6.5 18 L10.5 27 L14 25.5 L10 17 L17 17 Z" fill="#7C6CD0" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>
+              <span class="mcursor-tag">Milo</span>
+            </span>
+          </div>
+        </div>
+        <div class="work-perch">
+          <Character id="work" pose="idle" label="Milo perched on the corner of the spreadsheet window" />
+        </div>
+        <span class="you" data-you aria-hidden="true">You</span>
+      </div>
+      <ol class="steps" data-steps aria-live="polite"></ol>
+      <Replay label="Start again" />
+    </div>
+  </div>
+</section>
+
+<style>
+  .work { position: relative; }
+  .work-stage { position: relative; padding-top: 1.2rem; }
+  .work-outline {
+    position: absolute; inset: 1.2rem 0 0 0;
+    border-radius: calc(var(--radius-window) + 5px);
+    box-shadow: 0 0 0 3px var(--lavender), 0 0 0 8px color-mix(in srgb, var(--lavender) 22%, transparent), 0 0 40px 6px color-mix(in srgb, var(--lavender) 30%, transparent);
+    margin: -5px;
+    opacity: 0; transition: opacity 300ms;
+    pointer-events: none; z-index: 2;
+  }
+  .work[data-running] .work-outline, .work[data-outline] .work-outline { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) { .work .work-outline { opacity: 1; } }
+  .work-tag {
+    position: absolute; left: 1.2rem; top: -1.05rem;
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    background: var(--lavender); color: var(--on-lavender);
+    font-size: 0.82rem; font-weight: 700;
+    padding: 0.25rem 0.3rem 0.25rem 0.75rem; border-radius: var(--radius-pill);
+    pointer-events: auto;
+  }
+  .work-stop { border: 0; border-radius: var(--radius-pill); padding: 0.15rem 0.6rem; font-size: 0.78rem; font-weight: 700; background: rgb(255 255 255 / 0.22); color: inherit; }
+  .work-stop:hover { background: rgb(255 255 255 / 0.36); }
+  .work-perch { position: absolute; right: -0.6rem; top: -3.4rem; width: clamp(5.2rem, 9vw, 6.6rem); z-index: 3; pointer-events: none; }
+
+  .sheet { cursor: default; }
+  .fx { display: flex; align-items: center; gap: 0.7rem; height: 2.1rem; padding: 0 0.8rem; border-bottom: 1px solid var(--rule); font-size: 0.85rem; }
+  .fx-cell { width: 2.6rem; color: var(--ink-3); font-weight: 600; }
+  .fx-sign { color: var(--ink-3); font-style: italic; font-family: var(--font-display); }
+  .fx-val { font-variant-numeric: tabular-nums; color: var(--ink); min-height: 1em; }
+  .grid-wrap { position: relative; overflow-x: auto; }
+  .grid { width: 100%; border-collapse: collapse; font-size: 0.92rem; font-variant-numeric: tabular-nums; table-layout: fixed; min-width: 25rem; }
+  .grid th, .grid td { border: 1px solid var(--rule); padding: 0 0.6rem; height: 2.15rem; text-align: left; white-space: nowrap; overflow: hidden; }
+  .grid thead th { background: var(--card-2); color: var(--ink-3); font-weight: 600; text-align: center; font-size: 0.78rem; height: 1.6rem; }
+  .grid tbody th { background: var(--card-2); color: var(--ink-3); font-weight: 600; text-align: center; font-size: 0.78rem; width: 2.4rem; }
+  .grid thead th.corner { width: 2.4rem; }
+  .grid tr > :first-child { border-left: 0; }
+  .grid tr > :last-child { border-right: 0; }
+  .grid td:nth-child(2) { width: 32%; }
+  .grid .n { text-align: right; }
+  .grid .hdr td { font-weight: 700; color: var(--ink-2); }
+  .grid .sum td { font-weight: 700; border-top: 2px solid var(--rule-strong); }
+  .out { color: var(--lavender-deep); }
+  .out.is-new { animation: pop 420ms var(--ease-spring); }
+  @keyframes pop { 0% { background: color-mix(in srgb, var(--lavender) 28%, transparent); } 100% { background: transparent; } }
+  .sel { position: absolute; left: 0; top: 0; border: 2px solid var(--lavender); border-radius: 2px; pointer-events: none; opacity: 0; transition: transform 380ms var(--ease-out), width 300ms, opacity 200ms; }
+  .work[data-running] .sel { opacity: 1; }
+  .mcursor { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 2; transition: transform 640ms cubic-bezier(0.5, 0, 0.2, 1); filter: drop-shadow(0 2px 3px rgb(30 23 48 / 0.25)); }
+  .mcursor svg { width: 1.1rem; height: auto; }
+  .mcursor-tag { position: absolute; left: 1rem; top: 1.25rem; background: #5a4bad; color: #fff; font-size: 0.72rem; font-weight: 700; padding: 0.1rem 0.45rem; border-radius: 0.4rem 0.4rem 0.4rem 0.1rem; }
+  .you {
+    position: absolute; left: 0; top: 0; z-index: 4;
+    pointer-events: none; opacity: 0;
+    background: var(--ink); color: var(--paper);
+    font-size: 0.72rem; font-weight: 700;
+    padding: 0.1rem 0.45rem; border-radius: 0.1rem 0.4rem 0.4rem 0.4rem;
+    transition: opacity 150ms;
+  }
+  .you.is-on { opacity: 1; }
+
+  .steps { list-style: none; padding: 0; margin: 1.2rem 0 0; display: grid; align-content: start; gap: 0.5rem; min-height: 7.2rem; }
+  .steps :global(li) { display: flex; gap: 0.65rem; align-items: baseline; font-size: 1.02rem; animation: step-in 360ms var(--ease-out) both; }
+  .steps :global(li)::before { content: ''; flex: none; width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--lavender-soft); transform: translateY(-0.05rem); }
+  .steps :global(li.done)::before { background: var(--lavender); }
+  .steps :global(li.stopped)::before { background: var(--marigold); }
+  @keyframes step-in { from { opacity: 0; transform: translateY(0.4rem); } }
+  @media (hover: none) { .work-try { display: none; } }
+</style>
+
+<script>
+  import { demo, chatter, $, $$, type MiloEl } from '../../scripts/demo';
+
+  const root = $(document, '[data-work]');
+  const sheet = $(root, '[data-sheet]');
+  const wrap = $(root, '.grid-wrap');
+  const cursor = $(root, '[data-cursor]');
+  const sel = $(root, '[data-sel]');
+  const fx = $(root, '[data-fx]');
+  const fxCell = $(root, '[data-fx-cell]');
+  const steps = $(root, '[data-steps]');
+  const you = $(root, '[data-you]');
+  const m = $<MiloEl>(root, 'milo-character');
+  const outs = $$(root, '[data-out]');
+  const eur = (n: number) => `€${n.toLocaleString('en-GB')}`;
+
+  let done = 0;
+  const step = (text: string, cls = '') => {
+    steps.querySelector('li:last-child')?.classList.add('done');
+    const li = document.createElement('li');
+    li.textContent = text;
+    if (cls) li.className = cls;
+    steps.append(li);
+  };
+  const cellBox = (el: HTMLElement) => {
+    const a = el.getBoundingClientRect(), b = wrap.getBoundingClientRect();
+    return { x: a.left - b.left + wrap.scrollLeft, y: a.top - b.top, w: a.width, h: a.height };
+  };
+  const goTo = (el: HTMLElement) => {
+    const c = cellBox(el);
+    cursor.style.transform = `translate(${c.x + c.w * 0.62}px, ${c.y + c.h * 0.45}px)`;
+    sel.style.transform = `translate(${c.x - 1}px, ${c.y - 1}px)`;
+    sel.style.width = `${c.w + 2}px`;
+    sel.style.height = `${c.h + 2}px`;
+  };
+
+  const d = demo(root, async (ctx) => {
+    m.pose = 'idle';
+    await ctx.wait(500);
+    step('Opening your spreadsheet.');
+    await m.play('toss');
+    m.pose = 'busy';
+    chatter(m, 700);
+    await ctx.wait(500);
+    step('Adding up each row into column D.');
+    for (let i = 0; i < outs.length - 1; i++) {
+      const cell = outs[i];
+      const r = i + 2;
+      goTo(cell);
+      fxCell.textContent = `D${r}`;
+      fx.textContent = '';
+      await ctx.wait(i < 2 ? 700 : 420);
+      await ctx.type(fx, `=B${r}+C${r}`, i < 2 ? 14 : 30);
+      await ctx.wait(160);
+      cell.textContent = eur(Number(cell.dataset.out));
+      cell.classList.add('is-new');
+      done = i + 1;
+    }
+    const sum = outs[outs.length - 1];
+    goTo(sum);
+    fxCell.textContent = 'D8';
+    fx.textContent = '';
+    await ctx.wait(650);
+    await ctx.type(fx, '=SUM(D2:D7)', 16);
+    await ctx.wait(200);
+    sum.textContent = eur(Number(sum.dataset.out));
+    sum.classList.add('is-new');
+    done = 7;
+    await ctx.wait(500);
+    step(`Done. The totals are in column D, ${Number(sum.dataset.out).toLocaleString('en-GB')} euros at the bottom.`);
+    steps.querySelector('li:last-child')?.classList.add('done');
+    m.pose = 'proud';
+    chatter(m, 1200);
+    root.dataset.outline = '';
+    await ctx.wait(2200);
+    m.pose = 'idle';
+    delete root.dataset.outline;
+  }, {
+    threshold: 0.55,
+    reset() {
+      done = 0;
+      steps.textContent = '';
+      fx.textContent = '';
+      fxCell.textContent = 'D2';
+      for (const o of outs) { o.textContent = ''; o.classList.remove('is-new'); }
+      requestAnimationFrame(() => goTo(outs[0]));
+    },
+  });
+
+  // Touch the mouse or press esc: he stops at once and says how far he got.
+  function stop() {
+    if (!d.running) return;
+    d.stop();
+    const rows = Math.min(done, 6);
+    step(rows === 0 ? "Stopped. I hadn't changed anything yet." : `Stopped. I'd done ${rows} of 6 rows.`, 'stopped');
+    m.pose = 'idle';
+    m.extra = {};
+  }
+  sheet.addEventListener('pointermove', (e) => {
+    if (e.pointerType === 'mouse' && d.running && e.movementX ** 2 + e.movementY ** 2 > 4) stop();
+  });
+  addEventListener('keydown', (e) => { if (e.key === 'Escape') stop(); });
+  $(root, '[data-stop]').addEventListener('click', stop);
+
+  // A small "You" tag on your own pointer over the sheet, so the two pointers can't be confused.
+  const stage = $(root, '.work-stage');
+  stage.addEventListener('pointermove', (e) => {
+    if (e.pointerType !== 'mouse') return;
+    const r = stage.getBoundingClientRect();
+    you.style.transform = `translate(${e.clientX - r.left + 14}px, ${e.clientY - r.top + 18}px)`;
+    you.classList.add('is-on');
+  });
+  stage.addEventListener('pointerleave', () => you.classList.remove('is-on'));
+  addEventListener('resize', () => { if (!d.running) goTo(outs[Math.max(0, Math.min(done, outs.length - 1))]); });
+</script>

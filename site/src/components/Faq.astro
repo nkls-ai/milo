@@ -1,0 +1,57 @@
+---
+const qs: [string, string][] = [
+  ['Do I need to know anything about AI?', "No. You talk to him the way you'd talk to a person. If he doesn't understand, he says so and asks one question."],
+  ['Can I set him up for my mum or dad?', 'Yes, that is who he is for. Setup walks through each permission the Mac asks for, with one button each, and takes a few minutes.'],
+  ['What goes to the internet?', "Dictation, his memory and your reminders stay on your Mac. When he has to think something through, he sends that one question, with the bits of memory it needs, to an online model. His voice is made online too, so it sounds like a person and not a machine."],
+  ['Can he break something?', "He asks before anything that can't be undone, keeps copies of what he changes, and stops the moment you press esc or touch the mouse. Passwords and bank transfers he never touches."],
+  ['Does he work without the internet?', 'Dictation does, and so do your reminders. Talking to him needs a connection.'],
+  ['Which Macs does he run on?', 'Macs with Apple silicon (M1 or newer) and macOS 14 Sonoma or later. Only Macs for now.'],
+  ['Which languages does he speak?', 'He answers in the language you speak to him in. English and German are the ones we test most.'],
+  ['Why a bird?', "Wrens are small, loud for their size, and nest in the corners of houses. That's where Milo lives too."],
+  ['When can I get him?', "He's being tested now. Join the waitlist and we'll write to you once, when he's ready, and not before."],
+];
+---
+<section class="section" id="faq" aria-labelledby="faq-title">
+  <div class="wrap faq-grid">
+    <div class="section-head">
+      <h2 id="faq-title">Questions people ask.</h2>
+      <p>Something missing? Ask us. A person answers.</p>
+    </div>
+    <div class="faq">
+      {qs.map(([q, a]) => (
+        <details>
+          <summary><span>{q}</span><i aria-hidden="true"></i></summary>
+          <p>{a}</p>
+        </details>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .faq-grid { display: grid; gap: 2.5rem; }
+  @media (min-width: 60rem) { .faq-grid { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); align-items: start; } .faq-grid .section-head { position: sticky; top: 7rem; } }
+  .faq { border-top: 1.5px solid var(--rule-strong); }
+  details { border-bottom: 1px solid var(--rule); }
+  summary {
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    padding: 1.15rem 0.2rem;
+    font-weight: 650; font-size: 1.12rem;
+    cursor: pointer; list-style: none;
+    border-radius: 0.4rem;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary:hover span { color: var(--lavender-deep); }
+  summary i { position: relative; flex: none; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: var(--lavender-wash); transition: transform 300ms var(--ease-spring), background-color 200ms; }
+  summary i::before, summary i::after { content: ''; position: absolute; left: 50%; top: 50%; width: 0.7rem; height: 2px; margin: -1px 0 0 -0.35rem; border-radius: 1px; background: var(--lavender-deep); }
+  summary i::after { transform: rotate(90deg); transition: transform 300ms var(--ease-spring); }
+  details[open] summary i { background: var(--lavender); transform: rotate(180deg); }
+  details[open] summary i::before, details[open] summary i::after { background: var(--on-lavender); }
+  details[open] summary i::after { transform: rotate(0deg); }
+  details p { padding: 0 2.6rem 1.3rem 0.2rem; color: var(--ink-2); max-width: 40rem; }
+  @media (prefers-reduced-motion: no-preference) {
+    details::details-content { block-size: 0; overflow: clip; transition: block-size 320ms var(--ease-out), content-visibility 320ms allow-discrete; }
+    details[open]::details-content { block-size: auto; }
+    :root { interpolate-size: allow-keywords; }
+  }
+</style>

@@ -1,0 +1,137 @@
+---
+import Character from '../Character.astro';
+import Replay from '../Replay.astro';
+---
+<section class="section" id="phone" aria-labelledby="phone-title">
+  <div class="wrap feature">
+    <div class="section-head">
+      <h2 id="phone-title">Message him from your phone.</h2>
+      <p>Out at the shops and need something from your Mac at home? Write to him in Telegram. He does the work on your Mac and asks you in the chat before anything risky.</p>
+      <p class="note">Pairing takes a code shown on your Mac, and only your chat counts. iMessage is being tested.</p>
+    </div>
+
+    <div class="phone-wrap" data-phone>
+      <div class="phone">
+        <div class="phone-screen">
+          <div class="phone-island" aria-hidden="true"></div>
+          <div class="chat-head">
+            <span class="chat-avatar"><Character id="phone" small /></span>
+            <span><b>Milo</b><span class="chat-sub" data-status>on your Mac</span></span>
+          </div>
+          <ol class="chat" data-chat aria-live="polite" aria-label="Chat with Milo"></ol>
+        </div>
+      </div>
+      <Replay />
+    </div>
+  </div>
+</section>
+
+<style>
+  .phone-wrap { display: grid; justify-items: center; }
+  .phone {
+    width: min(21rem, 100%);
+    aspect-ratio: 9 / 18.6;
+    padding: 0.7rem;
+    border-radius: 3.1rem;
+    background: light-dark(#2b2454, #0b0916);
+    box-shadow: inset 0 0 0 2px light-dark(#463d7a, #2a2546), 0 40px 70px -30px rgb(var(--shadow-color) / 0.5);
+  }
+  .phone-screen {
+    position: relative;
+    height: 100%;
+    border-radius: 2.45rem;
+    overflow: hidden;
+    background:
+      radial-gradient(120% 60% at 50% 0%, light-dark(#ece8fb, #221d40), transparent),
+      light-dark(#f4f1ea, #141126);
+    display: grid; grid-template-rows: auto 1fr;
+  }
+  .phone-island { position: absolute; top: 0.6rem; left: 50%; transform: translateX(-50%); width: 6.2rem; height: 1.75rem; border-radius: 1rem; background: #000; z-index: 2; }
+  .chat-head {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 3rem 1rem 0.7rem;
+    background: light-dark(rgb(255 255 255 / 0.75), rgb(30 26 54 / 0.8));
+    border-bottom: 1px solid var(--rule);
+    font-size: 0.95rem; line-height: 1.2;
+  }
+  .chat-head > span:last-child { display: grid; }
+  .chat-avatar { width: 2.4rem; height: 2.4rem; border-radius: 50%; background: var(--lavender-wash); display: grid; place-items: center; overflow: hidden; }
+  .chat-avatar :global(milo-character) { width: 2.5rem; margin-top: 0.4rem; }
+  .chat-sub { font-size: 0.78rem; color: var(--ink-3); }
+  .chat { list-style: none; margin: 0; padding: 0.9rem 0.75rem; display: flex; flex-direction: column; justify-content: end; gap: 0.4rem; overflow: hidden; }
+  .chat :global(.msg) {
+    max-width: 82%;
+    padding: 0.5rem 0.75rem;
+    border-radius: 1.1rem;
+    font-size: 0.92rem; line-height: 1.35;
+    animation: msg 320ms var(--ease-spring) both;
+    transform-origin: bottom left;
+  }
+  @keyframes msg { from { opacity: 0; transform: translateY(0.5rem) scale(0.94); } }
+  .chat :global(.msg.milo) { align-self: start; background: var(--card); box-shadow: 0 1px 1px rgb(var(--shadow-color) / 0.08); border-bottom-left-radius: 0.35rem; }
+  .chat :global(.msg.you) { align-self: end; background: var(--lavender); color: var(--on-lavender); border-bottom-right-radius: 0.35rem; transform-origin: bottom right; }
+  .chat :global(.msg-btns) { display: flex; gap: 0.35rem; margin-top: 0.5rem; }
+  .chat :global(.msg-btns button) { flex: 1; border: 0; border-radius: 0.7rem; padding: 0.4rem 0.6rem; font-size: 0.85rem; font-weight: 700; background: var(--lavender-wash); color: var(--lavender-deep); }
+  .chat :global(.msg-btns button:hover) { background: var(--lavender-soft); }
+  .chat :global(.msg-btns button:disabled) { opacity: 0.5; cursor: default; }
+  .chat :global(.file) { display: flex; gap: 0.6rem; align-items: center; }
+  .chat :global(.file-ic) { flex: none; width: 2.2rem; height: 2.6rem; border-radius: 0.3rem; background: #e5484d; color: #fff; font-size: 0.6rem; font-weight: 800; display: grid; place-items: end center; padding-bottom: 0.3rem; }
+  .chat :global(.file small) { display: block; color: var(--ink-3); font-size: 0.78rem; }
+  .chat :global(.typing) { display: inline-flex; gap: 3px; padding: 0.7rem 0.85rem; }
+  .chat :global(.typing i) { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); animation: dot 1s infinite; }
+  .chat :global(.typing i:nth-child(2)) { animation-delay: 0.15s; }
+  .chat :global(.typing i:nth-child(3)) { animation-delay: 0.3s; }
+  @keyframes dot { 0%, 60%, 100% { opacity: 0.3; transform: none; } 30% { opacity: 1; transform: translateY(-2px); } }
+</style>
+
+<script>
+  import { demo, $, type Ctx } from '../../scripts/demo';
+  const root = $(document, '[data-phone]');
+  const chat = $(root, '[data-chat]');
+  const status = $(root, '[data-status]');
+
+  const add = (who: 'you' | 'milo', html: string) => {
+    const li = document.createElement('li');
+    li.className = `msg ${who}`;
+    li.innerHTML = html;
+    chat.append(li);
+    return li;
+  };
+  const miloTyping = async (ctx: Ctx, ms: number) => {
+    status.textContent = 'working on your Mac…';
+    const t = add('milo', '<span class="typing" aria-label="Milo is typing"><i></i><i></i><i></i></span>');
+    t.style.padding = '0';
+    await ctx.wait(ms);
+    t.remove();
+    status.textContent = 'on your Mac';
+  };
+
+  demo(root, async (ctx) => {
+    await ctx.wait(500);
+    add('you', "Can you send me the car insurance letter? It's somewhere on the Mac.");
+    await ctx.wait(700);
+    await miloTyping(ctx, 1800);
+    const ask = add('milo', 'Found it: Car insurance 2026.pdf, in Documents. Send it here?<div class="msg-btns"><button type="button" data-y>Send it</button><button type="button" data-n>No</button></div>');
+    const y = $<HTMLButtonElement>(ask, '[data-y]'), n = $<HTMLButtonElement>(ask, '[data-n]');
+    // wait for a tap, or answer by itself after a moment
+    const yes = await new Promise<boolean>((ok) => {
+      y.addEventListener('click', () => ok(true));
+      n.addEventListener('click', () => ok(false));
+      ctx.wait(3200).then(() => ok(true), () => ok(false));
+    });
+    y.disabled = n.disabled = true;
+    if (!ctx.live) return;
+    add('you', yes ? 'Send it' : 'No');
+    await ctx.wait(600);
+    if (!yes) { add('milo', "Okay, I won't send it."); return; }
+    await miloTyping(ctx, 900);
+    add('milo', '<span class="file"><span class="file-ic">PDF</span><span>Car insurance 2026.pdf<small>214 KB</small></span></span>');
+    await ctx.wait(1300);
+    add('you', "Thanks. What's on tomorrow?");
+    await ctx.wait(500);
+    await miloTyping(ctx, 1100);
+    add('milo', 'Dentist at nine, lunch with Anna at one.');
+  }, {
+    reset() { chat.textContent = ''; status.textContent = 'on your Mac'; },
+  });
+</script>

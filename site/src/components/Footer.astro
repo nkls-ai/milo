@@ -1,0 +1,30 @@
+---
+import Character from './Character.astro';
+---
+<footer class="foot">
+  <div class="wrap foot-row">
+    <div class="foot-brand">
+      <span class="foot-milo"><Character id="foot" pose="sleepy" extra={{ extras: ['zzz'] }} blink="off" small /></span>
+      <span><b>Milo</b>, your coworker on the Mac.</span>
+    </div>
+    <ul class="foot-links">
+      <li><a href="#trust">Privacy</a></li>
+      <li><a href="#pricing">Pricing</a></li>
+      <li><a href="#faq">Questions</a></li>
+      <li><a href="#top">Back to the top</a></li>
+    </ul>
+    <p class="note foot-note">No cookies, no tracking. © 2026</p>
+  </div>
+</footer>
+
+<style>
+  .foot { border-top: 1px solid var(--rule); padding-block: 2rem calc(2rem + env(safe-area-inset-bottom)); }
+  .foot-row { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 2rem; }
+  .foot-brand { display: flex; align-items: center; gap: 0.6rem; font-size: 0.98rem; }
+  .foot-milo { width: 2.6rem; height: 2.6rem; }
+  .foot-links { display: flex; flex-wrap: wrap; gap: 0.2rem 1.2rem; list-style: none; margin: 0; padding: 0; font-size: 0.95rem; }
+  .foot-links a { color: var(--ink-2); text-decoration: none; }
+  .foot-links a:hover { color: var(--ink); text-decoration: underline; }
+  .foot-note { margin-left: auto; }
+  @media (max-width: 40rem) { .foot-note { margin-left: 0; width: 100%; padding-right: 5rem; } }
+</style>
