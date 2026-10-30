@@ -91,3 +91,8 @@ class CloudHearing:
         except VoiceUnavailable as e:
             self.failed(str(e))
             return None
+        except Exception as e:
+            # Anything else (a library bug, a malformed answer) must not leave Milo stuck transcribing.
+            log.exception("cloud transcription crashed")
+            self.failed(str(e) or type(e).__name__)
+            return None

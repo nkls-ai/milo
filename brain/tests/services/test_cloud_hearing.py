@@ -3,7 +3,7 @@
 import asyncio
 
 from milo.core.events import Heard, Partial
-from milo.core.types import ListenMode, LiveMode
+from milo.core.types import ListenMode, LiveMode, MiloState
 from milo.services.cloud_hearing import RETRY_S, CloudHearing
 from milo.services.listening import Listening
 from tests.fakes import FakeAudioInput, FakeLiveModel, FakeStreamingTranscriber, FakeTranscriber
@@ -53,6 +53,35 @@ def test_when_the_cloud_fails_the_recording_is_transcribed_locally_and_milo_says
     assert [h.text for h in s.sink.of(Heard)] == ["wie spät ist es", "und jetzt", "wieder da"]
     assert len(cloud.sessions) == 2, "the second recording didn't try the cloud while it was down"
     assert switches == ["ElevenLabs unreachable"]
+
+
+class _Broken(FakeStreamingTranscriber):
+    """A session whose finish() fails with something other than VoiceUnavailable, like a bug in a library."""
+
+    def session(self, on_partial=None):
+        session = super().session(on_partial)
+
+        async def finish():
+            raise RuntimeError("the websocket library broke")
+
+        session.finish = finish
+        return session
+
+
+def test_an_unexpected_cloud_error_falls_back_to_the_mac_instead_of_leaving_milo_transcribing():
+    switches = []
+    s = Stack(model=FakeLiveModel(["[neutral] Neun."]), transcriber=FakeTranscriber("wie spät ist es"),
+              hearing=CloudHearing(_Broken(), on_switch=switches.append))
+
+    async def run():
+        s.listening.start(ListenMode.TALK)
+        await s.listening.stop()
+        await settle()
+
+    asyncio.run(run())
+    assert [h.text for h in s.sink.of(Heard)] == ["wie spät ist es"], "transcribed here instead"
+    assert s.ui.state is not MiloState.TRANSCRIBING
+    assert switches, "and the cloud rests for a while"
 
 
 def test_dictation_stays_on_the_mac_unless_allowed():
