@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 import signal
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
@@ -33,8 +34,8 @@ async def run(cmd: list[str], *, cwd: Path, timeout_s: float,
     the line that carries the answer: then run() returns at once (exit code 0, stderr so far) and leaves the
     CLI to finish on its own, so nobody waits for it to shut down.
 
-    The CLI runs in its own process group with everything it starts (tool servers, shell commands). A
-    timeout, or cancelling the call, ends the whole group.
+    The CLI runs in its own process group. A timeout, or cancelling the call, ends it and every process it
+    started, including those in groups of their own (codex starts each shell command that way).
     """
     try:
         # stdin must be closed: `codex exec` waits for piped stdin otherwise and hangs.
@@ -97,25 +98,56 @@ async def run(cmd: list[str], *, cwd: Path, timeout_s: float,
 
 
 async def stop(proc: asyncio.subprocess.Process, grace_s: float = STOP_GRACE_S) -> None:
-    """SIGTERM the CLI's process group, SIGKILL it if it is still there after `grace_s`."""
+    """SIGTERM the CLI and everything it started, SIGKILL what is still there after `grace_s`.
+
+    The process tree is read before the first signal: once the CLI is gone its children belong to launchd
+    and can't be found from it any more.
+    """
     if proc.returncode is not None:
         return
-    _signal_group(proc, signal.SIGTERM)
+    tree = descendants(proc.pid)
+    _signal(proc.pid, tree, signal.SIGTERM)
     try:
         await asyncio.wait_for(proc.wait(), grace_s)
     except TimeoutError:
-        _signal_group(proc, signal.SIGKILL)
-        await proc.wait()
-
-
-def _signal_group(proc: asyncio.subprocess.Process, sig: int) -> None:
+        pass
+    _signal(proc.pid, tree, signal.SIGKILL)
     try:
-        os.killpg(proc.pid, sig)
-    except (ProcessLookupError, PermissionError):
+        # wait() also waits for the pipes, which a process that escaped the tree could hold open forever.
+        await asyncio.wait_for(asyncio.shield(proc.wait()), grace_s)
+    except TimeoutError:
+        log.warning("%s was killed, but something it started still holds its output open", proc.pid)
+
+
+def descendants(pid: int) -> list[int]:
+    """Every process below `pid`, children first. Empty if ps can't be read."""
+    try:
+        out = subprocess.run(["ps", "-A", "-o", "pid=,ppid="], capture_output=True, text=True, timeout=2).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    children: dict[int, list[int]] = {}
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+            children.setdefault(int(parts[1]), []).append(int(parts[0]))
+    found, todo = [], list(children.get(pid, []))
+    while todo:
+        child = todo.pop()
+        found.append(child)
+        todo.extend(children.get(child, []))
+    return found
+
+
+def _signal(root: int, tree: list[int], sig: int) -> None:
+    """`sig` to the CLI's group and to each process it started, as a group when it leads one."""
+    for pid in (root, *tree):
         try:
-            proc.send_signal(sig)
-        except ProcessLookupError:
-            pass
+            os.killpg(pid, sig)  # fails for a process that leads no group
+        except (ProcessLookupError, PermissionError):
+            try:
+                os.kill(pid, sig)
+            except (ProcessLookupError, PermissionError):
+                pass
 
 
 def _linger(proc: asyncio.subprocess.Process, stderr: asyncio.Task) -> None:

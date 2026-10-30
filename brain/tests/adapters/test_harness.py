@@ -291,8 +291,10 @@ def test_the_reply_comes_as_soon_as_codex_finishes_its_turn_not_when_it_exits(tm
 
 
 def test_cancelling_a_turn_ends_the_cli_and_what_it_started(tmp_path, ctx):
+    """Like codex, the fake starts its command in a session of its own, out of reach of a group kill."""
     pidfile = tmp_path / "child.pid"
-    binary = fake_cli(tmp_path, f'sleep 30 &\necho $! > "{pidfile}"\nwait\n')
+    child = f"import os, time; os.setsid(); open('{pidfile}', 'w').write(str(os.getpid())); time.sleep(30)"
+    binary = fake_cli(tmp_path, f'python3 -c "{child}" &\nwait\n')
 
     async def go():
         turn = asyncio.create_task(codex(ctx, binary, timeout_s=60).reply("hi", None))
