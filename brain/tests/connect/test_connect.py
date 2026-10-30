@@ -265,3 +265,26 @@ def _tiny_xlsx(path: Path) -> None:
         z.writestr("xl/worksheets/sheet1.xml",
                    f'<worksheet {ns}><sheetData><row><c t="s"><v>0</v></c><c><v>900</v></c></row>'
                    f'<row><c t="s"><v>1</v></c><c><v>84.2</v></c></row></sheetData></worksheet>')
+
+
+def test_library_is_out_of_reach_whatever_its_case(tmp_path):
+    (tmp_path / "LIBRARY" / "Keychains").mkdir(parents=True)
+    secret = tmp_path / "LIBRARY" / "Keychains" / "login.txt"
+    secret.write_text("x")
+    assert not _files.allowed(secret, tmp_path, home=tmp_path)
+    assert not _files.allowed(secret, tmp_path / "LIBRARY", home=tmp_path), "a scope inside Library doesn't help"
+    (tmp_path / "Documents").mkdir()
+    ok = tmp_path / "Documents" / "library card.txt"
+    ok.write_text("x")
+    assert _files.allowed(ok, tmp_path, home=tmp_path)
+
+
+def test_questions_name_every_recipient_and_the_shortcut_input(home):
+    brain = FakeBrain()
+    server = mcp_server(toolbox(home, brain))
+    call(server, "shortcuts_run", {"name": "Text Anna I'm late", "input": "20 minutes"})
+    assert brain.asked[-1][1] == "I'm about to run your shortcut “Text Anna I'm late” with “20 minutes”. Go ahead?"
+    assert wording.question("mail_draft", {"to": ["Anna <anna@example.com>", "boss@example.com"]}) == \
+        "Write a draft to Anna <anna@example.com>, boss@example.com? It stays in Mail until you send it."
+    ok, text = call(server, "mail_draft", {"to": ["anna@example.com\nevil@example.com"], "body": "x"})
+    assert not ok and text == "each entry of to must be one line"

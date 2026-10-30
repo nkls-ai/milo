@@ -111,12 +111,15 @@ def question(tool: str, args: dict) -> str:
         case "reminders_complete":
             return "Tick off that reminder?"
         case "mail_draft":
-            to = _to(args)
-            return f"Write a draft to {to}? It stays in Mail until you send it." if to else "Write a mail draft?"
+            to = args.get("to") or []
+            everyone = ", ".join(str(a).strip() for a in (to if isinstance(to, list) else [to]))
+            return (f"Write a draft to {everyone}? It stays in Mail until you send it." if everyone.strip()
+                    else "Write a reply draft? It stays in Mail until you send it.")
         case "notes_create":
             return f"Make a new note called {_quoted(args.get('title'), 50)}?"
         case "notes_append":
             return "Add this to your note?"
         case "shortcuts_run":
-            return f"I'm about to run your shortcut {_quoted(args.get('name'), 50)}. Go ahead?"
+            given = f" with {_quoted(args['input'], 80)}" if args.get("input") else ""
+            return f"I'm about to run your shortcut {_quoted(args.get('name'), 50)}{given}. Go ahead?"
     return (title(tool, args) or "Go ahead") + "?"

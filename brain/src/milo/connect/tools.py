@@ -71,8 +71,10 @@ def _limit(args: dict, default: int = 20) -> int:
 
 def _list(args: dict, key: str) -> list[str]:
     value = args.get(key) or []
-    items = value if isinstance(value, list) else [value]
-    return [str(v).strip() for v in items if str(v).strip()]
+    items = [str(v).strip() for v in (value if isinstance(value, list) else [value]) if str(v).strip()]
+    if any(not c.isprintable() for item in items for c in item):
+        raise ToolError(f"each entry of {key} must be one line")
+    return items
 
 
 def _events(cal, args):

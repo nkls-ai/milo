@@ -36,13 +36,23 @@ _SHEET_NS = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 MAX_XML_BYTES = 30 * 1024 * 1024
 
 
-def allowed(path: Path, scope: Path) -> bool:
-    """Inside `scope`, not in ~/Library or any hidden folder."""
+def allowed(path: Path, scope: Path, home: Path | None = None) -> bool:
+    """Inside `scope`, not in ~/Library or any hidden folder. Names compare without case, like APFS does."""
     try:
-        rel = path.resolve().relative_to(scope.resolve())
+        real = path.resolve()
+        rel = real.relative_to(scope.resolve())
     except (ValueError, OSError):
         return False
-    return not any(part.startswith(".") for part in rel.parts) and rel.parts[:1] != ("Library",)
+    if any(part.startswith(".") for part in rel.parts):
+        return False
+    for root in (scope.resolve(), (home or Path.home()).resolve()):
+        try:
+            under = real.relative_to(root).parts
+        except ValueError:
+            continue
+        if under[:1] and under[0].casefold() == "library":
+            return False
+    return True
 
 
 def checked(path: str, scope: Path) -> Path:
