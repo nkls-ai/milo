@@ -33,7 +33,7 @@ public struct OverlayView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         .animation(motion, value: model.bubble)
         .animation(motion, value: model.state)
-        // In with the skin's spring, out quickly: a tap or a ⌥-shortcut must not leave a fading light behind.
+        // In with Milo's spring, out quickly: a tap or a ⌥-shortcut must not leave a fading light behind.
         .animation(model.voicePhase == nil ? .easeOut(duration: 0.12) : motion, value: model.voicePhase)
         .animation(motion, value: model.question)
         .animation(motion, value: model.looking)
@@ -41,7 +41,7 @@ public struct OverlayView: View {
         .themed(by: model)
     }
 
-    /// The skin's own spring: bouncy for the dragon, crisp for Kit, floaty for Glow.
+    /// Milo's own spring.
     private var motion: Animation {
         model.theme.motion.animation(reduced: reduceMotion)
     }

@@ -484,25 +484,39 @@ enum WrenRig {
         return path
     }
 
+    /// The beak: a short upper bill pointing down at the viewer, the lower bill swinging down below it to
+    /// open the mouth. Open, the upper bill lifts a touch and shortens, as the head tips back to speak.
     private static func drawBeak(_ ctx: CGContext, open: Double, tip: Double, turn t: Double) {
-        if open > 0.04 {
+        let d = open * 11
+        let upperTip = 13 - open * 3
+        if open > 0.03 {
+            // the lower bill: a V-shaped band whose tip drops as he opens
+            let lower = CGMutablePath()
+            lower.move(to: CGPoint(x: -6, y: 3 + d * 0.4))
+            lower.addQuadCurve(to: CGPoint(x: tip * 0.8 - 0.4, y: 10.5 + d), control: CGPoint(x: -2.8, y: 8.5 + d))
+            lower.addQuadCurve(to: CGPoint(x: 6, y: 3 + d * 0.4), control: CGPoint(x: 2.6, y: 8.5 + d))
+            lower.closeSubpath()
+            fillLinear(ctx, lower, [WrenColors.beakHi, WrenColors.beakLo], top: 3, bottom: 11 + d)
+            // the mouth inside it, with a hint of tongue once it is properly open
             let mouth = CGMutablePath()
-            mouth.move(to: CGPoint(x: -5, y: 1)); mouth.addQuadCurve(to: CGPoint(x: 5, y: 1), control: CGPoint(x: 0, y: 2 + open * 9))
+            mouth.move(to: CGPoint(x: -5, y: 2.5))
+            mouth.addQuadCurve(to: CGPoint(x: tip * 0.8 - 0.3, y: 8.2 + d * 0.86), control: CGPoint(x: -2.6, y: 6 + d * 0.8))
+            mouth.addQuadCurve(to: CGPoint(x: 5, y: 2.5), control: CGPoint(x: 2.4, y: 6 + d * 0.8))
             mouth.closeSubpath()
             fill(ctx, mouth, WrenColors.mouth)
+            if open > 0.3 {
+                ctx.saveGState()
+                ctx.addPath(mouth); ctx.clip()
+                let k = smooth(0.3, 0.8, open)
+                fill(ctx, CGPath(ellipseIn: CGRect(x: tip * 0.6 - 3.4, y: 5 + d * 0.62, width: 6.8, height: 5 * k + 1),
+                                 transform: nil), WrenColors.rgb(0xC25466))
+                ctx.restoreGState()
+            }
         }
-        let o4 = open * 4, o5 = open * 5, o7 = open * 7
-        let lower = CGMutablePath()
-        lower.move(to: CGPoint(x: -4.5, y: 2 + o4))
-        lower.addQuadCurve(to: CGPoint(x: 4.5, y: 2 + o4), control: CGPoint(x: 0, y: 1 + o4))
-        lower.addQuadCurve(to: CGPoint(x: tip - 0.5, y: 10 + o7), control: CGPoint(x: tip, y: 9 + o7))
-        lower.addQuadCurve(to: CGPoint(x: -4.5, y: 2 + o4), control: CGPoint(x: -2, y: 7 + o5))
-        lower.closeSubpath()
-        fill(ctx, lower, WrenColors.beakLo)
         let upper = CGMutablePath()
         upper.move(to: CGPoint(x: -6.5, y: 0))
         upper.addQuadCurve(to: CGPoint(x: 6.5, y: 0), control: CGPoint(x: 0, y: -4.5))
-        upper.addQuadCurve(to: CGPoint(x: tip, y: 13), control: CGPoint(x: 3 + t * 3, y: 6))
+        upper.addQuadCurve(to: CGPoint(x: tip, y: upperTip), control: CGPoint(x: 3 + t * 3, y: 6))
         upper.addQuadCurve(to: CGPoint(x: -6.5, y: 0), control: CGPoint(x: -3 + t * 3, y: 6))
         upper.closeSubpath()
         fillLinear(ctx, upper, [WrenColors.beakHi, WrenColors.beakLo], top: -4, bottom: 13)

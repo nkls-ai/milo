@@ -30,6 +30,9 @@ struct WrenRenderTests {
         add("stretch") { $0.squash = 0.15; $0.lift = 10 }
         add("lean") { $0.lean = -10; $0.headTilt = -12; $0.scarf = 25 }
         add("thinking") { $0.gazeX = 0.8; $0.gazeY = -0.8; $0.browR = 0.8; $0.browTiltL = -0.4; $0.headTilt = 8 }
+        for open in [0.25, 0.5, 0.75, 1.0] {
+            add("beak \(open)") { $0.beak = open }
+        }
         return list
     }()
 
@@ -51,7 +54,7 @@ struct WrenRenderTests {
             let image = try #require(ctx.makeImage())
             try write(image, "wren-poses-\(dark ? "dark" : "light")")
         }
-        for (name, pose) in Self.poses.prefix(4) {
+        for (name, pose) in Self.poses.prefix(4) + Self.poses.filter({ $0.0 == "beak 1.0" || $0.0 == "beak 0.5" }) {
             let image = try #require(WrenRender.image(pose, points: 120, scale: 4))
             try write(image, "wren-zoom-\(name)")
         }

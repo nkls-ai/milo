@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A soft border in the skin's colours around the window Milo is working in, with a small "Milo is working here" tag and
+/// A soft border in Milo's colours around the window Milo is working in, with a small "Milo is working here" tag and
 /// a Stop button. Fills its panel; the panel is placed over the window and follows it.
 struct WorkingOutlineView: View {
     /// Plain, simple English; localized where translations exist.
@@ -10,7 +10,7 @@ struct WorkingOutlineView: View {
 
     var onStop: () -> Void
     /// The skin he wears; the outline passes a new one when `[ui] character` changes.
-    var theme = Theme.for(.pip)
+    var theme = Theme.for(.milo)
 
     var body: some View {
         WorkingEdge(theme: theme, radius: 12, width: 3)
@@ -21,7 +21,7 @@ struct WorkingOutlineView: View {
     }
 }
 
-/// The glowing edge around where Milo works, in the skin's colours. It breathes slowly, or holds still with
+/// The glowing edge around where Milo works, in Milo's colours. It breathes slowly, or holds still with
 /// Reduce Motion; with Increase Contrast it is thicker and steady.
 struct WorkingEdge: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

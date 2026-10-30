@@ -177,6 +177,12 @@ final class WrenView: NSView {
         if motion.settled { run() }
     }
 
+    /// One frame by hand, for measuring: what a display link tick does.
+    func step(_ dt: Double) {
+        motion.advance(by: dt)
+        apply()
+    }
+
     override func removeFromSuperview() {
         stopLink()
         wakeTimer?.invalidate()

@@ -39,7 +39,7 @@ public struct ConversationView: View {
                 RoutinesPanel(routines: model.routines, open: $showRoutines, act: model.routine)
             }
             if !model.helpers.isEmpty {
-                HelpersPanel(helpers: model.helpers, entries: transcript.entries, character: model.character,
+                HelpersPanel(helpers: model.helpers, entries: transcript.entries,
                              open: { settings.focus = $0 }, stop: model.stopHelper)
             }
             if transcript.entries.isEmpty && model.state == .idle {
@@ -366,8 +366,8 @@ struct InputBar: View {
     }
 }
 
-/// Colours for what a task is doing, the same under every skin, and the dot by Milo's lines.
-/// Everything else in the window comes from the skin's `Theme`.
+/// Colours for what a task is doing, always the same, and the dot by Milo's lines.
+/// Everything else in the window comes from Milo's `Theme`.
 enum WindowColors {
     static let running = dynamic(light: NSColor(Palette.think).blended(withFraction: 0.25, of: .black)!,
                                  dark: NSColor(Palette.think))

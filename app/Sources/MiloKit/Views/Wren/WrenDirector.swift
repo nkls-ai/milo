@@ -142,7 +142,6 @@ struct WrenDirector {
             p.browL = 0.35; p.browR = 0.35
             p.squash += 0.02
         case .excited:
-            p.lowerL = 0.35; p.lowerR = 0.35
             p.lidL = 0; p.lidR = 0
             p.eyeL = 1.12; p.eyeR = 1.12
             p.beak = max(p.beak, 0.3)

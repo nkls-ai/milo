@@ -49,14 +49,6 @@ public struct SettingsView: View {
                 Callout(icon: "arrow.clockwise", text: "Some changes start working after Milo restarts.",
                         button: "Restart Milo", action: restart)
             }
-            if let look = report["ui", "character"] {
-                ThemedCard {
-                    VStack(alignment: .leading, spacing: 12) {
-                        CardHeading(icon: "sparkles", title: "Look", detail: "Pick who lives in your corner.")
-                        LookPicker(setting: look) { settings.change("ui", "character", to: $0) }
-                    }
-                }
-            }
             if let updates = report["chat", "updates"] {
                 ThemedCard {
                     VStack(alignment: .leading, spacing: 10) {
@@ -123,58 +115,3 @@ public struct SettingsView: View {
     }
 }
 
-/// One tile per look, each a small live Milo in his own colours. Hovering one makes him perk up and hop; the
-/// chosen one is ringed in his colour.
-struct LookPicker: View {
-    let setting: Setting
-    let choose: (JSONValue) -> Void
-    @State private var hovered: CharacterStyle?
-
-    var body: some View {
-        HStack(spacing: 6) {
-            ForEach(Array(setting.choices.enumerated()), id: \.offset) { _, choice in
-                if let name = choice.value.string, let style = CharacterStyle(rawValue: name) {
-                    LookTile(style: style, label: choice.label, chosen: choice.value == setting.value,
-                             hovered: hovered == style) { choose(.string(style.rawValue)) }
-                        .onHover { hovered = $0 ? style : (hovered == style ? nil : hovered) }
-                }
-            }
-        }
-        .frame(maxWidth: .infinity)
-    }
-}
-
-private struct LookTile: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let style: CharacterStyle
-    let label: String
-    let chosen: Bool
-    let hovered: Bool
-    let choose: () -> Void
-
-    var body: some View {
-        let own = Theme.for(style)
-        Button(action: choose) {
-            VStack(spacing: 4) {
-                CharacterFigure(for: style, emotion: hovered ? .excited : chosen ? .happy : .neutral, size: 70)
-                    .frame(width: 70, height: 70)
-                Text(label)
-                    .font(.system(size: 12.5, weight: chosen ? .semibold : .medium, design: .rounded))
-                    .foregroundStyle(chosen ? own.primary : own.ink.opacity(0.7))
-            }
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity)
-            .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(own.tint.opacity(chosen || hovered ? 1 : 0)))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(own.primary.opacity(chosen ? 1 : 0), lineWidth: 2))
-            .scaleEffect(hovered && !reduceMotion ? 1.04 : 1)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .animation(own.motion.animation(reduced: reduceMotion), value: hovered)
-        .animation(own.motion.animation(reduced: reduceMotion), value: chosen)
-        .accessibilityLabel(label)
-        .accessibilityAddTraits(chosen ? .isSelected : [])
-    }
-}

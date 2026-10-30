@@ -96,29 +96,20 @@ struct OverlayRenderTests {
     @Test func renderEveryMoment() throws {
         _ = NSApplication.shared
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        for skin in skins {
-            for dark in [false, true] {
-                for moment in Self.moments {
-                    let model = MiloModel(scheduler: ManualScheduler())
-                    model.connected = true
-                    model.character = skin
-                    moment.set(model)
-                    try render(model, name: "overlay-\(skin.rawValue)-\(dark ? "dark" : "light")-\(moment.name)",
-                               dark: dark)
-                }
+        for dark in [false, true] {
+            for moment in Self.moments {
+                let model = MiloModel(scheduler: ManualScheduler())
+                model.connected = true
+                moment.set(model)
+                try render(model, name: "overlay-\(dark ? "dark" : "light")-\(moment.name)", dark: dark)
             }
         }
-    }
-
-    private var skins: [CharacterStyle] {
-        let only = ProcessInfo.processInfo.environment["MILO_SKINS"]?.split(separator: ",").map(String.init)
-        return CharacterStyle.allCases.filter { only?.contains($0.rawValue) ?? true }
     }
 
     private func render(_ model: MiloModel, name: String, dark: Bool) throws {
         let size = OverlayPanel.size
         let view = ZStack {
-            SkinRenderTests.Wallpaper(dark: dark)
+            Wallpaper(dark: dark)
             OverlayView(model: model)
         }
         .frame(width: size.width, height: size.height)

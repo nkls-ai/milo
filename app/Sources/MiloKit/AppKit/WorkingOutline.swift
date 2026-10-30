@@ -23,7 +23,7 @@ public final class WorkingOutline {
         // Only the tag and its Stop button take clicks; the rest of the panel is see-through to the app below.
         let hosting = ClickThroughHostingView(rootView: WorkingOutlineView(onStop: onStop))
         panel.contentView = hosting
-        // The skin's colours, changed only when the skin is.
+        // Milo's colours, changed only when the theme is.
         restyle = model.$character.removeDuplicates().sink { [weak hosting] in
             hosting?.rootView = WorkingOutlineView(onStop: onStop, theme: Theme.for($0))
         }

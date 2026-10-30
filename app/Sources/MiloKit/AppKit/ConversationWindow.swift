@@ -23,7 +23,7 @@ public final class ConversationWindow: NSWindow {
             transcript: controller.transcript, model: controller.model, settings: settings,
             send: { [weak controller] text, speak in controller?.send(text: text, speak: speak) })
             .themed(by: controller.model))
-        // The title bar shows the window's own colour: keep it the skin's paper.
+        // The title bar shows the window's own colour: keep it Milo's paper.
         restyle = controller.model.$character.sink { [weak self] in
             self?.backgroundColor = Theme.for($0).appKit.tint
         }

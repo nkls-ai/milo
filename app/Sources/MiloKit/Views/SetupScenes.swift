@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Little looping scenes in the setup window that show what Milo does with each permission, drawn with the
-/// active skin. They play only while the window is open; with Reduce Motion each shows its telling moment still.
+/// wren himself. They play only while the window is open; with Reduce Motion each shows its telling moment still.
 struct PermissionScene: View {
     @Environment(\.miloTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

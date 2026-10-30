@@ -39,18 +39,28 @@ import Testing
         #expect(opened == ["h1"])
     }
 
-    @Test func eachStatusGetsItsOwnLookOnTheSameCharacter() {
-        let figure = HelperBird.figureModel(for: Self.working, character: .classic)
-        #expect((figure.character, figure.state, figure.emotion, figure.drowsy) == (.classic, .thinking, .thinking, false))
-        let looks: [(HelperInfo.Status, MiloState, Emotion, Bool)] = [
-            (.queued, .idle, .neutral, true), (.needsYou, .idle, .concerned, false), (.done, .idle, .happy, false),
-            (.failed, .idle, .confused, false), (.stopped, .idle, .neutral, false),
+    @Test func eachStatusGetsItsOwnPerformance() {
+        let looks: [(HelperInfo.Status, MiloState, Emotion, Bool, Bool)] = [
+            (.working, .thinking, .thinking, false, false), (.queued, .idle, .neutral, true, false),
+            (.needsYou, .idle, .neutral, false, true), (.done, .idle, .happy, false, false),
+            (.failed, .idle, .concerned, false, false), (.stopped, .idle, .neutral, false, false),
         ]
-        for (status, state, emotion, drowsy) in looks {
-            HelperBird.update(figure, for: HelperInfo(id: "h1", title: "X", status: status), character: .pip)
-            #expect((figure.character, figure.state, figure.emotion, figure.drowsy) == (.pip, state, emotion, drowsy))
+        for (status, state, emotion, asleep, asking) in looks {
+            let input = HelperBird.input(for: HelperInfo(id: "h1", title: "X", status: status))
+            #expect((input.state, input.emotion, input.asleep, input.asking) == (state, emotion, asleep, asking), "\(status)")
+            #expect(input.flight == .perched && input.connected)
         }
-        #expect(figure.connected)
+        #expect(HelperBird.input(for: Self.working, arriving: true).flight.airborne, "a new helper lands")
+    }
+
+    @Test func labelsBreakBetweenWords() {
+        // six points a letter, a 48 point line: eight letters fit
+        let measure = { (s: String) in CGFloat(s.count * 6) }
+        #expect(HelperBird.label("Sort downloads by month", width: 48, measure: measure) == "Sort downloads…")
+        #expect(HelperBird.label("Budget table", width: 48, measure: measure) == "Budget table")
+        #expect(HelperBird.label("Dentist email to Dr Lee", width: 48, measure: measure) == "Dentist email…")
+        #expect(!HelperBird.label("Sort downloads by month", width: 48, measure: measure).contains("downloa…"))
+        #expect(HelperBird.label("", width: 48, measure: measure) == "")
     }
 
     @Test func onlyQueuedWorkingAndWaitingHelpersAreActive() {
