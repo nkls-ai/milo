@@ -13,8 +13,7 @@
 
 - Idle CPU awake is still above 1%: about 1.8 to 3% for a release build with nobody touching the Mac (2026-10-30, on a busy machine; asleep 0.04%, before the skin system 7.2%). Repeating motion is in Core Animation now; what's left is each pose change (blinks, glances, the eyes following the cursor) redrawing the whole figure and every looping part's own hosting view, plus the springs' frames. Next: draw the eyes in their own small layer so a blink or a glance redraws only them.
 - Setup window: Automation is checked against Mail only, and macOS can only say while Mail is open. Check Notes too.
-- Pip pointing near the left screen edge: the bubble hangs to his left and can be cut off. Move the bubble to his right when he perches there.
-- Pip: a fold or flap animation when he takes off and lands, instead of starting mid-flap.
+- Milo pointing near the left screen edge: the bubble hangs to his left and can be cut off. Move the bubble to his right when he perches there.
 
 - Milo window: show heartbeat nudges and reminders in the transcript too (only turns and tasks are recorded now).
 - Helpers: a warm Claude worker process (like the chat model's) to save its start-up on every task. Codex can't be warmed, `codex exec` reads the whole prompt first.

@@ -1,6 +1,6 @@
 # Milo, the character
 
-This page says who Milo is, so the drawing, the animation and the persona prompt (`brain/src/milo/workspace_template/AGENTS.md`) agree. By default his body is Pip, a small round lavender bird. He can wear other looks, picked in Settings or with `[ui] character`; [the concept page](design/character-concepts.html) shows them all. Everything below holds for any of them.
+This page says who Milo is, so the drawing, the animation and the persona prompt (`brain/src/milo/workspace_template/AGENTS.md`) agree. His body is a small round lavender wren in a marigold scarf. [The design page](design/milo-character.html) shows how he was drawn and every state he has.
 
 He is written for someone who doesn't use AI. The test is the user's mom: in her sixties, good with email and photos, has heard of ChatGPT and never opened it. If she would find a line odd, cold or show-offy, it's wrong.
 
@@ -76,26 +76,65 @@ When he gets something wrong, he says so in one sentence, says what he'll do, an
 
 | Emotion | When | What his body does |
 |---|---|---|
-| neutral | most answers | Eyes open and following the cursor, small mouth, gentle float. |
-| happy | something worked, or you said something kind | Eyes curve up, cheeks flush, a small hop. Pip lifts his wings a little. |
-| excited | real good news, rarely | Bigger eyes, a sparkle, a bigger hop. |
-| thinking | working something out | Eyes up and to the side, looking one way then the other. Steady, not frantic. Pip ruffles his tuft and sways. |
-| concerned | something might go wrong, or before a can't-undo step | Brows tilt in, he leans back slightly and holds still. |
-| sad | bad news he has to pass on | Eyes droop, he sinks a little. Brief, then back to helping. |
-| sleepy | late at night, or 10 minutes without you | Eyes close, he yawns, breathes slower. Pip tucks in: feet hidden, tuft laid back, beak turned aside. Hover over him and he opens his eyes. |
-| confused | he didn't catch it, or it doesn't add up | One eye smaller, wavy mouth, a question mark. He says what he didn't get. |
+| neutral | most answers | Eyes wide open and following the cursor, beak shut, breathing. |
+| happy | something worked, or you said something kind | Eyes curve up into arches, cheeks flush, tail up, a small hop. |
+| excited | real good news, rarely | He fluffs up: bigger eyes, tuft high, brows up, beak open a little, tail fanned, a sparkle, a wing flutter. |
+| thinking | working something out | Eyes up and to the side, one brow up ("hm"), head tilted. A tap of the tail now and then, a bob every few beats. Steady, not frantic. |
+| concerned | something might go wrong, or before a can't-undo step | Brows tilt up in the middle, lids a little lower, tail down, he leans back slightly and holds still. |
+| sad | bad news he has to pass on | Eyes droop and look down, tail drops, he sinks a little. Brief, then back to helping. |
+| sleepy | late at night, or 10 minutes without you | Eyes close, his tuft lies flat, he yawns, snuggles into his scarf and breathes slower. Hover over him and he ruffles awake. |
+| confused | he didn't catch it, or it doesn't add up | One brow up and one down, head tilted, a double take, a question mark. He says what he didn't get. |
 
-## His looks
+## His body
 
-Every look gets the same signals (what he's doing, how he feels, where his eyes go, whether he's flying or pointing), so each one blinks, listens, thinks, speaks, sleeps, flies and points. Each brings its own colours and its own way of moving, and the windows, the bubble and the setup scenes take them on.
+A young wren about the size of a stamp, rounder than he is tall, like a sparrow fluffed up in the cold. He has to read as cute and young, never old or stern. What makes him cute is borrowed from Pip, the bird he used to be: big glossy eyes set low and wide with two catchlights and a sparkle, open and gently smiling at rest, a small beak low between them, pink cheeks, a cream belly, wing nubs and tiny feet. His head tilts a little toward you even at rest. What makes him Milo:
 
-| Look | `[ui] character` | Personality | His tells |
-|---|---|---|---|
-| Pip | `pip` | A small lavender bird, airy and gentle. | Ruffles his tuft when he thinks, tucks in to sleep, flaps to fly. |
-| Robot | `classic` | The purple robot with the antenna, steady and friendly. | The antenna glows in the colour of what he's doing; a little hand points. |
-| Dragon | `dragon` | A round teal dragon with tiny wings, little horns and a tail, warm and bouncy. | A puff of smoke while he thinks, a tiny spark when he's excited, sleeps curled around his tail. |
-| Kit | `kit` | A fox folded from warm paper, crisp and neat. | Ears move with his mood, one folds while he thinks; he becomes a paper plane to fly. |
-| Glow | `glow` | A lantern firefly in a night-blue sky, slow and floaty. | Brightens and dims as he talks, cools to an ember asleep, points with a beam of light. |
+- **The tuft.** Three soft feathers on his crown. They perk up while he listens, lie flat when he is sleepy or sad, fluff right up when he is surprised, and sway and bounce after every move. Soft feather ticks on his crown and fluffy points at his cheeks keep his head from looking bare.
+- **Brow marks.** Two short, soft arcs in a deeper lavender, set high over the eyes so he looks friendly by default. They lift, tilt and drop to say "hm?", worry or focus. Never white: white brows made him look like an old man.
+- **The mood tail.** A barred tail cocked up behind him. It rises with good news, fans while he listens with your voice, drops when something went wrong, and ticks when he waits for your yes or no.
+- **The marigold scarf.** A slim knitted band with a short loose end that swings when he moves. He tosses it over his shoulder to start a job and tugs it now and then.
+- **Lavender** body, the colour every window around him takes (`Theme.milo`), and marigold, his accent.
+
+He faces the middle of the screen a little, so from the bottom-right corner he looks at your work.
+
+## How he moves
+
+Every part of him is a number with its own spring (`Views/Wren/WrenPose.swift`): body parts are slow and heavy, eyes quick, and the tail, scarf and head loose, so they lag the body and settle after it. A state is a set of target numbers; a change of state is the springs travelling there, so nothing ever pops. Short authored moves (a hop, a nod, a tail tick, a take-off) play on top as smooth curves that start and end at rest. On screen:
+
+- **Breathing** at rest, slower when asleep.
+- **Blinks** that close fast, hold a beat and open slower, every few seconds, with a double blink now and then.
+- **Eyes** that jump to the cursor in quick saccades while it moves, and to what he points at.
+- **Squash and stretch** on every hop, landing and take-off, with a crouch before he leaves the ground.
+- **Follow-through**: the scarf end swings, the tail whips and the tuft wobbles when he hops, turns or lands; his head tilts after his body leans.
+- **Cute beats**: a little wiggle after a happy hop, eyes squinting when he's pleased, a fluff-up (rounder for a moment, tuft up, eyes wide) when he's surprised.
+- **Habits** when nothing happens, one every 5 to 12 seconds: a glance, a head tilt, a tail flick, a bob, a scarf tug, a ruffle, a wing stretch, a yawn late at night.
+
+With Reduce Motion he holds each pose still and changes between them without the moves.
+
+## Every state
+
+| State | What he does |
+|---|---|
+| idle | Breathes, blinks, follows the cursor, a habit every few seconds. |
+| listening | Perks up and leans toward you; his tuft stands up and his tail lifts and fans with your voice level, brows up. A small nod as each new word arrives. |
+| dictating | Leans in a little, eyes down to the words; the tail moves with your voice. |
+| thinking | "Hm": one brow up, head tilted, eyes up to the side, a tail tap or a bob every second or so. |
+| speaking | His beak opens with the level of his own voice, frame by frame; a nod and lifted brows on stressed words, a small wing gesture now and then. |
+| working | Tosses his scarf over his shoulder, brows set, and flies to the window he works in, pointing at it when he gets there. |
+| helpers | Each task is a mini wren next to him: it flies in, dozes while queued, thinks while working, asks with wide eyes, cheers when done and droops if it failed. |
+| asking you | Head tilted, eyes wide, his tail ticks every few seconds until you answer. |
+| success | A hop and a wiggle, eyes curved into a smile, tail and tuft up. After a job, a proud little puff. |
+| error | A flinch, then concerned brows and a dropped tail. |
+| asleep | Eyes shut, tuft laid flat, tucked into his scarf, slow breaths; he ruffles awake. |
+| flying | A crouch, a hop into the air, wings beating, scarf streaming behind; a soft landing with a squash. |
+
+The menu bar shows his silhouette with the tuft and the cocked tail; the app icon is him on a lavender tile.
+
+## What it costs
+
+He is drawn as a stack of Core Animation layers, one per part (`Views/Wren/WrenView.swift`). A part redraws only when its shape changes (a blink redraws the eyes, nothing else); moving, turning and squashing are layer transforms the window server composites. The springs run on a display link capped at 60 fps that stops as soon as he is still, and breathing is a Core Animation loop that costs the app nothing. The mic and voice levels reach him through `MiloModel.live`, outside SwiftUI, so they don't redraw the windows around him.
+
+CPU_NUMBERS
 
 ## When nothing is happening
 
