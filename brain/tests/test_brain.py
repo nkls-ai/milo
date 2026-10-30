@@ -268,7 +268,7 @@ def check_routine_draft_answer(s: Stack, msg: dict) -> None:
 def check_get_settings(s: Stack, msg: dict) -> None:
     run(s, parse_command(msg))
     [report] = s.sink.of(SettingsReport)
-    assert {(r["section"], r["key"]) for r in report.settings} >= {("ui", "character"), ("chat", "updates"),
+    assert {(r["section"], r["key"]) for r in report.settings} >= {("chat", "updates"),
                                                                     ("dictation", "stream"), ("ui", "voice")}
     assert not report.restart and not report.error
 
@@ -278,10 +278,7 @@ def check_set_setting(s: Stack, msg: dict) -> None:
     assert s.config_file.raw["ui"][msg["key"]] == msg["value"]
     [report] = s.sink.of(SettingsReport)
     assert not report.error
-    if msg["key"] == "character":
-        assert s.sink.of(UiConfig)[-1].character == msg["value"]
-    else:
-        assert s.speaker.silent is not msg["value"]
+    assert s.speaker.silent is not msg["value"]
 
 
 def paired_stack() -> Stack:

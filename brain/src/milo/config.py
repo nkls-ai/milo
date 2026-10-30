@@ -18,7 +18,9 @@ from .core.types import LiveMode
 log = logging.getLogger("milo.config")
 
 KEY_NAMES = ("fn", "right_option", "right_command", "right_control")
-CHARACTERS = ("pip", "classic", "dragon", "kit", "glow")
+CHARACTERS = ("milo",)
+# Looks Milo used to have. Old config files still name them; they all mean the wren now.
+RETIRED_CHARACTERS = ("pip", "classic", "dragon", "kit", "glow")
 PLUGGABLE = ("chat", "harness", "stt", "tts", "audio", "dictation", "connections", "messages")
 SECTIONS = (*PLUGGABLE, "ui", "heartbeat", "hands", "approvals", "logging", "memory", "routines", "meetings")
 _COMBO = re.compile(r"^((ctrl|control|option|alt|shift|cmd|command)\+)+[a-z0-9]+$|^f([1-9]|1[0-9])$")
@@ -87,9 +89,8 @@ class UiSettings:
     """A shortcut with at least one modifier (or an F key), held by nobody else. "" turns it off."""
     hands_free_max_s: float = 300.0
     """A recording locked on by a double tap stops by itself after this long."""
-    character: str = "pip"
-    """How Milo looks: "pip" (the bird), "classic" (the purple robot), "dragon", "kit" (the paper fox) or "glow"
-    (the lantern firefly)."""
+    character: str = "milo"
+    """How Milo looks. There is one Milo, a wren in a marigold scarf; the retired looks still load and mean him."""
     voice: bool = True
     """Say answers out loud. False: the bubble and the window only."""
 
@@ -104,8 +105,8 @@ class UiSettings:
             raise ConfigError(f"[ui] dictate_key and talk_key can't be the same key ({self.talk_key!r})")
         if self.hands_free_max_s <= 0:
             raise ConfigError("[ui] hands_free_max_s must be more than 0")
-        if self.character not in CHARACTERS:
-            raise ConfigError(f"[ui] character must be one of {', '.join(CHARACTERS)}")
+        if self.character not in CHARACTERS + RETIRED_CHARACTERS:
+            raise ConfigError('[ui] character must be "milo"')
 
 
 @dataclass(frozen=True)

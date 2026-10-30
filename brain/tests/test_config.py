@@ -108,6 +108,8 @@ def test_settings_values_come_from_the_file():
     assert config.tts.fallback == ""
     assert config.dictation.keep_history is False
     assert config.ui == UiSettings("right_command", "right_control")
+    assert Config.parse(MINIMAL).ui.character == "milo"
+    # a retired look from an old config still loads, and means the wren
     assert Config.parse(MINIMAL + '[ui]\ncharacter = "classic"\n').ui.character == "classic"
     assert config.heartbeat.enabled is False
     assert config.section("heartbeat")["tick_s"] == 5

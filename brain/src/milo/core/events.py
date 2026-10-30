@@ -93,7 +93,8 @@ class UiConfig(Event):
     """Sent once per connection. Key names: "fn", "right_option", "right_command", "right_control".
 
     hands_free_max_s caps a recording locked on by a double tap. whats_this_key is a combo such as
-    "ctrl+option+m" for the "What's this?" shortcut; "" turns it off. character is "pip" or "classic".
+    "ctrl+option+m" for the "What's this?" shortcut; "" turns it off. character is "milo"; an old config may
+    name a retired look, and the app shows Milo either way.
     """
 
     type: ClassVar[str] = "ui_config"
@@ -101,7 +102,7 @@ class UiConfig(Event):
     talk_key: str
     hands_free_max_s: float = 300.0
     whats_this_key: str = ""
-    character: str = "pip"
+    character: str = "milo"
 
 
 @dataclass(frozen=True)
@@ -494,7 +495,7 @@ class GetSettings(Command):
 
 @dataclass(frozen=True)
 class SetSetting(Command):
-    """Change one setting in config.toml, e.g. section "ui", key "character", value "dragon"."""
+    """Change one setting in config.toml, e.g. section "ui", key "voice", value false."""
 
     type: ClassVar[str] = "set_setting"
     section: str
