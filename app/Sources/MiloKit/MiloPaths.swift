@@ -1,0 +1,22 @@
+import Foundation
+
+/// Locations inside the ~/Milo workspace that the app uses.
+public struct MiloPaths: Sendable {
+    public let home: URL
+
+    public init(home: URL) {
+        self.home = home
+    }
+
+    /// `MILO_HOME` if set, else ~/Milo.
+    public static func resolve(environment: [String: String],
+                               userHome: URL = FileManager.default.homeDirectoryForCurrentUser) -> MiloPaths {
+        if let env = environment["MILO_HOME"], !env.isEmpty { return MiloPaths(home: URL(fileURLWithPath: env)) }
+        return MiloPaths(home: userHome.appendingPathComponent("Milo"))
+    }
+
+    public var socket: URL { home.appendingPathComponent("run/brain.sock") }
+    public var brainLog: URL { home.appendingPathComponent("logs/brain.log") }
+    /// Where a brain launched by the app writes stdout and stderr.
+    public var brainStdoutLog: URL { home.appendingPathComponent("logs/brain.stdout.log") }
+}

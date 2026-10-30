@@ -1,0 +1,104 @@
+# Milo configuration. Restart Milo after editing (menu bar > Restart brain).
+#
+# Every swappable part has `use = "<name>"` and a table `[<part>.<name>]` with that
+# implementation's options. Unknown keys are an error, so typos fail loudly.
+
+[chat]
+# The fast model Milo talks with. It streams, so he starts speaking after the first clause.
+use = "claude_live"
+# Start a fresh conversation after this many seconds without talking (also reloads memory).
+conversation_idle_reset_s = 600
+
+[chat.claude_live]
+binary = ""                       # empty: PATH, then ~/.local/bin
+model = "claude-sonnet-5-5"       # claude-haiku-5-5 is cheaper and about as fast
+effort = "low"
+
+[harness]
+# The agent that does real work (files, research, multi-step tasks) when the chat model hands one off.
+use = "codex"                     # codex | claude
+
+[harness.codex]
+binary = ""                       # empty: PATH, then ChatGPT.app's bundled codex
+model = ""
+reasoning_effort = "low"
+sandbox = "workspace-write"
+timeout_s = 180
+
+[harness.claude]
+binary = ""
+model = ""
+permission_mode = "acceptEdits"
+timeout_s = 180
+
+[stt]
+use = "mlx_whisper"
+
+[stt.mlx_whisper]
+model = "mlx-community/whisper-large-v3-turbo"
+language = ""                     # empty: auto-detect. "de" or "en" to pin it.
+vocabulary = "Milo, Codex, Claude" # names Whisper should spell right
+
+[tts]
+use = "omnivoice"                 # omnivoice | say
+fallback = "say"                  # used if `use` fails to load
+
+[tts.omnivoice]
+device = "mps"
+# Milo always speaks with one cloned voice. On first start it is designed from `instruct` with
+# `voice_seed` and saved to ~/Milo/state/voice/. Delete that folder to design a new one.
+instruct = "male, young adult, high pitch"
+voice_seed = 7
+ref_audio = ""                    # your own 2-5 s clip instead (overrides instruct)
+ref_text = ""                     # its transcript; empty: Whisper transcribes it
+# Diffusion steps per piece. On an M3 with the cloned voice: 6 = 0.6-0.8x real time and as clear as 8; 5 drops words.
+steps = 6
+
+[tts.say]
+voice = ""
+
+[audio]
+use = "sounddevice"
+
+[audio.sounddevice]
+input_device = ""                 # empty: system default
+output_device = ""
+
+[dictation]
+use = "fillers"                   # fillers | plain
+keep_history = true               # log dictations to dictation-history.jsonl
+
+[dictation.fillers]
+languages = ["en", "de"]
+
+[heartbeat]
+enabled = true
+tick_s = 30
+# Hard cap on harness calls the heartbeat may make per day. 0 = it never calls the LLM.
+llm_calls_per_day = 0
+min_gap_between_nudges_min = 20
+max_nudges_per_hour = 2
+# Never speak a nudge while one of these apps is frontmost.
+quiet_apps = ["zoom.us", "FaceTime", "Microsoft Teams", "Webex", "Keynote"]
+rules = ["reminders", "morning", "late_night", "welcome_back", "focus_break"]
+
+[heartbeat.morning]
+after_hour = 5
+before_hour = 12
+
+[heartbeat.late_night]
+from_hour = 1
+until_hour = 5
+
+[heartbeat.welcome_back]
+away_min = 30
+
+[heartbeat.focus_break]
+after_min = 90
+
+[heartbeat.reminders]
+grace_hours = 12
+
+[ui]
+dictate_key = "fn"                # fn | right_option | right_command | right_control
+talk_key = "right_option"

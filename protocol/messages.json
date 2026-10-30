@@ -1,0 +1,42 @@
+{
+  "comment": "One example of every wire message. Python (brain/tests/core/test_protocol.py) and Swift (app/Tests) both decode this file.",
+  "brain_to_app": [
+    {"type": "state", "state": "idle"},
+    {"type": "state", "state": "listening"},
+    {"type": "state", "state": "dictating"},
+    {"type": "state", "state": "transcribing"},
+    {"type": "state", "state": "thinking"},
+    {"type": "state", "state": "speaking"},
+    {"type": "emotion", "emotion": "happy"},
+    {"type": "bubble", "text": "Hi Niklas! Your standup is at 10."},
+    {"type": "heard", "text": "what's on my calendar"},
+    {"type": "level", "value": 0.42},
+    {"type": "dictation", "text": "Sounds good, ship it."},
+    {"type": "status", "text": "Mic unavailable: no input device"},
+    {"type": "partial", "text": "Sounds good, sh"},
+    {"type": "ui_config", "dictate_key": "fn", "talk_key": "right_option", "hands_free_max_s": 300.0},
+    {"type": "history", "entries": [
+      {"id": "5f2a9c1e04b7", "ts": "2026-10-30T09:12:03", "kind": "user", "text": "rename the photos from Friday", "via": "voice"},
+      {"id": "8d41e0a7c2f3", "ts": "2026-10-30T09:12:05", "kind": "milo", "text": "On it, I'll sort them by date.", "emotion": "happy", "done": true},
+      {"id": "c07b3e9d1a26", "ts": "2026-10-30T09:12:06", "kind": "task", "text": "Rename the photos from Friday in ~/Pictures by date taken", "status": "done", "result": "I renamed all 40 photos.", "steps": [
+        {"id": "item_1", "kind": "read", "title": "Looking in your Pictures folder", "detail": "ls ~/Pictures", "status": "done"}
+      ]}
+    ]},
+    {"type": "entry", "entry": {"id": "e9a0f61b7d58", "ts": "2026-10-30T09:14:00", "kind": "milo", "text": "", "emotion": "neutral", "done": false}},
+    {"type": "reply_delta", "id": "e9a0f61b7d58", "text": "Sure, "},
+    {"type": "activity", "task_id": "c07b3e9d1a26", "step": {"id": "item_2", "kind": "edit", "title": "Editing notes.md", "detail": "update /Users/you/Milo/notes.md", "status": "failed"}}
+  ],
+  "app_to_brain": [
+    {"type": "listen_start", "mode": "dictate"},
+    {"type": "listen_start", "mode": "talk"},
+    {"type": "listen_start", "mode": "dictate", "tentative": true},
+    {"type": "listen_confirm"},
+    {"type": "listen_stop"},
+    {"type": "listen_cancel"},
+    {"type": "text", "text": "hello Milo"},
+    {"type": "text", "text": "what's on today", "speak": false},
+    {"type": "get_history"},
+    {"type": "context", "app": "Xcode", "idle_s": 3.5},
+    {"type": "mute", "on": true}
+  ]
+}

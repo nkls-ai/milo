@@ -1,0 +1,203 @@
+"""Value types shared by every part of the brain. No I/O, no third-party imports except numpy."""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import StrEnum
+
+import numpy as np
+
+STT_SAMPLE_RATE = 16_000
+
+Audio = np.ndarray
+"""Mono float32 samples in [-1, 1]."""
+
+
+class Emotion(StrEnum):
+    NEUTRAL = "neutral"
+    HAPPY = "happy"
+    EXCITED = "excited"
+    THINKING = "thinking"
+    CONCERNED = "concerned"
+    SAD = "sad"
+    SLEEPY = "sleepy"
+    CONFUSED = "confused"
+
+    @classmethod
+    def parse(cls, value: object) -> Emotion:
+        try:
+            return cls(str(value))
+        except ValueError:
+            return cls.NEUTRAL
+
+
+class ListenMode(StrEnum):
+    DICTATE = "dictate"
+    TALK = "talk"
+
+
+class LiveMode(StrEnum):
+    """[dictation] stream: what happens while the user is still speaking."""
+
+    OFF = "off"  # transcribe on release only
+    PREVIEW = "preview"  # show the words live; paste one final pass on release
+    TYPE = "type"  # paste each phrase at the pause after it
+
+
+class MiloState(StrEnum):
+    IDLE = "idle"
+    LISTENING = "listening"
+    DICTATING = "dictating"
+    TRANSCRIBING = "transcribing"
+    THINKING = "thinking"
+    SPEAKING = "speaking"
+
+
+@dataclass(frozen=True)
+class Usage:
+    input_tokens: int = 0
+    cached_input_tokens: int = 0
+    output_tokens: int = 0
+
+
+REPLY_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["emotion", "say"],
+    "properties": {
+        "emotion": {"type": "string", "enum": [e.value for e in Emotion]},
+        "say": {"type": "string", "description": "What Milo says aloud. Plain text, no markdown."},
+    },
+}
+
+
+@dataclass(frozen=True)
+class Reply:
+    emotion: Emotion
+    say: str
+    usage: Usage
+    session_id: str | None
+
+    @staticmethod
+    def from_model_text(text: str, usage: Usage, session_id: str | None) -> Reply:
+        """Parse the model's JSON answer; fall back to speaking the raw text."""
+        try:
+            data = json.loads(text)
+            emotion, say = data.get("emotion"), str(data.get("say", "")).strip()
+        except (json.JSONDecodeError, AttributeError):
+            emotion, say = None, text.strip()
+        return Reply(Emotion.parse(emotion), say, usage, session_id)
+
+
+class HarnessError(Exception):
+    """A harness call failed. `transient` says whether retrying later can help."""
+
+    def __init__(self, message: str, *, transient: bool):
+        super().__init__(message)
+        self.transient = transient
+
+
+@dataclass(frozen=True)
+class Signals:
+    """What the heartbeat knows about the user right now. Cheap to gather, no LLM involved."""
+
+    now: datetime
+    idle_s: float
+    app: str | None
+
+
+@dataclass(frozen=True)
+class Nudge:
+    """Something Milo wants to say unprompted. `llm_prompt` asks for nicer wording if the budget allows."""
+
+    rule: str
+    emotion: Emotion
+    text: str
+    speak: bool
+    llm_prompt: str | None = None
+
+
+@dataclass(frozen=True)
+class Reminder:
+    id: str
+    due: datetime
+    text: str
+    done: bool
+
+
+class StepStatus(StrEnum):
+    RUNNING = "running"
+    DONE = "done"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class Step:
+    """One thing the worker agent did during a task, for the activity list in the Milo window.
+
+    `title` is plain language ("Reading your Downloads folder"); `detail` is the raw command or tool
+    payload, shown only when the row is expanded. `kind` picks the icon: command, read, edit, search,
+    web, tool or other.
+    """
+
+    id: str
+    kind: str
+    title: str
+    detail: str
+    status: StepStatus
+
+    def to_dict(self) -> dict:
+        return {"id": self.id, "kind": self.kind, "title": self.title, "detail": self.detail,
+                "status": self.status.value}
+
+    @staticmethod
+    def from_dict(d: dict) -> Step:
+        return Step(str(d["id"]), str(d.get("kind", "other")), str(d.get("title", "")), str(d.get("detail", "")),
+                    StepStatus(d.get("status", "done")))
+
+
+class EntryKind(StrEnum):
+    USER = "user"
+    MILO = "milo"
+    TASK = "task"
+
+
+@dataclass
+class TranscriptEntry:
+    """One line of the conversation as the Milo window shows it.
+
+    user: what the user said, `via` "voice" or "typed". milo: a reply, `done` False while it streams.
+    task: work handed to the worker agent, with its steps, `status` and the `result` Milo reported.
+    """
+
+    id: str
+    ts: str
+    kind: EntryKind
+    text: str
+    via: str = ""
+    emotion: Emotion = Emotion.NEUTRAL
+    done: bool = True
+    status: StepStatus = StepStatus.DONE
+    result: str = ""
+    steps: list[Step] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        d: dict = {"id": self.id, "ts": self.ts, "kind": self.kind.value, "text": self.text}
+        if self.kind is EntryKind.USER:
+            d["via"] = self.via
+        elif self.kind is EntryKind.MILO:
+            d |= {"emotion": self.emotion.value, "done": self.done}
+        else:
+            d |= {"status": self.status.value, "result": self.result, "steps": [s.to_dict() for s in self.steps]}
+        return d
+
+    @staticmethod
+    def from_dict(d: dict) -> TranscriptEntry:
+        return TranscriptEntry(
+            id=str(d["id"]), ts=str(d["ts"]), kind=EntryKind(d["kind"]), text=str(d.get("text", "")),
+            via=str(d.get("via", "")), emotion=Emotion.parse(d.get("emotion")), done=bool(d.get("done", True)),
+            status=StepStatus(d.get("status", "done")), result=str(d.get("result", "")),
+            steps=[Step.from_dict(s) for s in d.get("steps", [])],
+        )

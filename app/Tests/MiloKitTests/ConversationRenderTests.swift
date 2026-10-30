@@ -1,0 +1,116 @@
+import AppKit
+import Foundation
+import SwiftUI
+import Testing
+@testable import MiloKit
+
+/// Renders the Milo window offscreen into PNGs for a visual check:
+/// `MILO_RENDER_DIR=/tmp/milo-render swift test --filter ConversationRender`.
+@Suite(.enabled(if: ProcessInfo.processInfo.environment["MILO_RENDER_DIR"] != nil))
+@MainActor
+struct ConversationRenderTests {
+    static let size = CGSize(width: 420, height: 560)
+    let dir = URL(fileURLWithPath: ProcessInfo.processInfo.environment["MILO_RENDER_DIR"] ?? "/tmp")
+
+    @Test func renderEveryState() throws {
+        _ = NSApplication.shared
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        TaskBlock.openDetails = ["fail-3"]
+        defer { TaskBlock.openDetails = [] }
+        for (name, entries, state) in Samples.all {
+            for dark in [false, true] {
+                try render(entries: entries, state: state, name: "\(name)-\(dark ? "dark" : "light")", dark: dark)
+            }
+        }
+    }
+
+    private func render(entries: [TranscriptEntry], state: MiloState, name: String, dark: Bool) throws {
+        let model = MiloModel(scheduler: ManualScheduler())
+        model.state = state
+        let view = ConversationView(transcript: TranscriptModel(entries: entries), model: model,
+                                    settings: ConversationSettings(talkKey: "right ⌥"), send: { _, _ in })
+            .frame(width: Self.size.width, height: Self.size.height)
+        let host = NSHostingView(rootView: view)
+        host.frame = NSRect(origin: .zero, size: Self.size)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: rep)
+        let png = try #require(rep.representation(using: .png, properties: [:]))
+        try png.write(to: dir.appendingPathComponent("\(name).png"))
+    }
+}
+
+enum Samples {
+    static let base = Date(timeIntervalSinceNow: -600)
+
+    static func at(_ seconds: TimeInterval) -> Date { base.addingTimeInterval(seconds) }
+
+    static let oneTurn: [TranscriptEntry] = [
+        TranscriptEntry(id: "u1", date: at(0), kind: .user, text: "Do I have anything this afternoon?", via: .voice),
+        TranscriptEntry(id: "m1", date: at(4), kind: .milo, text: "Just the dentist at four. I'll remind you at half past three.",
+                        emotion: .happy),
+    ]
+
+    static let longReply: [TranscriptEntry] = oneTurn + [
+        TranscriptEntry(id: "u2", date: at(90), kind: .user, text: "how do I make the photos smaller before I email them",
+                        via: .typed),
+        TranscriptEntry(id: "m2", date: at(95), kind: .milo, text: """
+            Open the photo in Preview, then choose Tools and Adjust Size. Pick a width of about 1600 pixels and \
+            keep "Scale proportionally" ticked, so nothing gets squashed. Save it under a new name so the original \
+            stays as it was. If there are many photos, select them all in Preview's sidebar first and resize them \
+            in one go. Mail can also do it for you: when you attach them, the Image Size menu at the bottom right \
+            of the message lets you choose Medium.
+            """, emotion: .neutral, done: false),
+    ]
+
+    static let runningTask: [TranscriptEntry] = [
+        TranscriptEntry(id: "u1", date: at(0), kind: .user, text: "rename the photos from Friday by the date they were taken",
+                        via: .voice),
+        TranscriptEntry(id: "m1", date: at(3), kind: .milo, text: "On it. I'll sort them by date.", emotion: .excited),
+        TranscriptEntry(id: "t1", date: at(4), kind: .task,
+                        text: "Rename the photos from Friday in ~/Pictures/Friday to their capture date",
+                        status: .running, steps: [
+                            ActivityStep(id: "1", kind: "read", title: "Looking in your Pictures folder",
+                                         detail: "ls ~/Pictures", status: .done),
+                            ActivityStep(id: "2", kind: "read", title: "Looking in the Friday folder",
+                                         detail: "ls ~/Pictures/Friday", status: .done),
+                            ActivityStep(id: "3", kind: "command", title: "Running a small program",
+                                         detail: "python3 read_dates.py", status: .done),
+                            ActivityStep(id: "4", kind: "edit", title: "Making the Sorted folder",
+                                         detail: "mkdir -p ~/Pictures/Friday/Sorted", status: .done),
+                            ActivityStep(id: "5", kind: "edit", title: "Moving IMG_4012.jpg",
+                                         detail: "mv IMG_4012.jpg Sorted/2026-10-24 18.02.jpg", status: .done),
+                            ActivityStep(id: "6", kind: "edit", title: "Moving IMG_4013.jpg",
+                                         detail: "mv IMG_4013.jpg Sorted/2026-10-24 18.05.jpg", status: .running),
+                        ]),
+    ]
+
+    static let failedStep: [TranscriptEntry] = [
+        TranscriptEntry(id: "u1", date: at(0), kind: .user, text: "put the Hetzner invoice in my tax folder", via: .voice),
+        TranscriptEntry(id: "m1", date: at(3), kind: .milo, text: "Sure, let me look for it.", emotion: .happy),
+        TranscriptEntry(id: "t1", date: at(4), kind: .task, text: "Find the newest Hetzner invoice PDF and move it to ~/Documents/Tax",
+                        status: .failed, result: "I couldn't find a Tax folder. Should I make one?",
+                        steps: [
+                            ActivityStep(id: "1", kind: "search", title: "Looking for files in your Downloads folder",
+                                         detail: "find ~/Downloads -iname '*hetzner*'", status: .done),
+                            ActivityStep(id: "2", kind: "read", title: "Reading Hetzner_2026-10.pdf",
+                                         detail: "pdftotext Hetzner_2026-10.pdf -", status: .done),
+                            ActivityStep(id: "fail-3", kind: "edit", title: "Moving Hetzner_2026-10.pdf",
+                                         detail: "mv Hetzner_2026-10.pdf ~/Documents/Tax/\n\nmv: ~/Documents/Tax/: No such file or directory",
+                                         status: .failed),
+                        ]),
+        TranscriptEntry(id: "u2", date: at(70), kind: .user, text: "yes please", via: .typed),
+    ]
+
+    static let all: [(String, [TranscriptEntry], MiloState)] = [
+        ("empty", [], .idle),
+        ("one-turn", oneTurn, .idle),
+        ("long-reply", longReply, .speaking),
+        ("running-task", runningTask, .idle),
+        ("failed-step", failedStep, .thinking),
+    ]
+}

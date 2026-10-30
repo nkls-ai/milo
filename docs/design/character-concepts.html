@@ -1,0 +1,635 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Milo: three bodies</title>
+<style>
+  :root {
+    --page: #dfe3e8;
+    --ink: #1d2127;
+    --muted: #59616c;
+    --line: #c4cad2;
+    --accent: #6a43e0;
+    --talk: #ff7069;
+    --think: #ffc04a;
+    --speak: #4fd2fb;
+    --sleep: #c9c2e6;
+    --rounded: ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+    --text: system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink); font: 16px/1.5 var(--text); }
+  main { max-width: 1240px; margin: 0 auto; padding: 56px 32px 96px; }
+
+  h1, h2 { font-family: var(--rounded); font-weight: 800; letter-spacing: -0.01em; margin: 0; }
+  h1 { font-size: 44px; line-height: 1.05; }
+  h2 { font-size: 30px; line-height: 1.1; }
+  p { margin: 0; }
+  .lede { max-width: 62ch; margin-top: 14px; color: var(--muted); font-size: 18px; }
+
+  /* Hero: the three, side by side on one strip of desktop, watching the mouse. */
+  .hero { position: relative; margin-top: 36px; height: 200px; border-radius: 14px; overflow: hidden;
+    background: radial-gradient(120% 140% at 15% 0%, #f6efe6 0%, #d9e4f1 45%, #b9cbe2 100%); }
+  .hero::after { content: ""; position: absolute; inset: auto -10% -60% -10%; height: 120%;
+    background: radial-gradient(60% 50% at 30% 100%, rgba(120,140,190,.35), transparent 70%),
+                radial-gradient(50% 45% at 80% 100%, rgba(150,120,190,.3), transparent 70%); }
+  .hero-row { position: absolute; inset: 0; display: flex; justify-content: center; align-items: flex-end; gap: 120px; padding-bottom: 14px; z-index: 1; }
+  .hero-cell { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .hero-cell .milo { position: relative; right: auto; bottom: auto; }
+  .hero-cell a { font: 600 14px var(--rounded); color: #2a3140; text-decoration: none; }
+  .hero-cell a:hover { text-decoration: underline; }
+
+  section.dir { margin-top: 88px; display: grid; grid-template-columns: 300px 1fr; gap: 40px; align-items: start; }
+  .copy h2 { margin-bottom: 18px; }
+  .copy dl { margin: 0; display: grid; gap: 14px; }
+  .copy dt { font: 700 13px var(--rounded); color: var(--muted); }
+  .copy dd { margin: 2px 0 0; font-size: 15px; }
+  .score { display: inline-flex; gap: 3px; vertical-align: -1px; margin-left: 6px; }
+  .score i { width: 9px; height: 9px; border-radius: 50%; background: var(--line); }
+  .score i.on { background: var(--accent); }
+
+  .stage { display: grid; gap: 14px; }
+  .corners { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+
+  /* A bottom-right corner of a Mac desktop at 1:1 scale. */
+  .corner { position: relative; height: 320px; border-radius: 12px; overflow: hidden; isolation: isolate; }
+  .corner.light { background:
+      radial-gradient(70% 60% at 85% 110%, rgba(255,214,186,.9), transparent 70%),
+      radial-gradient(80% 70% at 0% 100%, rgba(170,196,236,.9), transparent 70%),
+      linear-gradient(165deg, #e9eef6 0%, #d6e0ef 50%, #e7dcef 100%); }
+  .corner.dark { background:
+      radial-gradient(70% 60% at 90% 110%, rgba(116,72,168,.55), transparent 70%),
+      radial-gradient(80% 70% at 0% 100%, rgba(40,70,140,.6), transparent 70%),
+      linear-gradient(165deg, #10152b 0%, #1a1f3d 55%, #261c42 100%); }
+
+  .win { position: absolute; left: -36px; top: 22px; width: 250px; border-radius: 10px; overflow: hidden;
+    font: 12px/1 var(--text); box-shadow: 0 12px 30px rgba(20,25,40,.18), 0 0 0 .5px rgba(0,0,0,.18); }
+  .light .win { background: #fff; color: #222; }
+  .dark .win { background: #26272c; color: #e8e8ea; box-shadow: 0 12px 30px rgba(0,0,0,.45), 0 0 0 .5px rgba(255,255,255,.12); }
+  .win .bar { height: 26px; display: flex; align-items: center; padding-left: 46px; gap: 6px; font-weight: 600; font-size: 11px; opacity: .75; }
+  .light .win .bar { background: #f3f3f5; border-bottom: 1px solid #e3e3e6; }
+  .dark .win .bar { background: #2f3036; border-bottom: 1px solid #3a3b41; }
+  .win table { border-collapse: collapse; width: 100%; }
+  .win td { padding: 7px 8px; border-bottom: 1px solid rgba(127,127,127,.18); border-right: 1px solid rgba(127,127,127,.18); }
+  .win td:first-child { padding-left: 46px; }
+  .win td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .win td.target { transition: background .3s, box-shadow .3s; }
+  .corner.lit td.target { background: rgba(106,67,224,.16); box-shadow: inset 0 0 0 2px var(--accent); }
+
+  .bubble { position: absolute; right: 26px; bottom: 136px; max-width: 230px; padding: 9px 13px 10px; border-radius: 15px;
+    font: 13.5px/1.35 var(--text); opacity: 0; transform: translateY(6px) scale(.92); transform-origin: 85% 100%;
+    transition: opacity .2s, transform .25s cubic-bezier(.3,1.4,.5,1); pointer-events: none; z-index: 3; }
+  .light .bubble { background: rgba(255,255,255,.97); color: #1b1d22; box-shadow: 0 6px 18px rgba(30,30,60,.16); }
+  .dark .bubble { background: rgba(44,45,52,.97); color: #ececf0; box-shadow: 0 6px 18px rgba(0,0,0,.4); }
+  .bubble::after { content: ""; position: absolute; right: 34px; bottom: -6px; width: 12px; height: 12px; background: inherit; transform: rotate(45deg); border-radius: 2px; }
+  .bubble.show { opacity: 1; transform: none; }
+  .bubble.away { right: auto; bottom: auto; transform-origin: 20% 0%; }
+  .bubble.away::after { right: auto; left: 22px; bottom: auto; top: -6px; }
+  .bars { display: inline-flex; gap: 3px; align-items: center; height: 18px; vertical-align: -4px; margin-right: 8px; }
+  .bars i { width: 3.5px; border-radius: 2px; background: var(--talk); height: 5px; }
+  .dots { display: inline-flex; gap: 5px; }
+  .dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--think); animation: dot .9s ease-in-out infinite; }
+  .dots i:nth-child(2) { animation-delay: .15s; } .dots i:nth-child(3) { animation-delay: .3s; }
+  @keyframes dot { 50% { transform: translateY(-4px); } }
+
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+  .controls .states { display: flex; flex-wrap: wrap; gap: 4px; padding: 3px; border-radius: 10px; background: rgba(255,255,255,.55); }
+  .controls button { font: 600 13px var(--rounded); border: 0; background: transparent; color: var(--ink); padding: 6px 11px; border-radius: 7px; cursor: pointer; }
+  .controls button:hover { background: rgba(255,255,255,.8); }
+  .controls button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+  .controls .play { background: rgba(255,255,255,.55); }
+  .controls label { font-size: 13px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+  .controls input[type=range] { width: 110px; accent-color: var(--accent); }
+  button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .pick { margin-top: 96px; padding-top: 28px; border-top: 1px solid var(--line); display: grid; grid-template-columns: 300px 1fr; gap: 40px; }
+  .pick p { max-width: 68ch; }
+  .pick p + p { margin-top: 12px; }
+
+  @media (max-width: 900px) {
+    section.dir, .pick { grid-template-columns: 1fr; gap: 20px; }
+    .corners { grid-template-columns: 1fr; }
+    .hero-row { gap: 40px; }
+  }
+
+  /* ---------- Shared character rig ---------- */
+  .milo { position: absolute; right: 12px; bottom: 10px; width: 110px; height: 110px; z-index: 2;
+    --gx: 0; --gy: 0; --lvl: 0; --tx: 0px; --ty: 0px;
+    transform: translate(var(--tx), var(--ty)); transition: transform 1s cubic-bezier(.45,.05,.25,1); }
+  .milo svg { width: 110px; height: 110px; overflow: visible; display: block; }
+  .milo * { transform-box: fill-box; }
+  .milo [transform] { transform-box: view-box; }
+  .milo .float { animation: float 4.4s ease-in-out infinite; transform-origin: 50% 100%; }
+  .milo[data-state=sleepy] .float { animation-duration: 6s; }
+  .milo[data-state=pointing] .float, .milo.flying .float { animation: none; }
+  @keyframes float { 0%,100% { transform: translateY(-3px); } 50% { transform: translateY(3px); } }
+  .milo .gaze { transform: translate(calc(var(--gx) * 3px), calc(var(--gy) * 2.5px)); }
+  .milo .eyes-open { transform-origin: center; transition: transform .07s; }
+  .milo.blink .eyes-open { transform: scaleY(.12); }
+  .milo .eyes-happy, .milo .eyes-sleep, .milo .cheeks, .milo .zz, .milo .point-only { opacity: 0; }
+  .milo[data-state=happy] .eyes-open, .milo[data-state=sleepy] .eyes-open { opacity: 0; }
+  .milo[data-state=happy] .eyes-happy, .milo[data-state=sleepy] .eyes-sleep { opacity: 1; }
+  .milo[data-state=happy] .cheeks, .milo[data-state=speaking] .cheeks { opacity: 1; }
+  .milo[data-state=sleepy] .zz { animation: zz 2.6s ease-out infinite; }
+  @keyframes zz { 0% { opacity: 0; transform: translate(0,0); } 20% { opacity: 1; } 100% { opacity: 0; transform: translate(7px,-14px); } }
+  .milo .pose { transform-origin: 50% 100%; transition: transform .45s cubic-bezier(.3,1.5,.5,1); }
+  .milo[data-state=happy] .hop { animation: hop .55s cubic-bezier(.3,1.6,.5,1) 2; transform-origin: 50% 100%; }
+  @keyframes hop { 0% { transform: scale(1.06,.9); } 45% { transform: translateY(-9px) scale(.95,1.07); } 100% { transform: none; } }
+  .milo .shadow { fill: rgba(20,20,50,.16); transform-origin: center; }
+  .dark .milo .shadow { fill: rgba(0,0,0,.4); }
+  .milo[data-state=pointing] .shadow, .milo.flying .shadow { opacity: 0; }
+
+  /* ---------- Visor ---------- */
+  .visor-rig .bulb { fill: var(--sleep); transition: fill .3s; }
+  .visor-rig .bulb-glow { fill: var(--sleep); opacity: .25; }
+  .visor-rig[data-state=listening] .bulb, .visor-rig[data-state=listening] .bulb-glow { fill: var(--talk); }
+  .visor-rig[data-state=listening] .bulb-glow { opacity: calc(.3 + var(--lvl) * .7); }
+  .visor-rig[data-state=thinking] .bulb, .visor-rig[data-state=thinking] .bulb-glow { fill: var(--think); }
+  .visor-rig[data-state=thinking] .bulb-glow { animation: glow 1.2s ease-in-out infinite; }
+  .visor-rig[data-state=speaking] .bulb, .visor-rig[data-state=speaking] .bulb-glow,
+  .visor-rig[data-state=pointing] .bulb, .visor-rig[data-state=pointing] .bulb-glow { fill: var(--speak); }
+  .visor-rig[data-state=speaking] .bulb-glow { opacity: calc(.3 + var(--lvl) * .7); }
+  .visor-rig[data-state=sleepy] .bulb { fill: #8e86b5; } .visor-rig[data-state=sleepy] .bulb-glow { opacity: 0; }
+  @keyframes glow { 50% { opacity: .9; } }
+  .visor-rig .eyes-open rect { fill: #dcf6ff; }
+  .visor-rig .eye-glow { fill: #8fe3ff; opacity: .35; }
+  .visor-rig .eyes-happy path, .visor-rig .eyes-sleep path { fill: none; stroke: #dcf6ff; stroke-width: 3.4; stroke-linecap: round; }
+  .visor-rig .mouth { fill: #8fe3ff; transform-origin: center; transform: scaleY(1); }
+  .visor-rig[data-state=speaking] .mouth { transform: scale(calc(1 + var(--lvl) * .3), calc(1 + var(--lvl) * 3.6)); }
+  .visor-rig[data-state=happy] .mouth { transform: scale(1.5, 1.7); }
+  .visor-rig[data-state=sleepy] .visor { opacity: .82; }
+  .visor-rig .scan { opacity: 0; }
+  .visor-rig[data-state=thinking] .scan { opacity: .55; animation: scan 1.4s ease-in-out infinite alternate; }
+  @keyframes scan { from { transform: translateY(0); } to { transform: translateY(38px); } }
+  .visor-rig .cheeks ellipse { fill: #ff8fb0; opacity: .7; }
+  .visor-rig[data-state=listening] .pose { transform: rotate(-6deg) scale(1.04); }
+  .visor-rig[data-state=sleepy] .pose { transform: rotate(3deg) scale(1.03,.96); }
+  .visor-rig .hand { transition: transform .5s cubic-bezier(.3,1.4,.5,1); transform-origin: center; }
+  .visor-rig[data-state=listening] .hand-r { transform: translate(-3px,-14px); }
+  .visor-rig[data-state=thinking] .hand-r { transform: translate(-20px,-6px); }
+  .visor-rig[data-state=speaking] .hand-l { animation: gesture 1.6s ease-in-out infinite; }
+  .visor-rig[data-state=happy] .hand-l { transform: translate(-4px,-22px); } .visor-rig[data-state=happy] .hand-r { transform: translate(4px,-22px); }
+  .visor-rig[data-state=pointing] .hand-l { transform: translate(-4px,-22px); }
+  .visor-rig[data-state=pointing] .point-only { opacity: 1; }
+  @keyframes gesture { 50% { transform: translate(-3px,-8px); } }
+
+  /* ---------- Pip ---------- */
+  .pip-rig .eyes-open circle.pupil { fill: #241c3f; }
+  .pip-rig .eyes-happy path, .pip-rig .eyes-sleep path { fill: none; stroke: #241c3f; stroke-width: 2.8; stroke-linecap: round; }
+  .pip-rig .cheeks ellipse { fill: #f39aa6; opacity: .55; }
+  .pip-rig .beak-bottom { transform: translateY(calc(var(--lvl) * 4.5px)); transition: transform .06s; }
+  .pip-rig .wing { transition: transform .5s cubic-bezier(.3,1.4,.5,1); }
+  .pip-rig .wing-l { transform-origin: 50% 8%; }
+  .pip-rig .wing-r { transform-origin: 50% 8%; }
+  .pip-rig .crest { transform-origin: 50% 100%; transition: transform .4s cubic-bezier(.3,1.6,.5,1); }
+  .pip-rig[data-state=listening] .pose { transform: rotate(-11deg); }
+  .pip-rig[data-state=listening] .crest { transform: scale(1, calc(1.05 + var(--lvl) * .35)); }
+  .pip-rig[data-state=thinking] .pose { animation: ponder 2.4s ease-in-out infinite; }
+  @keyframes ponder { 0%,100% { transform: rotate(6deg); } 50% { transform: rotate(-4deg); } }
+  .pip-rig[data-state=thinking] .wing-r { transform: rotate(28deg); }
+  .pip-rig[data-state=happy] .wing-l { transform: rotate(38deg); } .pip-rig[data-state=happy] .wing-r { transform: rotate(-38deg); }
+  .pip-rig[data-state=sleepy] .pose { transform: rotate(7deg) scale(1.07,.95); }
+  .pip-rig[data-state=sleepy] .crest { transform: rotate(-24deg) scale(.9); }
+  .pip-rig[data-state=pointing] .wing-l { transform: rotate(128deg); }
+  .pip-rig.flying .wing-l, .pip-rig.flying .wing-r { animation: flap .16s ease-in-out infinite alternate; }
+  .pip-rig.flying .feet, .pip-rig[data-state=pointing] .feet { opacity: 0; }
+  .pip-rig .feet { transition: opacity .2s; }
+  @keyframes flap { from { transform: rotate(-30deg); } to { transform: rotate(40deg); } }
+  .pip-rig.flying .wing-r { animation-direction: alternate-reverse; }
+
+  /* ---------- Pointer ---------- */
+  .pointer-rig .arrow { stroke: #2a2160; stroke-width: 4.5; stroke-linejoin: round; transition: stroke .3s; }
+  .pointer-rig .eyes-open circle.pupil { fill: #2a2160; }
+  .pointer-rig .eyes-happy path, .pointer-rig .eyes-sleep path { fill: none; stroke: #2a2160; stroke-width: 2.6; stroke-linecap: round; }
+  .pointer-rig .mouth { fill: #2a2160; transform-origin: center; }
+  .pointer-rig[data-state=speaking] .mouth { transform: scale(calc(1 + var(--lvl) * .2), calc(1 + var(--lvl) * 2.6)); }
+  .pointer-rig .cheeks ellipse { fill: #ff9bb5; opacity: .6; }
+  .pointer-rig .pose { transform-origin: 20% 10%; }
+  .pointer-rig[data-state=idle] .pose { animation: sniff 5s ease-in-out infinite; }
+  @keyframes sniff { 0%,70%,100% { transform: rotate(0); } 78% { transform: rotate(-5deg); } 86% { transform: rotate(3deg); } }
+  .pointer-rig[data-state=listening] .pose { transform: rotate(-9deg); }
+  .pointer-rig[data-state=listening] .arrow { stroke: #c4433d; }
+  .pointer-rig .ring { fill: none; stroke: var(--talk); stroke-width: 2; opacity: 0; transform-origin: center; }
+  .pointer-rig[data-state=listening] .ring { opacity: calc(.2 + var(--lvl) * .8); transform: scale(calc(.6 + var(--lvl) * .9)); }
+  .pointer-rig .ball { opacity: 0; transform-origin: center; }
+  .pointer-rig[data-state=thinking] .ball { opacity: 1; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .pointer-rig[data-state=sleepy] .pose { transform: translate(10px, 18px) rotate(-62deg); transform-origin: 50% 90%; }
+  .pointer-rig[data-state=pointing] .pose { animation: click .9s ease-in-out .9s infinite; transform-origin: 0% 0%; }
+  @keyframes click { 0%,60%,100% { transform: none; } 70% { transform: scale(.9); } }
+  .pointer-rig .ripple { fill: none; stroke: var(--accent); stroke-width: 2; opacity: 0; transform-origin: center; }
+  .pointer-rig[data-state=pointing] .ripple { animation: ripple .9s ease-out .9s infinite; }
+  @keyframes ripple { 0%,62% { opacity: 0; transform: scale(.3); } 70% { opacity: .9; } 100% { opacity: 0; transform: scale(1.6); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .milo, .milo * { animation: none !important; transition: none !important; }
+    .dots i { animation: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Three bodies for Milo</h1>
+    <p class="lede">Same Milo in each: the voice, the manners and the life described in <a href="../CHARACTER.md">CHARACTER.md</a>. Only the drawing changes. Each one sits at real size in the corner of a desktop, on a light and a dark wallpaper. Move your mouse and they watch it.</p>
+    <div class="hero" aria-label="The three directions side by side">
+      <div class="hero-row">
+        <div class="hero-cell"><div class="milo" data-dir="visor" data-state="idle"></div><a href="#visor">Visor</a></div>
+        <div class="hero-cell"><div class="milo" data-dir="pip" data-state="idle"></div><a href="#pip">Pip</a></div>
+        <div class="hero-cell"><div class="milo" data-dir="pointer" data-state="idle"></div><a href="#pointer">Pointer</a></div>
+      </div>
+    </div>
+  </header>
+
+  <section class="dir" id="visor" data-dir="visor">
+    <div class="copy">
+      <h2>Visor</h2>
+      <dl>
+        <dt>The idea</dt>
+        <dd>Today's purple robot, grown up a little. His face is a dark glass panel where the eyes glow, the antenna light shows what he's doing, and two floating hands let him point.</dd>
+        <dt>Why it stands out</dt>
+        <dd>It keeps what already works and fixes the blankness: the glowing face reads from across the desk, and hands give him gestures a blob can't make.</dd>
+        <dt>What it costs in SwiftUI</dt>
+        <dd>Low. Today's shapes plus a visor and two circles for hands. The glow is one blurred copy drawn once. Two or three days.</dd>
+        <dt>Would a 60-year-old like him? <span class="score" aria-label="2 of 5"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></span></dt>
+        <dd>Friendly, but a robot says "gadget", and the glowing antenna is a toy detail.</dd>
+      </dl>
+    </div>
+    <div class="stage"></div>
+  </section>
+
+  <section class="dir" id="pip" data-dir="pip">
+    <div class="copy">
+      <h2>Pip</h2>
+      <dl>
+        <dt>The idea</dt>
+        <dd>A small round bird who lives in the corner, with a tuft on his head where the antenna was. He cocks his head to listen, flies to whatever he's working on and points with a wing.</dd>
+        <dt>Why it stands out</dt>
+        <dd>Nobody's tech mascot is a garden bird. Head tilts, hops and short flights are what real birds do, so the life layer looks natural instead of programmed.</dd>
+        <dt>What it costs in SwiftUI</dt>
+        <dd>Medium. Eight simple shapes, but the wing flap and head tilt need tuning to feel right. The flap only runs while he flies, so idle cost stays the same. About a week.</dd>
+        <dt>Would a 60-year-old like him? <span class="score" aria-label="5 of 5"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></dt>
+        <dd>The safest bet. Calm colours, small eyes, no cartoon grin. He reads as a bird at the window, not a toy or a gadget.</dd>
+      </dl>
+    </div>
+    <div class="stage"></div>
+  </section>
+
+  <section class="dir" id="pointer" data-dir="pointer">
+    <div class="copy">
+      <h2>Pointer</h2>
+      <dl>
+        <dt>The idea</dt>
+        <dd>The Mac's arrow pointer, come alive. His tip is his nose and his finger. When he works on something he flies there and taps it, a click you can watch.</dd>
+        <dt>Why it stands out</dt>
+        <dd>No other assistant looks like this, and pointing in Phase 2 is his whole body. The thinking state winks at the spinning wait wheel.</dd>
+        <dt>What it costs in SwiftUI</dt>
+        <dd>Low to draw: one path and a face. The real cost is rules so he's never mistaken for the real pointer: always bigger, always with a face, never moving while you do.</dd>
+        <dt>Would a 60-year-old like him? <span class="score" aria-label="1 of 5"><i class="on"></i><i></i><i></i><i></i><i></i></span></dt>
+        <dd>Clever if you think about computers. If you already lose the pointer on screen, a second one is a problem.</dd>
+      </dl>
+    </div>
+    <div class="stage"></div>
+  </section>
+
+  <section class="pick">
+    <h2>My pick: Pip</h2>
+    <div>
+      <p>The person Milo is for has never used an assistant and is a little wary of computers that talk. A bird is the one shape here she already likes before he says a word. It also does the Phase 2 job best: flying to a spot and pointing with a wing is something a bird does anyway, so "Milo flew over to the spreadsheet" sounds charming instead of strange.</p>
+      <p>Visor is the fallback if the purple robot has fans already: cheapest to build and least risky. Pointer is the boldest idea, but it fails the main audience.</p>
+    </div>
+  </section>
+</main>
+
+<template id="stage-template">
+  <div class="controls">
+    <div class="states" role="group" aria-label="Show a state"></div>
+    <button class="play" type="button" aria-pressed="true">Playing</button>
+    <label>Voice level <input type="range" min="0" max="100" value="50" aria-label="Voice level"></label>
+    <label><input type="checkbox" class="auto" checked> Simulate voice</label>
+  </div>
+  <div class="corners">
+    <div class="corner light"></div>
+    <div class="corner dark"></div>
+  </div>
+</template>
+
+<template id="corner-template">
+  <div class="win" aria-hidden="true">
+    <div class="bar">Household 2026</div>
+    <table>
+      <tr><td>Electricity</td><td class="num">412</td><td class="num">418</td></tr>
+      <tr><td>Water</td><td class="num">96</td><td class="num">101</td></tr>
+      <tr><td>Insurance</td><td class="num">776</td><td class="num">765</td></tr>
+      <tr><td>Total</td><td class="num">1,284</td><td class="num target">&nbsp;</td></tr>
+    </table>
+  </div>
+  <div class="bubble" aria-live="polite"></div>
+  <div class="milo"></div>
+</template>
+
+<script>
+"use strict";
+let uid = 0;
+
+const RIGS = {
+  visor: {
+    point: [-1, 49],
+    svg: (id) => `
+<svg viewBox="0 0 120 120" aria-hidden="true">
+  <defs>
+    <linearGradient id="vb${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a47cf8"/><stop offset="1" stop-color="#6a3fdc"/></linearGradient>
+    <linearGradient id="vv${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#241d4e"/><stop offset="1" stop-color="#161233"/></linearGradient>
+    <filter id="vg${id}" x="-1" y="-1" width="3" height="3"><feGaussianBlur stdDeviation="3.2"/></filter>
+    <clipPath id="vc${id}"><rect x="25" y="45" width="70" height="42" rx="19"/></clipPath>
+  </defs>
+  <ellipse class="shadow" cx="60" cy="115" rx="27" ry="3.6"/>
+  <g class="float"><g class="pose"><g class="hop">
+    <g class="hand hand-r"><circle cx="106" cy="90" r="8" fill="url(#vb${id})"/></g>
+    <rect x="58" y="14" width="4" height="16" rx="2" fill="#8d63f2"/>
+    <circle class="bulb-glow" cx="60" cy="11" r="8" filter="url(#vg${id})"/>
+    <circle class="bulb" cx="60" cy="11" r="5.5"/>
+    <rect x="16" y="27" width="88" height="80" rx="33" fill="url(#vb${id})"/>
+    <ellipse cx="37" cy="38" rx="12" ry="5" fill="#fff" opacity=".28" transform="rotate(-24 37 38)"/>
+    <rect class="visor" x="25" y="45" width="70" height="42" rx="19" fill="url(#vv${id})"/>
+    <rect x="31" y="48" width="26" height="4" rx="2" fill="#fff" opacity=".08"/>
+    <g clip-path="url(#vc${id})"><rect class="scan" x="25" y="45" width="70" height="3" fill="#ffc04a"/></g>
+    <g class="gaze">
+      <g class="eyes-open">
+        <rect class="eye-glow" x="38" y="54" width="16" height="22" rx="8" filter="url(#vg${id})"/>
+        <rect class="eye-glow" x="66" y="54" width="16" height="22" rx="8" filter="url(#vg${id})"/>
+        <rect x="41" y="57" width="10" height="16" rx="5"/><rect x="69" y="57" width="10" height="16" rx="5"/>
+      </g>
+      <g class="eyes-happy"><path d="M40 67 q6 -8 12 0"/><path d="M68 67 q6 -8 12 0"/></g>
+      <g class="eyes-sleep"><path d="M40 65 q6 4 12 0"/><path d="M68 65 q6 4 12 0"/></g>
+    </g>
+    <rect class="mouth" x="55" y="78" width="10" height="3" rx="1.5"/>
+    <g class="cheeks"><ellipse cx="33" cy="76" rx="4.5" ry="2.5"/><ellipse cx="87" cy="76" rx="4.5" ry="2.5"/></g>
+    <g class="hand hand-l">
+      <path class="point-only" d="M14 90 L4 80" stroke="url(#vb${id})" stroke-width="6.5" stroke-linecap="round"/>
+      <circle cx="14" cy="90" r="8" fill="url(#vb${id})"/>
+    </g>
+  </g></g></g>
+  <text class="zz" x="98" y="26" font-family="ui-rounded, system-ui" font-weight="800" font-size="15" fill="#b9b0e6">z</text>
+</svg>`,
+  },
+
+  pip: {
+    point: [14, 41],
+    svg: (id) => `
+<svg viewBox="0 0 120 120" aria-hidden="true">
+  <defs>
+    <radialGradient id="pb${id}" cx=".38" cy=".3" r=".8"><stop offset="0" stop-color="#a497e2"/><stop offset="1" stop-color="#6d5dbf"/></radialGradient>
+    <radialGradient id="pe${id}" cx=".5" cy=".3" r=".8"><stop offset="0" stop-color="#fde3c6"/><stop offset="1" stop-color="#f0b98b"/></radialGradient>
+  </defs>
+  <ellipse class="shadow" cx="60" cy="112" rx="24" ry="3.5"/>
+  <g class="float"><g class="pose"><g class="hop">
+    <g class="feet" stroke="#dc9440" stroke-width="2.6" stroke-linecap="round" fill="none">
+      <path d="M52 100 v8 M48.5 108.5 h7"/><path d="M68 100 v8 M64.5 108.5 h7"/>
+    </g>
+    <path d="M86 88 L106 95 L101 102 L84 99 Z" fill="#5a4b9f"/>
+    <g class="wing wing-r"><ellipse cx="93" cy="72" rx="10" ry="19" fill="#6152ad" transform="rotate(-14 93 72)"/></g>
+    <g class="crest" fill="#7f6fce">
+      <path d="M56 36 q-4 -12 3 -17 q0 9 3 16 Z"/><path d="M61 36 q4 -11 12 -12 q-6 6 -7 13 Z"/>
+    </g>
+    <ellipse cx="60" cy="68" rx="37" ry="35" fill="url(#pb${id})"/>
+    <ellipse cx="60" cy="83" rx="24" ry="19" fill="url(#pe${id})"/>
+    <ellipse cx="44" cy="46" rx="10" ry="5" fill="#fff" opacity=".18" transform="rotate(-20 44 46)"/>
+    <g class="gaze">
+      <g class="eyes-open">
+        <circle class="pupil" cx="47" cy="60" r="4.4"/><circle class="pupil" cx="73" cy="60" r="4.4"/>
+        <circle cx="48.6" cy="58.4" r="1.4" fill="#fff"/><circle cx="74.6" cy="58.4" r="1.4" fill="#fff"/>
+      </g>
+      <g class="eyes-happy"><path d="M42.5 61 q4.5 -6 9 0"/><path d="M68.5 61 q4.5 -6 9 0"/></g>
+      <g class="eyes-sleep"><path d="M42.5 60 q4.5 4 9 0"/><path d="M68.5 60 q4.5 4 9 0"/></g>
+    </g>
+    <g class="cheeks"><ellipse cx="38" cy="69" rx="5" ry="3"/><ellipse cx="82" cy="69" rx="5" ry="3"/></g>
+    <path class="beak-bottom" d="M55.5 67.5 L64.5 67.5 L60 73.5 Z" fill="#d6862a"/>
+    <path d="M53 65 Q60 61.5 67 65 L60 70.5 Z" fill="#f2a63e"/>
+    <g class="wing wing-l"><ellipse cx="27" cy="72" rx="10" ry="19" fill="#6152ad" transform="rotate(14 27 72)"/></g>
+  </g></g></g>
+  <text class="zz" x="96" y="30" font-family="ui-rounded, system-ui" font-weight="800" font-size="15" fill="#b9b0e6">z</text>
+</svg>`,
+  },
+
+  pointer: {
+    point: [32, 8],
+    svg: (id) => `
+<svg viewBox="0 0 120 120" aria-hidden="true">
+  <defs>
+    <linearGradient id="ab${id}" x1="0" y1="0" x2=".6" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e6ddff"/></linearGradient>
+  </defs>
+  <ellipse class="shadow" cx="58" cy="114" rx="22" ry="3.2"/>
+  <circle class="ripple" cx="32" cy="8" r="12"/>
+  <g class="float"><g class="pose"><g class="hop">
+    <circle class="ring" cx="32" cy="8" r="14"/>
+    <path class="arrow" d="M32 8 L32 93 L53 74 L67 105.5 L80 100 L66.5 69 L94 69 Z" fill="url(#ab${id})"/>
+    <g class="gaze">
+      <g class="eyes-open">
+        <circle class="pupil" cx="43" cy="54" r="3.6"/><circle class="pupil" cx="57" cy="54" r="3.6"/>
+        <circle cx="44.2" cy="52.8" r="1.1" fill="#fff"/><circle cx="58.2" cy="52.8" r="1.1" fill="#fff"/>
+      </g>
+      <g class="eyes-happy"><path d="M39.5 55 q3.5 -5 7 0"/><path d="M53.5 55 q3.5 -5 7 0"/></g>
+      <g class="eyes-sleep"><path d="M39.5 54 q3.5 3 7 0"/><path d="M53.5 54 q3.5 3 7 0"/></g>
+    </g>
+    <g class="cheeks"><ellipse cx="38" cy="62" rx="3.5" ry="2"/><ellipse cx="63" cy="62" rx="3.5" ry="2"/></g>
+    <rect class="mouth" x="46" y="65" width="7" height="2.6" rx="1.3"/>
+    <g class="ball" transform="translate(0 0)">
+      <circle cx="96" cy="28" r="8" fill="none" stroke="#ff6b6b" stroke-width="5" stroke-dasharray="10 40.3"/>
+      <circle cx="96" cy="28" r="8" fill="none" stroke="#ffc04a" stroke-width="5" stroke-dasharray="10 40.3" stroke-dashoffset="-10"/>
+      <circle cx="96" cy="28" r="8" fill="none" stroke="#4fd28a" stroke-width="5" stroke-dasharray="10 40.3" stroke-dashoffset="-20"/>
+      <circle cx="96" cy="28" r="8" fill="none" stroke="#4fb6fb" stroke-width="5" stroke-dasharray="10 40.3" stroke-dashoffset="-30"/>
+      <circle cx="96" cy="28" r="8" fill="none" stroke="#a774f2" stroke-width="5" stroke-dasharray="10.3 40" stroke-dashoffset="-40"/>
+    </g>
+  </g></g></g>
+  <text class="zz" x="92" y="64" font-family="ui-rounded, system-ui" font-weight="800" font-size="15" fill="#b9b0e6">z</text>
+</svg>`,
+  },
+};
+
+const STATES = ["idle", "listening", "thinking", "speaking", "happy", "sleepy", "pointing"];
+const LABELS = { idle: "Idle", listening: "Listening", thinking: "Thinking", speaking: "Speaking", happy: "Happy", sleepy: "Sleepy", pointing: "Pointing" };
+const CYCLE = { idle: 4200, listening: 3800, thinking: 2800, speaking: 4600, happy: 2400, pointing: 5200, sleepy: 4400 };
+const LINES = {
+  speaking: "Done. Dentist, tomorrow at nine.",
+  happy: "That worked. All three rows add up.",
+  pointing: "Typing the total into this cell.",
+};
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const mouse = { x: -1, y: -1, moved: -1e9 };
+addEventListener("pointermove", (e) => { mouse.x = e.clientX; mouse.y = e.clientY; mouse.moved = performance.now(); });
+
+class Milo {
+  constructor(el, dir, corner) {
+    this.el = el; this.dir = dir; this.corner = corner;
+    el.dataset.dir = dir;
+    el.classList.add(dir + "-rig");
+    el.innerHTML = RIGS[dir].svg(++uid);
+    this.gx = 0; this.gy = 0; this.look = [0, 0]; this.lookUntil = 0; this.alt = false;
+    this.nextBlink = performance.now() + 1500 + Math.random() * 3000;
+    this.state = el.dataset.state || "idle";
+  }
+
+  set(state) {
+    this.state = state;
+    this.el.dataset.state = state;
+    this.lookUntil = 0;
+    if (!this.corner) return;
+    const bubble = this.corner.querySelector(".bubble");
+    if (state === "listening") bubble.innerHTML = `<span class="bars">${"<i></i>".repeat(5)}</span>Listening…`;
+    else if (state === "thinking") bubble.innerHTML = `<span class="dots"><i></i><i></i><i></i></span>`;
+    else if (LINES[state]) bubble.textContent = LINES[state];
+    bubble.classList.toggle("show", ["listening", "thinking", "speaking", "happy", "pointing"].includes(state));
+    this.corner.classList.remove("lit");
+    if (state === "pointing") this.fly(); else this.home();
+  }
+
+  fly() {
+    const c = this.corner.getBoundingClientRect();
+    const t = this.corner.querySelector(".target").getBoundingClientRect();
+    const scale = 110 / 120, [px, py] = RIGS[this.dir].point;
+    const left = c.width - 12 - 110, top = c.height - 10 - 110;
+    const tx = (t.left - c.left + t.width * 0.5) - (left + px * scale);
+    const ty = (t.top - c.top + t.height * 0.55) - (top + py * scale);
+    this.el.classList.add("flying");
+    this.el.style.setProperty("--tx", tx + "px");
+    this.el.style.setProperty("--ty", ty + "px");
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => { this.el.classList.remove("flying"); if (this.state === "pointing") this.corner.classList.add("lit"); }, reduced ? 0 : 1000);
+    // While he's away the bubble sits below him, so it doesn't cover what he points at.
+    const bubble = this.corner.querySelector(".bubble");
+    bubble.classList.add("away");
+    bubble.style.left = Math.max(8, left + tx + 40) + "px";
+    bubble.style.top = (top + ty + 112) + "px";
+  }
+
+  home() {
+    clearTimeout(this.timer);
+    const away = this.el.style.getPropertyValue("--tx") && this.el.style.getPropertyValue("--tx") !== "0px";
+    if (away) {
+      this.el.classList.add("flying");
+      this.timer = setTimeout(() => this.el.classList.remove("flying"), reduced ? 0 : 1000);
+    }
+    this.el.style.setProperty("--tx", "0px");
+    this.el.style.setProperty("--ty", "0px");
+    const bubble = this.corner.querySelector(".bubble");
+    bubble.classList.remove("away");
+    bubble.style.left = ""; bubble.style.top = "";
+  }
+
+  frame(now, level) {
+    let [x, y] = [0, 0];
+    const s = this.state;
+    if (s === "listening") [x, y] = [-0.2, -0.1];
+    else if (s === "thinking") {
+      if (now > this.lookUntil) { this.alt = !this.alt; this.lookUntil = now + 1200 + Math.random() * 1400; }
+      [x, y] = [this.alt ? 0.75 : -0.75, -0.8];
+    } else if (s === "speaking") {
+      if (now > this.lookUntil) { this.alt = !this.alt; this.lookUntil = now + (this.alt ? 1800 + Math.random() * 1200 : 900 + Math.random() * 700); }
+      [x, y] = this.alt ? [-0.35, -0.85] : [0, 0];
+    } else if (s === "pointing") [x, y] = [-0.8, -0.6];
+    else if (s === "idle" || s === "happy") {
+      const r = this.el.getBoundingClientRect();
+      if (now - mouse.moved < 2500 && mouse.x >= 0) {
+        const dx = mouse.x - (r.left + r.width / 2), dy = mouse.y - (r.top + r.height / 2);
+        const d = Math.hypot(dx, dy) || 1, reach = Math.min(1, d / 160);
+        [x, y] = [dx / d * reach, dy / d * reach];
+      } else {
+        if (now > this.lookUntil) {
+          const a = Math.random() * Math.PI * 2, glance = Math.random() < 0.55;
+          this.look = glance ? [Math.cos(a) * 0.8, Math.sin(a) * 0.5] : [0, 0];
+          this.lookUntil = now + (glance ? 900 + Math.random() * 700 : 2500 + Math.random() * 4000);
+        }
+        [x, y] = this.look;
+      }
+    }
+    this.gx += (x - this.gx) * 0.25; this.gy += (y - this.gy) * 0.25;
+    this.el.style.setProperty("--gx", this.gx.toFixed(3));
+    this.el.style.setProperty("--gy", this.gy.toFixed(3));
+    this.el.style.setProperty("--lvl", s === "listening" || s === "speaking" ? level.toFixed(3) : "0");
+    if (s !== "sleepy" && now > this.nextBlink) {
+      this.el.classList.add("blink");
+      setTimeout(() => this.el.classList.remove("blink"), 120);
+      this.nextBlink = now + 2500 + Math.random() * 3500;
+    }
+    if (this.corner && s === "listening") {
+      const w = [0.5, 0.8, 1, 0.75, 0.45];
+      this.corner.querySelectorAll(".bars i").forEach((b, i) => { b.style.height = (5 + 13 * Math.min(1, level * 1.5) * w[i]) + "px"; });
+    }
+  }
+}
+
+class Stage {
+  constructor(section) {
+    const dir = section.dataset.dir;
+    const host = section.querySelector(".stage");
+    host.append(document.getElementById("stage-template").content.cloneNode(true));
+    this.milos = [...host.querySelectorAll(".corner")].map((corner) => {
+      corner.append(document.getElementById("corner-template").content.cloneNode(true));
+      corner.setAttribute("aria-label", `${dir} on a ${corner.classList.contains("dark") ? "dark" : "light"} wallpaper`);
+      return new Milo(corner.querySelector(".milo"), dir, corner);
+    });
+    const states = host.querySelector(".states");
+    this.buttons = STATES.map((s) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.textContent = LABELS[s]; b.setAttribute("aria-pressed", "false");
+      b.addEventListener("click", () => { this.playing(false); this.show(s); });
+      states.append(b);
+      return b;
+    });
+    this.play = host.querySelector(".play");
+    this.play.addEventListener("click", () => this.playing(this.play.getAttribute("aria-pressed") !== "true"));
+    this.slider = host.querySelector("input[type=range]");
+    this.auto = host.querySelector(".auto");
+    this.slider.addEventListener("input", () => { this.auto.checked = false; });
+    this.index = 0;
+    this.show("idle");
+    this.playing(!reduced);
+  }
+
+  show(state) {
+    this.state = state;
+    this.milos.forEach((m) => m.set(state));
+    this.buttons.forEach((b, i) => b.setAttribute("aria-pressed", String(STATES[i] === state)));
+    this.index = STATES.indexOf(state);
+    this.until = performance.now() + CYCLE[state];
+  }
+
+  playing(on) {
+    this.play.setAttribute("aria-pressed", String(on));
+    this.play.textContent = on ? "Playing" : "Paused";
+    this.cycling = on;
+    if (on) this.until = performance.now() + CYCLE[this.state];
+  }
+
+  level(now) {
+    if (!this.auto.checked) return this.slider.value / 100;
+    const t = now / 1000, syllable = Math.max(0, Math.sin(t * 8.5)) * (0.55 + 0.45 * Math.sin(t * 1.9 + 1));
+    const v = Math.min(1, 0.08 + syllable * 0.9 + Math.random() * 0.08);
+    this.slider.value = Math.round(v * 100);
+    return v;
+  }
+
+  frame(now) {
+    if (this.cycling && now > this.until) this.show(STATES[(this.index + 1) % STATES.length]);
+    const level = this.level(now);
+    this.milos.forEach((m) => m.frame(now, level));
+  }
+}
+
+const heroes = [...document.querySelectorAll(".hero .milo")].map((el) => new Milo(el, el.dataset.dir, null));
+const stages = [...document.querySelectorAll("section.dir")].map((s) => new Stage(s));
+
+const forced = new URLSearchParams(location.hash.slice(1)).get("state");
+if (STATES.includes(forced)) stages.forEach((s) => { s.playing(false); s.show(forced); });
+
+function tick(now) {
+  stages.forEach((s) => s.frame(now));
+  heroes.forEach((m) => m.frame(now, 0));
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
