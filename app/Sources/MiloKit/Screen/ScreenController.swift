@@ -24,7 +24,8 @@ public struct ScreenPorts {
 ///
 /// The worker acts in the background: his own cursor glides to each spot before the action runs, the window he
 /// works in gets an outline (`MiloModel.workingWindow`) that follows it, and Pip perches on its corner. The
-/// user keeps their mouse and keyboard, and only esc (or the Stop button on the outline) stops him.
+/// user keeps their mouse and keyboard, and only esc (or the Stop button on the outline) stops him. With
+/// `showWindow` on (the default) that window comes to the front once when he starts in it, so the user sees it.
 ///
 /// When an action needs the real mouse or keyboard, the brain asks the user to lend them (`hands_borrow`).
 /// While they are lent, the frame around the screen shows and any real input stops the worker at once, as
@@ -58,6 +59,11 @@ public final class ScreenController {
     private var lent: Set<String> = []
     private var lapses: [String: ScheduledTask] = [:]
     private var watchedPid: Int32?
+    /// The app whose window was last brought to the front this session, so it comes forward once, not on every
+    /// action: if the user clicks away to keep working, Milo doesn't pull it back.
+    private var forwardPid: Int32?
+    /// `[hands] show_window`: bring the window Milo works in to the front, so the user sees it. Read per window.
+    public var showWindow: () -> Bool = { true }
 
     /// `now` is on the input events' clock. `toAppKit` turns a top-left-origin point into AppKit's.
     public init(model: MiloModel, brain: BrainClient, ports: ScreenPorts,
@@ -169,6 +175,10 @@ public final class ScreenController {
         guard Self.pointed.contains(tool) else { return }
         if let window = target.window {
             show(window: window)
+            if let pid = target.pid, pid != forwardPid, model.handsActive, showWindow() {
+                forwardPid = pid
+                ports.windows.bringForward(pid: pid, frame: window)
+            }
             if let pid = target.pid, pid != watchedPid || model.workingWindow != appKit(window) {
                 watchedPid = pid
                 ports.windows.watch(pid: pid, frame: window) { [weak self] frame in
@@ -282,6 +292,7 @@ public final class ScreenController {
         model.flyTarget = nil
         model.workingWindow = nil
         watchedPid = nil
+        forwardPid = nil
         ports.windows.stop()
         ports.cursor.rest()
         aim = nil

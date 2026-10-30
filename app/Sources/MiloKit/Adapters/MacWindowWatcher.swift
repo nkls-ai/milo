@@ -48,6 +48,15 @@ public final class MacWindowWatcher: WindowWatcher {
         poll = timer
     }
 
+    /// Activates the app and raises the window whose frame matches, so it is in front of the user's other windows.
+    public func bringForward(pid: Int32, frame: CGRect) {
+        if let window = Self.window(of: AX.application(pid), matching: frame) {
+            AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
+            AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+        }
+        NSRunningApplication(processIdentifier: pid)?.activate()
+    }
+
     public func stop() {
         poll?.invalidate()
         poll = nil

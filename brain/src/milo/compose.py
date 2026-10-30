@@ -449,8 +449,9 @@ def _brain(p: Parts) -> None:
         live_settings.use(changed.chat.updates, changed.harness.max_helpers)
 
     live = {("ui", "dictate_key"): use_ui, ("ui", "talk_key"): use_ui,
-            ("ui", "whats_this_key"): use_ui, ("ui", "meeting_key"): use_ui, ("ui", "voice"): use_voice, ("dictation", "stream"): use_stream,
-            ("dictation", "learn"): use_learn, ("chat", "updates"): use_updates}
+            ("ui", "whats_this_key"): use_ui, ("ui", "meeting_key"): use_ui, ("ui", "voice"): use_voice,
+            ("dictation", "stream"): use_stream, ("dictation", "learn"): use_learn, ("chat", "updates"): use_updates,
+            ("hands", "show_window"): lambda changed: None}  # the app reads it from the next `settings`
     settings = Settings(TomlConfigFile(p.workspace.config_path), p.config, p.ui, live)
     usage = UsageService(JsonlUsageHistory(p.workspace.usage_path, p.workspace.dictation_history_path),
                          CliAccounts(p.config, p.workspace.home), p.ui, p.clock)

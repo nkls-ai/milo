@@ -233,6 +233,7 @@ grace_hours = 4                   # a run the Mac slept through runs at wake if 
 # Risky steps (Send, Delete, every script) ask first, like [approvals], and wait its timeout_s.
 enabled = true
 applescript = true                # let it drive scriptable apps (Finder, Numbers, Safari) with AppleScript
+show_window = true                # bring the window he works in to the front, so you see it; false: he works behind
 
 [memory]
 # Milo remembers conversations, tasks and what you tell him, and each turn brings along only what

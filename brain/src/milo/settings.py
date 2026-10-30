@@ -43,6 +43,7 @@ SETTINGS = (
     Setting("ui", "meeting_key", ("ctrl+option+n", "ctrl+shift+n", "ctrl+option+r", ""),
             ("Control-Option-N", "Control-Shift-N", "Control-Option-R", "Off")),
     Setting("ui", "voice"),
+    Setting("hands", "show_window"),
 )
 
 assert all(len(s.options) == len(s.labels) for s in SETTINGS)

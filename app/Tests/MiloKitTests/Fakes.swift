@@ -187,6 +187,8 @@ final class FakeWindowWatcher: WindowWatcher {
     }
     func stop() { stops += 1; changed = nil }
     func move(to frame: CGRect?) { changed?(frame) }
+    private(set) var broughtForward: [Int32] = []
+    func bringForward(pid: Int32, frame: CGRect) { broughtForward.append(pid) }
 }
 
 final class FakeInputSource: UserInputSource {

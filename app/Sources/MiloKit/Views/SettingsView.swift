@@ -95,6 +95,21 @@ public struct SettingsView: View {
                     }
                 }
             }
+            if let show = report["hands", "show_window"] {
+                ThemedCard {
+                    HStack {
+                        CardHeading(icon: show.value.bool == false ? "macwindow.on.rectangle" : "macwindow",
+                                    title: "Show me the window Milo works in",
+                                    detail: "Brings it to the front when he starts. Off: he works behind your windows.")
+                        Spacer(minLength: 12)
+                        Toggle("Show me the window Milo works in", isOn: Binding(
+                            get: { show.value.bool ?? true },
+                            set: { settings.change(show.section, show.key, to: .bool($0)) }))
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                    }
+                }
+            }
         }
     }
 
