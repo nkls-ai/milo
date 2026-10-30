@@ -136,6 +136,11 @@ def short_title(description: str, title: str = "") -> str:
     return text if len(text) <= MAX_TITLE else text[:MAX_TITLE - 1].rstrip() + "…"
 
 
+def reads_outside(step: Step) -> bool:
+    """A worker step that brings in text someone else wrote: a web page, a search, a download, mail."""
+    return step.kind == "web" or (step.kind == "tool" and step.title.lower().startswith(("mail", "message")))
+
+
 def plain_step(step: Step, installed=None) -> str:
     """A step in words with no outside text in them, for the talker: "working in Microsoft Excel", "reading".
 

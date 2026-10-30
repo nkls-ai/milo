@@ -105,13 +105,15 @@ time."""
 
 
 # What a script may not do for an Allow to cover it: write or open files and links itself, or work in Finder.
-_SCRIPT_REACH = re.compile(r"\b(open\s+for\s+access|write|set\s+eof|open\s+location|store\s+script|posix\s+file"
-                           r"|alias|path\s+to|choose\s+file|mount\s+volume|delete|move|duplicate)\b", re.IGNORECASE)
+_SCRIPT_REACH = re.compile(r"\b(open\s+for\s+access|write|set\s+eof|open|location|store\s+script|posix\s+file"
+                           r"|alias|path\s+to|choose\s+file|mount\s+volume|delete|move|duplicate|save|export|print"
+                           r"|file|folder|url|close|quit)\b|\"[/~]|https?:|://", re.IGNORECASE)
 _FILE_APPS = ("finder", "com.apple.finder", "path finder", "forklift", "commander one")
 
 
 def coverable_script(script: str) -> bool:
-    """A script an Allow for its apps may cover: it does nothing outside them, as far as words can tell."""
+    """A script an Allow for its app may cover: it does nothing outside the document in front, as far as words can
+    tell (no files, paths, links, saving, opening or closing). A brake, not a sandbox, like the rest of this file."""
     return not _SCRIPT_REACH.search(script)
 
 

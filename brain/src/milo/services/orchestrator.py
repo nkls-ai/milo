@@ -24,7 +24,7 @@ from milo.core.ports import Clock, EventSink
 from milo.core.types import Decision, Emotion, HarnessError, Reply, Scope, Step
 
 from . import helpers as board_text
-from .helpers import Helper, HelperStatus, plain_step, short_title
+from .helpers import Helper, HelperStatus, plain_step, reads_outside, short_title
 from .quiet import POLL_S
 from .speaker import Speaker
 from .task_runner import NEEDS_SCREEN, TASK_FAILED, TaskRunner, follow_up_prompt, steer_prompt
@@ -365,6 +365,10 @@ class Orchestrator:
         if not helper.active:
             return
         self._transcript.task_step(helper.id, step)
+        if helper.user_asked and reads_outside(step):
+            # What it read could steer the rest of its work: from now on it asks as usual (ADR 0022).
+            helper.user_asked = False
+            log.info("helper %d read outside text, so auto mode no longer covers it", helper.number)
         if helper.record(step) and self.updates is not None:
             text = self._milestones.step(helper, step, self._clock.monotonic())
             if text is not None:

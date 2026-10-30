@@ -213,6 +213,7 @@ class HandsService:
         if tool == "run_applescript":
             script = str(args.get("script", ""))
             apps = script_apps(script) if coverable_script(script) else None
+            apps = apps if apps is not None and len(apps) == 1 else None  # one app, the one it was allowed in
         else:
             apps = [AppRef(app, str(target.get("bundle") or "") if app == str(target.get("app") or "") else "")]
         if not apps or not all(plain_app(a.name, a.bundle) for a in apps):
