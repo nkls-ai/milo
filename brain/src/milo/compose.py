@@ -17,9 +17,10 @@ from .core.ports import Harness, LiveModel, PlaybackTap, TimedTranscriber, Trans
 from .core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, CHANNELS, DIARIZERS, EMBEDDERS, HARNESSES, LIVE_MODELS,
                             STREAMING_TRANSCRIBERS, TEXT_CLEANERS, TRANSCRIBERS, VOICES, AdapterContext, ConfigError,
                             Registry)
-from .core.types import Emotion, LiveMode, MiloState, ToolServer
+from .core.types import Emotion, LiveMode, ToolServer
 from .services.app_bridge import AppBridge, AppEyes, AppHands
 from .services.approvals import ActionPolicy, Approvals
+from .services.attention import Attention
 from .services.backchannel import Backchannel
 from .services.background_stt import BackgroundStt
 from .services.barge_in import BargeIn
@@ -85,6 +86,7 @@ class Runtime:
     """Said when the voice or the hearing falls back to the Mac; they need the event loop once it runs."""
     meetings: MeetingService | None = None
     diarize_executor: ThreadPoolExecutor | None = None
+    attention: Attention | None = None
 
 
 @dataclass
@@ -150,9 +152,11 @@ def build(home: Path) -> Runtime:
     server = UnixSocketServer(workspace.socket_path, on_command=lambda c: brain.handle(c),
                               on_connect=lambda: brain.greeting(), on_disconnect=lambda: brain.app_gone())
     ui = UiState(server)
+    attention = Attention(lambda: ui.state)  # the parts are attached as they are built, below
+    attention.attach(mic=lambda: mic.active)
     context = UserContext(clock)
     mem = _memory(config, workspace, ctx, clock, ui, harness, ledger, context,
-                  busy=lambda: live_talk.busy or helpers.busy) if config.memory.enabled else None
+                  busy=attention.at_work) if config.memory.enabled else None
     if mem is not None:
         profile = mem.profile
         if config.memory.dictations:
@@ -161,9 +165,10 @@ def build(home: Path) -> Runtime:
     conversation = Conversation(harness, ledger, clock, idle_reset_s)
     speaker = Speaker(voice, output, ui, tts_executor)
     speaker.silent = not config.ui.voice
+    attention.attach(voice=lambda: speaker.active)
     # Milo says it once when his usual voice or hearing can't be reached and the local one takes over.
     notices = tuple(VoiceNotice(lambda text: speaker.say(text, Emotion.CONCERNED), text=text,
-                                busy=lambda: live_talk.busy or speaker.active or mic.active)
+                                busy=attention.using_voice)
                     for text in (VOICE_NOTICE, HEARING_NOTICE))
     voice.on_switch = notices[0]
     hearing = _cloud_hearing(config, ctx, notices[1])
@@ -177,14 +182,15 @@ def build(home: Path) -> Runtime:
                                              elsewhere=lambda id: routines is not None and routines.is_run(id))
     transcript = Transcript(ui, transcript_store, clock)
     approvals = Approvals(ui, speaker, ActionPolicy(config.approval_levels), timeout_s=config.approvals.timeout_s,
-                          speak=config.approvals.speak, quiet=lambda: live_talk.busy or mic.active,
+                          speak=config.approvals.speak, quiet=attention.in_conversation,
                           transcript=transcript)
+    attention.attach(question=lambda: approvals.pending)
     bridge = AppBridge(server)  # each request to one app; one that hangs up fails what it owed at once
     server.on_client_gone.append(bridge.app_gone)
     live_settings = LiveSettings(workspace.config_path, _live_settings, config.chat.updates,
                                  config.harness.max_helpers)
     updates = Updates(ui, live_settings.updates, clock,
-                      busy=lambda: live_talk.busy or mic.active or speaker.active or approvals.pending)
+                      busy=attention.occupied)
     hands = hands_server = None
     helpers: Orchestrator  # built below; the questions only reach it once a helper runs
     if config.hands.enabled:
@@ -200,12 +206,13 @@ def build(home: Path) -> Runtime:
         eyes = EpisodeEyes(eyes, mem.memory.record, now=clock.now)
     runner = TaskRunner(harness, ledger, clock, context, background=background, hands=hands)
     helpers = Orchestrator(runner, speaker, ui, clock, transcript=transcript, max_helpers=live_settings.max_helpers,
-                           quiet=lambda: live_talk.busy or mic.active, updates=updates, milestones=Milestones(),
+                           quiet=attention.in_conversation, updates=updates, milestones=Milestones(),
                            inert=untrusted)
+    attention.attach(helpers=lambda: helpers.busy)
     if config.routines.enabled:
         book = MarkdownRoutineBook(workspace.routines_dir, workspace.routine_runs_path, workspace.routine_drafts_dir)
         routines = Routines(book, JsonStateFile(workspace.routine_state_path), helpers, speaker, ui, clock,
-                            transcript=transcript, approvals=approvals, quiet=lambda: live_talk.busy or mic.active,
+                            transcript=transcript, approvals=approvals, quiet=attention.in_conversation,
                             max_runs_per_day=lambda: config.routines.max_runs_per_day,
                             grace_s=config.routines.grace_hours * 3600, inert=untrusted)
         helpers.on_done.append(routines.seen)
@@ -226,10 +233,9 @@ def build(home: Path) -> Runtime:
         async def add_reminder(title, notes):
             return await bridge.call("reminders.add", {"title": title, "notes": notes})
 
-        live = (MiloState.LISTENING, MiloState.DICTATING, MiloState.TRANSCRIBING)
         # Meeting passes wait while the user dictates or talks, and give way when a key goes down (Listening),
         # so the user's words stay instant during a call.
-        background_stt = BackgroundStt(stt_executor, busy=lambda: mic.active or ui.state in live,
+        background_stt = BackgroundStt(stt_executor, busy=attention.user_speaking,
                                        interrupt=transcriber.interrupt)
         meetings = MeetingService(
             FileMeetingStore(workspace.meetings_dir), ui, clock, background_stt, transcriber,
@@ -243,14 +249,14 @@ def build(home: Path) -> Runtime:
             draft_mail=(lambda task: helpers.submit(task, title="Follow-up mail", screen=False, careful=True))
             if switches.enabled and switches.mail else None,
             options=MeetingOptions(m.auto, m.keep_audio, m.offer_reminders, m.offer_mail, m.end_after_s),
-            connected=server.connected, private=lambda: mic.active or speaker.active,
-            quiet=lambda: live_talk.busy or mic.active,
+            connected=server.connected, private=attention.private, quiet=attention.in_conversation,
             on_episode=mem.memory.record if mem is not None else None,
             match=diarizer.match if diarizer else 0.6)
     live_talk = LiveTalk(live_model, speaker, ui, context, clock, profile, reminders, ledger,
                          _persona(workspace.persona_path), idle_reset_s, helpers, transcript, eyes=eyes,
                          approvals=approvals, memory=mem.turns if mem is not None else None,
                          backchannel=backchannel, routines=routines, meetings=meetings)
+    attention.attach(turn=lambda: live_talk.busy)
     helpers.on_result = live_talk.note
     updates.speak = live_talk.speak_update
     listening = Listening(mic, transcriber, stt_executor, ui, DictationService(cleaner, history, ui),
@@ -262,7 +268,7 @@ def build(home: Path) -> Runtime:
         if isinstance(output, PlaybackTap):
             # A mic of its own, so the talk key's recording never has to wait for it.
             barge_in = BargeIn(create(AUDIO_INPUTS, "audio"), output, transcriber, stt_executor, ui, live_talk,
-                               speaker, mic_busy=lambda: mic.active)
+                               speaker, mic_busy=attention.recording)
         else:
             log.warning("[chat] voice_barge_in needs an audio output that reports what it played; it is off")
     messages = None
@@ -296,7 +302,7 @@ def build(home: Path) -> Runtime:
 
         engine = build_engine(config.section("heartbeat"), ctx, reminders)
         heartbeat = HeartbeatRunner(engine, context, conversation, speaker, ui, mic, clock,
-                                    busy=lambda: live_talk.busy)
+                                    busy=attention.answering)
         if routines is not None:
             heartbeat.on_tick.append(routines.tick)
         if messages is not None:
@@ -324,7 +330,7 @@ def build(home: Path) -> Runtime:
                   messages=messages, meetings=meetings)
     return Runtime(brain, server, heartbeat, transcriber, voice, stt_executor, tts_executor, harness,
                    live_model, live_talk, tool_server, hands_server, helpers, mem, barge_in, backchannel, messages,
-                   notices, meetings=meetings, diarize_executor=diarize_executor)
+                   notices, meetings=meetings, diarize_executor=diarize_executor, attention=attention)
 
 
 def _memory(config: Config, workspace, ctx: AdapterContext, clock, ui: UiState, harness: Harness, ledger,

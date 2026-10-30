@@ -79,6 +79,7 @@ Rules that keep the parts swappable:
 3. **Config picks by name.** Every swappable section has `use = "<name>"` and a table `[<section>.<name>]` holding that implementation's options. An adapter parses its own table with `options_from(OptionsDataclass, table, "section.name")`, which rejects unknown keys.
 4. **Only `compose.py` wires concrete things.** Tests wire fakes from `tests/fakes.py` instead.
 5. **Blocking work runs on dedicated single-thread executors.** STT gets one thread and TTS another, so MLX and PyTorch each stay on their own thread and the event loop never blocks.
+6. **"Is the user busy?" has one answer.** `services/attention.py` holds the facts (a turn runs, the mic records, Milo speaks, a question waits, a helper works) and named questions over them: `in_conversation`, `using_voice`, `occupied`, `at_work`, `private`, `user_speaking`. compose.py passes the question a service needs, never its own mix.
 
 ## Cross-module interfaces
 

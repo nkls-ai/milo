@@ -277,3 +277,20 @@ def test_a_bad_messages_setting_names_the_key(build):
         build(cheap(**{"messages.enabled": True, "messages.brief_at": "7.30am"}))
     with pytest.raises(ConfigError, match=r"messages\.telegram.*tokn_file"):
         build(cheap(**{"messages.enabled": True}).replace("token_file =", "tokn_file ="))
+
+
+def test_every_busy_check_asks_attention(build):
+    # A2: one place says when the user is busy; a new kind of activity is added there, not in eight lambdas.
+    runtime, _ = build(cheap(**{"chat.voice_barge_in": False}))
+    a = runtime.attention
+    approvals = runtime.brain._approvals
+    assert approvals._quiet == a.in_conversation
+    assert runtime.helpers._quiet == a.in_conversation
+    assert runtime.heartbeat._busy == a.answering
+    assert {n._busy for n in runtime.notices} == {a.using_voice}
+    assert runtime.memory.sleep._busy == a.at_work
+    runtime.memory.executor.shutdown(wait=False)
+    assert runtime.brain._routines._quiet == a.in_conversation
+    if runtime.meetings is not None:
+        assert (runtime.meetings._private, runtime.meetings._quiet) == (a.private, a.in_conversation)
+    assert a.turn() is False and a.question() is False and a.helpers() is False, "every part is attached"
