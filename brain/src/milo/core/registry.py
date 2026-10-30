@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
+from .control import WORK_FOLDER
+
 if TYPE_CHECKING:
     from .ports import (AudioInput, AudioOutput, Channel, Clock, Connections, Diarizer, Embedder, Harness, LiveModel,
                         ProactiveRule, StreamingTranscriber, TextCleaner, Transcriber, Voice)
@@ -42,6 +44,11 @@ class AdapterContext:
     """The command that starts the milo-mac MCP server for the worker harness. Empty: no Mac tools."""
     tool_servers: tuple[ToolServer, ...] = ()
     """MCP servers the worker harness gives its agent (Milo's app connections)."""
+
+    @property
+    def worker_dir(self) -> Path:
+        """Where a worker harness runs: the only folder of the workspace its sandbox may write (ADR 0020)."""
+        return self.home / WORK_FOLDER
 
 
 Factory = Callable[[Mapping[str, Any], AdapterContext], T]

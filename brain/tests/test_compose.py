@@ -72,7 +72,7 @@ def test_build_picks_the_engines_named_in_config(build):
     assert isinstance(runtime.live_talk, LiveTalk) and runtime.live_talk._idle_reset_s == 600
     assert isinstance(runtime.harness, CodexHarness)
     assert runtime.harness.binary == "/nonexistent/codex" and runtime.harness.model == "gpt-x"
-    assert runtime.harness.workdir == home
+    assert runtime.harness.workdir == home / "work", "helpers write only their own folder (ADR 0020)"
     assert isinstance(runtime.transcriber, MlxWhisper)
     assert isinstance(runtime.voice, FallbackVoice) and isinstance(runtime.voice.current, MacSay)
     assert isinstance(runtime.server, UnixSocketServer)
@@ -139,7 +139,9 @@ def test_screen_and_background_workers_both_run_with_milos_tools_only(build):
     runtime, home = build(cheap(**{"harness.use": "claude"}))
     for worker in (runtime.harness, runtime.helpers._runner._background):
         cmd = worker.command("hi", None)
-        assert cmd[cmd.index("--setting-sources") + 1] == "project,local" and "--strict-mcp-config" in cmd
+        assert "--restricted" in cmd and "--strict-mcp-config" in cmd
+        assert f"Write(/{(home / 'config.toml').resolve()})" in worker.deny, "both keep off Milo's control files"
+        assert worker.workdir == home / "work"
 
 
 def test_heartbeat_disabled_builds_no_runner(build):
@@ -206,6 +208,8 @@ def test_memory_can_be_switched_off_and_keeps_the_tools_server_for_it(build):
     assert [s.name for s in runtime.harness.tool_servers] == ["milo"], "the memory tools still need it"
     assert runtime.memory.sleep is None
     runtime.memory.executor.shutdown(wait=False)
+    runtime, _ = build(cheap(**{"connections.enabled": False, "memory.enabled": False}))
+    assert [s.name for s in runtime.harness.tool_servers] == ["milo"], "milo_remind: helpers can't write reminders.md"
 
 
 def test_a_bad_memory_setting_fails_at_build(build):

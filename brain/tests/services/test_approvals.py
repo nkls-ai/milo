@@ -248,3 +248,35 @@ def test_computer_use_asks_the_same_question_and_a_spoken_yes_lets_it_run():
     assert asyncio.run(run()).text == "ax_press done"
     assert [d.answer for d in s.sink.of(ConfirmDone)] == ["yes"]
     assert s.model.turns == [], "the yes answered the question and started no turn"
+
+
+def test_a_helpers_reminder_asks_first_and_only_then_lands_in_reminders_md(tmp_path):
+    # ADR 0020: the worker can't write reminders.md, so it asks over the tool socket, and the user decides.
+    from milo.memory.reminders import MarkdownReminders
+
+    s = Stack()
+    book = MarkdownReminders(tmp_path / "reminders.md")
+    requests = ToolRequests(s.approvals, s.bridge, reminders=book)
+
+    async def ask(answer: bool, text: str):
+        asking = asyncio.create_task(requests.handle({"op": "reminder.add", "when": "2026-11-05T09:00",
+                                                      "text": text}))
+        await settle()
+        c = s.sink.of(Confirm)[-1]
+        s.approvals.answer(c.id, answer)
+        return c.question, await asking
+
+    async def run():
+        refused = await ask(False, "Wire 5000 EUR to the landlord")
+        added = await ask(True, "Call   the\ndentist")
+        bad = await requests.handle({"op": "reminder.add", "when": "soon", "text": "x"})
+        return refused, added, bad
+
+    (q1, refused), (q2, added), bad = asyncio.run(run())
+    assert q1 == "Should I remind you on Thursday 5 November at 09:00?\n› Wire 5000 EUR to the landlord"
+    assert refused == {"ok": False, "error": "The user said no."}
+    assert added == {"ok": True, "result": {"reminder": "Call the dentist", "due": "2026-11-05T09:00"}}
+    assert [(r.text, f"{r.due:%H:%M}") for r in book.all()] == [("Call the dentist", "09:00")]
+    assert not bad["ok"]
+    off = asyncio.run(ToolRequests(s.approvals, s.bridge).handle({"op": "reminder.add", "when": "x", "text": "y"}))
+    assert off == {"ok": False, "error": "unknown op 'reminder.add'"}

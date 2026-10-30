@@ -146,7 +146,7 @@ TOOLS: tuple[Tool, ...] = (
          lambda r, a: r.list(_text(a, "query"), bool(a.get("include_done")))),
     Tool("reminders_add", "reminders", "change",
          "Add a reminder to the user's Reminders app, synced to their iPhone. For Milo's own spoken reminders "
-         "use reminders.md instead; use this when the user says Reminders, a list, or their phone.",
+         "use milo_remind instead; use this when the user says Reminders, a list, or their phone.",
          {"title": _str("What to remember, in the user's words."), "due": _str(WHEN + " Optional."),
           "notes": _str("Extra detail."), "list": _str("List name. Default: the usual one.")},
          ("title",), lambda r, a: r.add(_need(a, "title"), _time(a, "due"), _text(a, "notes"), _text(a, "list"))),

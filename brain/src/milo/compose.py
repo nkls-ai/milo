@@ -120,7 +120,7 @@ def build(home: Path) -> Runtime:
     hands_socket = workspace.hands_socket_path
     # The worker CLI starts the MCP server with the brain's own interpreter, so it needs no install step.
     mac_tools = (sys.executable, "-m", "milo.mcp_server", "--socket", str(hands_socket)) if config.hands.enabled else ()
-    ctx = AdapterContext(home, workspace.state_dir, clock, mac_tools, _tool_servers(config, home))
+    ctx = AdapterContext(home, workspace.state_dir, clock, mac_tools, _tool_servers(home))
 
     def create(registry: Registry, section: str):
         name, options = config.pluggable(section)
@@ -189,7 +189,8 @@ def build(home: Path) -> Runtime:
     helpers: Orchestrator  # built below; the questions only reach it once a helper runs
     if config.hands.enabled:
         hands = HandsService(AppHands(bridge), HelperQuestions(approvals, lambda: helpers, screen=True), ui,
-                             transcript=transcript, applescript=config.hands.applescript, locale=_mac_locale())
+                             transcript=transcript, applescript=config.hands.applescript, locale=_mac_locale(),
+                             protected=workspace.protected)
         hands_server = HandsSocketServer(hands_socket, hands.call)
     switches = config.connections
     enabled = [name for name in ("calendar", "reminders") if switches.enabled and getattr(switches, name)]
@@ -286,7 +287,8 @@ def build(home: Path) -> Runtime:
         helpers.watchers.append(messages.helper_changed)
     tool_server = ToolSocketServer(workspace.tools_socket_path,
                                    ToolRequests(HelperQuestions(approvals, lambda: helpers, screen=False), bridge,
-                                                enabled, memory_requests, phone=messages).handle)
+                                                enabled, memory_requests, phone=messages,
+                                                reminders=reminders).handle)
 
     heartbeat = None
     if config.heartbeat.enabled:
@@ -361,11 +363,9 @@ def _memory(config: Config, workspace, ctx: AdapterContext, clock, ui: UiState, 
     return MemoryRuntime(memory, TurnMemory(memory), profile, executor, sleep)
 
 
-def _tool_servers(config: Config, home: Path) -> tuple[ToolServer, ...]:
-    """Milo's app connections (and memory tools) as an MCP server for the worker: this Python, so no `uv run`
-    on every task."""
-    if not config.connections.enabled and not config.memory.enabled:
-        return ()
+def _tool_servers(home: Path) -> tuple[ToolServer, ...]:
+    """Milo's app connections, memory tools and reminders as an MCP server for the worker: this Python, so no
+    `uv run` on every task. Always on: the worker can't write reminders.md itself (ADR 0020)."""
     return (ToolServer("milo", (sys.executable, "-m", "milo.connect"), (("MILO_HOME", str(home)),)),)
 
 

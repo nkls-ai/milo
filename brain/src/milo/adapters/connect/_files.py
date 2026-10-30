@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from xml.etree import ElementTree
 
+from milo.core.control import Protected
 from milo.core.types import ToolError
 
 PLAIN = {".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".log", ".xml", ".yaml", ".yml", ".ini", ".ics",
@@ -21,6 +22,7 @@ READABLE = PLAIN | TEXTUTIL | {".pdf", ".xlsx", ".eml"}
 TIMEOUT_S = 30
 
 OUTSIDE = "That file is outside the folders Milo may look in."
+MILOS = "That is one of Milo's own files. Only the user changes those, in Milo's settings."
 SHARED = "That folder is shared or synced to the internet, so I don't move files into it. The user can do that."
 # Top-level folders of the home that other people or the internet can see. ~/Library (iCloud Drive and the
 # cloud storage apps) is out of reach anyway.
@@ -42,8 +44,11 @@ _SHEET_NS = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 MAX_XML_BYTES = 30 * 1024 * 1024
 
 
-def allowed(path: Path, scope: Path, home: Path | None = None) -> bool:
-    """Inside `scope`, not in ~/Library or any hidden folder. Names compare without case, like APFS does."""
+def allowed(path: Path, scope: Path, home: Path | None = None, protected: Protected | None = None) -> bool:
+    """Inside `scope`, not in ~/Library or any hidden folder, and not one of Milo's control files (`protected`,
+    ADR 0020). Names compare without case, like APFS does."""
+    if protected is not None and protected.covers(path):
+        return False
     try:
         real = path.resolve()
         rel = real.relative_to(scope.resolve())
@@ -61,10 +66,12 @@ def allowed(path: Path, scope: Path, home: Path | None = None) -> bool:
     return True
 
 
-def checked(path: str, scope: Path) -> Path:
+def checked(path: str, scope: Path, protected: Protected | None = None) -> Path:
     p = Path(path).expanduser()
     if not p.is_absolute():
         p = scope / p
+    if protected is not None and protected.covers(p):
+        raise ToolError(MILOS)
     if not allowed(p, scope):
         raise ToolError(OUTSIDE)
     if not p.is_file():
@@ -72,11 +79,13 @@ def checked(path: str, scope: Path) -> Path:
     return p.resolve()
 
 
-def folder(path: str, scope: Path, *, must_exist: bool = True) -> Path:
+def folder(path: str, scope: Path, *, must_exist: bool = True, protected: Protected | None = None) -> Path:
     """A folder inside `scope`, like "~/Downloads" or "Invoices" (inside the scope)."""
     p = Path(path).expanduser()
     if not p.is_absolute():
         p = scope / p
+    if protected is not None and protected.covers(p):
+        raise ToolError(MILOS)
     if not allowed(p, scope):
         raise ToolError(OUTSIDE)
     if must_exist and not p.is_dir():
@@ -86,19 +95,19 @@ def folder(path: str, scope: Path, *, must_exist: bool = True) -> Path:
     return p.resolve()
 
 
-def listing(path: str, scope: Path, name: str = "", limit: int = 20) -> list[dict]:
+def listing(path: str, scope: Path, name: str = "", limit: int = 20, protected: Protected | None = None) -> list[dict]:
     """The files right inside one folder whose name contains `name`, newest first. No Spotlight needed."""
-    where = folder(path, scope)
-    return newest([p for p in where.iterdir() if name.lower() in p.name.lower()], scope, limit)
+    where = folder(path, scope, protected=protected)
+    return newest([p for p in where.iterdir() if name.lower() in p.name.lower()], scope, limit, protected)
 
 
-def move(paths: list[str], into: str, scope: Path) -> dict:
+def move(paths: list[str], into: str, scope: Path, protected: Protected | None = None) -> dict:
     """Move files into a folder inside `scope`, making the folder if needed. Nothing is ever replaced: if a
     file of the same name is there, nothing moves."""
     if not paths:
         raise ToolError("Say which files to move.")
-    files = [checked(p, scope) for p in paths]
-    dest = folder(into, scope, must_exist=False)
+    files = [checked(p, scope, protected) for p in paths]
+    dest = folder(into, scope, must_exist=False, protected=protected)
     if shared(dest):
         raise ToolError(SHARED)
     clashes = [f.name for f in files if (dest / f.name).exists() and (dest / f.name).resolve() != f]
@@ -141,8 +150,8 @@ def describe(path: Path, scope: Path) -> dict:
             "modified": datetime.fromtimestamp(st.st_mtime).isoformat(timespec="minutes"), "size": st.st_size}
 
 
-def newest(paths: list[Path], scope: Path, limit: int) -> list[dict]:
-    files = [p for p in paths if p.is_file() and allowed(p, scope)]
+def newest(paths: list[Path], scope: Path, limit: int, protected: Protected | None = None) -> list[dict]:
+    files = [p for p in paths if p.is_file() and allowed(p, scope, protected=protected)]
     files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
     return [describe(p, scope) for p in files[:limit]]
 

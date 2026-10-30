@@ -20,7 +20,7 @@ from typing import Any
 
 from milo.core.hands import mac_server
 from milo.core.ports import PlanCallback, SessionCallback, StepCallback
-from milo.core.registry import HARNESSES, AdapterContext, options_from
+from milo.core.registry import HARNESSES, AdapterContext, ConfigError, options_from
 from milo.core.types import REPLY_SCHEMA, HarnessError, Reply, ToolServer, Usage
 
 from ._activity import CodexActivity, RunWatch, lines
@@ -66,15 +66,18 @@ def user_codex_home() -> Path:
     return Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex").expanduser()
 
 
-# What Codex would read from its home as instructions, hooks, rules or extra config. Milo never puts any there.
+# What Codex would read from its home as instructions, hooks, rules or extra config. Only Milo's own AGENTS.md
+# (put back after this cleanup) goes there.
 _FOREIGN = ("AGENTS.md", "AGENTS.override.md", "hooks.json", "hooks", "rules", "skills", "plugins", "agents")
 
 
-def prepare_home(home: Path, login_from: Path) -> None:
-    """Milo's Codex home: a fresh config.toml, a link to the user's login, nothing else that steers Codex.
+def prepare_home(home: Path, login_from: Path, instructions: Path | None = None) -> None:
+    """Milo's Codex home: a fresh config.toml, a link to the user's login, Milo's instructions (a copy of
+    `instructions`, the workspace's AGENTS.md) and nothing else that steers Codex.
 
     A link that is already there is kept, and so is a real auth.json (a login made for Milo alone). Nothing
-    here follows a symlink except the login: config.toml is replaced, not written through.
+    here follows a symlink except the login: config.toml and AGENTS.md are replaced, not written through.
+    The home is outside the worker's folder, so its sandbox can't change it for the next task.
     """
     if home.is_symlink():
         raise HarnessError(f"{home} is a symlink; Milo's Codex home must be a real folder", transient=False)
@@ -87,10 +90,12 @@ def prepare_home(home: Path, login_from: Path) -> None:
             shutil.rmtree(path)
     for profile in home.glob("*.config.toml"):
         profile.unlink()
-    staged = home / "config.toml.milo"
-    staged.unlink(missing_ok=True)
-    staged.write_text(HOME_CONFIG)
-    os.replace(staged, home / "config.toml")
+    _replace(home / "config.toml", HOME_CONFIG)
+    if instructions is not None:
+        try:
+            _replace(home / "AGENTS.md", instructions.read_text(encoding="utf-8"))
+        except OSError as e:
+            log.warning("could not give the worker Milo's instructions from %s: %s", instructions, e)
     auth, source = home / "auth.json", login_from / "auth.json"
     if auth.is_symlink() and not auth.exists():
         auth.unlink()  # the user's login moved or went away
@@ -106,7 +111,12 @@ class CodexOptions:
     model: str = ""
     reasoning_effort: str = "low"
     sandbox: str = "workspace-write"
+    """workspace-write (the worker's folder only) or read-only. Never danger-full-access: the worker would
+    reach Milo's control files (ADR 0020)."""
     timeout_s: float = 180
+
+
+SANDBOXES = ("workspace-write", "read-only")
 
 
 class CodexHarness:
@@ -115,10 +125,13 @@ class CodexHarness:
     def __init__(self, binary: str, workdir: Path, schema_path: Path, *, model: str = "",
                  reasoning_effort: str = "low", sandbox: str = "workspace-write", timeout_s: float = 180,
                  mac_tools: Sequence[str] = (), tool_servers: tuple[ToolServer, ...] = (),
-                 home: Path | None = None, login_from: Path | None = None):
-        """`home` is Milo's own Codex home (None: the user's, for tests), `login_from` the user's."""
+                 home: Path | None = None, login_from: Path | None = None, instructions: Path | None = None):
+        """`home` is Milo's own Codex home (None: the user's, for tests), `login_from` the user's.
+        `instructions` (the workspace's AGENTS.md) become the home's AGENTS.md: the worker runs in `workdir`,
+        a folder below the workspace, where Codex wouldn't look for them."""
         self.binary = binary
         self.home = home
+        self.instructions = instructions
         self.login_from = login_from or user_codex_home()
         self.mac_tools = tuple(mac_tools)
         self.tool_servers = tool_servers
@@ -156,15 +169,23 @@ class CodexHarness:
                         RunWatch(on_session, on_plan).line if on_session or on_plan else None)
         env = None
         if self.home is not None:
-            prepare_home(self.home, self.login_from)
+            prepare_home(self.home, self.login_from, self.instructions)
             env = {**os.environ, "CODEX_HOME": str(self.home)}
         # codex takes another 4-6 s to exit after turn.completed; the answer is complete by then.
+        self.workdir.mkdir(parents=True, exist_ok=True)
         code, out, err = await run(self.command(prompt, session_id), cwd=self.workdir, timeout_s=self.timeout_s,
                                    on_line=on_line, done=turn_over, env=env)
         thread_id, text, usage, error = parse_events(out.splitlines())
         if error or code != 0 or text is None:
             raise HarnessError(f"codex failed: {error or last_line(err, code)}", transient=True)
         return Reply.from_model_text(text, usage, thread_id or session_id)
+
+
+def _replace(path: Path, text: str) -> None:
+    staged = path.with_name(path.name + ".milo")
+    staged.unlink(missing_ok=True)
+    staged.write_text(text, encoding="utf-8")
+    os.replace(staged, path)
 
 
 def mcp_overrides(server: ToolServer) -> list[str]:
@@ -217,9 +238,12 @@ def parse_events(lines: Iterable[str]) -> tuple[str | None, str | None, Usage, s
 @HARNESSES.register("codex")
 def _codex(options: Mapping[str, Any], ctx: AdapterContext) -> CodexHarness:
     o = options_from(CodexOptions, options, "harness.codex")
+    if o.sandbox not in SANDBOXES:
+        raise ConfigError(f"[harness.codex] sandbox must be one of {', '.join(SANDBOXES)}, not {o.sandbox!r}: "
+                          "Milo's helpers never get to change his own files")
     return CodexHarness(
         find_binary(o.binary, "codex", (BUNDLED_CODEX,), section="harness.codex"),
-        ctx.home,
+        ctx.worker_dir,
         ctx.state_dir / "reply-schema.json",
         model=o.model,
         reasoning_effort=o.reasoning_effort,
@@ -228,4 +252,5 @@ def _codex(options: Mapping[str, Any], ctx: AdapterContext) -> CodexHarness:
         mac_tools=ctx.mac_tools,
         tool_servers=ctx.tool_servers,
         home=ctx.home / ".codex",
+        instructions=ctx.home / "AGENTS.md",
     )

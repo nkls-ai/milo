@@ -7,6 +7,7 @@ import logging
 import re
 from dataclasses import dataclass
 
+from milo.core.control import Protected
 from milo.core.events import FlyTo, HandsBorrow, HandsSession, Status
 from milo.core.hands import validate
 from milo.core.ports import AppHands, Confirmer, EventSink
@@ -60,9 +61,12 @@ class HandsService:
     """
 
     def __init__(self, hands: AppHands, confirm: Confirmer, sink: EventSink, *,
-                 transcript: Transcript | None = None, applescript: bool = True, locale: str = ""):
+                 transcript: Transcript | None = None, applescript: bool = True, locale: str = "",
+                 protected: Protected | None = None):
         """`locale` is the Mac's region (AppleLocale, like "en_US@rg=dezzzz"): money in spreadsheets uses its
-        currency."""
+        currency. A script that names one of Milo's control files (`protected`) never runs (ADR 0020); one
+        that builds the path some other way still waits for the user's yes, like every script."""
+        self._protected = protected
         self._hands = hands
         self._locale = locale
         self._confirm = confirm
@@ -174,6 +178,9 @@ class HandsService:
     def _judge(self, tool: str, acts: bool, args: dict, target: dict) -> tuple[Verdict, str]:
         """How risky the action is on `target`, and the app it acts in."""
         verdict = classify(tool, args, target)
+        if tool == "run_applescript" and self._protected is not None and \
+                self._protected.mentioned_in(str(args.get("script", ""))):
+            verdict = Verdict(Risk.NEVER, "his own settings, memory or routines from a script")
         app = _app_of(tool, args, target)
         if verdict.risk is Risk.OK and self._needs_clearing(tool, acts, target, app):
             verdict = Verdict(Risk.ASK, "use")

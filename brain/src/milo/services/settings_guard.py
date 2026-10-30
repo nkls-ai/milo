@@ -1,6 +1,7 @@
 """While the owner is away and Milo can be reached by message, Milo's settings can't change (ADR 0017).
 
-A helper started from the phone works in ~/Milo and could edit what decides Milo's safety: config.toml
+Helpers can't write these files (ADR 0020), but one driving the Mac's apps could still type into them in an
+editor. What a helper started from the phone could change decides Milo's safety: config.toml
 (switch connections back on, loosen the approval levels), state/messages.json (who the paired phone is)
 or secrets/ (swap the bot token for someone else's bot). Most of these are only read at start, but the
 next restart would pick a change up. So while the guard is on, every guarded file is put back the way it

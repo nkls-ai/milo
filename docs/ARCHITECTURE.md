@@ -11,7 +11,7 @@ Events that only draw (state, bubble, levels) go to every connected app. Request
 
 Only one brain runs per workspace. It takes an `flock` on `~/Milo/run/brain.lock` before it loads anything and holds it until the process ends, and a second brain exits at once. The app starts a brain only while nobody holds that lock: after a restart it waits for the old brain to let go, and it leaves a brain started by hand alone. It stops its brain with SIGTERM, since `uv run` passes that on and swallows SIGINT. Two brains would each load Whisper and OmniVoice, which on 16 GB fills swap and makes every Whisper pass several times slower.
 
-`~/Milo/` is the workspace. It holds `config.toml`, Milo's persona for the chat model (`persona.md`), the agent's instructions (`AGENTS.md`, `CLAUDE.md`), `memory/`, `reminders.md`, `state/` and `logs/`. The harness runs with this folder as its working directory, so the agent reads and edits its own memory with ordinary file tools.
+`~/Milo/` is the workspace. It holds `config.toml`, Milo's persona for the chat model (`persona.md`), the agent's instructions (`AGENTS.md`, `CLAUDE.md`), `memory/`, `reminders.md`, `state/` and `logs/`. The harness runs in `work/`, the one folder of the workspace its sandbox may write. It can read the rest, but Milo's control files (config, persona, instructions, reminders, routines, memory, secrets) change only through the Settings window, Milo's tags and tools that ask the user ([ADR 20](adr/0020-helpers-never-write-milos-control-files.md)).
 
 ## Brain layout
 
@@ -144,7 +144,7 @@ Milo remembers episodes (what happened) and facts (what is true about the user) 
 
 ## Helpers
 
-The chat model, the talker, has no tools and never waits for work. Work that needs files, research, the user's apps or the screen comes out of a reply as a `<task>`, and `services/orchestrator.py` hands it to a helper: one run of the agent harness (`[harness]`, Codex by default) in its own process and its own session, working in the `~/Milo` sandbox under `AGENTS.md`. See [ADR 11](adr/0011-helpers-and-the-orchestrator.md).
+The chat model, the talker, has no tools and never waits for work. Work that needs files, research, the user's apps or the screen comes out of a reply as a `<task>`, and `services/orchestrator.py` hands it to a helper: one run of the agent harness (`[harness]`, Codex by default) in its own process and its own session, working in `~/Milo/work` under `AGENTS.md`, with a sandbox that can't write Milo's control files (ADR 20). See [ADR 11](adr/0011-helpers-and-the-orchestrator.md).
 
 - **At once and in turn.** Up to `[harness] max_helpers` (3) helpers work at the same time; more wait as queued. Helpers with `screen="yes"` take turns on the screen harness (with the milo-mac tools). The rest run on a second harness instance without them. A background helper that answers `NEEDS_SCREEN` is queued again for the screen.
 - **Milo's tools only.** Both harness instances run without the user's own setup: Codex in a home of Milo's own (`~/Milo/.codex`, rewritten before every turn, the login linked from the user's), Claude Code without user settings, skills and other MCP servers. See [ADR 13](adr/0013-a-worker-with-milos-tools-only.md).

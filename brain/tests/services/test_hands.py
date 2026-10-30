@@ -100,6 +100,21 @@ def test_a_script_question_is_short_and_the_script_is_in_the_window_first():
     assert t.confirm.asked[2] == "Run a script? It's in my window."
 
 
+def test_a_script_that_names_milos_control_files_never_runs(tmp_path):
+    # ADR 0020: scripts run in Milo.app, outside the worker's sandbox, so naming config.toml is refused outright.
+    from milo.core.control import Protected
+
+    home = tmp_path / "Milo"
+    t = Setup(confirm=FakeConfirm(True, True), protected=Protected(home))
+    for script in (f'do shell script "echo x >> {home}/config.toml"',
+                   f'set f to POSIX file "{home}/Routines/weekly.md"',
+                   f'do shell script "cp evil {home}/memory/facts.jsonl"'):
+        assert "never touches his own settings" in t.fails("run_applescript", {"script": script})
+    assert t.confirm.asked == [] and t.port.actions == [], "not even asked"
+    t.call("run_applescript", {"script": f'do shell script "ls {home}/work"'})
+    assert len(t.confirm.asked) == 1, "a script about the worker's own folder asks like any other"
+
+
 def test_applescript_can_be_turned_off():
     assert Setup(applescript=False).fails("run_applescript", {"script": "beep"}) == TURNED_OFF
 

@@ -51,6 +51,8 @@ def title(tool: str, args: dict) -> str | None:
             return f"Adding the reminder {_quoted(args.get('title'))}"
         case "reminders_complete":
             return "Ticking off a reminder"
+        case "milo_remind":
+            return f"Setting the reminder {_quoted(args.get('text'))}"
         case "mail_search":
             q = args.get("query")
             return f"Looking through your mail for {_quoted(q)}" if q else "Looking through your mail"

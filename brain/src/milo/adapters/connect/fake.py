@@ -15,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from milo.core.control import Protected
 from milo.core.ports import Connections
 from milo.core.registry import CONNECTIONS, AdapterContext, options_from
 from milo.core.types import ToolError
@@ -208,11 +209,12 @@ class FakeShortcuts:
 class FakeFiles:
     """Files under the fake home, found by name and by content like Spotlight would."""
 
-    def __init__(self, world: World):
+    def __init__(self, world: World, protected: Protected | None = None):
         self.scope = world.home
+        self.protected = protected
 
     def find(self, name: str, limit: int = 20) -> list[dict]:
-        return _files.newest([p for p in self._all() if name.lower() in p.name.lower()], self.scope, limit)
+        return _files.newest([p for p in self._all() if name.lower() in p.name.lower()], self.scope, limit, self.protected)
 
     def search(self, text: str, limit: int = 20) -> list[dict]:
         words = text.lower().split()
@@ -224,21 +226,21 @@ class FakeFiles:
                 continue
             if all(w in content for w in words):
                 hits.append(p)
-        return _files.newest(hits, self.scope, limit)
+        return _files.newest(hits, self.scope, limit, self.protected)
 
     def read(self, path: str, max_chars: int = 20000) -> dict:
-        return _files.read(_files.checked(path, self.scope), max_chars)
+        return _files.read(_files.checked(path, self.scope, self.protected), max_chars)
 
     def list(self, folder: str, name: str = "", limit: int = 20) -> list[dict]:
-        return _files.listing(folder, self.scope, name, limit)
+        return _files.listing(folder, self.scope, name, limit, self.protected)
 
     def move(self, paths: list[str], folder: str) -> dict:
-        return _files.move(paths, folder, self.scope)
+        return _files.move(paths, folder, self.scope, self.protected)
 
     def _all(self) -> list[Path]:
         if not self.scope.is_dir():
             return []
-        return [p for p in self.scope.rglob("*") if p.is_file() and _files.allowed(p, self.scope)]
+        return [p for p in self.scope.rglob("*") if p.is_file() and _files.allowed(p, self.scope, protected=self.protected)]
 
 
 @CONNECTIONS.register("fake")
@@ -246,4 +248,5 @@ def _fake(options: Mapping[str, Any], ctx: AdapterContext) -> Connections:
     o = options_from(FakeOptions, options, "connections.fake")
     world = World(Path(o.dir).expanduser() if o.dir else ctx.home / "fake")
     return Connections(calendar=FakeCalendar(world), reminders=FakeReminders(world), mail=FakeMail(world),
-                       notes=FakeNotes(world), shortcuts=FakeShortcuts(world), files=FakeFiles(world))
+                       notes=FakeNotes(world), shortcuts=FakeShortcuts(world),
+                       files=FakeFiles(world, Protected(ctx.home)))
