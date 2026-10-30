@@ -88,6 +88,9 @@ async def _serve(runtime: Runtime) -> None:
     asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, asyncio.current_task().cancel)
     for notice in runtime.notices:
         notice.loop = asyncio.get_running_loop()
+    if runtime.meetings is not None:
+        # Before the socket opens: the app says first thing whether it still records a meeting a crash left open.
+        runtime.meetings.start()
     await runtime.server.start()
     await runtime.tool_server.start()
     if runtime.hands_server is not None:
@@ -121,6 +124,10 @@ async def _serve(runtime: Runtime) -> None:
             task.cancel()
         runtime.stt_executor.shutdown(wait=False, cancel_futures=True)
         runtime.tts_executor.shutdown(wait=False, cancel_futures=True)
+        if runtime.diarize_executor is not None:
+            runtime.diarize_executor.shutdown(wait=False, cancel_futures=True)
+        if runtime.meetings is not None:
+            await runtime.meetings.close()
         if memory is not None:
             memory.memory.close()  # queued behind whatever the memory thread is doing
             memory.executor.shutdown(wait=False)

@@ -240,3 +240,16 @@ consolidate_calls_per_day = 2     # hard cap; 0 turns it off
 model = "intfloat/multilingual-e5-small"
 device = "gpu"                    # gpu | cpu
 
+[meetings]
+# When Milo notices a call (Zoom, Teams, Meet, FaceTime, Slack huddles): "ask" asks once whether to take notes,
+# "calendar" takes notes without asking when your calendar has a meeting now (and asks otherwise), "off" never
+# asks. "Take meeting notes" in the menu bar works either way. Notes go to ~/Milo/meetings/.
+auto = "ask"
+keep_audio = false                # keep the recording after the notes are written
+diarizer = "sherpa_onnx"          # tells the other people apart; "" labels them all "Others"
+offer_reminders = true            # after the call, offer to put your to-dos into Reminders
+offer_mail = true                 # after the call, offer a follow-up mail draft
+end_after_s = 30                  # notes stop this long after the call ends
+
+[meetings.sherpa_onnx]
+match = 0.6                       # how alike two stretches of speech must sound to count as one person

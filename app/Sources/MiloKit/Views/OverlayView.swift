@@ -22,6 +22,7 @@ public struct OverlayView: View {
                 CharacterView(model: model)
                     .frame(width: 132, height: 132)
                     .overlay(alignment: .topLeading) { LookingBadge(model: model) }
+                    .overlay(alignment: .topTrailing) { RecordingBadge(model: model) }
                     .padding(.trailing, 8)
             }
             // A fixed answer, so the stack never walks into the figure to align it: every frame of
@@ -34,6 +35,7 @@ public struct OverlayView: View {
         .animation(motion, value: model.state)
         .animation(motion, value: model.question)
         .animation(motion, value: model.looking)
+        .animation(motion, value: model.recording)
         .themed(by: model)
     }
 

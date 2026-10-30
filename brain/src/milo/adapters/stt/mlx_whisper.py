@@ -12,6 +12,7 @@ from typing import Any
 
 import numpy as np
 
+from milo.core.meetings import TimedWord
 from milo.core.registry import TRANSCRIBERS, AdapterContext, options_from
 from milo.core.types import STT_SAMPLE_RATE, Audio, Interrupted
 
@@ -100,6 +101,33 @@ class MlxWhisper:
 
     def interrupt(self) -> None:
         self._stop.set()
+
+    def words(self, audio: Audio, language: str | None = None) -> list[TimedWord]:
+        """TimedTranscriber for meeting notes: the final model with word times. Skips silence and the segments
+        Whisper makes up over noise. interrupt() ends it with Interrupted, as it does a pass."""
+        self._stop.clear()
+        if is_silent(audio):
+            return []
+        result = self._whisper(self.model).result(audio, self.language or language, self.prompt,
+                                                  word_timestamps=True)
+        spoken = str(result.get("language") or self.language or language or "")
+        words = []
+        for n, segment in enumerate(result.get("segments") or []):
+            text = str(segment.get("text", "")).strip()
+            if not text or is_hallucination(text) or segment.get("compression_ratio", 0) > 2.4:
+                continue
+            if segment.get("no_speech_prob", 0) > 0.6 and segment.get("avg_logprob", 0) < -1.0:
+                continue
+            words += [TimedWord(float(w["start"]), float(w["end"]), str(w["word"]), n, spoken)
+                      for w in segment.get("words") or [] if str(w.get("word", "")).strip()]
+        return words
+
+    def spoken_language(self, audio: Audio) -> str:
+        if self.language:
+            return self.language
+        self._stop.clear()
+        whisper = self._whisper(self.model)
+        return whisper._detect(whisper._load(), audio.astype(np.float32))
 
     def _transcribe(self, model: str, audio: Audio, language: str | None, quick: bool) -> str:
         self._stop.clear()
@@ -209,6 +237,7 @@ class _Whisper:
             mx.set_cache_limit(CACHE_LIMIT)
             self._model = load_model(self.repo, dtype=mx.float16)
             self._model.encoder = _Encoder(self._model.encoder, self._model.dims.n_audio_state, self._stop)
+            self._model.decoder = _Decoder(self._model.decoder, self._stop)
         return self._model
 
     def _run_short(self, model, audio: Audio, language: str | None, prompt: str | None) -> str | None:
@@ -263,6 +292,19 @@ class _Whisper:
             verbose=None,
         )
         return str(result.get("text", "")).strip()
+
+    def result(self, audio: Audio, language: str | None, prompt: str | None, **options) -> dict:
+        """mlx_whisper.transcribe's whole result over full windows: text, and segments with their words when
+        asked (`word_timestamps=True`). For meeting passes."""
+        import mlx_whisper
+        from mlx_whisper.transcribe import ModelHolder
+
+        audio = audio.astype(np.float32)
+        model = self._load()
+        ModelHolder.model, ModelHolder.model_path = model, self.repo
+        language = language or self._detect(model, audio)
+        return mlx_whisper.transcribe(audio, path_or_hf_repo=self.repo, language=language, initial_prompt=prompt,
+                                      condition_on_previous_text=False, verbose=None, **options)
 
     @staticmethod
     def _detect(model, audio: Audio) -> str:
@@ -321,6 +363,23 @@ class _Encoder:
                     raise Interrupted()
             x, _, _ = block(x)
         return e.ln_post(x)
+
+
+class _Decoder:
+    """Wraps the Whisper decoder so `stop` also ends decoding and word alignment, between two tokens: a long
+    meeting pass then gives way to the user's dictation at once, not only while it encodes."""
+
+    def __init__(self, decoder, stop: threading.Event):
+        self._decoder = decoder
+        self._stop = stop
+
+    def __call__(self, *args, **kwargs):
+        if self._stop.is_set():
+            raise Interrupted()
+        return self._decoder(*args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._decoder, name)
 
 
 @TRANSCRIBERS.register("mlx_whisper")

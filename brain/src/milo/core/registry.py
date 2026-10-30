@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 if TYPE_CHECKING:
-    from .ports import (AudioInput, AudioOutput, Channel, Clock, Connections, Embedder, Harness, LiveModel,
+    from .ports import (AudioInput, AudioOutput, Channel, Clock, Connections, Diarizer, Embedder, Harness, LiveModel,
                         ProactiveRule, StreamingTranscriber, TextCleaner, Transcriber, Voice)
     from .types import ToolServer
 
@@ -97,3 +97,4 @@ RULES: Registry[ProactiveRule] = Registry("heartbeat rule")
 CONNECTIONS: Registry[Connections] = Registry("connections")
 EMBEDDERS: Registry[Embedder] = Registry("embedder")
 CHANNELS: Registry[Channel] = Registry("message channel")
+DIARIZERS: Registry[Diarizer] = Registry("diarizer")

@@ -47,6 +47,36 @@ public enum BrainCommand: Equatable, Sendable {
     case remotePause(Bool)
     /// The menu's "Disconnect phone": a new connection needs a new code shown on the Mac.
     case remoteForget
+    /// A call app started using the microphone. `title` is its window or tab title, "" if unknown.
+    case callStarted(app: String, bundle: String, title: String)
+    /// That call app let go of the microphone.
+    case callEnded(app: String)
+    /// A finished 30 s chunk of meeting `id`: `track` "me" (the mic) or "them" (the call), `index` from 1,
+    /// `start` its offset in the meeting. The last one may be shorter.
+    case meetingChunk(MeetingChunk)
+    /// What the app records: on connect, on a change of tracks, and once it stopped. `id` "" when nothing.
+    /// `error` is plain words for the user when a track can't be recorded.
+    case meetingRecording(id: String, on: Bool, tracks: [String], error: String = "")
+    /// The user chose "Take meeting notes" or "Stop taking notes" in the menu.
+    case meetingToggle(Bool)
+}
+
+public struct MeetingChunk: Equatable, Sendable {
+    public var id: String
+    public var track: String
+    public var index: Int
+    public var path: String
+    public var start: Double
+    public var seconds: Double
+
+    public init(id: String, track: String, index: Int, path: String, start: Double, seconds: Double) {
+        self.id = id
+        self.track = track
+        self.index = index
+        self.path = path
+        self.start = start
+        self.seconds = seconds
+    }
 }
 
 /// What the app did with an `app_request`: a JSON result, or a plain-language error for the user.
@@ -59,6 +89,7 @@ extension BrainCommand: Encodable {
     private enum Key: String, CodingKey {
         case type, mode, text, app, on, tentative, speak, id, capture, ok, result, error, reason, yes, action, save
         case section, key, value
+        case bundle, title, track, index, path, start, seconds, tracks
         case idleSeconds = "idle_s"
     }
 
@@ -151,6 +182,31 @@ extension BrainCommand: Encodable {
             try c.encode(on, forKey: .on)
         case .remoteForget:
             try c.encode("remote_forget", forKey: .type)
+        case let .callStarted(app, bundle, title):
+            try c.encode("call_started", forKey: .type)
+            try c.encode(app, forKey: .app)
+            try c.encode(bundle, forKey: .bundle)
+            try c.encode(title, forKey: .title)
+        case let .callEnded(app):
+            try c.encode("call_ended", forKey: .type)
+            try c.encode(app, forKey: .app)
+        case let .meetingChunk(chunk):
+            try c.encode("meeting_chunk", forKey: .type)
+            try c.encode(chunk.id, forKey: .id)
+            try c.encode(chunk.track, forKey: .track)
+            try c.encode(chunk.index, forKey: .index)
+            try c.encode(chunk.path, forKey: .path)
+            try c.encode(chunk.start, forKey: .start)
+            try c.encode(chunk.seconds, forKey: .seconds)
+        case let .meetingRecording(id, on, tracks, error):
+            try c.encode("meeting_recording", forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(on, forKey: .on)
+            try c.encode(tracks, forKey: .tracks)
+            if !error.isEmpty { try c.encode(error, forKey: .error) }
+        case let .meetingToggle(on):
+            try c.encode("meeting_toggle", forKey: .type)
+            try c.encode(on, forKey: .on)
         }
     }
 }

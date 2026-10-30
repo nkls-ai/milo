@@ -60,6 +60,8 @@ public enum BrainEvent: Equatable, Sendable {
     case settings(SettingsReport)
     /// Milo by message: which chat app, whether a phone is connected, paused.
     case remote(RemoteStatus)
+    /// Record meeting `id` into `dir` (two tracks in 30 s chunks), or stop recording it.
+    case meetingRecord(id: String, dir: String, on: Bool)
     case unknown(String)
 }
 
@@ -67,6 +69,7 @@ extension BrainEvent: Decodable {
     private enum Key: String, CodingKey {
         case type, state, emotion, text, value, entries, entry, id, step, mode, on, tool, args, point, question, answer, op, what
         case facts
+        case dir
         case taskID = "task_id"
         case whatsThisKey = "whats_this_key"
         case dictateKey = "dictate_key"
@@ -133,6 +136,10 @@ extension BrainEvent: Decodable {
                                             restart: try c.decodeIfPresent(Bool.self, forKey: .restart) ?? false,
                                             error: try c.decodeIfPresent(String.self, forKey: .error) ?? ""))
         case "remote": self = .remote(try RemoteStatus(from: decoder))
+        case "meeting_record":
+            self = .meetingRecord(id: try c.decode(String.self, forKey: .id),
+                                  dir: try c.decodeIfPresent(String.self, forKey: .dir) ?? "",
+                                  on: try c.decode(Bool.self, forKey: .on))
         default: self = .unknown(type)
         }
     }

@@ -6,11 +6,11 @@ import logging
 from pathlib import Path
 
 from .config import UiSettings
-from .core.events import (AppResponse, Command, ConfirmAnswer, ContextUpdate, EditFact, EmotionChanged, Event,
-                          Facts, ForgetFact, GetFacts, GetHistory, GetSettings, HandsResult, HandsStop, ListenCancel,
-                          ListenConfirm, ListenStart, ListenStop, LookResult, Mute, RemoteForget, RemotePause,
-                          RoutineAction, RoutineDraftAnswer, SetSetting, StateChanged, StopHelper, TextInput,
-                          UiConfig, WhatsThis)
+from .core.events import (AppResponse, CallEnded, CallStarted, Command, ConfirmAnswer, ContextUpdate, EditFact,
+                          EmotionChanged, Event, Facts, ForgetFact, GetFacts, GetHistory, GetSettings, HandsResult,
+                          HandsStop, ListenCancel, ListenConfirm, ListenStart, ListenStop, LookResult, MeetingChunk,
+                          MeetingRecording, MeetingToggle, Mute, RemoteForget, RemotePause, RoutineAction,
+                          RoutineDraftAnswer, SetSetting, StateChanged, StopHelper, TextInput, UiConfig, WhatsThis)
 from .core.types import ListenMode
 from .services.app_bridge import AppBridge
 from .services.approvals import Approvals
@@ -19,6 +19,7 @@ from .services.hands import HandsService
 from .services.heartbeat_runner import HeartbeatRunner
 from .services.listening import Listening
 from .services.live_talk import LiveTalk
+from .services.meetings import MeetingService
 from .services.memory import Memory
 from .services.messages import MessageService
 from .services.orchestrator import Orchestrator
@@ -44,7 +45,8 @@ class Brain:
                  hands: HandsService | None = None, screens: Path | None = None,
                  helpers: Orchestrator | None = None, memory: Memory | None = None,
                  routines: Routines | None = None, settings: Settings | None = None,
-                 messages: MessageService | None = None):
+                 messages: MessageService | None = None, meetings: MeetingService | None = None):
+        self._meetings = meetings
         self._memory = memory
         self._routines = routines
         self._settings = settings
@@ -140,6 +142,9 @@ class Brain:
             case AppResponse():
                 if self._bridge is not None:
                     self._bridge.resolve(command)
+            case CallStarted() | CallEnded() | MeetingChunk() | MeetingRecording() | MeetingToggle():
+                if self._meetings is not None:
+                    self._meetings.handle(command)
             case GetFacts() | ForgetFact() | EditFact():
                 self._facts(command)
             case GetSettings():
