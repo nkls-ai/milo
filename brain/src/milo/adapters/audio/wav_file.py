@@ -68,6 +68,22 @@ class WavPlayer:
         self._current: dict | None = None
         self.written: list[Path] = []
 
+    def played(self, since: float) -> tuple[int, list[tuple[float, Audio]]]:
+        """PlaybackTap: the pieces of the open utterance, at the times they "reach the speaker"."""
+        with self._lock:
+            u = self._current
+            if u is None:
+                return 24_000, []
+            now = self._played(u)
+            blocks = []
+            for p in u["pieces"]:
+                start = int(round(p["start_s"] * u["rate"]))
+                audio = p["audio"][:max(0, now - start)]
+                t = u["t0"] + p["start_s"]
+                if len(audio) and t + len(audio) / u["rate"] > since:
+                    blocks.append((t, audio))
+            return u["rate"], blocks
+
     def begin(self, sample_rate: int, on_level: LevelCallback) -> None:
         if self._current is not None:
             self.interrupt()
@@ -150,6 +166,10 @@ class WavMicrophone:
     @property
     def active(self) -> bool:
         return self._started is not None
+
+    @property
+    def started_at(self) -> float | None:
+        return self._started
 
     def start(self, on_level: LevelCallback) -> None:
         if self._started is None:

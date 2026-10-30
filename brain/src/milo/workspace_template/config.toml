@@ -8,6 +8,11 @@
 use = "claude_live"
 # Start a fresh conversation after this many seconds without talking (also reloads memory).
 conversation_idle_reset_s = 600
+# Talk over Milo to stop him, without the talk key. The mic listens while he speaks, and his own
+# voice is filtered out of it. Best with headphones; try it with the speakers and see.
+voice_barge_in = false
+# A short "hm" when an answer is slow to start, so a pause never sounds like he didn't hear.
+backchannels = true
 
 [chat.claude_live]
 binary = ""                       # empty: PATH, then ~/.local/bin

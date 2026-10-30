@@ -20,6 +20,7 @@ import numpy as np
 RATE = 16_000
 BLOCK = 256  # 16 ms
 TAPS = 2048  # 128 ms of echo path: room reflections plus a few ms of timestamp error
+NOISE_WINDOW_BLOCKS = 125  # 2 s
 
 
 def _db(power: float) -> float:
@@ -65,44 +66,63 @@ class TalkDetector:
     """Decides, block by block, whether the user talks over Milo.
 
     The user talks when the residual is `SPEECH_OVER_NOISE_DB` above the noise floor and `SPEECH_OVER_ECHO_DB`
-    above the echo the canceller usually leaves at this playback level, for `HOLD_BLOCKS` blocks in a row with
-    at most one quiet block between. Until the canceller has heard enough echo to know how much it leaves
-    (`learning`), the bar is the raw echo estimate instead, which only very clear speech passes.
+    above the echo the canceller usually leaves behind, for `HOLD_BLOCKS` blocks in a row with at most one
+    quieter block between. The echo it leaves follows the loudest recent echo, decaying like a room's
+    reverberation, so the tail of Milo's last word doesn't count as the user. Until the canceller has heard
+    enough of Milo and takes a fair part of his echo out (`learning`), the bar is the reference's level plus
+    the speaker-to-mic coupling measured so far, which only clear speech passes. A room the canceller can't
+    learn (a distorting speaker) keeps that bar: the user then has to be louder than Milo in the mic.
     """
 
     SPEECH_OVER_NOISE_DB = 12.0
     SPEECH_OVER_ECHO_DB = 8.0
-    HOLD_BLOCKS = 8  # 128 ms
+    LEARNING_MARGIN_DB = 6.0
+    HOLD_BLOCKS = 9  # 144 ms
     LEARN_BLOCKS = 30  # about half a second of Milo's voice
+    LEARNED_DB = 6.0  # and the canceller takes at least this much of his echo out
+    DECAY_DB = 1.0  # per block: about 60 dB a second, a small room's reverberation
+    PLAYING_DB = -60.0
 
     def __init__(self, canceller: EchoCanceller | None = None):
         self.canceller = canceller or EchoCanceller()
-        self._noise_db = None  # the quiet room, from blocks without playback or speech
-        self._leak_db = 0.0  # residual minus echo estimate, in dB, in blocks where only Milo spoke
+        self._noise_db: float | None = None  # the quiet room: the quietest residual of the last two seconds
+        self._quiet: deque[float] = deque(maxlen=NOISE_WINDOW_BLOCKS)
+        self._leak_db = 0.0  # residual minus recent echo, in blocks where only Milo spoke
+        self._coupling_db = 0.0  # mic minus reference: how loud Milo is in the mic, until the canceller knows
+        self._removed_db = 0.0  # mic minus residual while Milo plays: how much echo the canceller takes out
+        self._echo_env = -120.0
+        self._ref_env = -120.0
         self._echo_blocks = 0
         self._run = 0
         self._miss = 0
         self.talking = False
+        self.speech_now = False
+        """The last block was over the bar: a speech sound, whether or not it lasted."""
+        self.residual = np.zeros(0)
+        """The last block with Milo's echo taken out."""
 
     @property
     def learning(self) -> bool:
-        return self._echo_blocks < self.LEARN_BLOCKS
+        return self._echo_blocks < self.LEARN_BLOCKS or self._removed_db < self.LEARNED_DB
 
     def process(self, mic: np.ndarray, ref: np.ndarray) -> bool:
         """Feed one block of mic and the reference played with it. True once the user is talking."""
         residual, echo = self.canceller.process(mic, ref, adapt=not self._run)
         res_db = _db(float(np.mean(residual ** 2)))
-        echo_db = _db(float(np.mean(echo ** 2)))
-        ref_db = _db(float(np.mean(np.square(ref))))
-        playing = ref_db > -60
+        mic_db = _db(float(np.mean(np.square(mic))))
+        self._echo_env = max(_db(float(np.mean(echo ** 2))), self._echo_env - self.DECAY_DB)
+        self._ref_env = max(_db(float(np.mean(np.square(ref)))), self._ref_env - self.DECAY_DB)
+        playing = self._ref_env > self.PLAYING_DB
         if self._noise_db is None:
             self._noise_db = res_db
         bar = self._noise_db + self.SPEECH_OVER_NOISE_DB
         if playing:
-            leak = self._leak_db if not self.learning else max(self._leak_db, 6.0)
-            bar = max(bar, echo_db + leak + self.SPEECH_OVER_ECHO_DB)
-        speech = res_db > bar
-        if speech:
+            bar = max(bar, self._echo_env + self._leak_db + self.SPEECH_OVER_ECHO_DB)
+            if self.learning:
+                bar = max(bar, self._ref_env + self._coupling_db + self.LEARNING_MARGIN_DB)
+        self.residual = residual
+        self.speech_now = res_db > bar
+        if self.speech_now:
             self._run += 1
             self._miss = 0
         elif self._run:
@@ -110,16 +130,20 @@ class TalkDetector:
             if self._miss > 1:
                 self._run = self._miss = 0
         if not self._run:
-            self._learn(res_db, echo_db, playing)
+            self._learn(res_db, mic_db, playing)
         self.talking = self._run >= self.HOLD_BLOCKS
         return self.talking
 
-    def _learn(self, res_db: float, echo_db: float, playing: bool) -> None:
+    def _learn(self, res_db: float, mic_db: float, playing: bool) -> None:
+        # The floor is the quietest block of the last two seconds: it follows a louder room (a fan coming on)
+        # within two seconds, and the tail of Milo's last word, never the quietest part, can't lift it.
+        self._quiet.append(res_db)
+        self._noise_db = min(self._quiet)
         if not playing:
-            # The floor follows a quieter room at once and a louder one slowly (a fan coming on).
-            self._noise_db = res_db if res_db < self._noise_db else self._noise_db + 0.02 * (res_db - self._noise_db)
             return
-        if echo_db > self._noise_db + 6:
+        if self._ref_env > self.PLAYING_DB + 20 and mic_db > self._noise_db + 6:
             self._echo_blocks += 1
-            alpha = 0.2 if self.learning else 0.03
-            self._leak_db += alpha * (min(res_db - echo_db, 6.0) - self._leak_db)
+            fast = self.learning
+            self._coupling_db += (0.3 if fast else 0.02) * (mic_db - self._ref_env - self._coupling_db)
+            self._leak_db += (0.2 if fast else 0.03) * (min(res_db - self._echo_env, 6.0) - self._leak_db)
+            self._removed_db += 0.1 * (mic_db - res_db - self._removed_db)

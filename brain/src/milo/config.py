@@ -33,6 +33,10 @@ RETIRED = {("harness", "conversation_idle_reset_s"): "it moved to [chat]",
 @dataclass(frozen=True)
 class ChatSettings:
     conversation_idle_reset_s: float = 600.0
+    voice_barge_in: bool = False
+    """Listen while Milo speaks, and let the user stop him by talking. Opens the mic whenever he speaks."""
+    backchannels: bool = True
+    """A short "hm" when the answer is slow to come, so silence never feels like Milo didn't hear."""
 
 
 @dataclass(frozen=True)

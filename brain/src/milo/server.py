@@ -97,6 +97,8 @@ async def _serve(runtime: Runtime) -> None:
         "chat": runtime.live_talk.warm,
     }))
     tasks = [warming] + ([asyncio.create_task(runtime.heartbeat.run())] if runtime.heartbeat else [])
+    if runtime.barge_in is not None:
+        tasks.append(asyncio.create_task(runtime.barge_in.run()))
     try:
         await runtime.server.serve_forever()
     finally:

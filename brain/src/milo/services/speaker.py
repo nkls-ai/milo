@@ -77,9 +77,13 @@ class Utterance:
         self._pause = 0.0  # the pause the last piece asked for before the next
         self._held = False
         self._fed: list[tuple[str, float, float]] = []  # each piece fed: text, loop time it starts and ends
+        self._fillers: set[int] = set()  # indexes into _fed of interjected clips, which aren't part of the reply
         self._synthesizing: str | None = None
+        self._synthesis_began = 0.0
         self._changed = asyncio.Event()
         self._shown_before = ""  # the bubble's text from before a hold
+        self._all_text = ""
+        self._first_text_at: float | None = None
         self.first_sound_at: float | None = None
         """Loop time the first audio was queued, for the turn's timing."""
         self.shown = ""
@@ -95,10 +99,23 @@ class Utterance:
     def held(self) -> bool:
         return self._held
 
+    @property
+    def open(self) -> bool:
+        """It still takes text: not finished and not interrupted."""
+        return not self._closed
+
+    @property
+    def text(self) -> str:
+        """Everything this utterance has been given so far, spoken or not."""
+        return self._all_text
+
     def add(self, text: str) -> None:
         """Queue more text. The worker picks it up as soon as a piece is ready."""
         if self._closed or not text:
             return
+        self._all_text += text
+        if self._first_text_at is None:
+            self._first_text_at = asyncio.get_running_loop().time()
         self._chunker.add(text)
         self._more.set()
         self._ensure_worker()
@@ -148,16 +165,17 @@ class Utterance:
             return
         self._held = True
         now = asyncio.get_running_loop().time()
+        fed = [f for i, f in enumerate(self._fed) if i not in self._fillers]
         unheard = [_from_heard_part(text, (now - start) / max(1e-6, end - start)) if start < now else text
-                   for text, start, end in self._fed if end > now]
-        heard = [text for text, start, end in self._fed if end <= now]
+                   for text, start, end in fed if end > now]
+        heard = [text for text, start, end in fed if end <= now]
         if self._synthesizing is not None:
             unheard.append(self._synthesizing)
         rest = self._chunker.flush_raw()
         self._chunker = SpeechChunker()
         self._chunker.add(" ".join([*unheard, rest]) if unheard else rest)
         self._stop_audio()
-        self._fed, self._synthesizing = [], None
+        self._fed, self._fillers, self._synthesizing = [], set(), None
         self._began, self._play_end, self._pause = False, 0.0, 0.0
         self.shown = " ".join([self._shown_before, *heard]).strip() if heard or self._shown_before else ""
         self._shown_before = self.shown
@@ -173,10 +191,47 @@ class Utterance:
         self._changed.set()
         return True
 
+    def interject(self, text: str, audio: Audio) -> bool:
+        """Play a ready clip ("Hm.") now, ahead of the reply. Only before any of the reply has sounded and while
+        not held; False otherwise. The clip isn't shown and isn't said again after a hold."""
+        if self.done or self._held or self._fed:
+            return False
+        loop = asyncio.get_running_loop()
+        self._begin(loop)
+        self._fillers.add(len(self._fed))
+        self._feed(audio, text, loop)
+        self._sounded(audio, text)
+        return True
+
+    def ready_in(self) -> float:
+        """Roughly how long until the next piece is ready to play: infinite while there is no text."""
+        if self._synthesizing is None:
+            return 0.0 if self._fed else float("inf")
+        pace = self._speaker.pace
+        expected = pace.overhead_s + pace.seconds_per_char * len(self._synthesizing)
+        return max(0.0, expected - (asyncio.get_running_loop().time() - self._synthesis_began))
+
+    def _begin(self, loop: asyncio.AbstractEventLoop) -> None:
+        if not self._began:
+            self._speaker.output.begin(self._speaker.voice.sample_rate, throttled_levels(self._speaker.ui, loop))
+            self._began = True
+        if not self._speaker.ui.speaking:
+            self._speaker.ui.speaking = True
+            self._speaker.ui.set_state(MiloState.SPEAKING)
+
+    def _sounded(self, audio: Audio, piece: str) -> None:
+        if self.first_sound_at is None:
+            rate = self._speaker.voice.sample_rate
+            self.first_sound_at = self._play_end - len(audio) / rate
+            log.info("first sound %.2fs after the first text (%d chars, %.2fs of audio)%s",
+                     self.first_sound_at - (self._first_text_at or self.first_sound_at), len(piece),
+                     len(audio) / rate, ", a backchannel" if self._fillers else "")
+
     def _ensure_worker(self) -> None:
         if self._held or self._interrupted:
             return
-        if (self._worker is None or self._worker.done()) and (not self._chunker.empty):
+        if (self._worker is None or self._worker.done()) and (not self._chunker.empty or
+                                                              (self._closed and self._began)):
             self._worker = asyncio.create_task(self._play())
 
     def _stop_audio(self) -> None:
@@ -200,11 +255,12 @@ class Utterance:
         speaker, ui = self._speaker, self._speaker.ui
         loop = asyncio.get_running_loop()
         sample_rate = speaker.voice.sample_rate
-        speaker.output.begin(sample_rate, throttled_levels(ui, loop))
-        self._began = True
+        if not self._began:
+            speaker.output.begin(sample_rate, throttled_levels(ui, loop))
+            self._began = True
         try:
             while (piece := await self._next_piece(loop)) is not None:
-                started = loop.time()
+                started = self._synthesis_began = loop.time()
                 self._synthesizing = piece
                 audio = await self._synthesize(piece)
                 self._synthesizing = None
@@ -217,8 +273,7 @@ class Utterance:
                     ui.speaking = True
                     ui.set_state(MiloState.SPEAKING)
                 self._feed(audio, piece, loop)
-                if self.first_sound_at is None:
-                    self.first_sound_at = self._play_end - len(audio) / sample_rate
+                self._sounded(audio, piece)
                 self.shown = f"{self.shown} {piece}".strip()
                 ui.emit(Bubble(self.shown))
             if self._play_end:
@@ -285,6 +340,12 @@ class Speaker:
     @property
     def active(self) -> bool:
         return self.current is not None and not self.current.done
+
+    @property
+    def recent_text(self) -> str:
+        """What the current utterance has said and is about to say, to tell Milo's echo from the user."""
+        u = self.current
+        return "" if u is None else u.text
 
     def utterance(self, emotion: Emotion) -> Utterance:
         """Start speaking a reply whose text is still arriving. Interrupts whatever is being said."""
