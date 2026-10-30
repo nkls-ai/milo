@@ -318,8 +318,8 @@ def meeting_block(info: MeetingInfo, entries: Sequence[tuple[float, str, str]], 
 
 _NAMING = [
     re.compile(r"\b(?:speaker|sprecher(?:in)?)\s*(\d+)\s+(?:is|was|ist|war|heißt)\s+([A-ZÄÖÜ][\w\-]+(?:\s[A-ZÄÖÜ][\w\-]+)?)", re.I),
-    re.compile(r"\b(?:that|this|the last one|that one)\s+(?:was|is)\s+([A-ZÄÖÜ][\w\-]+(?:\s[A-ZÄÖÜ][\w\-]+)?)"),
-    re.compile(r"\b(?:das|der|die)\s+(?:war|ist)\s+(?:die\s+|der\s+)?([A-ZÄÖÜ][\w\-]+(?:\s[A-ZÄÖÜ][\w\-]+)?)"),
+    re.compile(r"\b(?i:that|this|the last one|that one)\s+(?i:was|is)\s+([A-ZÄÖÜ][\w\-]+(?:\s[A-ZÄÖÜ][\w\-]+)?)"),
+    re.compile(r"\b(?i:das|der|die)\s+(?i:war|ist)\s+(?:die\s+|der\s+)?([A-ZÄÖÜ][\w\-]+(?:\s[A-ZÄÖÜ][\w\-]+)?)"),
 ]
 _NOT_NAMES = {"I", "It", "You", "Milo", "Ich", "Es", "Das", "Der", "Die", "Gut", "Okay", "Ok", "Good", "Great",
               "Nice", "Right", "Wrong", "Richtig", "Falsch", "Super", "Toll", "Klar", "Interesting", "Spannend"}
