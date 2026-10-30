@@ -68,6 +68,12 @@ let lifecycle = AppLifecycle(
                                   UserDefaults(suiteName: "dev.nkls.milo.home" + home.replacingOccurrences(of: "/", with: "."))
                               } ?? .standard),
             model: model)
+        // "Fix it" under a bubble about a missing permission opens the window with a button for each.
+        model.onBubbleAction = { action in
+            switch action {
+            case .permissions: setupWindow.open()
+            }
+        }
         let statusMenu = StatusMenu(controller: controller, panel: overlay, window: window, settings: settingsWindow,
                                     setup: setupWindow, paths: paths)
         controller.onBindingsChange = {

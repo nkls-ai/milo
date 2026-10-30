@@ -4,8 +4,9 @@ import Foundation
 /// act on what it returns.
 ///
 /// Holding a bound key records while it is held. Recording starts the moment the key goes down, but
-/// tentatively: the brain records without showing anything until the hold passes `minHold` (`confirm`),
-/// so a stray tap never makes Milo flicker. Any other key or modifier during a hold cancels, so normal
+/// tentatively: the brain records without changing Milo's state until the hold passes `minHold` (`confirm`),
+/// so a stray tap never sends him into listening and back. The app shows only a small light meanwhile, in the
+/// same frame as the key (`MiloModel.press`). Any other key or modifier during a hold cancels, so normal
 /// shortcuts (⌥-letter, fn-arrows) still work. Pressing the other bound key during a hold is ignored.
 ///
 /// Two short taps of the same key within `doubleTap` lock the mode on, hands-free (`lock`). The

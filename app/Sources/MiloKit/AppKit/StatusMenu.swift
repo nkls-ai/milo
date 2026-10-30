@@ -19,6 +19,7 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
     private let statusItem: NSStatusItem
     private let hintItem: NSMenuItem
     private var muteItem: NSMenuItem!
+    private var visibleItem: NSMenuItem!
     private lazy var knowledge = KnowledgeWindow(controller: controller)
     private var styleMenu: NSMenu!
     private var restyle: AnyCancellable?
@@ -55,8 +56,9 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
         if controller.meetings != nil {
             notesItem = add(menu, "Take meeting notes", #selector(toggleNotes))
         }
-        muteItem = add(menu, "Mute proactive nudges", #selector(toggleMute))
-        add(menu, "Show / hide Milo", #selector(toggleVisible))
+        muteItem = add(menu, "Pause nudges", #selector(toggleMute))
+        muteItem.toolTip = "Milo stops bringing things up by himself. He still answers when you ask."
+        visibleItem = add(menu, "Hide Milo", #selector(toggleVisible))
         add(menu, "Move Milo back to the corner", #selector(resetPosition))
         styleMenu = NSMenu()
         styleMenu.delegate = self
@@ -75,9 +77,12 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         add(menu, "Settings…", #selector(openSettings))
         add(menu, "Check permissions…", #selector(openSetup))
-        add(menu, "Open Milo folder", #selector(openHome))
-        add(menu, "Open brain log", #selector(openLog))
-        add(menu, "Restart brain", #selector(restartBrain))
+        // For whoever set Milo up: out of the way of everyone else.
+        let troubleshoot = NSMenu()
+        add(troubleshoot, "Restart Milo's brain", #selector(restartBrain))
+        add(troubleshoot, "Open the brain log", #selector(openLog))
+        add(troubleshoot, "Open Milo's folder", #selector(openHome))
+        menu.addItem(withTitle: "Troubleshoot", action: nil, keyEquivalent: "").submenu = troubleshoot
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Milo", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.delegate = self
@@ -141,7 +146,10 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
     /// Each time a menu opens: ticks the dictation style the brain uses in the submenu, and shows Milo by
     /// message as the brain last reported it in the main menu.
     public func menuNeedsUpdate(_ menu: NSMenu) {
-        guard menu === styleMenu else { return updateRemoteItems() }
+        guard menu === styleMenu else {
+            visibleItem.title = panel.isVisible ? "Hide Milo" : "Show Milo"
+            return updateRemoteItems()
+        }
         for item in menu.items {
             item.state = item.representedObject as? String == controller.dictationStyle?.rawValue ? .on : .off
             item.isEnabled = controller.dictationStyle != nil  // no brain yet: nothing to switch
