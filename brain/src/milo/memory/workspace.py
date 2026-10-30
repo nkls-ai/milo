@@ -86,6 +86,11 @@ class Workspace:
         return self.state_dir / "transcript.jsonl"
 
     @property
+    def meetings_dir(self) -> Path:
+        """One folder per meeting: audio chunks, transcript and notes. See memory/meetings.py."""
+        return self.home / "meetings"
+
+    @property
     def heartbeat_state_path(self) -> Path:
         return self.state_dir / "heartbeat.json"
 

@@ -187,6 +187,9 @@ public final class EventKitConnections: AppConnections {
             "location": .string(event.location ?? ""),
             "notes": .string(event.notes ?? ""),
             "calendar": .string(event.calendar?.title ?? ""),
+            // The others invited, by name (or address), without the user: meeting notes name voices with them.
+            "attendees": .array((event.attendees ?? []).filter { !$0.isCurrentUser }
+                .map { .string($0.name ?? $0.url.absoluteString.replacingOccurrences(of: "mailto:", with: "")) }),
         ])
     }
 

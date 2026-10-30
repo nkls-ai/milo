@@ -23,6 +23,7 @@ from .transcript import Transcript, unrecorded
 from .ui_state import UiState
 
 if TYPE_CHECKING:
+    from .meetings import MeetingService
     from .orchestrator import Orchestrator
 
 log = logging.getLogger("milo.live")
@@ -147,8 +148,9 @@ class LiveTalk:
                  profile: ProfileMemory, reminders: ReminderBook, ledger: UsageLedger,
                  persona: Callable[[], str], idle_reset_s: float, tasks: Orchestrator,
                  transcript: Transcript | None = None, eyes: ScreenEyes | None = None,
-                 approvals: Approvals | None = None):
+                 approvals: Approvals | None = None, meetings: MeetingService | None = None):
         self._model = model
+        self._meetings = meetings
         self._eyes = eyes
         self._approvals = approvals
         self._saw_screen = False
@@ -291,10 +293,11 @@ class LiveTalk:
         notes, self._notes = self._notes, []
         try:
             await self._ensure_conversation()
-            self._tainted = self._tainted or bool(notes)
+            meeting = await self._meeting(text) if tags and not screen else ""
+            self._tainted = self._tainted or bool(notes) or bool(meeting)
             self._saw_screen = self._saw_screen or screen
             self._streaming = True
-            async for delta in self._model.turn(self._prompt(text, notes), images):
+            async for delta in self._model.turn(self._prompt(text, [*notes, *([meeting] if meeting else [])]), images):
                 if first_at is None:
                     first_at = self._clock.monotonic()
                     if self._ui_looking:
@@ -354,6 +357,16 @@ class LiveTalk:
         if self._ui.state is MiloState.THINKING and not self._ui.thinking:  # only tags, nothing was spoken
             self._ui.rest()
         return parser
+
+    async def _meeting(self, text: str) -> str:
+        """During a call Milo takes notes in: what was said, as data (see services/meetings.py)."""
+        if self._meetings is None:
+            return ""
+        try:
+            return await self._meetings.before_turn(text)
+        except Exception:
+            log.exception("the meeting context failed")
+            return ""
 
     def _screen_message(self, capture: ScreenCapture, question: str) -> tuple[str, list[Path]]:
         images = [Path(capture.image)] if capture.image else []

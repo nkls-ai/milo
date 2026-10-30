@@ -89,6 +89,8 @@ async def _serve(runtime: Runtime) -> None:
     await runtime.tool_server.start()
     if runtime.hands_server is not None:
         await runtime.hands_server.start()
+    if runtime.meetings is not None:
+        runtime.meetings.start()  # meetings a crash left unfinished
     log.info("brain up (chat=%s, harness=%s)", runtime.live_model.name, runtime.harness.name)
     warming = asyncio.create_task(_warm_all({
         "stt": (runtime.stt_executor, runtime.transcriber.warm),
@@ -104,6 +106,10 @@ async def _serve(runtime: Runtime) -> None:
             task.cancel()
         runtime.stt_executor.shutdown(wait=False, cancel_futures=True)
         runtime.tts_executor.shutdown(wait=False, cancel_futures=True)
+        if runtime.diarize_executor is not None:
+            runtime.diarize_executor.shutdown(wait=False, cancel_futures=True)
+        if runtime.meetings is not None:
+            await runtime.meetings.close()
         await runtime.tool_server.close()
         await _close(runtime)
 

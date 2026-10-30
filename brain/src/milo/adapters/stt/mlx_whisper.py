@@ -10,6 +10,7 @@ from typing import Any
 
 import numpy as np
 
+from milo.core.meetings import TimedWord
 from milo.core.registry import TRANSCRIBERS, AdapterContext, options_from
 from milo.core.types import STT_SAMPLE_RATE, Audio
 
@@ -74,6 +75,24 @@ class MlxWhisper:
     def preview(self, audio: Audio) -> str:
         return self._transcribe(self.preview_model, audio)
 
+    def words(self, audio: Audio) -> list[TimedWord]:
+        """TimedTranscriber for meeting notes: the final model with word times. Skips silence and the segments
+        Whisper makes up over noise."""
+        if is_silent(audio):
+            return []
+        result = self._whisper(self.model).result(audio, self.language, self.prompt, word_timestamps=True,
+                                                  hallucination_silence_threshold=2.0)
+        words = []
+        for n, segment in enumerate(result.get("segments") or []):
+            text = str(segment.get("text", "")).strip()
+            if not text or is_hallucination(text) or segment.get("compression_ratio", 0) > 2.4:
+                continue
+            if segment.get("no_speech_prob", 0) > 0.6 and segment.get("avg_logprob", 0) < -1.0:
+                continue
+            words += [TimedWord(float(w["start"]), float(w["end"]), str(w["word"]), n)
+                      for w in segment.get("words") or [] if str(w.get("word", "")).strip()]
+        return words
+
     def _transcribe(self, model: str, audio: Audio) -> str:
         if is_silent(audio):
             return ""
@@ -104,6 +123,10 @@ class _Whisper:
         self._model = None
 
     def run(self, audio: Audio, language: str | None, prompt: str | None) -> str:
+        return str(self.result(audio, language, prompt).get("text", "")).strip()
+
+    def result(self, audio: Audio, language: str | None, prompt: str | None, **options) -> dict:
+        """mlx_whisper.transcribe's whole result: text, and segments with their words when asked."""
         import mlx.core as mx
         import mlx_whisper
         from mlx_whisper.transcribe import ModelHolder
@@ -124,8 +147,9 @@ class _Whisper:
             initial_prompt=prompt,
             condition_on_previous_text=False,
             verbose=None,
+            **options,
         )
-        return str(result.get("text", "")).strip()
+        return result
 
     def _detect(self, audio: Audio) -> str:
         import mlx.core as mx

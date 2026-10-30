@@ -12,12 +12,13 @@ from pathlib import Path
 from .brain import Brain
 from .config import Config
 from .core.clock import SystemClock
-from .core.ports import Harness, LiveModel, Transcriber, Voice
-from .core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, HARNESSES, LIVE_MODELS, TEXT_CLEANERS, TRANSCRIBERS,
-                            VOICES, AdapterContext, ConfigError, Registry)
-from .core.types import LiveMode, ToolServer
+from .core.ports import Harness, LiveModel, TimedTranscriber, Transcriber, Voice
+from .core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, DIARIZERS, HARNESSES, LIVE_MODELS, TEXT_CLEANERS,
+                            TRANSCRIBERS, VOICES, AdapterContext, ConfigError, Registry)
+from .core.types import LiveMode, MiloState, ToolServer
 from .services.app_bridge import AppBridge, AppEyes, AppHands
 from .services.approvals import ActionPolicy, Approvals
+from .services.background_stt import BackgroundStt
 from .services.context import UserContext
 from .services.conversation import Conversation
 from .services.dictation import DictationService
@@ -26,6 +27,7 @@ from .services.hands import HandsService
 from .services.heartbeat_runner import HeartbeatRunner
 from .services.listening import Listening
 from .services.live_talk import LiveTalk, untrusted
+from .services.meetings import MeetingOptions, MeetingService
 from .services.orchestrator import HelperQuestions, Orchestrator
 from .services.speaker import Speaker
 from .services.task_runner import TaskRunner
@@ -57,6 +59,8 @@ class Runtime:
     tool_server: ToolSocketServer
     hands_server: HandsSocketServer | None = None
     helpers: Orchestrator | None = None
+    meetings: MeetingService | None = None
+    diarize_executor: ThreadPoolExecutor | None = None
 
 
 def build(home: Path) -> Runtime:
@@ -64,6 +68,7 @@ def build(home: Path) -> Runtime:
     from . import adapters
     from .memory.history import JsonlDictationHistory
     from .memory.ledger import JsonlUsageLedger
+    from .memory.meetings import FileMeetingStore, JsonVoiceBook
     from .memory.profile import MarkdownProfile
     from .memory.reminders import MarkdownReminders
     from .memory.transcript import JsonlTranscript
@@ -134,9 +139,42 @@ def build(home: Path) -> Runtime:
     helpers = Orchestrator(runner, speaker, ui, clock, transcript=transcript, max_helpers=settings.max_helpers,
                            quiet=lambda: live_talk.busy or mic.active, updates=updates, milestones=Milestones(),
                            inert=untrusted)
+    meetings = diarize_executor = None
+    if isinstance(transcriber, TimedTranscriber):
+        m = config.meetings
+        diarizer = DIARIZERS.create(m.diarizer, config.section("meetings").get(m.diarizer, {}), ctx) \
+            if m.diarizer else None
+        diarize_executor = ThreadPoolExecutor(1, thread_name_prefix="diarize") if diarizer else None
+        chat_name, chat_options = config.pluggable("chat")
+
+        async def calendar(start, end):
+            return await bridge.call("calendar.events", {"start": start.isoformat(timespec="minutes"),
+                                                         "end": end.isoformat(timespec="minutes"), "query": ""})
+
+        async def add_reminder(title, notes):
+            return await bridge.call("reminders.add", {"title": title, "notes": notes})
+
+        live = (MiloState.LISTENING, MiloState.DICTATING, MiloState.TRANSCRIBING)
+        meetings = MeetingService(
+            FileMeetingStore(workspace.meetings_dir), ui, clock,
+            # Meeting passes wait while the user dictates or talks, so their words stay instant during a call.
+            BackgroundStt(stt_executor, busy=lambda: mic.active or ui.state in live), transcriber,
+            approvals=approvals, speaker=speaker, transcript=transcript, diarizer=diarizer,
+            diarize_executor=diarize_executor,
+            voices=JsonVoiceBook(workspace.meetings_dir / "voices.json", diarizer.model) if diarizer else None,
+            summarizer=lambda: LIVE_MODELS.create(chat_name, chat_options, ctx),
+            calendar=calendar if "calendar" in enabled else None,
+            add_reminder=add_reminder if "reminders" in enabled else None,
+            draft_mail=(lambda task: helpers.submit(task, title="Follow-up mail", screen=False))
+            if switches.enabled and switches.mail else None,
+            options=MeetingOptions(m.auto, m.keep_audio, m.offer_reminders, m.offer_mail, m.end_after_s),
+            connected=server.connected, private=lambda: mic.active or speaker.active,
+            quiet=lambda: live_talk.busy or mic.active,
+            on_episode=None,  # memory wires EpisodeLog.append here (docs/design/memory.md)
+            match=diarizer.match if diarizer else 0.6)
     live_talk = LiveTalk(live_model, speaker, ui, context, clock, profile, reminders, ledger,
                          _persona(workspace.persona_path), idle_reset_s, helpers, transcript, eyes=AppEyes(bridge),
-                         approvals=approvals)
+                         approvals=approvals, meetings=meetings)
     helpers.on_result = live_talk.note
     updates.speak = live_talk.speak_update
     listening = Listening(mic, transcriber, stt_executor, ui, DictationService(cleaner, history, ui),
@@ -151,9 +189,9 @@ def build(home: Path) -> Runtime:
                                     busy=lambda: live_talk.busy)
 
     brain = Brain(ui, listening, live_talk, context, heartbeat, config.ui, transcript, approvals=approvals,
-                  bridge=bridge, hands=hands, screens=workspace.screens_dir, helpers=helpers)
+                  bridge=bridge, hands=hands, screens=workspace.screens_dir, helpers=helpers, meetings=meetings)
     return Runtime(brain, server, heartbeat, transcriber, voice, stt_executor, tts_executor, harness,
-                   live_model, live_talk, tool_server, hands_server, helpers)
+                   live_model, live_talk, tool_server, hands_server, helpers, meetings, diarize_executor)
 
 
 def _tool_servers(config: Config, home: Path) -> tuple[ToolServer, ...]:

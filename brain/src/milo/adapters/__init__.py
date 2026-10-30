@@ -21,6 +21,7 @@ BUILTIN = (
     "connect.mac",
     "connect.fake",
     "headless.none",
+    "diarize.sherpa",
 )
 
 
