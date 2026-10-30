@@ -42,6 +42,8 @@ mail = true
 notes = true
 shortcuts = true
 files = true
+
+[connections.mac]
 files_scope = "~"                 # files outside this folder are never searched or read
 
 [approvals]

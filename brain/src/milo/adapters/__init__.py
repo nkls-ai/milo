@@ -18,6 +18,8 @@ BUILTIN = (
     "audio.sounddevice_io",
     "text.fillers",
     "text.plain",
+    "connect.mac",
+    "connect.fake",
 )
 
 

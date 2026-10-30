@@ -10,12 +10,14 @@ from typing import Any
 
 from milo.core.ports import StepCallback
 from milo.core.registry import HARNESSES, AdapterContext, options_from
-from milo.core.types import REPLY_SCHEMA, HarnessError, Reply, Usage
+from milo.core.types import REPLY_SCHEMA, HarnessError, Reply, ToolServer, Usage
 
 from ._activity import CodexActivity
 from ._binary import find_binary
 from ._process import last_line, run
 
+# Long enough for a question to the user (approvals time out at 60 s by default).
+TOOL_TIMEOUT_S = 240
 # Where the ChatGPT desktop app ships its own codex.
 BUNDLED_CODEX = Path("/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex")
 
@@ -33,8 +35,10 @@ class CodexHarness:
     name = "codex"
 
     def __init__(self, binary: str, workdir: Path, schema_path: Path, *, model: str = "",
-                 reasoning_effort: str = "low", sandbox: str = "workspace-write", timeout_s: float = 180):
+                 reasoning_effort: str = "low", sandbox: str = "workspace-write", timeout_s: float = 180,
+                 tool_servers: tuple[ToolServer, ...] = ()):
         self.binary = binary
+        self.tool_servers = tool_servers
         self.workdir = workdir
         self.schema_path = schema_path
         self.model = model
@@ -58,6 +62,8 @@ class CodexHarness:
         ]
         if self.model:
             cmd += ["-m", self.model]
+        for server in self.tool_servers:
+            cmd += mcp_overrides(server)
         return cmd + ["--", prompt]
 
     async def reply(self, prompt: str, session_id: str | None, *, on_step: StepCallback | None = None) -> Reply:
@@ -68,6 +74,17 @@ class CodexHarness:
         if error or code != 0 or text is None:
             raise HarnessError(f"codex failed: {error or last_line(err, code)}", transient=True)
         return Reply.from_model_text(text, usage, thread_id or session_id)
+
+
+def mcp_overrides(server: ToolServer) -> list[str]:
+    """`-c` overrides that add one MCP server. Milo's tools ask the user themselves, so codex auto-approves them."""
+    key = f"mcp_servers.{server.name}"
+    env = ", ".join(f"{k} = {json.dumps(v)}" for k, v in server.env)
+    return ["-c", f"{key}.command={json.dumps(server.command[0])}",
+            "-c", f"{key}.args={json.dumps(list(server.command[1:]))}",
+            "-c", f"{key}.env={{{env}}}",
+            "-c", f'{key}.default_tools_approval_mode="approve"',
+            "-c", f"{key}.tool_timeout_sec={TOOL_TIMEOUT_S}"]
 
 
 def parse_events(lines: Iterable[str]) -> tuple[str | None, str | None, Usage, str | None]:
@@ -107,4 +124,5 @@ def _codex(options: Mapping[str, Any], ctx: AdapterContext) -> CodexHarness:
         reasoning_effort=o.reasoning_effort,
         sandbox=o.sandbox,
         timeout_s=o.timeout_s,
+        tool_servers=ctx.tool_servers,
     )

@@ -4,6 +4,8 @@ import logging
 from collections.abc import Collection
 from typing import Any
 
+from milo.core.wording import question
+
 from .app_bridge import AppBridge, AppError
 from .approvals import Approvals
 
@@ -30,9 +32,10 @@ class ToolRequests:
     - `approve` {kind, summary}: the action level for `kind`, asking `summary` if it is ask_first.
       Result: {allowed, level, answer}.
     - `confirm` {summary}: always ask. Result: {yes}.
-    - `app` {name, args, summary}: run `name` (one of APP_OPS) in Milo.app. Result: what the app returned.
+    - `app` {name, args}: run `name` (one of APP_OPS) in Milo.app. Result: what the app returned.
       The app lends its Calendar and Reminders permission here, so this side checks the connection is
-      switched on and applies the op's action level itself (asking `summary` if needed), whoever calls.
+      switched on and applies the op's action level itself, whoever calls. The question is written here
+      from the arguments that go to the app, never taken from the caller.
     """
 
     def __init__(self, approvals: Approvals, bridge: AppBridge, enabled: Collection[str] = ("calendar", "reminders")):
@@ -60,8 +63,7 @@ class ToolRequests:
                     args = request.get("args") or {}
                     if not isinstance(args, dict):
                         return _error("args must be an object")
-                    summary = " ".join(str(request.get("summary") or "").split())[:300] or f"Go ahead with {name}?"
-                    decision = await self._approvals.approve(kind, summary)
+                    decision = await self._approvals.approve(kind, question(name.replace(".", "_"), args))
                     if not decision.allowed:
                         return _error(REFUSED.get(decision.answer, REFUSED["refused"]))
                     return _ok(await self._bridge.call(name, args))

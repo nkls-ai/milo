@@ -76,8 +76,6 @@ class ConnectionSettings:
     notes: bool = True
     shortcuts: bool = True
     files: bool = True
-    files_scope: str = "~"
-    """Files outside this folder are never found or read. ~/Library and hidden folders are always left out."""
 
 
 @dataclass(frozen=True)

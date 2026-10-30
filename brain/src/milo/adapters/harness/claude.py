@@ -10,7 +10,7 @@ from typing import Any
 
 from milo.core.ports import StepCallback
 from milo.core.registry import HARNESSES, AdapterContext, options_from
-from milo.core.types import REPLY_SCHEMA, HarnessError, Reply, Usage
+from milo.core.types import REPLY_SCHEMA, HarnessError, Reply, ToolServer, Usage
 
 from ._activity import ClaudeActivity
 from ._binary import find_binary
@@ -23,18 +23,27 @@ class ClaudeOptions:
     model: str = ""
     permission_mode: str = "acceptEdits"
     timeout_s: float = 180
+    disallowed_tools: tuple[str, ...] = ()
+    """Built-in tools the agent may not use, e.g. ["Bash", "WebFetch"]."""
 
 
 class ClaudeHarness:
     name = "claude"
 
     def __init__(self, binary: str, workdir: Path, *, model: str = "", permission_mode: str = "acceptEdits",
-                 timeout_s: float = 180):
+                 timeout_s: float = 180, tool_servers: tuple[ToolServer, ...] = (), mcp_config: Path | None = None,
+                 disallowed_tools: tuple[str, ...] = ()):
         self.binary = binary
         self.workdir = workdir
         self.model = model
         self.permission_mode = permission_mode
         self.timeout_s = timeout_s
+        self.tool_servers = tool_servers
+        self.mcp_config = mcp_config
+        self.disallowed_tools = disallowed_tools
+        if tool_servers and mcp_config is not None:
+            mcp_config.parent.mkdir(parents=True, exist_ok=True)
+            mcp_config.write_text(json.dumps(mcp_servers(tool_servers)))
 
     def command(self, prompt: str, session_id: str | None) -> list[str]:
         cmd = [self.binary, "-p", "--output-format", "stream-json", "--verbose",
@@ -43,6 +52,12 @@ class ClaudeHarness:
             cmd += ["--resume", session_id]
         if self.model:
             cmd += ["--model", self.model]
+        if self.tool_servers and self.mcp_config is not None:
+            # Milo's tools ask the user themselves when it matters, so -p mode may call them without a prompt.
+            cmd += ["--mcp-config", str(self.mcp_config),
+                    "--allowedTools", *(f"mcp__{s.name}" for s in self.tool_servers)]
+        if self.disallowed_tools:
+            cmd += ["--disallowedTools", *self.disallowed_tools]
         return cmd + ["--", prompt]
 
     async def reply(self, prompt: str, session_id: str | None, *, on_step: StepCallback | None = None) -> Reply:
@@ -50,6 +65,12 @@ class ClaudeHarness:
         code, out, err = await run(self.command(prompt, session_id), cwd=self.workdir, timeout_s=self.timeout_s,
                                    on_line=on_line)
         return parse_result(result_line(out), code, err, session_id)
+
+
+def mcp_servers(servers: tuple[ToolServer, ...]) -> dict:
+    """The --mcp-config file for Claude Code."""
+    return {"mcpServers": {s.name: {"type": "stdio", "command": s.command[0], "args": list(s.command[1:]),
+                                    "env": dict(s.env)} for s in servers}}
 
 
 def result_line(out: str) -> str:
@@ -96,4 +117,7 @@ def _claude(options: Mapping[str, Any], ctx: AdapterContext) -> ClaudeHarness:
         model=o.model,
         permission_mode=o.permission_mode,
         timeout_s=o.timeout_s,
+        tool_servers=ctx.tool_servers,
+        mcp_config=ctx.state_dir / "mcp-servers.json",
+        disallowed_tools=o.disallowed_tools,
     )

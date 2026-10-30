@@ -83,8 +83,8 @@ class Approvals:
     The question shows in the bubble and the Milo window with Yes and No, and is spoken unless the user
     is busy talking (`quiet()`). It is answered by a click (`answer`), or by a short spoken or typed
     "yes"/"no" (`answer_text`, called by LiveTalk before it starts a turn) as long as the question is
-    still the last thing Milo said: once he answers something else (`superseded`), a bare "yes" could
-    mean that, so only Yes and No count. No answer within `timeout_s` means no. One question at a time;
+    still the last thing Milo said: once the bubble shows anything else (a reply, a task result, a
+    nudge), a bare "yes" could mean that, so only the buttons count. No answer within `timeout_s` means no. One question at a time;
     later ones wait their turn.
     """
 
@@ -99,8 +99,7 @@ class Approvals:
         self._quiet = quiet
         self._transcript = transcript or unrecorded()
         self._one_at_a_time = asyncio.Lock()
-        self._pending: tuple[str, asyncio.Future[bool]] | None = None
-        self._last_said = False
+        self._pending: tuple[str, str, asyncio.Future[bool]] | None = None
 
     @property
     def pending(self) -> bool:
@@ -123,33 +122,33 @@ class Approvals:
 
     def answer(self, id: str, yes: bool, *, via: str = "button") -> bool:
         """Answer the waiting question `id`. False if it isn't the one waiting (already answered, timed out)."""
-        if self._pending is None or self._pending[0] != id or self._pending[1].done():
+        if self._pending is None or self._pending[0] != id or self._pending[2].done():
             return False
         self._transcript.user("Yes" if yes else "No", via)
-        self._pending[1].set_result(yes)
+        self._pending[2].set_result(yes)
         return True
 
     def answer_text(self, text: str, *, via: str = "voice") -> bool:
         """Treat a turn as the answer if the waiting question is the last thing Milo said and the turn is
         a plain yes or no."""
-        if self._pending is None or not self._last_said:
+        if self._pending is None or not self._still_showing(self._pending[1]):
             return False
         yes = yes_or_no(text)
         if yes is None:
             return False
         return self.answer(self._pending[0], yes, via=via)
 
-    def superseded(self) -> None:
-        """Milo said something else after the question, so a spoken or typed yes no longer answers it."""
-        self._last_said = False
+    def _still_showing(self, question: str) -> bool:
+        """The bubble shows the question, or the part of it spoken so far."""
+        shown = self._ui.bubble.strip()
+        return bool(shown) and question.startswith(shown)
 
     async def _ask(self, question: str) -> str:
         """Returns "yes", "no" or "timeout"."""
         async with self._one_at_a_time:
             id = uuid.uuid4().hex[:12]
             future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
-            self._pending = (id, future)
-            self._last_said = True
+            self._pending = (id, question, future)
             log.info("asking before an action: %s", private(question))
             self._ui.emit(Confirm(id, question))
             self._transcript.say(question, Emotion.THINKING)

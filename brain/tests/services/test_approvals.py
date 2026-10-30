@@ -180,11 +180,12 @@ def test_app_ops_check_the_switch_and_apply_their_level_on_this_side():
     async def run():
         off = await requests.handle({"op": "app", "name": "reminders.list", "args": {}})
         adding = asyncio.create_task(requests.handle({"op": "app", "name": "calendar.add_event",
-                                                      "args": {"title": "Doctor"},
-                                                      "summary": "Put “Doctor” in your calendar?"}))
+                                                      "args": {"title": "Doctor", "start": "2026-11-05T15:00"},
+                                                      "summary": "Look at your calendar?"}))
         await settle()
         [c] = s.sink.of(Confirm)
-        assert c.question == "Put “Doctor” in your calendar?"
+        assert c.question == "Put “Doctor” in your calendar on Thursday 5 November at 15:00?", \
+            "the brain writes the question from what goes to the app, not from the caller's summary"
         s.approvals.answer(c.id, False)
         return off, await adding
 
@@ -192,3 +193,19 @@ def test_app_ops_check_the_switch_and_apply_their_level_on_this_side():
     assert off == {"ok": False, "error": "The reminders connection is switched off in Milo's settings."}
     assert refused == {"ok": False, "error": "The user said no."}
     assert not s.sink.of(AppRequest), "nothing reached the app"
+
+
+def test_a_spoken_yes_only_counts_while_the_bubble_still_shows_the_question():
+    s = Stack()
+
+    async def run():
+        asking = asyncio.create_task(s.approvals.confirm("Send this to Anna?"))
+        await settle()
+        await s.speaker.say("Your task is done: I found the bill.", s.ui.emotion, speak=False)  # a task result
+        assert not s.approvals.answer_text("yes")
+        assert s.approvals.pending
+        [c] = s.sink.of(Confirm)
+        assert s.approvals.answer(c.id, True), "the buttons still work"
+        return await asking
+
+    assert asyncio.run(run()) is True

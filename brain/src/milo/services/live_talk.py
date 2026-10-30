@@ -203,8 +203,6 @@ class LiveTalk:
         self._log(started, first_at, parser.spoken)
         self._ledger.record("chat", self._model.name, self._model.last_usage)
         self._apply(parser, ask=self._tainted)
-        if self._approvals is not None and parser.spoken.strip():
-            self._approvals.superseded()
         if not speak:
             if parser.spoken.strip():
                 await self._speaker.say(parser.spoken, parser.emotion, speak=False)
@@ -295,11 +293,13 @@ class LiveTalk:
             if effects:
                 log.warning("dropped %d tag(s) from a reply to task results: nobody to ask", len(effects))
         elif effects:
-            asking = asyncio.create_task(self._ask_then_apply(effects))
+            asking = asyncio.create_task(self._ask_then_apply(asyncio.current_task(), effects))
             self._asking.add(asking)
             asking.add_done_callback(self._asking.discard)
 
-    async def _ask_then_apply(self, effects: list[tuple[str, Callable[[], None]]]) -> None:
+    async def _ask_then_apply(self, turn: asyncio.Task | None, effects: list[tuple[str, Callable[[], None]]]) -> None:
+        if turn is not None:
+            await asyncio.wait({turn})  # ask once the reply is over, so the question is what the bubble shows
         for question, apply in effects:
             if await self._approvals.confirm(question):
                 apply()

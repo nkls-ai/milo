@@ -92,7 +92,7 @@ def check_confirm_answer(s: Stack, msg: dict) -> None:
     async def go():
         asking = asyncio.create_task(s.approvals.confirm("Send it?"))
         await settle()
-        s.approvals._pending = (msg["id"], s.approvals._pending[1])  # the fixture's id
+        s.approvals._pending = (msg["id"], *s.approvals._pending[1:])  # the fixture's id
         await s.brain.handle(parse_command(msg))
         return await asking
 
