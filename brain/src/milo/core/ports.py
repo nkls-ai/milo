@@ -17,7 +17,7 @@ import numpy as np
 from .events import Event
 from .memory import ConsolidationReport, Document, Episode, Fact, Hit, IndexItem, Recall, TurnContext
 from .routines import Routine
-from .types import Audio, Nudge, Reminder, Reply, ScreenCapture, Signals, Step, Usage
+from .types import Audio, Inbound, Nudge, Reminder, Reply, ScreenCapture, Signals, Step, Usage
 
 LevelCallback = Callable[[float], None]
 """Receives loudness in 0..1. May be called from an audio thread."""
@@ -214,6 +214,79 @@ class Confirmer(Protocol):
         True only for a yes. No, no answer before the timeout, or an error mean False.
         """
         ...
+
+
+@runtime_checkable
+class Channel(Protocol):
+    """A chat app the owner reaches Milo through from their phone (Telegram, iMessage). It only moves
+    messages: who counts as the owner, what Milo answers and what may be sent is the MessageService's job."""
+
+    name: str
+    """The registry name, e.g. "telegram"."""
+    label: str
+    """What the user calls it, e.g. "Telegram"."""
+
+    async def start(self) -> None:
+        """Check the token or permissions and get ready. Raises ChannelError with plain words."""
+        ...
+
+    async def receive(self) -> list[Inbound]:
+        """Wait for what arrived since the last call, for up to a poll's length. [] when nothing came.
+        Raises ChannelError when the channel stopped working; the caller waits and tries again."""
+        ...
+
+    async def send(self, chat: str, text: str) -> None:
+        """Send a text message to `chat`. Raises ChannelError."""
+        ...
+
+    async def ask(self, chat: str, id: str, question: str) -> None:
+        """Send a yes-or-no question. Buttons, where the app has them, answer with `yes:<id>` or `no:<id>`."""
+        ...
+
+    async def typing(self, chat: str) -> None:
+        """Show that Milo is writing, for a few seconds. Never raises."""
+        ...
+
+    async def send_file(self, chat: str, name: str, data: bytes, caption: str = "") -> None:
+        """Send one file's bytes under `name`. The caller has read and checked them. Raises ChannelError."""
+        ...
+
+    async def acknowledge(self, inbound: Inbound, text: str = "") -> None:
+        """Confirm a button press, with a short note the app may show. Never raises."""
+        ...
+
+    async def close(self) -> None: ...
+
+
+@runtime_checkable
+class QuestionRelay(Protocol):
+    """Somewhere else Approvals can ask its questions, like the owner's phone."""
+
+    def asked(self, id: str, question: str, detail: str) -> Relayed | None:
+        """A question started. None: not passed on. Never raises."""
+        ...
+
+    def closed(self, id: str, answer: str) -> None:
+        """The question is over: "yes", "no" or "timeout"."""
+        ...
+
+
+@dataclass(frozen=True)
+class Relayed:
+    """A question was passed on. `wait_s`: how long to wait for its answer at most. `only`: only the relay may
+    answer it (the user is away, so whoever sits at the Mac must not)."""
+
+    wait_s: float
+    only: bool = False
+
+
+@runtime_checkable
+class RemoteState(Protocol):
+    """Where the MessageService keeps whose phone is paired and whether remote is paused."""
+
+    def load(self) -> dict: ...
+
+    def save(self, data: dict) -> None: ...
 
 
 @runtime_checkable
@@ -459,6 +532,15 @@ class Files(Protocol):
         ...
 
 
+@runtime_checkable
+class Phone(Protocol):
+    """The owner's phone, reached by message through the brain (Milo by message, ADR 17)."""
+
+    def send(self, path: str, caption: str = "") -> dict:
+        """Send one file. The brain checks it and asks the user first. Raises ToolError."""
+        ...
+
+
 @dataclass(frozen=True)
 class Connections:
     """One implementation of each connection. None: switched off in config.toml or not available."""
@@ -469,6 +551,7 @@ class Connections:
     notes: Notes | None = None
     shortcuts: Shortcuts | None = None
     files: Files | None = None
+    phone: Phone | None = None
 
 
 # ---- memory: episodes, facts and the user's things (docs/design/memory.md)

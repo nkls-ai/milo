@@ -213,3 +213,32 @@ def test_a_bad_memory_setting_fails_at_build(build):
         build(cheap(**{"memory.recall_tokens": 99999}))
     with pytest.raises(ConfigError, match="embedder"):
         build(cheap(**{"memory.embedder": "nope"}))
+
+
+def test_messages_are_off_until_switched_on(build):
+    runtime, _ = build(cheap())
+    assert runtime.messages is None and runtime.brain._messages is None
+
+
+def test_messages_switched_on_wire_the_channel_relay_and_watchers(build):
+    from milo.adapters.channel.telegram import TelegramChannel
+    from milo.services.messages import MessageService
+
+    runtime, home = build(cheap(**{"messages.enabled": True, "messages.brief_at": "07:30",
+                                   "messages.away_after_min": 2}))
+    messages = runtime.messages
+    assert isinstance(messages, MessageService) and isinstance(messages._channel, TelegramChannel)
+    assert messages._channel._token_path == home / "secrets" / "telegram-token"
+    assert (home / "secrets").stat().st_mode & 0o777 == 0o700
+    assert messages.settings.away_after_s == 120 and str(messages.settings.brief_at) == "07:30:00"
+    assert messages in runtime.brain._approvals.relays
+    assert messages.helper_changed in runtime.helpers.watchers
+    assert messages.tick in runtime.heartbeat.after_tick
+    assert runtime.brain.greeting()[-1].type == "remote"
+
+
+def test_a_bad_messages_setting_names_the_key(build):
+    with pytest.raises(ConfigError, match="brief_at"):
+        build(cheap(**{"messages.enabled": True, "messages.brief_at": "7.30am"}))
+    with pytest.raises(ConfigError, match=r"messages\.telegram.*tokn_file"):
+        build(cheap(**{"messages.enabled": True}).replace("token_file =", "tokn_file ="))

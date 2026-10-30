@@ -23,16 +23,18 @@ from milo.services.heartbeat_runner import HeartbeatRunner
 from milo.services.listening import Listening
 from milo.services.live_talk import LiveTalk, untrusted
 from milo.services.memory import Memory, MemoryParts, TurnMemory
+from milo.services.messages import MessageService, MessageSettings
 from milo.services.speaker import Speaker
 from milo.services.orchestrator import Orchestrator
 from milo.services.routines import Routines
 from milo.services.task_runner import TaskRunner
 from milo.services.ui_state import UiState
 from milo.settings import Settings
-from tests.fakes import (FakeAudioInput, FakeAudioOutput, FakeClock, FakeEyes, FakeHands, FakeHarness,
+from tests.fakes import (FakeAudioInput, FakeAudioOutput, FakeChannel, FakeClock, FakeEyes, FakeHands, FakeHarness,
                          FakeLiveModel, FakeTranscriber, FakeVoice, ListReminders, MemoryConfigFile, MemoryHistory,
-                         MemoryLedger, MemoryProfile, MemoryRoutineBook, MemoryState, RecordingSink, ScriptedEngine,
-                         UpperCleaner, FakeMemoryIndex, MemoryEpisodeLog, MemoryFactStore)
+                         MemoryLedger, MemoryProfile, MemoryRemoteState, MemoryRoutineBook, MemoryState,
+                         RecordingSink, ScriptedEngine, UpperCleaner, FakeMemoryIndex, MemoryEpisodeLog,
+                         MemoryFactStore)
 
 PERSONA = "You are Milo, a test persona."
 
@@ -79,6 +81,10 @@ class Stack:
     routine_state: MemoryState = field(default_factory=MemoryState)
     max_routine_runs: int = 6
     config_file: MemoryConfigFile = field(default_factory=MemoryConfigFile)
+    channel: FakeChannel | None = None
+    """A chat app for Milo by message. None: no MessageService."""
+    remote: MemoryRemoteState = field(default_factory=MemoryRemoteState)
+    message_settings: MessageSettings = field(default_factory=MessageSettings)
 
     def __post_init__(self):
         executor = InlineExecutor()
@@ -126,10 +132,20 @@ class Stack:
                 ("ui", "whats_this_key"): use_ui, ("ui", "voice"): lambda c: setattr(self.speaker, "silent", not c.ui.voice),
                 ("dictation", "stream"): lambda c: setattr(self.listening, "live_mode", LiveMode(c.dictation.stream))}
         self.settings = Settings(self.config_file, self.config_file.read(), self.ui, live)
+        self.messages = None
+        if self.channel is not None:
+            self.messages = MessageService(self.channel, self.live_talk, self.approvals, self.remote, self.speaker,
+                                           self.ui, self.context, self.clock, settings=self.message_settings,
+                                           helpers=lambda: self.tasks.helpers, board=self.tasks.board,
+                                           reminders=self.reminders, app=self.bridge.call,
+                                           wait_for_mac_s=self.wait_s, typing_every_s=0.01, backoff_s=(0.01, 0.02))
+            self.approvals.relays.append(self.messages)
+            self.tasks.watchers.append(self.messages.helper_changed)
+            self.heartbeat.after_tick.append(self.messages.tick)
         self.brain = Brain(self.ui, self.listening, self.live_talk, self.context, self.heartbeat, UiSettings(),
                            approvals=self.approvals, bridge=self.bridge, hands=self.hands, screens=self.screens,
                            helpers=self.tasks, memory=self.memory, routines=self.routines,
-                           settings=self.settings)
+                           settings=self.settings, messages=self.messages)
 
     def states(self) -> list[MiloState]:
         return [e.state for e in self.sink.of(StateChanged)]

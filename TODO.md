@@ -41,6 +41,13 @@
 - First sound is about 1.5 to 2.5 s after the user's words, and most of it is OmniVoice's first piece (each diffusion step costs 200 to 500 ms even for a short piece, and the audio decoder another 0.3 s). Idea not yet measured: a per-call cache of the voice reference's encoder pass. Starting the chat turn on the committed words before the key comes up is possible now (the live transcript commits phrases while the user speaks, and the words are ready about 0.5 s after release), but a message sent to the running model can't be taken back if the user goes on talking, so it would need a throwaway conversation per guess.
 - OmniVoice garbled one 6-step render out of about 40 in a Whisper check ("Goodnight..."). If it happens in use, 8 steps when the GPU is free.
 
+- Milo by message: try it with a real bot (make one with @BotFather, pair, ask for a file, answer a question from the phone). Everything so far ran against a fake Bot API.
+- Milo by message: run the iMessage channel against the real Messages app (message yourself, check that Milo's own messages are skipped and that "from me" rows of the self chat come through as expected).
+- Milo by message: a field for the bot token and a "Connect your phone" button in the Settings window (now config.toml and a file).
+- Milo by message: voice notes from the phone through Whisper, photos to the chat model as images (both are refused with a plain note now).
+- Milo by message: say which helper a phone question comes from, and let a helper's turn wait as long as a question on the phone does (now the harness timeout ends it first).
+- Milo by message: keep helpers from writing into ~/Milo/state and ~/Milo/secrets at all, not only putting them back while the owner is away.
+
 ## Later
 - Wake word ("hey Milo") with a small local model.
 - Rive or sprite animations instead of SwiftUI shapes.

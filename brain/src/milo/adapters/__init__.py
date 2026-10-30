@@ -24,6 +24,8 @@ BUILTIN = (
     "headless.none",
     "embed.mlx_e5",
     "embed.hashing",
+    "channel.telegram",
+    "channel.imessage",
 )
 
 

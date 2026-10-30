@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 
 from milo.core.logtext import private
@@ -46,6 +46,8 @@ class HeartbeatRunner:
         self.muted = False
         self.on_tick: list[Callable[[datetime], None]] = []
         """Other zero-token checks that run on every tick with the time, e.g. routine schedules."""
+        self.after_tick: list[Callable[[], Awaitable[None]]] = []
+        """Async checks awaited after the nudges on each tick, like the morning brief to the phone. Zero tokens."""
 
     async def run(self) -> None:
         while True:
@@ -64,6 +66,8 @@ class HeartbeatRunner:
                 log.exception("heartbeat check failed")
         for nudge in self._engine.tick(signals):
             await self.deliver(nudge)
+        for check in self.after_tick:
+            await check()
 
     def signals(self) -> Signals:
         return Signals(now=self._clock.now(), idle_s=self._context.idle_s(), app=self._context.app)
