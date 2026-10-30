@@ -1,15 +1,24 @@
 """ElevenLabs, a cloud voice that streams: the reply's text goes in while it is still being written, and the audio
 comes back as one continuous delivery, so pitch and pace carry across sentences.
 
-Speech goes over the multi-context WebSocket (`/v1/text-to-speech/{voice}/multi-stream-input`). One connection
-stays open between replies; each reply is a context on it, and a cut-off reply only closes its context. Pieces
-(whole sentences, see services/chunker.py) go in with `auto_mode`, which starts each one at once instead of
-waiting for 120 characters to pile up. Audio comes back as 24 kHz PCM, nothing to decode. Each audio message
-says which characters it speaks (`alignment`), which tells the speaker where one piece ends and the next begins.
+Two WebSockets, picked by the model:
 
-Measured from Germany on 2026-10-30 (docs/research/voice.md): about 0.4 s from a sentence going in to its first
-audio with eleven_flash_v2_5, a sentence of audio every few hundred ms after that, and the same pitch from
-sentence to sentence (0.5 to 1.4 semitones of spread between phrases, like one whole-text render).
+- Eleven v4 and v3 (`eleven_v4_turbo`, the default) speak over the dialogue socket
+  (`/v1/text-to-dialogue/stream-input`). It has no contexts: a reply is a turn, each piece goes in with a flush
+  so it starts at once, and the server answers every flush with `is_final_audio_for_turn`. A turn can't be
+  stopped there, so a cut-off reply drops the connection and a fresh one opens behind it. The server closes a
+  socket that hears nothing for 20 s, so an idle one gets a keep-alive every KEEP_ALIVE_S.
+- The v2.5 models speak over the multi-context socket (`/v1/text-to-speech/{voice}/multi-stream-input`). Each
+  reply is a context, a cut-off reply only closes its context, and pieces go in with `auto_mode`.
+
+Either way one connection stays open between replies, pieces are whole sentences (see services/chunker.py),
+audio comes back as 24 kHz PCM, and each audio message says which characters it speaks (`alignment`), which
+tells the speaker where one piece ends and the next begins.
+
+Measured from Germany (docs/research/voice.md): eleven_v4_turbo on 2026-10-31, 0.10 to 0.13 s from a sentence
+going in to its first audio on a warm connection, and the alignment matches the sent text character for
+character (numbers, "€", "Dr." included). eleven_flash_v2_5 on 2026-10-30, about 0.4 s, with 0.5 to 1.4
+semitones of pitch spread between phrases.
 
 synthesize() renders a whole text over HTTP, for the short clips rendered at warm-up ("Hm.").
 
@@ -48,8 +57,11 @@ HTTP_TIMEOUT_S = 10.0
 INACTIVITY_TIMEOUT_S = 180  # the server closes an idle connection after this (its maximum)
 MIN_LIFE_S = 30.0  # a connection closed sooner than this isn't reopened by itself: something is wrong
 KEEP_WARM_S = 600.0  # reopen a connection the server closed only if Milo spoke this recently
-FIRST_AUDIO_GUESS_S = 0.45
-DEFAULT_VOICE = "bIHbv24MWmeRgasZH58o"  # "Will", a premade voice: young, relaxed, conversational
+KEEP_ALIVE_S = 10.0  # the dialogue socket closes after 20 s without a message
+FIRST_AUDIO_GUESS_S = 0.3
+DEFAULT_VOICE = "N2lVS1w4EtoT3dr4eOWO"  # "Callum", a premade voice: young, a little higher than most
+DEFAULT_MODEL = "eleven_v4_turbo"
+DIALOGUE_MODELS = ("eleven_v4", "eleven_v3")  # these speak over the dialogue socket
 
 _END = object()
 
@@ -57,11 +69,11 @@ _END = object()
 @dataclass(frozen=True)
 class ElevenLabsOptions:
     voice_id: str = DEFAULT_VOICE
-    model: str = "eleven_flash_v2_5"  # the fastest; eleven_turbo_v2_5 is about as fast, eleven_multilingual_v2 slower
+    model: str = DEFAULT_MODEL  # eleven_flash_v2_5 is the older fast one; eleven_v4 is slower, not for talking
     key_file: str = ""  # empty: <workspace>/secrets/elevenlabs.key
     stability: float = 0.5
-    similarity_boost: float = 0.75
-    speed: float = 1.0
+    similarity_boost: float = 0.75  # v2.5 models only
+    speed: float = 1.0  # v2.5 models only
     language: str = ""  # empty: follows the text, which may switch between German and English
     server: str = "wss://api.elevenlabs.io"
 
@@ -80,12 +92,13 @@ class ElevenLabsVoice:
 
     sample_rate = SAMPLE_RATE
 
-    def __init__(self, key_file: Path, voice_id: str = DEFAULT_VOICE, *, model: str = "eleven_flash_v2_5",
+    def __init__(self, key_file: Path, voice_id: str = DEFAULT_VOICE, *, model: str = DEFAULT_MODEL,
                  stability: float = 0.5, similarity_boost: float = 0.75, speed: float = 1.0, language: str = "",
                  server: str = "wss://api.elevenlabs.io", clock=None):
         self.key_file = key_file
         self.voice_id = voice_id
         self.model = model
+        self.dialogue = model.startswith(DIALOGUE_MODELS)
         self.language = language
         self.server = server.rstrip("/")
         self.voice_settings = {"stability": stability, "similarity_boost": similarity_boost, "speed": speed}
@@ -155,6 +168,11 @@ class ElevenLabsVoice:
         return self._key
 
     def _url(self) -> str:
+        if self.dialogue:
+            query = {"model_id": self.model, "output_format": f"pcm_{SAMPLE_RATE}", "sync_alignment": "true"}
+            if self.language:
+                query["language_code"] = self.language
+            return f"{self.server}/v1/text-to-dialogue/stream-input?{urlencode(query)}"
         query = {"model_id": self.model, "output_format": f"pcm_{SAMPLE_RATE}", "auto_mode": "true",
                  "inactivity_timeout": INACTIVITY_TIMEOUT_S, "sync_alignment": "true"}
         if self.language:
@@ -164,12 +182,23 @@ class ElevenLabsVoice:
     def _connected(self) -> _Connection:
         """The open connection, or one that is opening now."""
         if self._connection is None or self._connection.closed:
-            self._connection = _Connection(self, self._url(), self._read_key())
+            kind = _DialogueConnection if self.dialogue else _Connection
+            self._connection = kind(self, self._url(), self._read_key())
         return self._connection
 
-    def _send(self, stream: ElevenLabsStream, message: dict) -> None:
+    def _say(self, stream: ElevenLabsStream, text: str, first: bool) -> None:
         self._last_used = asyncio.get_running_loop().time()
-        self._connected().send(stream, message)
+        self._connected().say(stream, text, first)
+
+    def _finish(self, stream: ElevenLabsStream) -> None:
+        self._connected().finish(stream)
+
+    def _abandon(self, connection: _Connection) -> None:
+        """Drop a connection still speaking a reply nobody wants, and open a fresh one for the next."""
+        connection.abandon()
+        if self._connection is connection:
+            self._connection = None
+            self._connected()
 
     def _closed_idle(self, connection: _Connection) -> None:
         """The server closed a connection nobody was using. Reopen it if Milo spoke lately, so the next reply
@@ -205,15 +234,35 @@ class _Connection:
         self.streams.setdefault(stream.context_id, stream)
         self._outbox.put_nowait(message)
 
+    def say(self, stream: ElevenLabsStream, text: str, first: bool) -> None:
+        if first:
+            self.send(stream, {"text": " ", "context_id": stream.context_id,
+                               "voice_settings": self.voice.voice_settings})
+        self.send(stream, {"text": text, "context_id": stream.context_id})
+
+    def finish(self, stream: ElevenLabsStream) -> None:
+        self.send(stream, {"context_id": stream.context_id, "flush": True})
+        self.send(stream, {"context_id": stream.context_id, "close_context": True})
+
+    def drop(self, stream: ElevenLabsStream) -> None:
+        """The reply is over before its end: stop its audio."""
+        self.send(stream, {"context_id": stream.context_id, "close_context": True})
+
     def forget(self, stream: ElevenLabsStream) -> None:
         self.streams.pop(stream.context_id, None)
 
-    async def close(self) -> None:
+    def abandon(self) -> None:
         self.closed = self._closing = True
-        self._outbox.put_nowait(None)
         self._task.cancel()
+
+    async def close(self) -> None:
+        self.abandon()
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await self._task
+
+    def _hello(self) -> dict | None:
+        """The first message on a new connection, if the protocol has one."""
+        return None
 
     async def _run(self, url: str, key: str) -> None:
         from websockets.asyncio.client import connect
@@ -225,6 +274,8 @@ class _Connection:
             async with asyncio.timeout(CONNECT_TIMEOUT_S):
                 self._ws = await connect(url, additional_headers={"xi-api-key": key}, max_size=16 * 2**20,
                                          open_timeout=None, ping_interval=20)
+            if (hello := self._hello()) is not None:
+                await self._ws.send(json.dumps(hello))
             writer = asyncio.create_task(self._write())
             try:
                 async for raw in self._ws:
@@ -281,6 +332,64 @@ class _Connection:
             stream._final()
 
 
+class _DialogueConnection(_Connection):
+    """The dialogue socket: no contexts, so replies take turns in the order they started, and each one waits
+    for the server to finish every piece it flushed."""
+
+    def __init__(self, voice: ElevenLabsVoice, url: str, key: str):
+        self.waiting: dict[str, int] = {}  # per reply: pieces flushed whose audio isn't all here yet
+        super().__init__(voice, url, key)
+
+    def say(self, stream: ElevenLabsStream, text: str, first: bool) -> None:
+        self.waiting[stream.context_id] = self.waiting.get(stream.context_id, 0) + 1
+        self.send(stream, {"inputs": [{"text": text, "voice_id": self.voice.voice_id, "new_turn": first}],
+                           "flush": True})
+
+    def finish(self, stream: ElevenLabsStream) -> None:
+        if not self.waiting.get(stream.context_id):
+            stream._final()
+
+    def drop(self, stream: ElevenLabsStream) -> None:
+        if self.waiting.get(stream.context_id):
+            self.voice._abandon(self)
+
+    def forget(self, stream: ElevenLabsStream) -> None:
+        super().forget(stream)
+        self.waiting.pop(stream.context_id, None)
+
+    def _hello(self) -> dict:
+        return {"voices": [self.voice.voice_id],
+                "voice_settings": {"stability": self.voice.voice_settings["stability"]}}
+
+    async def _write(self) -> None:
+        loop = asyncio.get_running_loop()
+        while True:
+            try:
+                message = await asyncio.wait_for(self._outbox.get(), KEEP_ALIVE_S)
+            except TimeoutError:
+                if not self.streams and loop.time() - self.voice._last_used >= KEEP_WARM_S:
+                    await self._ws.close()  # unused for a while: let it go
+                    return
+                message = {"keep_alive": True}
+            if message is None:
+                return
+            await self._ws.send(json.dumps(message))
+
+    def _route(self, message: dict) -> None:
+        if message.get("error") or (message.get("message") and "audio" not in message):
+            raise VoiceUnavailable(f"ElevenLabs: {message.get('message') or message.get('error')}")
+        context_id = next((c for c in self.streams if self.waiting.get(c)), None)
+        if context_id is None:
+            return  # audio for a reply that was cut off
+        stream = self.streams[context_id]
+        if message.get("audio"):
+            stream._audio(base64.b64decode(message["audio"]), message.get("alignment"))
+        if message.get("is_final_audio_for_turn"):
+            self.waiting[context_id] -= 1
+            if not self.waiting[context_id] and stream._finished:
+                stream._final()
+
+
 class ElevenLabsStream:
     """One reply as one ElevenLabs context. See VoiceStream."""
 
@@ -305,16 +414,13 @@ class ElevenLabsStream:
         text = " ".join(text.split())
         if not text or self._finished or self._done:
             return
-        if not self._started:
-            self._started = True
-            self.voice._send(self, {"text": " ", "context_id": self.context_id,
-                                    "voice_settings": self.voice.voice_settings})
+        first, self._started = not self._started, True
         text += " "  # every message ends with a space, as the API asks
         self._sent += len(text)
         self._ends.append(self._sent)
         if self._first_sent_at is None:
             self._first_sent_at = asyncio.get_running_loop().time()
-        self.voice._send(self, {"text": text, "context_id": self.context_id})
+        self.voice._say(self, text, first)
         self._arm()
 
     def finish(self) -> None:
@@ -324,8 +430,7 @@ class ElevenLabsStream:
         if not self._started:
             self._end(_END)
             return
-        self.voice._send(self, {"context_id": self.context_id, "flush": True})
-        self.voice._send(self, {"context_id": self.context_id, "close_context": True})
+        self.voice._finish(self)
 
     def cancel(self) -> None:
         if self._done:
@@ -356,7 +461,7 @@ class ElevenLabsStream:
             pcm, self._odd = pcm[:-1], pcm[-1:]
         samples = _samples(pcm)
         chars = (alignment or {}).get("chars") or ()
-        starts = (alignment or {}).get("charStartTimesMs") or ()
+        starts = (alignment or {}).get("charStartTimesMs") or (alignment or {}).get("char_start_times_ms") or ()
         offset, last = self._spoken, len(self._ends) - 1
         self._spoken += len(chars)
         while self._piece < last and self._ends[self._piece] <= offset:
@@ -414,11 +519,11 @@ class ElevenLabsStream:
             self._fail(f"no audio from ElevenLabs for {NO_AUDIO_S:.0f} s")
 
     def _close_context(self, again: bool = False) -> None:
-        """Tell the server this context is over, unless finish() did (`again`: even then) or there is no
+        """Tell the server this reply is over, unless finish() did (`again`: even then) or there is no
         connection to tell."""
         connection = self.voice._connection
         if self._started and (again or not self._finished) and connection is not None and not connection.closed:
-            connection.send(self, {"context_id": self.context_id, "close_context": True})
+            connection.drop(self)
 
 
 def _samples(pcm: bytes) -> Audio:

@@ -5,9 +5,11 @@ the wider research are in the second half of this file.
 
 ## What Milo does now
 
-- **Speaking.** `[tts] use = "elevenlabs"`: one WebSocket to ElevenLabs' `multi-stream-input`, kept warm while Milo
-  talks. A reply is one context: each whole sentence goes in as soon as the chat model has written it, and the
-  audio plays as it arrives (PCM 24 kHz). This makes the reply one delivery, not a string of separate clips.
+- **Speaking.** `[tts] use = "elevenlabs"`, `eleven_v4_turbo` with the voice Callum (since 2026-10-31, see
+  "Eleven v4 Turbo" below): one WebSocket to ElevenLabs' `text-to-dialogue/stream-input`, kept warm while Milo
+  talks. A reply is one turn: each whole sentence goes in, flushed, as soon as the chat model has written it, and
+  the audio plays as it arrives (PCM 24 kHz). A cut-off reply drops the socket and a fresh one opens. The v2.5
+  models (`eleven_flash_v2_5`) still work over `multi-stream-input`, one context per reply.
   Pauses longer than 0.5 s inside the audio are shortened. Hold, barge-in and backchannels work as before.
 - **Fallback.** If ElevenLabs can't be reached, the rest of the reply is spoken by `[tts] fallback` (default "say")
   for two minutes, and Milo says once, plainly, that he is using his own voice for a while. The fallback is not
@@ -82,6 +84,33 @@ German, one English and one mixed line plus "Hm." through the streaming path, an
 | – | Liam | | 6% | | too hyped |
 | – | Brian | | 3% | | too deep, announcer |
 | – | George | | 3% | 0.33–0.49 s | narrator, slower |
+
+## Eleven v4 Turbo and a higher voice (2026-10-31)
+
+Eleven v4 and v4 Turbo came out in late September 2026, on every plan at the same credit price. They are refused
+by `multi-stream-input` (HTTP 400) and spoken over the dialogue socket (`/v1/text-to-dialogue/stream-input`):
+first message `{"voices": [id], "voice_settings": {"stability": ...}}`, then `{"inputs": [{"text", "voice_id",
+"new_turn"}], "flush": true}` per sentence. Every flush is answered with `is_final_audio_for_turn`, so a reply
+can stream sentence by sentence; without a flush the server waits for about 40 characters. `alignment` uses
+snake_case keys and matched the sent text character for character ("3,50 €", "12.11.", "10%", "Dr."). The
+socket closes after 20 s without a message, so an idle one gets `{"keep_alive": true}` every 10 s.
+
+| model (voice Will, then Callum) | first audio, warm |
+|---|---|
+| eleven_flash_v2_5, HTTP stream | 0.36 s (one run) |
+| eleven_v4_turbo, HTTP stream | 0.23 s (one run) |
+| eleven_v4_turbo, dialogue socket, through the adapter | 0.10 to 0.13 s |
+| eleven_v4, dialogue socket | 0.75 s |
+
+A cut-off reply, then the next one: 0.11 s to first audio, nothing of the old reply in it. After 25 s idle: 0.12 s
+on the same connection. Pitch: three sentences sent as three flushed pieces showed no larger jumps than the same
+text sent whole (largest gap between thirds 4.1 to 6.0 vs 6.2 to 8.0 semitones, a rough autocorrelation measure;
+the spread is Callum's own intonation).
+
+The user asked for a higher voice than Will. Premade voices on v4 Turbo, median pitch of one mixed
+German/English line: Will 157 Hz, Callum 169 (+1.3 st), Liam 170, Chris 174, Charlie 188 (+3.2), Harry 208
+(+4.9), River 246, Jessica 242. The user picked Callum (`N2lVS1w4EtoT3dr4eOWO`). Voice Design and library voices
+would give more choice but need a paid plan.
 
 ## Licences
 
