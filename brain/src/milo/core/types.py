@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import StrEnum
@@ -151,7 +152,8 @@ class ActionLevel(StrEnum):
 
 @dataclass(frozen=True)
 class Decision:
-    """The outcome of an approval. `answer`: "auto" (no question needed), "yes", "no", "timeout" or "refused"."""
+    """The outcome of an approval. `answer`: "auto" (no question needed), "yes", "always" (Allow always), "allowed"
+    (the user allowed this work before, ADR 0022), "no", "timeout" or "refused"."""
 
     allowed: bool
     level: ActionLevel
@@ -327,3 +329,63 @@ class Inbound:
     answer: str = ""
     ref: str = ""
     attachments: int = 0
+
+
+# Bundle ids of apps Milo names in his own scripts and tools, so "Microsoft Excel" from sheet_write and
+# com.microsoft.Excel from a click are the same app.
+_BUNDLES = {
+    "microsoft excel": "com.microsoft.excel", "excel": "com.microsoft.excel",
+    "microsoft word": "com.microsoft.word", "word": "com.microsoft.word",
+    "microsoft powerpoint": "com.microsoft.powerpoint", "powerpoint": "com.microsoft.powerpoint",
+    "numbers": "com.apple.iwork.numbers", "pages": "com.apple.iwork.pages", "keynote": "com.apple.iwork.keynote",
+    "textedit": "com.apple.textedit", "notes": "com.apple.notes", "mail": "com.apple.mail",
+    "calendar": "com.apple.ical", "reminders": "com.apple.reminders", "finder": "com.apple.finder",
+    "safari": "com.apple.safari", "preview": "com.apple.preview",
+}
+
+
+def _name(text: str) -> str:
+    """"/Applications/Numbers.app" -> "numbers"."""
+    return str(text or "").strip().rstrip("/").rsplit("/", 1)[-1].lower().removesuffix(".app").strip()
+
+
+@dataclass(frozen=True)
+class AppRef:
+    """An app, by its bundle id where Milo knows it, else by its name."""
+
+    name: str
+    bundle: str = ""
+
+    @property
+    def key(self) -> str:
+        return self.bundle.lower() or _BUNDLES.get(_name(self.name), _name(self.name))
+
+    def same(self, other: AppRef) -> bool:
+        if self.bundle and other.bundle:
+            return self.bundle.lower() == other.bundle.lower()
+        if self.key and self.key == other.key:
+            return True
+        # One side has only a name: an app Milo knows goes by its bundle id, any other by its name.
+        a, b = _name(self.name), _name(other.name)
+        return bool(a) and a == b and a not in _BUNDLES
+
+    @property
+    def label(self) -> str:
+        return self.name or self.bundle
+
+    def to_dict(self) -> dict:
+        return {"name": self.name, "bundle": self.bundle}
+
+    @staticmethod
+    def of(entry: Mapping | str) -> AppRef:
+        if isinstance(entry, str):
+            return AppRef(entry)
+        return AppRef(str(entry.get("name") or ""), str(entry.get("bundle") or ""))
+
+
+@dataclass(frozen=True)
+class Scope:
+    """The work a question is about: acting in `apps` for the task `task` ("" when it can't tell which)."""
+
+    apps: tuple[AppRef, ...]
+    task: str = ""

@@ -11,10 +11,10 @@ from milo.core.control import Protected
 from milo.core.events import FlyTo, HandsBorrow, HandsSession, Status
 from milo.core.hands import validate
 from milo.core.ports import AppHands, Confirmer, EventSink
-from milo.core.types import BorrowNeeded, HandsError, Step, StepStatus
+from milo.core.types import AppRef, BorrowNeeded, HandsError, Scope, Step, StepStatus
 
 from . import documents, sheets
-from .risk import Risk, Verdict, classify, normalize_combo
+from .risk import WORK, Risk, Verdict, classify, normalize_combo, plain_app
 from .screen import NOTE, screen_data
 from .transcript import Transcript, unrecorded
 
@@ -31,6 +31,8 @@ NOT_ALLOWED = ("macOS doesn't let Milo control {app} yet. Tell the user to switc
                "Settings › Privacy & Security › Automation, then try again.")
 
 _TELL = re.compile(r'tell application "([^"]+)"', re.IGNORECASE)
+# Every way a script names an app; a quoted name or id is one Milo can check.
+_APP_REF = re.compile(r'\b(?:application|app)\b(?:(\s+id)?\s*"([^"]*)")?', re.IGNORECASE)
 _NOT_AUTHORIZED = re.compile(r"Not authori[sz]ed to send Apple events to (.+?)\.|\(-1743\)", re.IGNORECASE)
 # Tools the brain runs as a few app actions of its own (scripts it writes, a filtered ax_tree).
 _COMPOSED = ("sheet_write", "sheet_read", "write_document", "ax_find")
@@ -141,7 +143,7 @@ class HandsService:
                     break
                 self._transcript.task_step(task_id, step)  # the user can read the whole thing before answering
                 question = confirm_question(tool, args, target, verdict.reason)
-                if not await self._confirm.confirm(question):
+                if not await self._confirm.confirm(question, scope=self._scope(tool, args, target, verdict, app)):
                     self._step(task_id, step, StepStatus.FAILED)
                     raise HandsError(f"The user said no (or didn't answer) to: {question} Don't try it another "
                                      "way; tell the user what is left to do.")
@@ -192,7 +194,8 @@ class HandsService:
         The app hands them back by itself a little after its last action that needed them, so the next such
         action asks again."""
         log.info("computer use needs the %s for %s", need.what, tool)
-        if not await self._confirm.confirm(borrow_question(tool, target, need.what)):
+        scope = self._scope(tool, args, target, Verdict(Risk.ASK, "use"), _app_of(tool, args, target))
+        if not await self._confirm.confirm(borrow_question(tool, target, need.what), scope=scope):
             raise HandsError(KEEP_IT.format(what=need.what))
         self._check()
         self._sink.emit(HandsBorrow(True, need.what))
@@ -200,6 +203,20 @@ class HandsService:
             return await self._perform(tool, args)
         except BorrowNeeded:
             raise HandsError("This didn't work even with the real mouse and keyboard. Try another way.") from None
+
+    def _scope(self, tool: str, args: dict, target: dict, verdict: Verdict, app: str) -> Scope | None:
+        """The work in an app a question is about, which an Allow covers for the rest of this task (ADR 0022).
+        None for anything else: sending, deleting, code, settings, and scripts that don't say which apps they
+        talk to."""
+        if verdict.reason not in WORK:
+            return None
+        if tool == "run_applescript":
+            apps = script_apps(str(args.get("script", "")))
+        else:
+            apps = [AppRef(app, str(target.get("bundle") or "") if app == str(target.get("app") or "") else "")]
+        if not apps or not all(plain_app(a.name, a.bundle) for a in apps):
+            return None
+        return Scope(tuple(apps), self._task_id or "")
 
     def _needs_clearing(self, tool: str, acts: bool, target: dict, app: str) -> bool:
         """A careful task asks once per app before it first changes something there."""
@@ -391,6 +408,17 @@ def output(tool: str, result: dict) -> ToolOutput:
     elif not text:
         text = "Done."
     return ToolOutput(text, image)
+
+
+def script_apps(script: str) -> list[AppRef] | None:
+    """The apps a script talks to, by name or id. None if it names none, or names one some other way (a variable,
+    a built string), since then it could be talking to any app."""
+    apps = []
+    for m in _APP_REF.finditer(script):
+        if m.group(2) is None:
+            return None
+        apps.append(AppRef("", m.group(2)) if m.group(1) else AppRef(m.group(2)))
+    return list(dict.fromkeys(apps)) or None
 
 
 def _app_of(tool: str, args: dict, target: dict) -> str:

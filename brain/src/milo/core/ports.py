@@ -19,7 +19,7 @@ from .events import Event
 from .meetings import Chunk, MeetingInfo, MeetingNotes, TimedWord, Track, TranscriptLine, Turn
 from .memory import ConsolidationReport, Document, Episode, Fact, Hit, IndexItem, Recall, TurnContext
 from .routines import Routine
-from .types import Audio, Inbound, Nudge, Reminder, Reply, ScreenCapture, Signals, Step, Usage
+from .types import Audio, Inbound, Nudge, Reminder, Reply, ScreenCapture, Scope, Signals, Step, Usage
 
 LevelCallback = Callable[[float], None]
 """Receives loudness in 0..1. May be called from an audio thread."""
@@ -281,8 +281,9 @@ class AppHands(Protocol):
 class Confirmer(Protocol):
     """Asks the user before an action. Any tool or service that is about to do something it can't undo uses it."""
 
-    async def confirm(self, summary: str) -> bool:
-        """Ask `summary`, a plain yes-or-no question naming the thing and the consequence.
+    async def confirm(self, summary: str, *, scope: Scope | None = None) -> bool:
+        """Ask `summary`, a plain yes-or-no question naming the thing and the consequence. `scope`: the work in an
+        app it is about, which an earlier Allow may already cover (ADR 0022); None asks every time.
 
         True only for a yes. No, no answer before the timeout, or an error mean False.
         """

@@ -19,6 +19,10 @@ log = logging.getLogger("milo.connect")
 VERSION = "0.1.0"
 
 
+# The app each connection changes things in, so an Allow for one change there covers the next (ADR 0022).
+APPS = {"notes": "Notes", "files": "Finder"}
+
+
 class Toolbox:
     """Runs a tool after its approval. A connection that asks the brain itself (Calendar and Reminders
     through Milo.app, where the brain applies the level) has `approves_itself` set."""
@@ -41,7 +45,7 @@ class Toolbox:
             raise ToolError(f"{name} doesn't take {', '.join(unknown)}")
         if not getattr(backend, "approves_itself", False):
             facts = tool.about(backend, args) if tool.about and tool.kind != "read" else {}
-            decision = self._brain.approve(tool.kind, tool.question({**args, **facts}))
+            decision = self._brain.approve(tool.kind, tool.question({**args, **facts}), app=APPS.get(tool.connection, ""))
             if not decision.allowed:
                 raise ToolError(refusal(decision))
         log.info("%s: %s", tool.connection, name)

@@ -27,6 +27,7 @@ from milo.services.memory import Memory, MemoryParts, TurnMemory
 from milo.services.messages import MessageService, MessageSettings
 from milo.services.speaker import Speaker
 from milo.services.orchestrator import Orchestrator
+from milo.services.permits import Permits
 from milo.services.routines import Routines
 from milo.services.task_runner import TaskRunner
 from milo.services.ui_state import UiState
@@ -83,6 +84,10 @@ class Stack:
     routine_state: MemoryState = field(default_factory=MemoryState)
     max_routine_runs: int = 6
     config_file: MemoryConfigFile = field(default_factory=MemoryConfigFile)
+    ask: str = "task"
+    """[approvals] ask: how often Milo asks about work in an app (ADR 0022)."""
+    allowed_apps: list | None = None
+    """[approvals] allowed_apps: the apps the user said Allow always to."""
     channel: FakeChannel | None = None
     """A chat app for Milo by message. None: no MessageService."""
     remote: MemoryRemoteState = field(default_factory=MemoryRemoteState)
@@ -99,8 +104,13 @@ class Stack:
         self.context = UserContext(self.clock)
         self.conversation = Conversation(self.harness, self.ledger, self.clock, self.idle_reset_s)
         self.speaker = Speaker(self.voice, self.output, self.ui, self.executors["tts"])
+        approvals = {"ask": self.ask, **({"allowed_apps": self.allowed_apps} if self.allowed_apps else {})}
+        self.config_file.raw = {**self.config_file.raw,
+                                "approvals": {**self.config_file.raw.get("approvals", {}), **approvals}}
+        settings = self.config_file.read().approvals
+        self.permits = Permits(settings.ask, settings.allowed_apps)
         self.approvals = Approvals(self.ui, self.speaker, timeout_s=self.confirm_timeout_s,
-                                   quiet=lambda: self.live_talk.busy)
+                                   quiet=lambda: self.live_talk.busy, permits=self.permits)
         self.bridge = AppBridge(self.sink, timeout_s=self.confirm_timeout_s)
         self.hands = HandsService(self.hands_port, self.approvals, self.ui)
         self.runner = TaskRunner(self.harness, self.ledger, self.clock, self.context, background=self.background,
@@ -123,6 +133,7 @@ class Stack:
                                  max_runs_per_day=lambda: self.max_routine_runs, inert=untrusted, wait_s=self.wait_s,
                                  poll_s=0.005)
         self.tasks.on_done.append(self.routines.seen)
+        self.tasks.on_done.append(lambda helper: self.permits.end(helper.id))
         self.live_talk = LiveTalk(self.model, self.speaker, self.ui, self.context, self.clock, self.profile,
                                   self.reminders, self.ledger, lambda: self.persona, self.idle_reset_s, self.tasks,
                                   eyes=self.eyes, approvals=self.approvals, memory=self.turn_memory,
@@ -137,8 +148,11 @@ class Stack:
         use_ui = lambda c: self.brain.use_ui(c.ui)  # noqa: E731
         live = {("ui", "dictate_key"): use_ui, ("ui", "talk_key"): use_ui,
                 ("ui", "whats_this_key"): use_ui, ("ui", "voice"): lambda c: setattr(self.speaker, "silent", not c.ui.voice),
-                ("dictation", "stream"): lambda c: setattr(self.listening, "live_mode", LiveMode(c.dictation.stream))}
+                ("dictation", "stream"): lambda c: setattr(self.listening, "live_mode", LiveMode(c.dictation.stream)),
+                ("approvals", "ask"): lambda c: setattr(self.permits, "ask", c.approvals.ask),
+                ("approvals", "allowed_apps"): lambda c: self.permits.use(c.approvals.allowed_apps)}
         self.settings = Settings(self.config_file, self.config_file.read(), self.ui, live)
+        self.permits.save = lambda apps: self.settings.keep("approvals", "allowed_apps", apps)
         self.messages = None
         if self.channel is not None:
             self.messages = MessageService(self.channel, self.live_talk, self.approvals, self.remote, self.speaker,

@@ -35,9 +35,11 @@ class FakeBrain:
     def __init__(self, **answers: str):
         self.answers = answers
         self.asked: list[tuple[str, str]] = []
+        self.apps: list[str] = []
 
-    def approve(self, kind: str, summary: str) -> Decision:
+    def approve(self, kind: str, summary: str, app: str = "") -> Decision:
         self.asked.append((kind, summary))
+        self.apps.append(app)
         answer = self.answers.get(kind, "auto")
         level = ActionLevel.ASK_FIRST if answer in ("yes", "no", "timeout") else ActionLevel.READ
         return Decision(answer in ("auto", "yes"), level, answer)

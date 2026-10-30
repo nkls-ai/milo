@@ -38,10 +38,11 @@ class BrainClient:
             raise ToolError(str(answer.get("error") or "Milo couldn't do that."))
         return answer.get("result")
 
-    def approve(self, kind: str, summary: str) -> Decision:
-        """The brain applies the user's action levels and asks if needed. Without a brain only reading goes."""
+    def approve(self, kind: str, summary: str, app: str = "") -> Decision:
+        """The brain applies the user's action levels and asks if needed. `app`: the app a change happens in, so
+        an Allow covers the next change there. Without a brain only reading goes."""
         try:
-            r = self.request({"op": "approve", "kind": kind, "summary": summary})
+            r = self.request({"op": "approve", "kind": kind, "summary": summary, **({"app": app} if app else {})})
         except ToolError:
             if kind == "read":
                 return Decision(True, ActionLevel.READ, "auto")

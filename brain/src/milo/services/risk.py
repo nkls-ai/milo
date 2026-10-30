@@ -97,6 +97,18 @@ def app_names(*names: object) -> set[str]:
     return out
 
 
+WORK = frozenset({"run a script", "overwrite", "replace", "ersetzen", "click something I can't name", "use"})
+"""Reasons that are about the work in the app itself. An Allow covers them for the rest of the task, and Allow
+always for that app (ADR 0022). Sending, deleting, buying, code and settings are not among them: they ask every
+time."""
+
+
+def plain_app(name: str, bundle: str = "") -> bool:
+    """An app an Allow may cover: not a password manager, System Settings or a program that runs commands."""
+    names = app_names(name, bundle)
+    return bool(names) and not names & set(_SECRET_APPS + _SETTINGS_APPS + _CODE_APPS)
+
+
 def classify(tool: str, args: dict, target: dict) -> Verdict:
     apps = app_names(target.get("app"), target.get("bundle"))
     title = " ".join(str(target.get(k) or "") for k in ("title", "description")).strip()

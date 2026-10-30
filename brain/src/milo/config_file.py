@@ -24,7 +24,7 @@ class TomlConfigFile:
     def read(self) -> Config:
         return Config.load(self.path)
 
-    def write(self, section: str, key: str, value: str | bool | int | float) -> Config:
+    def write(self, section: str, key: str, value: str | bool | int | float | list) -> Config:
         """Set `[section] key = value` and return the config as it is now. Raises ConfigError, writing nothing."""
         text = self.path.read_text(encoding="utf-8") if self.path.exists() else ""
         try:
@@ -49,8 +49,20 @@ class TomlConfigFile:
 def _set(table, key: str, value) -> None:
     """tomlkit keeps a comment at the end of the line; this keeps it in the same column too."""
     old = table.get(key)
+    if isinstance(value, list) and all(isinstance(v, dict) for v in value):
+        value = _inline(value)
     table[key] = value
     if isinstance(old, Item) and old.trivia.comment:
         new = table.item(key)
         width = len(old.trivia.comment_ws) + len(old.as_string()) - len(new.as_string())
         new.trivia.comment_ws = " " * max(1, width)
+
+
+def _inline(tables: list[dict]):
+    """A list of tables as one array of inline tables, one per line: `[{name = "Numbers", bundle = ""}]`."""
+    array = tomlkit.array()
+    for entry in tables:
+        item = tomlkit.inline_table()
+        item.update(entry)
+        array.append(item)
+    return array.multiline(len(tables) > 1)

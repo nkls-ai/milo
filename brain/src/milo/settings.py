@@ -7,7 +7,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
-from .config import KEY_NAMES, UPDATES, Config
+from .config import ASK, KEY_NAMES, UPDATES, Config
 from .core.events import SettingsReport
 from .core.ports import EventSink
 from .core.registry import ConfigError
@@ -15,7 +15,7 @@ from .core.types import LiveMode
 
 log = logging.getLogger("milo.settings")
 
-Value = str | bool | int | float
+Value = str | bool | int | float | list
 
 
 @dataclass(frozen=True)
@@ -40,7 +40,11 @@ SETTINGS = (
     Setting("ui", "whats_this_key", ("ctrl+option+m", "ctrl+option+w", "ctrl+shift+m", ""),
             ("Control-Option-M", "Control-Option-W", "Control-Shift-M", "Off")),
     Setting("ui", "voice"),
+    Setting("approvals", "ask", ASK, ("Once per task", "Every step")),
+    Setting("approvals", "allowed_apps"),
 )
+ALLOWED_APPS = ("approvals", "allowed_apps")
+"""Only Allow always adds an app (`keep`); the window can only take them away."""
 
 assert all(len(s.options) == len(s.labels) for s in SETTINGS)
 
@@ -83,6 +87,15 @@ class Settings:
             log.warning("settings: refused to change [%s] %s", section, key)
             self.send("That one can't be changed here.")
             return
+        if (section, key) == ALLOWED_APPS and not self._only_removes(value):
+            log.warning("settings: refused to add to the always-allowed apps from the window")
+            self.send("Apps are added with Allow always, when Milo asks.")
+            return
+        self.keep(section, key, value)
+
+    def keep(self, section: str, key: str, value: Value) -> None:
+        """Save `[section] key = value`, apply it if it is live, and report. For the window's changes after
+        their checks, and for Milo's own (Allow always adds an app)."""
         try:
             config = self._file.write(section, key, value)
         except ConfigError as e:
@@ -99,6 +112,13 @@ class Settings:
             apply(config)
         self._ui.emit(self._report(config))
 
+    def _only_removes(self, value: object) -> bool:
+        try:
+            now = self._file.read().approvals.allowed_apps
+        except (OSError, ConfigError):
+            return False
+        return isinstance(value, list) and all(isinstance(v, dict) and v in now for v in value)
+
     def _report(self, config: Config, error: str = "") -> SettingsReport:
         rows = [{"section": s.section, "key": s.key, "value": _value(config, s), "options": list(s.options),
                  "labels": list(s.labels), "live": (s.section, s.key) in self._live} for s in SETTINGS]
@@ -111,7 +131,8 @@ BROKEN = "Milo couldn't open his settings file. If you edited it by hand, it may
 
 
 def _value(config: Config, setting: Setting) -> Value:
-    return getattr(getattr(config, setting.section), setting.key)
+    value = getattr(getattr(config, setting.section), setting.key)
+    return [dict(v) for v in value] if isinstance(value, tuple) else value
 
 
 def _plain(section: str, key: str, error: str) -> str:

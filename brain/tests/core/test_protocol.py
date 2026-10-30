@@ -32,7 +32,7 @@ OUTBOUND = {
     "hands_request": lambda m: ev.HandsRequest(m["id"], m["tool"], m["args"]),
     "hands_session": lambda m: ev.HandsSession(m["on"]),
     "fly_to": lambda m: ev.FlyTo(m["point"]),
-    "confirm": lambda m: ev.Confirm(m["id"], m["question"]),
+    "confirm": lambda m: ev.Confirm(m["id"], m["question"], m["always"]),
     "confirm_done": lambda m: ev.ConfirmDone(m["id"], m["answer"]),
     "app_request": lambda m: ev.AppRequest(m["id"], m["op"], m["args"]),
     "helpers": lambda m: ev.Helpers(m["helpers"]),

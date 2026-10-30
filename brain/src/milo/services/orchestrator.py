@@ -16,11 +16,12 @@ import asyncio
 import logging
 import re
 from collections.abc import Callable
+from dataclasses import replace
 
 from milo.core.events import Helpers
 from milo.core.logtext import private
 from milo.core.ports import Clock, EventSink
-from milo.core.types import Decision, Emotion, HarnessError, Reply, Step
+from milo.core.types import Decision, Emotion, HarnessError, Reply, Scope, Step
 
 from . import helpers as board_text
 from .helpers import Helper, HelperStatus, plain_step, short_title
@@ -465,21 +466,25 @@ class HelperQuestions:
         self._orchestrator = orchestrator
         self._screen = screen
 
-    async def confirm(self, summary: str, *, detail: str = "") -> bool:
+    async def confirm(self, summary: str, *, detail: str = "", scope: Scope | None = None) -> bool:
         helper = self._orchestrator().asking(screen=self._screen)
         try:
-            return await self._approvals.confirm(summary, detail=detail)
+            return await self._approvals.confirm(summary, detail=detail, scope=scope)
         finally:
             self._orchestrator().answered(helper)
 
-    async def approve(self, kind: str, summary: str) -> Decision:
-        """Approvals.approve, careful when the helper that asks is (see Orchestrator.careful)."""
+    async def approve(self, kind: str, summary: str, *, scope: Scope | None = None) -> Decision:
+        """Approvals.approve, careful when the helper that asks is (see Orchestrator.careful). `scope` names the
+        app; the helper that asks becomes its task, so the user's Allow lasts as long as that helper (ADR 0022).
+        When it can't tell which helper asks, only Allow always covers it."""
         careful = self._orchestrator().careful(screen=self._screen)
         if not self._approvals.asks(kind, careful=careful):
             return await self._approvals.approve(kind, summary, careful=careful)
         helper = self._orchestrator().asking(screen=self._screen)
+        if scope is not None:
+            scope = replace(scope, task=helper.id if helper is not None else "")
         try:
-            return await self._approvals.approve(kind, summary, careful=careful)
+            return await self._approvals.approve(kind, summary, careful=careful, scope=scope)
         finally:
             self._orchestrator().answered(helper)
 

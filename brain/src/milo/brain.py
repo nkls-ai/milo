@@ -153,8 +153,8 @@ class Brain:
                 log.info("proactive nudges %s", "muted" if on else "on")
                 if self._heartbeat is not None:
                     self._heartbeat.muted = on
-            case ConfirmAnswer(id, yes):
-                if self._approvals is not None and not self._approvals.answer(id, yes):
+            case ConfirmAnswer(id, yes, always):
+                if self._approvals is not None and not self._approvals.answer(id, yes, always=always):
                     log.info("an answer came for a question that is over")
             case StopHelper(id):
                 if self._helpers is not None and not self._helpers.stop(id):

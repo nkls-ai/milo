@@ -630,9 +630,11 @@ class FakeConfirm:
     def __init__(self, *answers: bool):
         self.answers = deque(answers)
         self.asked: list[str] = []
+        self.scopes: list = []
 
-    async def confirm(self, summary: str) -> bool:
+    async def confirm(self, summary: str, *, scope=None) -> bool:
         self.asked.append(summary)
+        self.scopes.append(scope)
         return self.answers.popleft() if self.answers else False
 
 

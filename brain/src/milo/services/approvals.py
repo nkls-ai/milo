@@ -13,6 +13,7 @@ from milo.core.ports import QuestionRelay, Relayed
 from milo.core.registry import ConfigError
 from milo.core.types import ActionLevel, Decision, Emotion
 
+from .permits import Permits, Scope
 from .speaker import Speaker
 from .transcript import Transcript, unrecorded
 from .ui_state import UiState
@@ -21,6 +22,8 @@ log = logging.getLogger("milo.approvals")
 
 DEFAULT_TIMEOUT_S = 60.0
 NO_ANSWER = "No answer, so I left it."
+ALLOWED = ("yes", "always", "allowed")
+"""Answers that let the action go ahead: "allowed" is work the user allowed before, so nobody was asked."""
 REMOTE = "message"
 """`via` for answers from the owner's phone (a relay)."""
 
@@ -131,11 +134,16 @@ class Approvals:
     `relays` pass questions on, like to the owner's phone when they are away (messages.py). A relayed
     question waits as long as the relay asks; one the relay takes `only` can't be answered at the Mac at
     all, since whoever sits there now isn't the user who asked for the work.
+
+    A question about working in an app comes with a `Scope` (ADR 0022). If `permits` already allow that work
+    (Allow earlier in the same task, or Allow always for the app) it isn't asked at all; otherwise it offers a
+    third button, Allow always. Only a click on that button means always: a spoken or typed yes, or a yes from
+    the phone, allows this time. Questions without a scope ask every time and never offer always.
     """
 
     def __init__(self, ui: UiState, speaker: Speaker, policy: ActionPolicy | None = None, *,
                  timeout_s: float = DEFAULT_TIMEOUT_S, speak: bool = True, quiet: Callable[[], bool] = lambda: False,
-                 transcript: Transcript | None = None):
+                 transcript: Transcript | None = None, permits: Permits | None = None):
         self._ui = ui
         self._speaker = speaker
         self.policy = policy or ActionPolicy()
@@ -144,7 +152,9 @@ class Approvals:
         self._quiet = quiet
         self._transcript = transcript or unrecorded()
         self._one_at_a_time = asyncio.Lock()
-        self._pending: tuple[str, str, asyncio.Future[bool]] | None = None
+        self.permits = permits or Permits()
+        self._pending: tuple[str, str, asyncio.Future[str], bool] | None = None
+        """id, question, the answer to come ("yes", "no", "always"), whether Allow always was offered."""
         self._remote_only = False
         self.relays: list[QuestionRelay] = []
 
@@ -158,31 +168,37 @@ class Approvals:
         level = self.policy.level(kind)
         return level is ActionLevel.ASK_FIRST or (careful and level is ActionLevel.CHANGE)
 
-    async def approve(self, kind: str, summary: str, *, careful: bool = False) -> Decision:
-        """Apply the level for `kind`, asking `summary` if asks() says so."""
+    async def approve(self, kind: str, summary: str, *, careful: bool = False,
+                      scope: Scope | None = None) -> Decision:
+        """Apply the level for `kind`, asking `summary` if asks() says so. `scope`: the app the action works in,
+        which only a careful helper's `change` uses: an ask_first kind (send, delete, buy...) asks every time."""
         level = self.policy.level(kind)
         if level is ActionLevel.NEVER:
             log.info("refused a %s action", kind)
             return Decision(False, level, "refused")
         if not self.asks(kind, careful=careful):
             return Decision(True, level, "auto")
-        answer = await self._ask(summary)
-        return Decision(answer == "yes", level, answer)
+        answer = await self._ask(summary, scope=scope if level is ActionLevel.CHANGE else None)
+        return Decision(answer in ALLOWED, level, answer)
 
-    async def confirm(self, summary: str, *, detail: str = "", speak: bool = True) -> bool:
-        """Confirmer: always ask. `detail` shows under the question in the Milo window, e.g. the whole task.
-        speak=False only shows it, for a question asked while the user is in a call."""
-        return await self._ask(summary, detail, speak) == "yes"
+    async def confirm(self, summary: str, *, detail: str = "", speak: bool = True,
+                      scope: Scope | None = None) -> bool:
+        """Confirmer: ask, unless `scope` is work the user already allowed. `detail` shows under the question in
+        the Milo window, e.g. the whole task. speak=False only shows it, for a question asked while the user is in
+        a call."""
+        return await self._ask(summary, detail, speak, scope=scope) in ALLOWED
 
-    def answer(self, id: str, yes: bool, *, via: str = "button") -> bool:
-        """Answer the waiting question `id`. False if it isn't the one waiting (already answered, timed out)."""
+    def answer(self, id: str, yes: bool, *, via: str = "button", always: bool = False) -> bool:
+        """Answer the waiting question `id`. `always`: the Allow always button, which counts only where it was
+        offered. False if it isn't the one waiting (already answered, timed out)."""
         if self._pending is None or self._pending[0] != id or self._pending[2].done():
             return False
         if self._remote_only and via != REMOTE:
             log.info("an answer at the Mac to a question only the phone may answer")
             return False
-        self._transcript.user("Yes" if yes else "No", via)
-        self._pending[2].set_result(yes)
+        always = yes and always and via == "button" and self._pending[3]
+        self._transcript.user("Allow always" if always else "Yes" if yes else "No", via)
+        self._pending[2].set_result("always" if always else "yes" if yes else "no")
         return True
 
     def answer_text(self, text: str, *, via: str = "voice") -> bool:
@@ -200,12 +216,17 @@ class Approvals:
         shown = self._ui.bubble.strip()
         return bool(shown) and question.startswith(shown)
 
-    async def _ask(self, question: str, detail: str = "", speak: bool = True) -> str:
-        """Returns "yes", "no" or "timeout"."""
+    async def _ask(self, question: str, detail: str = "", speak: bool = True, *, scope: Scope | None = None) -> str:
+        """Returns "yes", "always", "no", "timeout", or "allowed" when `scope` was allowed before."""
         async with self._one_at_a_time:
+            # Checked in the lock: the yes to a question waiting before this one may cover it.
+            covered = self.permits.covers(scope) if scope is not None else ""
+            if covered:
+                log.info("allowed without asking (%s): %s", covered, private(question))
+                return "allowed"
             id = uuid.uuid4().hex[:12]
-            future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
-            self._pending = (id, question, future)
+            future: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+            self._pending = (id, question, future, scope is not None)
             log.info("asking before an action: %s", private(question))
             relayed = self._relay(id, question, detail)
             self._remote_only = any(r.only for r in relayed)
@@ -217,12 +238,12 @@ class Approvals:
                 self._transcript.say(f"Asked on your phone: {text}", Emotion.THINKING)
                 self._speaker.say(f"Asked on your phone: {question}", Emotion.THINKING, speak=False)
             else:
-                self._ui.emit(Confirm(id, question))
+                self._ui.emit(Confirm(id, question, always=scope is not None))
                 self._transcript.say(text, Emotion.THINKING)
                 self._speaker.say(question, Emotion.THINKING, speak=speak and self._speak and not self._quiet())
             answer = "no"
             try:
-                answer = "yes" if await asyncio.wait_for(future, timeout_s) else "no"
+                answer = await asyncio.wait_for(future, timeout_s)
             except TimeoutError:
                 answer = "timeout"
                 self._transcript.say(NO_ANSWER, Emotion.NEUTRAL)
@@ -233,10 +254,12 @@ class Approvals:
                 self._remote_only = False
                 for relay in self.relays:
                     try:
-                        relay.closed(id, answer)
+                        relay.closed(id, "yes" if answer == "always" else answer)
                     except Exception:
                         log.exception("a question relay failed")
             log.info("the answer was %s", answer)
+            if scope is not None and answer in ("yes", "always"):
+                self.permits.allowed(scope, always=answer == "always")
             return answer
 
     def _relay(self, id: str, question: str, detail: str) -> list[Relayed]:

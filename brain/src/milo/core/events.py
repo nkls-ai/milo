@@ -188,16 +188,18 @@ class FlyTo(Event):
 
 @dataclass(frozen=True)
 class Confirm(Event):
-    """Milo asks a yes-or-no question before an action. Shown with Yes and No until `confirm_done` for this id."""
+    """Milo asks a yes-or-no question before an action. Shown with Yes and No until `confirm_done` for this id.
+    `always`: the question is about working in an app, so it also offers Allow always (ADR 0022)."""
 
     type: ClassVar[str] = "confirm"
     id: str
     question: str
+    always: bool = False
 
 
 @dataclass(frozen=True)
 class ConfirmDone(Event):
-    """The question `id` is over. answer: "yes", "no" or "timeout" (which counts as no)."""
+    """The question `id` is over. answer: "yes", "always" (Allow always), "no" or "timeout" (which counts as no)."""
 
     type: ClassVar[str] = "confirm_done"
     id: str
@@ -493,11 +495,12 @@ class HandsStop(Command):
 
 @dataclass(frozen=True)
 class ConfirmAnswer(Command):
-    """The user clicked Yes or No on the question `id`."""
+    """The user clicked Yes or No on the question `id`, or Allow always (`always`, with yes) where it was offered."""
 
     type: ClassVar[str] = "confirm_answer"
     id: str
     yes: bool
+    always: bool = False
 
 
 @dataclass(frozen=True)
@@ -698,7 +701,7 @@ def parse_command(raw: object) -> Command:
             case "confirm_answer":
                 if not isinstance(raw["yes"], bool):
                     raise ProtocolError("yes must be true or false")
-                return ConfirmAnswer(str(raw["id"]), raw["yes"])
+                return ConfirmAnswer(str(raw["id"]), raw["yes"], raw.get("always") is True)
             case "app_response":
                 return AppResponse(str(raw["id"]), raw["ok"] is True, raw.get("result"), str(raw.get("error") or ""))
             case "remote_pause":
