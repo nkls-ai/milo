@@ -25,6 +25,7 @@ public final class StatusMenu: NSObject {
         menu.addItem(hintItem)
         menu.addItem(.separator())
         add(menu, "Open conversation", #selector(toggleWindow))
+        add(menu, "What's this?", #selector(whatsThis))
         muteItem = add(menu, "Mute proactive nudges", #selector(toggleMute))
         add(menu, "Show / hide Milo", #selector(toggleVisible))
         add(menu, "Move Milo back to the corner", #selector(resetPosition))
@@ -56,6 +57,7 @@ public final class StatusMenu: NSObject {
 
     @objc private func toggleVisible() { panel.toggleVisible() }
     @objc private func toggleWindow() { window.toggle() }
+    @objc private func whatsThis() { controller.screen?.whatsThis() }
     @objc private func resetPosition() { panel.placeBottomRight() }
     @objc private func openHome() { NSWorkspace.shared.open(paths.home) }
     @objc private func openLog() { NSWorkspace.shared.open(paths.brainLog) }

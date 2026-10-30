@@ -37,7 +37,7 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .dictation("Sounds good, ship it."),
             .status("Mic unavailable: no input device"),
             .partial("Sounds good, sh"),
-            .uiConfig(dictateKey: "fn", talkKey: "right_option", handsFreeMaxSeconds: 300),
+            .uiConfig(dictateKey: "fn", talkKey: "right_option", handsFreeMaxSeconds: 300, whatsThisKey: "ctrl+option+m"),
             .history([
                 TranscriptEntry(id: "5f2a9c1e04b7", date: try day("2026-10-30T09:12:03"), kind: .user,
                                 text: "rename the photos from Friday", via: .voice),
@@ -56,6 +56,14 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .activity(taskID: "c07b3e9d1a26", step: ActivityStep(
                 id: "item_2", kind: "edit", title: "Editing notes.md", detail: "update /Users/you/Milo/notes.md",
                 status: .failed)),
+            .lookRequest(id: "look-1", mode: "window"),
+            .looking(true),
+            .handsRequest(id: "hands-2", tool: "click", args: ["x": 640, "y": 412]),
+            .handsSession(true),
+            .flyTo(ScreenPoint(x: 812, y: 430.5)),
+            .flyTo(nil),
+            .confirmRequest(id: "confirm-3", text: "I'm about to click “Send” in Mail. Go ahead?"),
+            .confirmEnd(id: "confirm-3"),
         ])
     }
 
@@ -69,6 +77,17 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .listenStop, .listenCancel,
             .text("hello Milo"), .text("what's on today", speak: false), .getHistory,
             .context(app: "Xcode", idleSeconds: 3.5), .mute(true),
+            .lookResult(id: "look-1", ScreenCapture(
+                app: "Microsoft Excel", window: "Budget.xlsx", focused: "cell C4: =SUM(C1:C3)", text: "Rent 900\nFood 320",
+                image: "/Users/you/Milo/state/screens/look-20261030-091400.png")),
+            .lookResult(id: "look-4", ScreenCapture(
+                app: "Safari",
+                error: "I can't take screenshots yet. Turn on Screen Recording for Milo in System Settings › Privacy & Security.")),
+            .whatsThis(ScreenCapture(app: "Mail", selection: "Your parcel is waiting. Pay 1.99 EUR customs here.")),
+            .handsResult(id: "hands-2", ok: true, result: ["text": "Clicked."]),
+            .handsResult(id: "hands-5", ok: false, result: [:], error: "There is no element e99. Call ax_tree again."),
+            .handsStop(reason: "escape"),
+            .confirmResult(id: "confirm-3", yes: false),
         ]
         let encoder = JSONEncoder()
         let encoded = try commands.map { command in
@@ -98,6 +117,13 @@ private func entries(_ key: String) throws -> [[String: Any]] {
         let json = #"{"type":"ui_config","dictate_key":"fn","talk_key":"right_option"}"#
         #expect(try JSONDecoder().decode(BrainEvent.self, from: Data(json.utf8))
                 == .uiConfig(dictateKey: "fn", talkKey: "right_option", handsFreeMaxSeconds: nil))
+    }
+
+    @Test func handsRequestArgsKeepTheirJSONShape() throws {
+        let json = #"{"type":"hands_request","id":"h","tool":"key","args":{"combo":"cmd+s","n":[1,true,null]}}"#
+        let event = try JSONDecoder().decode(BrainEvent.self, from: Data(json.utf8))
+        #expect(event == .handsRequest(id: "h", tool: "key",
+                                       args: ["combo": "cmd+s", "n": .array([1, true, .null])]))
     }
 
     @Test func missingTypeThrows() {

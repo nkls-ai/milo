@@ -15,11 +15,20 @@ public enum BrainCommand: Equatable, Sendable {
     case context(app: String, idleSeconds: Double)
     /// Mute or unmute proactive nudges.
     case mute(Bool)
+    /// What was captured for look_request `id`.
+    case lookResult(id: String, ScreenCapture)
+    /// The "What's this?" shortcut: the selection, or the window if nothing was selected.
+    case whatsThis(ScreenCapture)
+    /// The outcome of hands_request `id`. `error` is plain words for the worker when `ok` is false.
+    case handsResult(id: String, ok: Bool, result: [String: JSONValue], error: String = "")
+    /// The user took over the mouse or keyboard ("user") or pressed esc ("escape").
+    case handsStop(reason: String)
+    case confirmResult(id: String, yes: Bool)
 }
 
 extension BrainCommand: Encodable {
     private enum Key: String, CodingKey {
-        case type, mode, text, app, on, tentative, speak
+        case type, mode, text, app, on, tentative, speak, id, capture, ok, result, error, reason, yes
         case idleSeconds = "idle_s"
     }
 
@@ -49,6 +58,26 @@ extension BrainCommand: Encodable {
         case let .mute(on):
             try c.encode("mute", forKey: .type)
             try c.encode(on, forKey: .on)
+        case let .lookResult(id, capture):
+            try c.encode("look_result", forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(capture, forKey: .capture)
+        case let .whatsThis(capture):
+            try c.encode("whats_this", forKey: .type)
+            try c.encode(capture, forKey: .capture)
+        case let .handsResult(id, ok, result, error):
+            try c.encode("hands_result", forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(ok, forKey: .ok)
+            try c.encode(result, forKey: .result)
+            if !error.isEmpty { try c.encode(error, forKey: .error) }
+        case let .handsStop(reason):
+            try c.encode("hands_stop", forKey: .type)
+            try c.encode(reason, forKey: .reason)
+        case let .confirmResult(id, yes):
+            try c.encode("confirm_result", forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(yes, forKey: .yes)
         }
     }
 }
