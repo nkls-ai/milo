@@ -158,7 +158,8 @@ public final class MiloModel: ObservableObject {
         case let .remote(status):
             remote = status
         case .dictation, .uiConfig, .history, .entry, .replyDelta, .activity, .lookRequest, .handsRequest,
-             .handsSession, .flyTo, .appRequest, .handsBorrow, .facts, .settings, .meetingRecord, .unknown:
+             .handsSession, .flyTo, .appRequest, .handsBorrow, .facts, .settings, .meetingRecord, .conversations,
+             .conversation, .searchResults, .reminders, .unknown:
             break
         }
     }

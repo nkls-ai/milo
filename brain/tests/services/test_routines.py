@@ -12,7 +12,7 @@ from milo.services.helpers import HelperStatus
 from milo.services.orchestrator import HelperQuestions
 from milo.services.routines import DRAFT_SAY, given_inputs, run_prompt
 from milo.services.transcript import Transcript
-from tests.fakes import FakeHarness, MemoryRoutineBook, MemoryTranscript, RecordingSink, ScriptedHarness, WorkerScript
+from tests.fakes import FakeHarness, MemoryConversations, MemoryRoutineBook, RecordingSink, ScriptedHarness, WorkerScript
 from tests.services.stack import Stack, settle
 
 D = StepStatus.DONE
@@ -239,7 +239,7 @@ def test_nothing_to_write_down():
 
 def test_the_steps_come_from_the_transcript_entry():
     s = stack()
-    transcript = Transcript(RecordingSink(), MemoryTranscript(), s.clock)
+    transcript = Transcript(RecordingSink(), MemoryConversations(), s.clock)
     s.tasks._transcript = s.routines._transcript = transcript
     many = [Step(f"i{n}", "command", f"Step {n}", f"echo {n}", D) for n in range(20)]
     s.harness = Worker(s.routine_book, RECIPE, "Done.", steps=many)

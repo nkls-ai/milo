@@ -2,10 +2,11 @@ import AppKit
 import Combine
 import SwiftUI
 
-/// The Milo window: the conversation as text and a field to type to him. Closing only hides it.
+/// The Milo window: Today, the conversations and their tasks, and a field to type to him. Closing only hides it.
 public final class ConversationWindow: NSWindow {
     private let controller: MiloController
     private let settings: ConversationSettings
+    private let route = WindowRoute(page: .live)
     /// The gear in the title bar: open the Settings window.
     public var onSettings: (() -> Void)?
     private var restyle: AnyCancellable?
@@ -13,15 +14,15 @@ public final class ConversationWindow: NSWindow {
     public init(controller: MiloController) {
         self.controller = controller
         settings = ConversationSettings(talkKey: controller.bindings.talk.displayName)
-        super.init(contentRect: NSRect(x: 0, y: 0, width: 420, height: 560),
+        super.init(contentRect: NSRect(x: 0, y: 0, width: 780, height: 580),
                    styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: true)
         title = "Milo"
         titlebarAppearsTransparent = true
         isReleasedWhenClosed = false
         minSize = NSSize(width: 320, height: 300)
         contentView = NSHostingView(rootView: ConversationView(
-            transcript: controller.transcript, model: controller.model, settings: settings,
-            send: { [weak controller] text, speak in controller?.send(text: text, speak: speak) })
+            transcript: controller.transcript, model: controller.model, settings: settings, route: route,
+            actions: controller.windowActions)
             .themed(by: controller.model))
         // The title bar shows the window's own colour: keep it the skin's paper.
         restyle = controller.model.$character.sink { [weak self] in
@@ -32,7 +33,8 @@ public final class ConversationWindow: NSWindow {
         setFrameAutosaveName(Self.frameName)
     }
 
-    private static let frameName = "MiloConversationWindow"
+    /// A new name for the wider window with its sidebar, so the old narrow frame doesn't come back.
+    private static let frameName = "MiloConversationWindow2"
 
     /// Updates the key named in the empty state.
     public func show(_ bindings: HotkeyBindings) {

@@ -45,6 +45,8 @@ class ChatSettings:
     """Listen while Milo speaks, and let the user stop him by talking. Opens the mic whenever he speaks."""
     backchannels: bool = True
     """A short "hm" when the answer is slow to come, so silence never feels like Milo didn't hear."""
+    recap_tokens: int = 600
+    """What picking an earlier conversation up again may add to the next message, at most."""
 
     def __post_init__(self):
         if self.updates not in UPDATES:

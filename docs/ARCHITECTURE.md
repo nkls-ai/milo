@@ -34,7 +34,8 @@ brain/src/milo/
   connect/        the MCP tool server the worker loads (python -m milo.connect)
   eval/           the 30-task eval (python -m milo.eval) and the on-screen eval (python -m milo.eval.screen)
   memory/         Workspace paths and bootstrap, profile.md, reminders.md, usage ledger, dictation history,
-                  transcript (the Milo window's conversation), routines (the recipe folder and its state),
+                  transcript (the old single-file log), conversations (one file per conversation and the
+                  index, the migration from transcript.jsonl), routines (the recipe folder and its state),
                   remote (state/messages.json: the paired phone), and
                   long-term memory: episodes and facts (append-only JSONL), fact_profile (profile.md as a view of
                   the facts), index (FTS5 and vectors in state/memory.sqlite), recall, when (time phrases),
@@ -47,7 +48,8 @@ brain/src/milo/
                   chunker + speaker + speech_audio (streaming TTS), echo + barge_in (talking over Milo),
                   backchannel ("Hm." when a reply is late), orchestrator + helpers + task_runner (helpers doing
                   delegated work on the harness, see ADR 11), updates (milestones and `[chat] updates`),
-                  conversation (one resumed harness session, for the heartbeat), transcript (what the Milo window shows), heartbeat_runner, approvals
+                  conversation (one resumed harness session, for the heartbeat), transcript (the conversation going on and where it splits), conversations (the
+                  list, opening, renaming and search for the Milo window), heartbeat_runner, approvals
                   (action levels and yes-or-no questions), app_bridge (requests to the app and their answers:
                   AppEyes, AppHands, Calendar and Reminders work), tool_requests (what the tool socket may do),
                   screen (screen data for the chat model), hands + risk (checking and logging the worker's Mac
@@ -95,7 +97,9 @@ Beyond `milo.core.ports`, these entry points are fixed:
 | `milo.services.memory.Memory` / `TurnMemory` | services | The brain's memory: recall on the memory thread with a 300 ms limit, search, forget, edit, the `facts` event. `TurnMemory.before_turn()` is the live chat's hook. |
 | `milo.memory.ledger.JsonlUsageLedger(path, clock)` | memory | `UsageLedger`. Appends one JSON line per harness call. |
 | `milo.memory.history.JsonlDictationHistory(path, clock)` | memory | `DictationHistory`. |
-| `milo.memory.transcript.JsonlTranscript(path)` | memory | `TranscriptStore` over `state/transcript.jsonl`. `tail(n)` reads the file backwards block by block, so its cost doesn't grow with the file. |
+| `milo.memory.transcript.JsonlTranscript(path)` | memory | `TranscriptStore` over `state/transcript.jsonl`. `tail(n)` reads the file backwards block by block, so its cost doesn't grow with the file. Only the migration reads it now. |
+| `milo.memory.conversations.JsonlConversationStore(root)` | memory | `ConversationStore` over `state/conversations/YYYY-MM/<id>.jsonl`, one file per conversation, and `index.jsonl`, a cache of their headers that it rebuilds when files and index disagree. `migrate(transcript, kept, store, rules)` splits an old `transcript.jsonl` into conversations once, keeping every line, then renames it to `transcript.before-conversations.jsonl`. |
+| `milo.services.conversations.ConversationBrowser(transcript, store, sink, clock, memory=, reminders=)` | services | What the window asks about conversations: `list_event(before)`, `open(id)`, `rename(id, title)`, `search(query)` (titles, then memory hits mapped to their conversation, then the files' words), `reminders_event()`. `changed()` sends the list again, coalesced to one per 0.3 s. |
 | `milo.services.approvals.Approvals` | services | `approve(kind, summary) -> Decision` applies the action level and asks if needed. `confirm(summary) -> bool` always asks (the `Confirmer` port). |
 | `milo.transport.tool_client.BrainClient(path)` | transport | `request(body) -> dict` on `run/tools.sock`; `approve(kind, summary) -> Decision`. Used by the MCP server, and by any helper process that needs a yes. |
 | `milo.services.messages.MessageService` | services | Milo by message. `run()` polls the `Channel` until cancelled, `tick()` runs on the heartbeat. A `QuestionRelay` for `Approvals` (`asked`, `closed`), an `Orchestrator` watcher (`helper_changed`), and the `Phone` behind the tool socket's `send_to_phone` (`check`, `question`, `send_file`). `pause(on)`, `forget()`, `status() -> Remote`. |
@@ -151,7 +155,7 @@ The chat model, the talker, has no tools and never waits for work. Work that nee
 - **Careful helpers.** A task the user asks for in a conversation that has seen the screen starts at once, but its helper runs careful (`Helper.careful`): Approvals asks before its `change` actions too, and HandsService asks once per app before the first change there. The flag is per helper: `TaskRunner` passes it to `hands.begin`, and `HelperQuestions` passes it to `Approvals.approve` for the connection tools (any careful helper at work counts when the tool socket can't tell which one asks). A task or steer the chat model starts on its own in reply to screen data or after reading untrusted text asks first, in one sentence of at most 80 characters (`live_talk.task_question`); the whole task shows under it in the Milo window. See [ADR 14](adr/0014-scripts-milo-writes-and-short-questions.md).
 - **Updates.** `services/updates.py` finds milestones with rules over step kinds and titles and tells the user as `[chat] updates` says: `quiet`, `bubble` (a short note) or `chatty` (the talker says it, at most every 45 s). `LiveSettings` re-reads `config.toml` when it changed, at most every 2 s, so `updates` and `max_helpers` apply without a restart.
 - **Results.** When a helper finishes, Milo speaks its `say` and the next chat message carries the result. A result that finishes during a live turn waits up to 30 s for the turn to end, then shows silently. Heartbeat nudges wait the same way, and a silent bubble never cuts off speech.
-- **The app.** The `helpers` event lists every active helper and, for 8 s, the ones that just ended (step changes coalesced to every 0.25 s). The overlay shows a small bird per helper next to Milo, the Milo window a list with steps and Stop.
+- **The app.** The `helpers` event lists every active helper and, for 8 s, the ones that just ended (step changes coalesced to every 0.25 s). The overlay shows a small bird per helper next to Milo; a click opens its task page in the Milo window. Today lists the helpers at work with Stop, and each task is a card in its conversation.
 
 Task results reach the chat model as `<task_result>` blocks with `<` and `>` escaped, and the reply rules say they are data. Once a result is in the conversation, LiveTalk asks before it acts on any later tag in it, until the conversation resets. See [ADR 10](adr/0010-untrusted-results-and-a-private-log.md).
 
@@ -227,13 +231,18 @@ phone ──Telegram──▶ api.telegram.org ◀──HTTPS long poll── br
 
 ## The Milo window
 
-The window shows the conversation as text and lets the user type to Milo. Clicking the character or "Open conversation" in the menu bar item opens it; a second click or the close button hides it. macOS keeps its frame.
+The window has the conversations down its left side and a page beside them: Today, a conversation, or a task. Clicking the character or "Open conversation" in the menu bar item opens it; a second click or the close button hides it. macOS keeps its frame. The design is in [design/conversations.md](design/conversations.md) and [ADR 19](adr/0019-conversations-that-split-on-their-own.md).
 
-- **Transcript.** `services/transcript.py` keeps the last 50 entries in memory: user turns (`via` voice or typed), Milo's replies and tasks with their steps. LiveTalk adds the user turn and streams the reply into it (`entry`, then `reply_delta` events, then the finished `entry`). The orchestrator adds an entry per helper and its steps (`activity` events). Finished entries are appended to `state/transcript.jsonl`. At the first need after a start the brain reads the last 50 lines from the end of that file, never the whole file.
-- **History.** The brain sends `history` with those entries when the app connects and when the window opens (`get_history`). Both read memory only and call no model.
+- **Conversations.** `services/transcript.py` holds the conversation going on and asks `core.conversations.split()` at every user turn whether it starts a new one: after `[chat] conversation_idle_reset_s` of quiet, when the user asks for one (⌘N), after a 2-minute pause with no word in common with the last two turns, or when a turn comes from another channel. It never splits on an answer or while Milo waits for one. Each conversation is a JSONL file under `state/conversations/`; its id is `c-` and its first entry's id. Routine runs and meeting notes get conversations of their own.
+- **Titles.** The first user turn gives a title from its words at once (`title_from`). On the reply to the first turn LiveTalk appends `[name this conversation]`, and Milo's `<title>` tag, taken out of the reply stream, replaces it. A name the user gives (double-click the title) wins over both.
+- **Picking up.** Typing in an older conversation sends `text` with its `conversation`. The brain makes it the current one again and gives the chat model an `<earlier_conversation>` recap of its last lines within `[chat] recap_tokens` (600). The recap is untrusted when that conversation saw outside text or a task's result.
+- **Events.** On connect and when the window opens the brain sends `conversations` (the headers, the current id, whether older ones exist), `history` (the current conversation's entries) and `reminders` (open ones due before the end of tomorrow). `entry`, `reply_delta` and `activity` stream as before, each entry with its `conversation`. `open_conversation` answers with `conversation` (the header and its entries), `search_conversations` with `search_results`. None of them call a model.
 - **Activity.** `Harness.reply` takes an optional `on_step` callback. The worker adapters read the CLI's stdout line by line while it runs: `codex exec --json` reports `item.started`/`item.completed` for `command_execution`, `file_change`, `mcp_tool_call` and `web_search` (reasoning, messages and todo lists are skipped), and `claude -p --output-format stream-json --verbose` reports `tool_use` blocks with their `tool_result`. `adapters/harness/_activity.py` turns each into a `Step` with a plain title ("Reading your Downloads folder", "Opening Microsoft Excel", "Searching the web for ...") and keeps the raw command or tool payload as `detail`, shown only when the row is expanded. Callers without a callback get the same `Reply` as before.
-- **Questions.** While Milo waits for a yes or no, the bubble shows the question with Yes and No buttons and stays up, and a bar above the text field shows it too.
+- **Tasks.** In a conversation a task is one card: its title, its state and its current step. The card opens the task's page with the result, the files it names that exist (`files`, checked when it finishes) and every step.
+- **Today.** What waits for the user (Milo's question, a recipe draft), what Milo is working on, today's reminders, what got done today and the last conversation to pick up.
+- **Questions.** While Milo waits for a yes or no, the bubble shows the question with Yes and No buttons and stays up, and a bar above the text field and the Today page show it too.
 - **Typing.** The text field sends `text`. The window's "speak replies" toggle (off by default, kept in UserDefaults) adds `"speak": false`, and Milo then answers in the bubble and the window without audio.
+- **Keys.** ⌘1 Today, ⌘N a new conversation, ⌘F search, ⌘[ back, ⌥⌘↑ and ⌥⌘↓ the conversation above or below, ⌘L the text field, ⌘0 the sidebar in a window narrower than 600 pt, Esc clears the search or leaves a task.
 
 ## Settings
 
@@ -304,8 +313,11 @@ A chat turn costs one message to the running chat model: about 600 tokens, with 
 app/
   Sources/MiloKit/   protocols, wire types (Wire/RemoteStatus: Milo by message for the menu), controller, hotkey
                      state machine, views (all testable).
-                     The Milo window: TranscriptModel, Views/ConversationView + ActivityView,
-                     Views/HelperViews (the birds next to Milo and the helpers list, Wire/Helper),
+                     The Milo window: TranscriptModel (the conversations, the current one's entries, opened
+                     ones, search results, reminders), Wire/Conversation, Views/WindowRoute (the page and the
+                     way back), Views/ConversationView (sidebar + page, the keys), ConversationsSidebar,
+                     TodayView, ConversationPage, TaskPage (the task card and page), ActivityView,
+                     Views/HelperViews (the birds next to Milo and a helper's row on Today, Wire/Helper),
                      Views/RoutineViews (the Routines section and the recipe draft card, Wire/Routine),
                      AppKit/ConversationWindow. Screen/: ScreenController and TakeoverDetector.
                      Hotkeys/KeyCombo. Adapters/: Accessibility, SystemScreenReader, ScreenShots,
@@ -330,10 +342,12 @@ app/
   Sources/Milo/      main.swift: builds concrete adapters, hands them to MiloController
   Tests/MiloKitTests Swift Testing; decodes protocol/messages.json, drives the controller with fakes.
                      MILO_RENDER_DIR=/tmp/milo-render swift test --filter ConversationRender renders the
-                     window offscreen into PNGs. MILO_RENDER_DIR=... --filter SkinRender renders every skin
-                     in every state (MILO_SKINS=dragon,kit to pick), --filter OverlayRender the bubble and the
-                     voice capsule in every moment, --filter SettingsRender the Settings and
-                     setup windows in every skin, --filter HelperRender the birds and the helpers list;
+                     narrow window offscreen into PNGs, --filter WindowRender the whole window: Today, a
+                     conversation, an older one, task pages, search, empty states, light, dark and skins.
+                     MILO_RENDER_DIR=... --filter SkinRender renders every skin in every state
+                     (MILO_SKINS=dragon,kit to pick), --filter OverlayRender the bubble and the voice capsule in
+                     every moment, --filter SettingsRender the Settings and setup windows in every skin,
+                     --filter HelperRender the birds and their task cards;
                      MILO_PROBE_DIR=... --filter OverlayProbe puts the overlay on screen, measures its CPU
                      and what a pose change costs per skin, and flies him to a point and back
 ```

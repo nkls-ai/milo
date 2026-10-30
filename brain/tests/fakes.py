@@ -497,6 +497,73 @@ class MemoryTranscript:
         return self.entries[-n:] if n > 0 else []
 
 
+class MemoryConversations:
+    """ConversationStore in dicts. `saved` lists every appended entry in order, as the store got it.
+
+    Entries given to the constructor become one conversation, as if an earlier run had written them."""
+
+    def __init__(self, *entries: dict):
+        from milo.core.conversations import ConversationInfo, conversation_id, title_from
+
+        self.headers: dict = {}
+        self.files: dict[str, list[dict]] = {}
+        self.saved: list[dict] = []
+        if entries:
+            first = min(entries, key=lambda e: e["ts"])
+            info = ConversationInfo(conversation_id(first["id"]), "chat", first["ts"], first["ts"],
+                                    title_from(first.get("text", "")))
+            for e in entries:
+                info = info.with_entry(e)
+            self.headers[info.id] = info
+            self.files[info.id] = [{**e, "conversation": info.id} for e in entries]
+
+    def append(self, conversation, entry: dict):
+        entry = {**entry, "conversation": conversation.id}
+        self.saved.append(entry)
+        self.files.setdefault(conversation.id, []).append(entry)
+        info = conversation.with_entry(entry)
+        self.headers[info.id] = info
+        return info
+
+    def save(self, conversation) -> None:
+        self.headers[conversation.id] = conversation
+
+    def title(self, id: str, title: str, by: str):
+        from dataclasses import replace
+
+        info = self.headers.get(id)
+        if info is None:
+            return None
+        if info.titled_by == "you" and by != "you":
+            return info
+        info = replace(info, title=title, titled_by=by)
+        self.headers[id] = info
+        return info
+
+    def all(self):
+        return sorted(self.headers.values(), key=lambda c: (c.last, c.started), reverse=True)
+
+    def get(self, id: str):
+        return self.headers.get(id)
+
+    def entries_of(self, id: str) -> list[dict]:
+        return sorted(self.files.get(id, []), key=lambda e: e["ts"])
+
+    def entries(self, id: str, limit: int | None = None) -> list[dict]:
+        entries = self.entries_of(id)
+        return entries if limit is None else entries[-limit:] if limit > 0 else []
+
+    def search_text(self, words, *, limit=20, budget_bytes=0):
+        found = []
+        for info in self.all():
+            for e in reversed(self.entries_of(info.id)):
+                text = f"{e.get('text', '')} {e.get('result', '')}".lower()
+                if all(w.lower() in text for w in words):
+                    found.append((info.id, e))
+                    break
+        return found[:limit]
+
+
 class FakeEyes:
     """ScreenEyes that returns queued captures, then an empty one with an error."""
 

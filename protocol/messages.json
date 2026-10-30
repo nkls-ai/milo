@@ -16,11 +16,11 @@
     {"type": "partial", "text": "Sounds good, sh"},
     {"type": "ui_config", "dictate_key": "fn", "talk_key": "right_option", "hands_free_max_s": 300.0, "whats_this_key": "ctrl+option+m", "character": "pip"},
     {"type": "history", "entries": [
-      {"id": "5f2a9c1e04b7", "ts": "2026-10-30T09:12:03", "kind": "user", "text": "rename the photos from Friday", "via": "voice"},
-      {"id": "8d41e0a7c2f3", "ts": "2026-10-30T09:12:05", "kind": "milo", "text": "On it, I'll sort them by date.", "emotion": "happy", "done": true},
-      {"id": "c07b3e9d1a26", "ts": "2026-10-30T09:12:06", "kind": "task", "text": "Rename the photos from Friday in ~/Pictures by date taken", "status": "done", "result": "I renamed all 40 photos.", "steps": [
+      {"id": "5f2a9c1e04b7", "ts": "2026-10-30T09:12:03", "kind": "user", "text": "rename the photos from Friday", "via": "voice", "conversation": "c-5f2a9c1e04b7"},
+      {"id": "8d41e0a7c2f3", "ts": "2026-10-30T09:12:05", "kind": "milo", "text": "On it, I'll sort them by date.", "emotion": "happy", "done": true, "conversation": "c-5f2a9c1e04b7"},
+      {"id": "c07b3e9d1a26", "ts": "2026-10-30T09:12:06", "kind": "task", "text": "Rename the photos from Friday in ~/Pictures by date taken", "status": "done", "result": "I renamed all 40 photos. The list is in ~/Pictures/Friday/renamed.txt.", "steps": [
         {"id": "item_1", "kind": "read", "title": "Looking in your Pictures folder", "detail": "ls ~/Pictures", "status": "done"}
-      ]}
+      ], "title": "Rename Friday's photos", "files": ["~/Pictures/Friday/renamed.txt"], "conversation": "c-5f2a9c1e04b7"}
     ]},
     {"type": "entry", "entry": {"id": "e9a0f61b7d58", "ts": "2026-10-30T09:14:00", "kind": "milo", "text": "", "emotion": "neutral", "done": false}},
     {"type": "reply_delta", "id": "e9a0f61b7d58", "text": "Sure, "},
@@ -45,7 +45,19 @@
     {"type": "settings", "settings": [], "restart": false, "error": "The dictate key and the talk key need to be different keys."},
     {"type": "remote", "channel": "telegram", "label": "Telegram", "state": "paired", "paused": false, "detail": "Niklas (@niklas)"},
     {"type": "remote", "channel": "telegram", "label": "Telegram", "state": "unpaired", "paused": false, "detail": "Message @milo_mac_bot from your phone to connect."},
-    {"type": "meeting_record", "id": "2026-10-30-1400-weekly-sync", "dir": "/Users/you/Milo/meetings/2026-10-30-1400-weekly-sync/audio", "on": true}
+    {"type": "meeting_record", "id": "2026-10-30-1400-weekly-sync", "dir": "/Users/you/Milo/meetings/2026-10-30-1400-weekly-sync/audio", "on": true},
+    {"type": "conversations", "conversations": [
+      {"id": "c-5f2a9c1e04b7", "kind": "chat", "started": "2026-10-30T09:12:03", "last": "2026-10-30T09:14:10", "title": "Photos from Friday", "titled_by": "milo", "via": ["voice"], "turns": 1, "preview": "I renamed all 40 photos.", "tasks": [{"id": "c07b3e9d1a26", "title": "Rename Friday's photos", "status": "done", "at": "2026-10-30T09:12:06"}], "outside": true},
+      {"id": "c-1b2c3d4e5f60", "kind": "chat", "started": "2026-10-30T07:40:00", "last": "2026-10-30T07:41:12", "title": "Train to Hamburg", "titled_by": "words", "via": ["message"], "turns": 2, "preview": "The 8:12 is on time.", "tasks": []},
+      {"id": "c-a0b1c2d3e4f5", "kind": "routine", "started": "2026-10-27T09:00:00", "last": "2026-10-27T09:03:40", "title": "Monday report", "titled_by": "words", "via": [], "turns": 0, "preview": "The report is in Reports.", "tasks": [{"id": "a0b1c2d3e4f5", "title": "Monday report", "status": "done", "at": "2026-10-27T09:00:00"}], "outside": true, "source": "routine:Monday report"},
+      {"id": "c-9e8d7c6b5a40", "kind": "meeting", "started": "2026-10-29T15:02:11", "last": "2026-10-29T15:02:11", "title": "Weekly sync", "titled_by": "words", "via": [], "turns": 0, "preview": "Notes from “Weekly sync”: Launch moves to Friday.", "tasks": [], "source": "meeting:2026-10-29-1400-weekly-sync"}
+    ], "current": "c-5f2a9c1e04b7", "more": false},
+    {"type": "conversation", "id": "c-1b2c3d4e5f60", "info": {"id": "c-1b2c3d4e5f60", "kind": "chat", "started": "2026-10-30T07:40:00", "last": "2026-10-30T07:41:12", "title": "Train to Hamburg", "titled_by": "words", "via": ["message"], "turns": 2, "preview": "The 8:12 is on time.", "tasks": []}, "entries": [
+      {"id": "1b2c3d4e5f60", "ts": "2026-10-30T07:40:00", "kind": "user", "text": "is my train to Hamburg on time", "via": "message", "conversation": "c-1b2c3d4e5f60"},
+      {"id": "2c3d4e5f6071", "ts": "2026-10-30T07:41:12", "kind": "milo", "text": "The 8:12 is on time.", "emotion": "happy", "done": true, "conversation": "c-1b2c3d4e5f60"}
+    ]},
+    {"type": "search_results", "query": "photos", "results": [{"conversation": "c-5f2a9c1e04b7", "title": "Photos from Friday", "kind": "chat", "at": "2026-10-30T09:12:03", "snippet": "rename the photos from Friday", "via": ["voice"]}]},
+    {"type": "reminders", "reminders": [{"due": "2026-10-30T15:30", "text": "Leave for the dentist"}, {"due": "2026-10-31T09:00", "text": "Call Anna"}]}
   ],
   "app_to_brain": [
     {"type": "listen_start", "mode": "dictate"},
@@ -56,6 +68,13 @@
     {"type": "listen_cancel"},
     {"type": "text", "text": "hello Milo"},
     {"type": "text", "text": "what's on today", "speak": false},
+    {"type": "text", "text": "and what about the other one?", "speak": false, "conversation": "c-1b2c3d4e5f60"},
+    {"type": "get_conversations"},
+    {"type": "get_conversations", "before": "2026-10-01T00:00:00"},
+    {"type": "open_conversation", "id": "c-1b2c3d4e5f60"},
+    {"type": "search_conversations", "query": "dentist"},
+    {"type": "rename_conversation", "id": "c-1b2c3d4e5f60", "title": "Hamburg trip"},
+    {"type": "new_conversation"},
     {"type": "get_history"},
     {"type": "context", "app": "Xcode", "idle_s": 3.5},
     {"type": "mute", "on": true},

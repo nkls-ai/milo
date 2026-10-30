@@ -62,6 +62,14 @@ public enum BrainEvent: Equatable, Sendable {
     case remote(RemoteStatus)
     /// Record meeting `id` into `dir` (two tracks in 30 s chunks), or stop recording it.
     case meetingRecord(id: String, dir: String, on: Bool)
+    /// The window's list: conversations latest first, the one going on ("" for none), and whether older ones exist.
+    case conversations([ConversationInfo], current: String, more: Bool)
+    /// One conversation the user opened, its entries oldest first.
+    case conversation(ConversationInfo, entries: [TranscriptEntry])
+    /// What a search found, best first.
+    case searchResults(query: String, results: [SearchHit])
+    /// Open reminders of today and tomorrow, for Today.
+    case reminders([ReminderItem])
     case unknown(String)
 }
 
@@ -79,6 +87,7 @@ extension BrainEvent: Decodable {
         case helpers
         case routines, drafts
         case settings, restart, error
+        case conversations, current, more, info, query, results, reminders
     }
 
     public init(from decoder: Decoder) throws {
@@ -140,6 +149,17 @@ extension BrainEvent: Decodable {
             self = .meetingRecord(id: try c.decode(String.self, forKey: .id),
                                   dir: try c.decodeIfPresent(String.self, forKey: .dir) ?? "",
                                   on: try c.decode(Bool.self, forKey: .on))
+        case "conversations":
+            self = .conversations(try c.decodeIfPresent([ConversationInfo].self, forKey: .conversations) ?? [],
+                                  current: try c.decodeIfPresent(String.self, forKey: .current) ?? "",
+                                  more: try c.decodeIfPresent(Bool.self, forKey: .more) ?? false)
+        case "conversation":
+            self = .conversation(try c.decode(ConversationInfo.self, forKey: .info),
+                                 entries: try c.decodeIfPresent([TranscriptEntry].self, forKey: .entries) ?? [])
+        case "search_results":
+            self = .searchResults(query: try c.decodeIfPresent(String.self, forKey: .query) ?? "",
+                                  results: try c.decodeIfPresent([SearchHit].self, forKey: .results) ?? [])
+        case "reminders": self = .reminders(try c.decodeIfPresent([ReminderItem].self, forKey: .reminders) ?? [])
         default: self = .unknown(type)
         }
     }

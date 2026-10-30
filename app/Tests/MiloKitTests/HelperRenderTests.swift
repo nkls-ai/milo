@@ -4,7 +4,7 @@ import SwiftUI
 import Testing
 @testable import MiloKit
 
-/// Renders the helpers offscreen into PNGs: small birds next to Milo, and the helpers list in the Milo window.
+/// Renders the helpers offscreen into PNGs: small birds next to Milo, and their tasks in the Milo window.
 /// `MILO_RENDER_DIR=/tmp/milo-helpers swift test --filter HelperRender`.
 @Suite(.enabled(if: ProcessInfo.processInfo.environment["MILO_RENDER_DIR"] != nil))
 @MainActor

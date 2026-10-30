@@ -7,14 +7,17 @@ from pathlib import Path
 
 from .config import UiSettings
 from .core.events import (AppResponse, CallEnded, CallStarted, Command, ConfirmAnswer, ContextUpdate, EditFact,
-                          EmotionChanged, Event, Facts, ForgetFact, GetFacts, GetHistory, GetSettings, HandsResult,
-                          HandsStop, ListenCancel, ListenConfirm, ListenStart, ListenStop, LookResult, MeetingChunk,
-                          MeetingRecording, MeetingToggle, Mute, RemoteForget, RemotePause, RoutineAction,
-                          RoutineDraftAnswer, SetSetting, StateChanged, StopHelper, TextInput, UiConfig, WhatsThis)
+                          EmotionChanged, Event, Facts, ForgetFact, GetConversations, GetFacts, GetHistory,
+                          GetSettings, HandsResult, HandsStop, ListenCancel, ListenConfirm, ListenStart, ListenStop,
+                          LookResult, MeetingChunk, MeetingRecording, MeetingToggle, Mute, NewConversation,
+                          OpenConversation, RemoteForget, RemotePause, RenameConversation, RoutineAction,
+                          RoutineDraftAnswer, SearchConversations, SetSetting, StateChanged, StopHelper, TextInput,
+                          UiConfig, WhatsThis)
 from .core.types import ListenMode
 from .services.app_bridge import AppBridge
 from .services.approvals import Approvals
 from .services.context import UserContext
+from .services.conversations import ConversationBrowser
 from .services.hands import HandsService
 from .services.heartbeat_runner import HeartbeatRunner
 from .services.listening import Listening
@@ -45,7 +48,9 @@ class Brain:
                  hands: HandsService | None = None, screens: Path | None = None,
                  helpers: Orchestrator | None = None, memory: Memory | None = None,
                  routines: Routines | None = None, settings: Settings | None = None,
-                 messages: MessageService | None = None, meetings: MeetingService | None = None):
+                 messages: MessageService | None = None, meetings: MeetingService | None = None,
+                 conversations: ConversationBrowser | None = None):
+        self._conversations = conversations
         self._meetings = meetings
         self._memory = memory
         self._routines = routines
@@ -87,6 +92,8 @@ class Brain:
 
     def _history(self) -> list[Event]:
         history = [self._transcript.history()] if self._transcript is not None else []
+        if self._conversations is not None:
+            history += [self._conversations.list_event(), self._conversations.reminders_event()]
         return history + ([self._routines.resend()] if self._routines is not None else [])
 
     async def handle(self, command: Command) -> None:
@@ -101,8 +108,31 @@ class Brain:
                 await self._listening.stop()
             case ListenCancel():
                 self._listening.cancel()
-            case TextInput(text, speak):
+            case TextInput(text, speak, conversation):
+                if conversation and self._transcript is not None:
+                    recap = self._transcript.resume(conversation)
+                    if recap is not None:
+                        self._live_talk.pick_up(*recap)
                 self._live_talk.start(text, via="typed", speak=speak)
+            case GetConversations(before):
+                if self._conversations is not None:
+                    self._ui.emit(self._conversations.list_event(before))
+                    if not before:
+                        self._ui.emit(self._conversations.reminders_event())
+            case OpenConversation(id):
+                opened = self._conversations.open(id) if self._conversations is not None else None
+                if opened is not None:
+                    self._ui.emit(opened)
+            case SearchConversations(query):
+                if self._conversations is not None:
+                    self._ui.emit(await self._conversations.search(query))
+            case RenameConversation(id, title):
+                if self._conversations is not None:
+                    self._conversations.rename(id, title)
+            case NewConversation():
+                if self._transcript is not None:
+                    self._transcript.new_conversation()
+                self._live_talk.fresh()
             case GetHistory():
                 for event in self._history():
                     self._ui.emit(event)

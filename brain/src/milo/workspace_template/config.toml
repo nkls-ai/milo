@@ -9,6 +9,9 @@
 use = "claude_live"
 # Start a fresh conversation after this many seconds without talking (also reloads memory).
 conversation_idle_reset_s = 600
+# Typing in an earlier conversation in the Milo window picks it up again: Milo gets a recap of it of at
+# most this many tokens.
+recap_tokens = 600
 # How Milo tells you about work his helpers do: "quiet" (only the small birds and the Milo window),
 # "bubble" (short notes in the bubble) or "chatty" (he also says them). Results and questions always
 # come through. Changes take effect without a restart.

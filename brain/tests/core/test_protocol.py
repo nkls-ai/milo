@@ -42,6 +42,10 @@ OUTBOUND = {
     "settings": lambda m: ev.SettingsReport(m["settings"], m["restart"], m["error"]),
     "remote": lambda m: ev.Remote(m["channel"], m["label"], m["state"], m["paused"], m["detail"]),
     "meeting_record": lambda m: ev.MeetingRecord(m["id"], m["dir"], m["on"]),
+    "conversations": lambda m: ev.Conversations(m["conversations"], m["current"], m["more"]),
+    "conversation": lambda m: ev.ConversationOpened(m["id"], m["info"], m["entries"]),
+    "search_results": lambda m: ev.SearchResults(m["query"], m["results"]),
+    "reminders": lambda m: ev.RemindersList(m["reminders"]),
 }
 
 
@@ -164,3 +168,30 @@ def test_meeting_commands_parse_into_their_values():
 def test_bad_meeting_commands_are_refused(bad):
     with pytest.raises(ev.ProtocolError):
         ev.parse_command(bad)
+
+
+def test_conversation_commands_parse_into_their_values():
+    assert ev.parse_command({"type": "text", "text": "and then?", "conversation": "c-1"}) == \
+        ev.TextInput("and then?", True, "c-1")
+    assert ev.parse_command({"type": "text", "text": "hi"}).conversation == ""
+    assert ev.parse_command({"type": "get_conversations"}) == ev.GetConversations("")
+    assert ev.parse_command({"type": "open_conversation", "id": " c-1 "}) == ev.OpenConversation("c-1")
+    assert ev.parse_command({"type": "search_conversations", "query": "  the  dentist "}) == \
+        ev.SearchConversations("the dentist")
+    assert ev.parse_command({"type": "rename_conversation", "id": "c-1", "title": "Trip"}) == \
+        ev.RenameConversation("c-1", "Trip")
+    for bad in ({"type": "open_conversation", "id": " "}, {"type": "rename_conversation", "id": "c-1", "title": ""}):
+        with pytest.raises(ev.ProtocolError):
+            ev.parse_command(bad)
+
+
+def test_fixture_headers_and_entries_decode_into_the_brains_types():
+    from milo.core.conversations import ConversationInfo
+    from milo.core.types import TranscriptEntry
+
+    (listing,) = [m for m in FIXTURE["brain_to_app"] if m["type"] == "conversations"]
+    for header in listing["conversations"]:
+        assert ConversationInfo.from_dict(header).to_dict() == header
+    (history,) = [m for m in FIXTURE["brain_to_app"] if m["type"] == "history"]
+    for entry in history["entries"]:
+        assert TranscriptEntry.from_dict(entry).to_dict() == entry
