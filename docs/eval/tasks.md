@@ -60,3 +60,4 @@ Dates move with the day the eval runs. Tomorrow at 10 the hairdresser, Monday at
 |---|---|---|---|
 | 2026-10-30, run 1 | 23/30 | 11.0 s | Sonnet 5.5 chat and Claude Code worker, fake connections. Failed: c14 (the check missed a spoken-out "4 4 7 1"; fixed), c15 (offered to look instead of looking), c17 (put eggs in a Reminders list that didn't exist), c22, c25, c26 (wrote the reply as text, not a draft), c28 (no way to forward). |
 | 2026-10-30, run 2 | 28/30 | 10.4 s | After telling the chat model to start app tasks at once and make Mail drafts, erroring on unknown lists, and adding forwarding. Failed: c22 (didn't try the "Get weather" shortcut), c25 (looked in calendar, notes and mail, not in files). |
+| 2026-10-30, run 3 | 30/30 | 11.3 s | After forwarding became its own tool that asks first, and AGENTS.md told the worker to look wider (shortcuts, files) before saying it can't. One run; the chat model varies, so expect a case or two to wobble. |
