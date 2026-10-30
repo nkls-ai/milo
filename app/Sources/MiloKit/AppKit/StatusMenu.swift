@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 
 /// The menu bar item.
 public final class StatusMenu: NSObject {
@@ -11,6 +12,7 @@ public final class StatusMenu: NSObject {
     private let statusItem: NSStatusItem
     private let hintItem: NSMenuItem
     private var muteItem: NSMenuItem!
+    private var restyle: AnyCancellable?
 
     public init(controller: MiloController, panel: OverlayPanel, window: ConversationWindow, settings: SettingsWindow,
                 setup: SetupWindow, paths: MiloPaths) {
@@ -24,7 +26,10 @@ public final class StatusMenu: NSObject {
         hintItem = NSMenuItem(title: controller.bindings.hint, action: nil, keyEquivalent: "")
         super.init()
 
-        statusItem.button?.image = NSImage(systemSymbolName: "face.smiling", accessibilityDescription: "Milo")
+        // A small sign of the skin he wears, drawn like every menu bar icon (it follows the menu bar's colour).
+        restyle = controller.model.$character.sink { [weak self] in
+            self?.statusItem.button?.image = NSImage(systemSymbolName: Self.symbol(for: $0), accessibilityDescription: "Milo")
+        }
         let menu = NSMenu()
         hintItem.isEnabled = false
         menu.addItem(hintItem)
@@ -43,6 +48,16 @@ public final class StatusMenu: NSObject {
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Milo", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu
+    }
+
+    static func symbol(for style: CharacterStyle) -> String {
+        switch style {
+        case .pip: "bird"
+        case .classic: "face.smiling"
+        case .dragon: "flame"
+        case .kit: "pawprint"
+        case .glow: "sparkle"
+        }
     }
 
     /// Updates the "Hold … to dictate" line.

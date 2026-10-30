@@ -23,15 +23,24 @@ struct ConversationRenderTests {
                            question: name == "asking" ? Samples.question : nil)
             }
         }
+        // The window takes the skin's colours.
+        for style in [CharacterStyle.dragon, .kit, .glow] {
+            for (name, entries, state) in Samples.all where name == "empty" || name == "asking" {
+                try render(entries: entries, state: state, name: "\(name)-\(style.rawValue)", dark: style == .glow,
+                           question: name == "asking" ? Samples.question : nil, style: style)
+            }
+        }
     }
 
     private func render(entries: [TranscriptEntry], state: MiloState, name: String, dark: Bool,
-                        question: String? = nil) throws {
+                        question: String? = nil, style: CharacterStyle = .pip) throws {
         let model = MiloModel(scheduler: ManualScheduler())
+        model.character = style
         model.state = state
         if let question { model.apply(.confirm(id: "q1", question: question)) }
         let view = ConversationView(transcript: TranscriptModel(entries: entries), model: model,
                                     settings: ConversationSettings(talkKey: "right ⌥"), send: { _, _ in })
+            .themed(by: model)
             .frame(width: Self.size.width, height: Self.size.height)
         let host = NSHostingView(rootView: view)
         host.frame = NSRect(origin: .zero, size: Self.size)

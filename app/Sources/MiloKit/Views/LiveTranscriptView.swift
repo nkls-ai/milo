@@ -2,6 +2,7 @@ import SwiftUI
 
 /// The words heard so far, in a small pill next to Milo while recording. A lock marks hands-free mode.
 struct LiveTranscriptView: View {
+    @Environment(\.miloTheme) private var theme
     @ObservedObject var model: MiloModel
 
     var body: some View {
@@ -14,20 +15,20 @@ struct LiveTranscriptView: View {
                 }
                 Text(line)
                     .font(.system(size: 12))
-                    .foregroundStyle(model.partial == nil ? .secondary : .primary)
+                    .foregroundStyle(model.partial == nil ? theme.ink.opacity(0.6) : theme.ink)
                     .lineLimit(3)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
             .frame(maxWidth: 250, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .fill(Color(nsColor: .windowBackgroundColor).opacity(0.94)))
+                .fill(theme.tint.opacity(0.96)))
             .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous)
                 .stroke(color.opacity(0.55), lineWidth: 1))
-            .shadow(color: .black.opacity(0.14), radius: 6, y: 2)
+            .shadow(color: theme.primary.opacity(0.18), radius: 7, y: 3)
             .padding(.trailing, 40)
             .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .bottomTrailing)))
-            .animation(.easeOut(duration: 0.12), value: line)
+            .animation(theme.motion.spring, value: line)
         }
     }
 
@@ -39,7 +40,7 @@ struct LiveTranscriptView: View {
     }
 
     private var color: Color {
-        (model.handsFree ?? (model.state == .listening ? .talk : .dictate)) == .talk ? Palette.talk : Palette.dictate
+        (model.handsFree ?? (model.state == .listening ? .talk : .dictate)) == .talk ? theme.primary : theme.accent
     }
 
     /// The last `limit` characters, cut at a word, so the newest words stay visible.

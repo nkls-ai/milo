@@ -131,21 +131,31 @@ struct SkinRenderTests {
         }
     }
 
-    /// The skin at real size in the corner of a wallpaper.
+    /// The skin at real size in the corner of a wallpaper, asking a question in his themed bubble.
     struct Corner: View {
         var skin: CharacterStyle
         var dark: Bool
 
+        private var model: MiloModel {
+            let model = MiloModel(scheduler: ManualScheduler())
+            model.apply(.confirm(id: "q", question: "Shall I put the dentist in your calendar for Tuesday at nine?"))
+            return model
+        }
+
         var body: some View {
             ZStack(alignment: .bottomTrailing) {
                 Wallpaper(dark: dark)
-                CharacterFigure(for: skin, pose: LifePose(gaze: CGVector(dx: -0.3, dy: -0.4)), time: 0.4)
-                    .frame(width: 132, height: 132)
-                    .padding(.trailing, 8)
-                    .padding(12)
+                VStack(alignment: .trailing, spacing: 6) {
+                    BubbleView(model: model)
+                    CharacterFigure(for: skin, pose: LifePose(gaze: CGVector(dx: -0.3, dy: -0.4)), time: 0.4)
+                        .frame(width: 132, height: 132)
+                        .padding(.trailing, 8)
+                }
+                .padding(12)
             }
-            .frame(width: 420, height: 300)
+            .frame(width: 420, height: 340)
             .environment(\.colorScheme, dark ? .dark : .light)
+            .environment(\.miloTheme, Theme.for(skin))
         }
     }
 

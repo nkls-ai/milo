@@ -3,6 +3,7 @@ import SwiftUI
 /// The whole overlay: speech bubble above the character, pinned bottom-right.
 public struct OverlayView: View {
     @ObservedObject var model: MiloModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public init(model: MiloModel) {
         self.model = model
@@ -21,9 +22,15 @@ public struct OverlayView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: model.bubble)
-        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: model.state)
-        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: model.question)
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: model.looking)
+        .animation(motion, value: model.bubble)
+        .animation(motion, value: model.state)
+        .animation(motion, value: model.question)
+        .animation(motion, value: model.looking)
+        .themed(by: model)
+    }
+
+    /// The skin's own spring: bouncy for the dragon, crisp for Kit, floaty for Glow.
+    private var motion: Animation {
+        model.theme.motion.animation(reduced: reduceMotion)
     }
 }
