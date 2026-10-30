@@ -92,6 +92,8 @@ class UiSettings:
     talk_key: str = "right_option"
     whats_this_key: str = "ctrl+option+m"
     """A shortcut with at least one modifier (or an F key), held by nobody else. "" turns it off."""
+    meeting_key: str = "ctrl+option+n"
+    """Starts or stops meeting notes by hand, for calls Milo doesn't notice himself. Same rules; "" turns it off."""
     hands_free_max_s: float = 300.0
     """A recording locked on by a double tap stops by itself after this long."""
     character: str = "milo"
@@ -100,8 +102,12 @@ class UiSettings:
     """Say answers out loud. False: the bubble and the window only."""
 
     def __post_init__(self):
-        if self.whats_this_key and not _COMBO.match(str(self.whats_this_key).lower().replace(" ", "")):
-            raise ConfigError('[ui] whats_this_key must look like "ctrl+option+m" (modifiers joined with +) or be ""')
+        for name in ("whats_this_key", "meeting_key"):
+            combo = str(getattr(self, name)).lower().replace(" ", "")
+            if combo and not _COMBO.match(combo):
+                raise ConfigError(f'[ui] {name} must look like "ctrl+option+m" (modifiers joined with +) or be ""')
+        if self.meeting_key and self.meeting_key.lower().replace(" ", "") == self.whats_this_key.lower().replace(" ", ""):
+            raise ConfigError(f"[ui] meeting_key and whats_this_key can't be the same shortcut ({self.meeting_key!r})")
         for name in ("dictate_key", "talk_key"):
             if getattr(self, name) not in KEY_NAMES:
                 raise ConfigError(f"[ui] {name} must be one of {', '.join(KEY_NAMES)}")

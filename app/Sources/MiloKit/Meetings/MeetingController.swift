@@ -8,6 +8,7 @@ public final class MeetingController {
     private let brain: BrainClient
     private let recorder: MeetingRecorder
     private let signals: CallSignals?
+    private let hotkey: HotkeySource?
     private let scheduler: Scheduler
     private let pollInterval: TimeInterval
     private let brainGrace: TimeInterval
@@ -20,11 +21,12 @@ public final class MeetingController {
 
     public init(model: MiloModel, brain: BrainClient, recorder: MeetingRecorder, signals: CallSignals?,
                 scheduler: Scheduler, pollInterval: TimeInterval = 2.5, brainGrace: TimeInterval = 300,
-                detector: CallDetector = CallDetector()) {
+                detector: CallDetector = CallDetector(), hotkey: HotkeySource? = nil) {
         self.model = model
         self.brain = brain
         self.recorder = recorder
         self.signals = signals
+        self.hotkey = hotkey
         self.scheduler = scheduler
         self.pollInterval = pollInterval
         self.brainGrace = brainGrace
@@ -32,6 +34,7 @@ public final class MeetingController {
     }
 
     public func start() {
+        hotkey?.onPress = { [weak self] in self?.toggle() }
         recorder.onChunk = { [weak self] track, chunk in
             guard let self, let id = meeting else { return }
             brain.send(.meetingChunk(MeetingChunk(id: id, track: track, index: chunk.index, path: chunk.path,
@@ -76,6 +79,16 @@ public final class MeetingController {
             brain.send(.meetingRecording(id: meeting, on: true, tracks: recorder.tracks))
         } else {
             brain.send(.meetingRecording(id: "", on: false, tracks: []))
+        }
+    }
+
+    /// The shortcut from `ui_config` (`[ui] meeting_key`), for calls Milo doesn't notice himself. "" turns it off;
+    /// unknown text leaves it off.
+    public func setShortcut(_ text: String) {
+        let combo = KeyCombo(text)
+        if !text.isEmpty && combo == nil { NSLog("Milo: ignoring meeting_key %@", text) }
+        if hotkey?.register(combo) == false, let combo {
+            NSLog("Milo: macOS refused the meeting notes shortcut %@", combo.displayName)
         }
     }
 

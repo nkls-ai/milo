@@ -39,7 +39,7 @@ let controller = MiloController(
                                       promptForAccessibility: false),
     screen: screen,
     meetings: MeetingController(model: model, brain: brain, recorder: MacMeetingRecorder(brainLock: paths.brainLock),
-                                signals: MacCallSignals(), scheduler: scheduler),
+                                signals: MacCallSignals(), scheduler: scheduler, hotkey: CarbonHotkey()),
     pasteWatcher: PasteWatcher(reader: AXFocusedText(), words: SpellCheckWords(), scheduler: scheduler))
 
 // Windows and the status item are created once the app has finished launching.

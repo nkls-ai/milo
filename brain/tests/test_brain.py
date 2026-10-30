@@ -45,7 +45,8 @@ def test_greeting_draws_the_current_state_and_sends_the_configured_keys():
     brain = Brain(s.ui, s.listening, s.live_talk, s.context, s.heartbeat,
                   UiSettings("right_command", "right_control"))
     assert brain.greeting() == [StateChanged(MiloState.IDLE), EmotionChanged(Emotion.NEUTRAL),
-                                UiConfig("right_command", "right_control", whats_this_key="ctrl+option+m")]
+                                UiConfig("right_command", "right_control", whats_this_key="ctrl+option+m",
+                                         meeting_key="ctrl+option+n")]
     s.ui.set_state(MiloState.THINKING)
     s.ui.set_emotion(Emotion.SAD)
     assert brain.greeting()[:2] == [StateChanged(MiloState.THINKING), EmotionChanged(Emotion.SAD)]

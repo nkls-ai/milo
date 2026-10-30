@@ -184,6 +184,15 @@ def test_hands_and_the_whats_this_key_have_defaults_and_can_be_changed():
     assert Config.parse(MINIMAL + "[ui]\nwhats_this_key = \"\"\n").ui.whats_this_key == ""
 
 
+def test_the_meeting_notes_shortcut_has_a_default_and_never_shares_a_combo():
+    assert Config.parse(MINIMAL).ui.meeting_key == "ctrl+option+n"
+    assert Config.parse(MINIMAL + "[ui]\nmeeting_key = \"\"\n").ui.meeting_key == ""
+    with pytest.raises(ConfigError, match="meeting_key"):
+        Config.parse(MINIMAL + "[ui]\nmeeting_key = \"n\"\n")
+    with pytest.raises(ConfigError, match="meeting_key"):
+        Config.parse(MINIMAL + "[ui]\nmeeting_key = \"Ctrl+Option+M\"\n")
+
+
 def test_routines_settings():
     config = Config.parse(TEMPLATE.read_text())
     assert config.routines.enabled and config.routines.max_runs_per_day == 6 and config.routines.grace_hours == 4

@@ -136,7 +136,7 @@ class Stack:
                                          wait_s=self.wait_s, poll_s=0.005)
         use_ui = lambda c: self.brain.use_ui(c.ui)  # noqa: E731
         live = {("ui", "dictate_key"): use_ui, ("ui", "talk_key"): use_ui,
-                ("ui", "whats_this_key"): use_ui, ("ui", "voice"): lambda c: setattr(self.speaker, "silent", not c.ui.voice),
+                ("ui", "whats_this_key"): use_ui, ("ui", "meeting_key"): use_ui, ("ui", "voice"): lambda c: setattr(self.speaker, "silent", not c.ui.voice),
                 ("dictation", "stream"): lambda c: setattr(self.listening, "live_mode", LiveMode(c.dictation.stream))}
         self.settings = Settings(self.config_file, self.config_file.read(), self.ui, live)
         self.messages = None

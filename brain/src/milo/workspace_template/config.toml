@@ -217,6 +217,8 @@ character = "milo"                # Milo the wren; the only look
 voice = true                      # false: answers show in the bubble without being said out loud
 # Ask Milo about the selection, or the front window if nothing is selected. "" turns it off.
 whats_this_key = "ctrl+option+m"
+# Start or stop meeting notes by hand, e.g. for a Discord call Milo didn't notice. "" turns it off.
+meeting_key = "ctrl+option+n"
 
 [routines]
 # Recipes for work you want done again ("remember how to do this, call it the Monday report"), kept as

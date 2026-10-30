@@ -93,7 +93,8 @@ class UiConfig(Event):
     """Sent once per connection. Key names: "fn", "right_option", "right_command", "right_control".
 
     hands_free_max_s caps a recording locked on by a double tap. whats_this_key is a combo such as
-    "ctrl+option+m" for the "What's this?" shortcut; "" turns it off. character is "milo"; an old config may
+    "ctrl+option+m" for the "What's this?" shortcut, meeting_key the one that starts or stops meeting notes;
+    "" turns either off. character is "milo"; an old config may
     name a retired look, and the app shows Milo either way.
     """
 
@@ -103,6 +104,7 @@ class UiConfig(Event):
     hands_free_max_s: float = 300.0
     whats_this_key: str = ""
     character: str = "milo"
+    meeting_key: str = ""
 
 
 @dataclass(frozen=True)

@@ -38,6 +38,15 @@ public enum CallApps {
         ("com.apple.avconferenced", "FaceTime"),
         ("com.tinyspeck.slackmacgap", "Slack"),
         ("Cisco-Systems.Spark", "Webex"),
+        ("com.hnc.Discord", "Discord"),
+        ("com.hnc.DiscordPTB", "Discord"),
+        ("com.hnc.DiscordCanary", "Discord"),
+        ("net.whatsapp.WhatsApp", "WhatsApp"),
+        ("desktop.WhatsApp", "WhatsApp"),
+        ("org.whispersystems.signal-desktop", "Signal"),
+        ("ru.keepcoder.Telegram", "Telegram"),
+        ("org.telegram.desktop", "Telegram"),
+        ("com.skype.skype", "Skype"),
     ]
 
     /// Browsers by the bundle of the process that holds the mic; Safari's is WebKit's GPU process.
@@ -62,6 +71,7 @@ public enum CallApps {
         ("Webex", { $0.contains("Webex") }),
         ("Whereby", { $0.contains("Whereby") }),
         ("Jitsi Meet", { $0.contains("Jitsi Meet") }),
+        ("Discord", { $0.hasSuffix("- Discord") || $0.hasSuffix("| Discord") }),
     ]
 
     static func matches(_ bundle: String, _ prefix: String) -> Bool {

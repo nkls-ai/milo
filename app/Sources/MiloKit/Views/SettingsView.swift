@@ -77,6 +77,7 @@ public struct SettingsView: View {
                     if let key = report["ui", "dictate_key"] { keyRow(key, "Hold to dictate") }
                     if let key = report["ui", "talk_key"] { keyRow(key, "Hold to talk to Milo") }
                     if let key = report["ui", "whats_this_key"] { keyRow(key, "Ask “What's this?”") }
+                    if let key = report["ui", "meeting_key"] { keyRow(key, "Start or stop meeting notes") }
                 }
             }
             if let voice = report["ui", "voice"] {

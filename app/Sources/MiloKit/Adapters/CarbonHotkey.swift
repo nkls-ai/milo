@@ -7,8 +7,14 @@ public final class CarbonHotkey: HotkeySource {
     private var hotKey: EventHotKeyRef?
     private var handler: EventHandlerRef?
     private static let signature: OSType = 0x4D69_6C6F  // "Milo"
+    private static var lastID: UInt32 = 0
+    /// Each shortcut has its own id. Every handler sees every hotkey press of the app, so it takes only its own.
+    private let id: UInt32
 
-    public init() {}
+    public init() {
+        Self.lastID += 1
+        id = Self.lastID
+    }
 
     deinit {
         register(nil)
@@ -26,17 +32,25 @@ public final class CarbonHotkey: HotkeySource {
         if combo.modifiers.contains(.shift) { modifiers |= UInt32(shiftKey) }
         if combo.modifiers.contains(.option) { modifiers |= UInt32(optionKey) }
         if combo.modifiers.contains(.control) { modifiers |= UInt32(controlKey) }
-        let id = EventHotKeyID(signature: Self.signature, id: 1)
-        return RegisterEventHotKey(UInt32(combo.keyCode), modifiers, id, GetApplicationEventTarget(), 0, &hotKey) == noErr
+        let hotKeyID = EventHotKeyID(signature: Self.signature, id: id)
+        return RegisterEventHotKey(UInt32(combo.keyCode), modifiers, hotKeyID, GetApplicationEventTarget(), 0,
+                                   &hotKey) == noErr
     }
 
     private func installHandler() {
         guard handler == nil else { return }
         var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         let me = Unmanaged.passUnretained(self).toOpaque()
-        InstallEventHandler(GetApplicationEventTarget(), { _, _, data in
-            guard let data else { return OSStatus(eventNotHandledErr) }
+        InstallEventHandler(GetApplicationEventTarget(), { _, event, data in
+            guard let event, let data else { return OSStatus(eventNotHandledErr) }
+            var pressed = EventHotKeyID()
+            let read = GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
+                                         nil, MemoryLayout<EventHotKeyID>.size, nil, &pressed)
             let hotkey = Unmanaged<CarbonHotkey>.fromOpaque(data).takeUnretainedValue()
+            // Another Milo shortcut: let its own handler have it.
+            guard read == noErr, pressed.signature == CarbonHotkey.signature, pressed.id == hotkey.id else {
+                return OSStatus(eventNotHandledErr)
+            }
             DispatchQueue.main.async { hotkey.onPress?() }
             return noErr
         }, 1, &spec, me, &handler)

@@ -38,7 +38,7 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .status("Mic unavailable: no input device"),
             .partial("Sounds good, sh"),
             .uiConfig(dictateKey: "fn", talkKey: "right_option", handsFreeMaxSeconds: 300, whatsThisKey: "ctrl+option+m",
-                      character: .milo),
+                      character: .milo, meetingKey: "ctrl+option+n"),
             .history([
                 TranscriptEntry(id: "5f2a9c1e04b7", date: try day("2026-10-30T09:12:03"), kind: .user,
                                 text: "rename the photos from Friday", via: .voice, conversation: "c-5f2a9c1e04b7"),

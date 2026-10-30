@@ -42,13 +42,14 @@ private final class Rig {
     let recorder = FakeRecorder()
     let signals = FakeCallSignals()
     let scheduler = ManualScheduler()
+    let hotkey = FakeHotkey()
     let model: MiloModel
     let meetings: MeetingController
 
     init() {
         model = MiloModel(scheduler: scheduler)
         meetings = MeetingController(model: model, brain: brain, recorder: recorder, signals: signals,
-                                     scheduler: scheduler, pollInterval: 2)
+                                     scheduler: scheduler, pollInterval: 2, hotkey: hotkey)
         meetings.start()
     }
 
@@ -123,6 +124,20 @@ private final class Rig {
         #expect(rig.brain.sent == [.meetingToggle(false), .meetingRecording(id: "m1", on: false, tracks: [])])
     }
 
+    @Test func theShortcutTogglesNotesLikeTheMenu() {
+        let rig = Rig()
+        rig.meetings.setShortcut("ctrl+option+n")
+        #expect(rig.hotkey.registered.last == KeyCombo("ctrl+option+n"))
+        rig.hotkey.press()
+        #expect(rig.brain.sent == [.meetingToggle(true)])
+        rig.record(true)
+        rig.brain.clearSent()
+        rig.hotkey.press()
+        #expect(rig.brain.sent.first == .meetingToggle(false) && !rig.model.recording)
+        rig.meetings.setShortcut("")
+        #expect(rig.hotkey.registered.last == .some(nil), "an empty shortcut turns it off")
+    }
+
     @Test func recordingGoesOnWhileTheBrainRestartsButNotWithoutOneForLong() {
         let rig = Rig()
         rig.record(true)
@@ -184,6 +199,13 @@ private final class Rig {
                 == Call(app: "Slack", bundle: "com.tinyspeck.slackmacgap", title: "Huddle with Anna"))
         #expect(call("com.apple.Music") == nil)
         #expect(call("us.zoom.xosx") == nil)
+        #expect(call("com.hnc.Discord")?.app == "Discord")
+        #expect(call("com.hnc.Discord.helper")?.app == "Discord")
+        #expect(call("com.hnc.DiscordPTB")?.app == "Discord")
+        #expect(call("net.whatsapp.WhatsApp")?.app == "WhatsApp")
+        #expect(call("org.whispersystems.signal-desktop")?.app == "Signal")
+        #expect(call("ru.keepcoder.Telegram")?.app == "Telegram")
+        #expect(call("com.skype.skype")?.app == "Skype")
     }
 
     @Test func aBrowserIsACallOnlyWithAMeetingTab() {
@@ -193,6 +215,8 @@ private final class Rig {
         #expect(call("com.google.Chrome.helper", titles: ["com.google.Chrome": ["Dictation test"]]) == nil)
         let safari = ["com.apple.Safari": ["Weekly sync | Microsoft Teams"]]
         #expect(call("com.apple.WebKit.GPU", titles: safari)?.app == "Microsoft Teams")
+        let discord = ["com.google.Chrome": ["#general | Gaming - Discord"]]
+        #expect(call("com.google.Chrome.helper", titles: discord)?.app == "Discord")
     }
 
     @Test func oneCallPerApp() {

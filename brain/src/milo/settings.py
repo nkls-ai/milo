@@ -40,6 +40,8 @@ SETTINGS = (
     Setting("ui", "talk_key", KEY_NAMES, tuple(KEY_LABELS[k] for k in KEY_NAMES)),
     Setting("ui", "whats_this_key", ("ctrl+option+m", "ctrl+option+w", "ctrl+shift+m", ""),
             ("Control-Option-M", "Control-Option-W", "Control-Shift-M", "Off")),
+    Setting("ui", "meeting_key", ("ctrl+option+n", "ctrl+shift+n", "ctrl+option+r", ""),
+            ("Control-Option-N", "Control-Shift-N", "Control-Option-R", "Off")),
     Setting("ui", "voice"),
 )
 

@@ -14,7 +14,7 @@
     {"type": "dictation", "text": "Sounds good, ship it."},
     {"type": "status", "text": "Mic unavailable: no input device"},
     {"type": "partial", "text": "Sounds good, sh"},
-    {"type": "ui_config", "dictate_key": "fn", "talk_key": "right_option", "hands_free_max_s": 300.0, "whats_this_key": "ctrl+option+m", "character": "milo"},
+    {"type": "ui_config", "dictate_key": "fn", "talk_key": "right_option", "hands_free_max_s": 300.0, "whats_this_key": "ctrl+option+m", "character": "milo", "meeting_key": "ctrl+option+n"},
     {"type": "history", "entries": [
       {"id": "5f2a9c1e04b7", "ts": "2026-10-30T09:12:03", "kind": "user", "text": "rename the photos from Friday", "via": "voice", "conversation": "c-5f2a9c1e04b7"},
       {"id": "8d41e0a7c2f3", "ts": "2026-10-30T09:12:05", "kind": "milo", "text": "On it, I'll sort them by date.", "emotion": "happy", "done": true, "conversation": "c-5f2a9c1e04b7"},
