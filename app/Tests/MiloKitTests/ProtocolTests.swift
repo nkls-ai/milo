@@ -68,6 +68,7 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .appRequest(id: "a41f", op: "calendar.add_event", args: .object([
                 "title": .string("Doctor"), "start": .string("2026-11-05T15:00:00"), "end": .string("2026-11-05T16:00:00"),
             ])),
+            .handsBorrow(true),
         ])
     }
 
@@ -98,6 +99,8 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             ]))),
             .appResponse(id: "a42f", outcome: .failure(
                 "Milo isn't allowed to use your calendar. Turn it on in System Settings › Privacy & Security › Calendars.")),
+            .handsResult(id: "hands-7", ok: false, result: ["borrow": "mouse"],
+                         error: "Excel doesn't take clicks in the background."),
         ]
         let encoder = JSONEncoder()
         let encoded = try commands.map { command in

@@ -16,7 +16,7 @@ from typing import Any
 
 from milo.core.events import AppRequest, AppResponse, Event, HandsRequest, LookRequest
 from milo.core.ports import EventSink
-from milo.core.types import HandsError, ScreenCapture
+from milo.core.types import BorrowNeeded, HandsError, ScreenCapture
 
 log = logging.getLogger("milo.app_bridge")
 
@@ -131,6 +131,8 @@ class AppHands:
                 raise
             raise HandsError("stopped") from None
         if not ok:
+            if isinstance(result, dict) and isinstance(result.get("borrow"), str):
+                raise BorrowNeeded(result["borrow"], error)
             raise HandsError(error or f"{tool} failed")
         return result
 

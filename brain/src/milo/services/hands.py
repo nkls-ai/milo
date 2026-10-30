@@ -6,10 +6,10 @@ import logging
 import re
 from dataclasses import dataclass
 
-from milo.core.events import FlyTo, HandsSession, Status
+from milo.core.events import FlyTo, HandsBorrow, HandsSession, Status
 from milo.core.hands import validate
 from milo.core.ports import AppHands, Confirmer, EventSink
-from milo.core.types import HandsError, Step, StepStatus
+from milo.core.types import BorrowNeeded, HandsError, Step, StepStatus
 
 from .risk import Risk, classify, normalize_combo
 from .screen import NOTE, screen_data
@@ -22,6 +22,8 @@ STOPPED = ("The user stopped you: they took over the mouse or keyboard. Don't us
            "this task. Tell the user in one sentence how far you got.")
 TURNED_OFF = "AppleScript is turned off in Milo's settings ([hands] applescript)."
 STOPPED_SAY = "Okay, I stopped. It's all yours."
+KEEP_IT = ("The user wants to keep their {what} right now, and this app only takes that action with the real "
+           "{what}. Do this part another way (run_applescript, ax_press, ax_set_value) or tell the user what is left.")
 
 _TELL = re.compile(r'tell application "([^"]+)"', re.IGNORECASE)
 
@@ -114,12 +116,30 @@ class HandsService:
             if spec.acts:
                 self._start_session(target)
             try:
-                result = await self._act(tool, args)
+                try:
+                    result = await self._act(tool, args)
+                except BorrowNeeded as need:
+                    result = await self._borrow(tool, args, target, need)
             except HandsError:
                 self._step(task_id, step, StepStatus.FAILED)
                 raise
             self._step(task_id, step, StepStatus.DONE)
             return output(tool, result)
+
+    async def _borrow(self, tool: str, args: dict, target: dict, need: BorrowNeeded) -> dict:
+        """The app can't do this in the background. Ask to borrow the mouse or keyboard, then try again with it.
+
+        The app hands them back by itself a little after its last action that needed them, so the next such
+        action asks again."""
+        log.info("computer use needs the %s for %s", need.what, tool)
+        if not await self._confirm.confirm(borrow_question(tool, target, need.what)):
+            raise HandsError(KEEP_IT.format(what=need.what))
+        self._check()
+        self._sink.emit(HandsBorrow(True))
+        try:
+            return await self._act(tool, args)
+        except BorrowNeeded:
+            raise HandsError("This didn't work even with the real mouse and keyboard. Try another way.") from None
 
     async def _act(self, tool: str, args: dict) -> dict:
         try:
@@ -209,6 +229,14 @@ def confirm_question(tool: str, args: dict, target: dict, reason: str) -> str:
             shown = ". The whole script is in my window. "
         return f"I'm about to run a script{where}{can}{shown}Go ahead?"
     return f"I'm about to {reason}{in_app}. Go ahead?"
+
+
+def borrow_question(tool: str, target: dict, what: str) -> str:
+    """"Can I borrow your mouse for a moment, to click in Microsoft Excel?"."""
+    app = str(target.get("app") or "")
+    in_app = f" in {app}" if app else ""
+    verb = {"click": "click", "type": "type", "key": "press a key", "scroll": "scroll"}.get(tool, "do this")
+    return f"Can I borrow your {what} for a moment, to {verb}{in_app}?"
 
 
 def output(tool: str, result: dict) -> ToolOutput:

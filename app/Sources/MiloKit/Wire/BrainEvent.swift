@@ -47,6 +47,9 @@ public enum BrainEvent: Equatable, Sendable {
     case confirmDone(id: String, answer: String)
     /// Work only the app may do (EventKit). Answered with `BrainCommand.appResponse` and the same id.
     case appRequest(id: String, op: String, args: JSONValue)
+    /// The user lent Milo the real mouse and keyboard for actions that can't be done in the background.
+    /// The app hands them back on its own a while after the last such action, or when the session ends.
+    case handsBorrow(Bool)
     case unknown(String)
 }
 
@@ -103,6 +106,7 @@ extension BrainEvent: Decodable {
         case "app_request":
             self = .appRequest(id: try c.decode(String.self, forKey: .id), op: try c.decode(String.self, forKey: .op),
                                args: try c.decodeIfPresent(JSONValue.self, forKey: .args) ?? .object([:]))
+        case "hands_borrow": self = .handsBorrow(try c.decode(Bool.self, forKey: .on))
         default: self = .unknown(type)
         }
     }

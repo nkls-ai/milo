@@ -2,27 +2,26 @@ import Foundation
 
 /// How an action reaches an app. See docs/adr/0011-background-delivery.md for what works where.
 ///
-/// Milo works in the background first: Accessibility actions, then events posted to the app's own process.
-/// Neither moves the user's pointer or takes their keyboard. Only when neither can do it does he use the real
-/// mouse or keyboard, and only after the user agreed to lend them (`borrowed`).
+/// Milo works in the background first, through Accessibility actions: pressing a button, focusing a field,
+/// putting the caret, inserting text, setting a scroll bar. None of them moves the user's pointer or takes
+/// their keyboard. When none of them can do it, he uses the real mouse or keyboard, and only after the user
+/// agreed to lend them (`borrowed`).
 public enum Delivery {
     /// The kinds of app that behave differently.
     public enum Family: String, Sendable {
         /// AppKit and SwiftUI apps: TextEdit, Mail, Numbers, Finder.
         case cocoa
         /// Chrome, Brave, Edge and Electron apps. Their web content reads through Accessibility only once asked
-        /// to (AXManualAccessibility), ignores setting the selected text, and coerces a posted right-click to a
-        /// left one.
+        /// to, and they answer yes to setting the selected text without doing it.
         case chromium
-        /// Excel, Word, PowerPoint, Outlook: their documents ignore events posted to the process.
+        /// Excel, Word, PowerPoint, Outlook: their ribbons press through Accessibility, their documents don't.
         case office
     }
 
     public enum Action: Equatable, Sendable {
         case click(right: Bool, count: Int)
         case type
-        /// `chord`: with cmd, ctrl or option, which needs the app's window to be key.
-        case key(chord: Bool)
+        case key
         case scroll
     }
 
@@ -36,12 +35,16 @@ public enum Delivery {
         public var menu = false
         /// A scroll bar Milo can set lies under the point.
         public var scrollBar = false
+        /// Its selected text can be set, so typing can insert there.
+        public var insertable = false
 
-        public init(pressable: Bool = false, textual: Bool = false, menu: Bool = false, scrollBar: Bool = false) {
+        public init(pressable: Bool = false, textual: Bool = false, menu: Bool = false, scrollBar: Bool = false,
+                    insertable: Bool = false) {
             self.pressable = pressable
             self.textual = textual
             self.menu = menu
             self.scrollBar = scrollBar
+            self.insertable = insertable
         }
     }
 
@@ -54,12 +57,7 @@ public enum Delivery {
         /// Insert the text at the caret through AXSelectedText, read back to check.
         case axInsert
         case axScrollBar
-        /// Mouse events posted to the app's process, stamped with its window, after making that window key.
-        case processClick
-        /// Key events posted to the app's process.
-        case processKeys
-        case processScroll
-        /// The user's own pointer or keyboard, borrowed.
+        /// The user's own pointer or keyboard, lent.
         case real
     }
 
@@ -70,34 +68,23 @@ public enum Delivery {
 
     /// The steps to try for `action`, in order. The last one is `.real` only when the user lent the mouse or
     /// keyboard; without it the plan may come back empty, which means asking first (`need(for:)`).
-    /// `skyLight`: the window can be made key without raising it, which posted key chords and clicks into
-    /// Chromium need.
-    public static func plan(_ action: Action, traits: Traits, family: Family, skyLight: Bool,
-                            borrowed: Bool) -> [Step] {
+    public static func plan(_ action: Action, traits: Traits, family: Family, borrowed: Bool) -> [Step] {
         var steps: [Step] = []
-        let posts = family != .office
         switch action {
         case let .click(right, count):
             if right {
-                if traits.menu { steps.append(.axShowMenu) }
-                // Chromium turns a posted right-click into a left one.
-                if posts && family != .chromium && count == 1 { steps.append(.processClick) }
+                if traits.menu && count == 1 { steps.append(.axShowMenu) }
             } else if count == 1 {
                 if traits.pressable { steps.append(.axPress) }
                 if traits.textual { steps.append(.axFocus) }
-                if posts && (family != .chromium || skyLight) { steps.append(.processClick) }
-            } else if posts && (family != .chromium || skyLight) {
-                steps.append(.processClick)
             }
         case .type:
-            // Chromium says yes to AXSelectedText and does nothing, so it goes straight to keys.
-            if family != .chromium { steps.append(.axInsert) }
-            if posts { steps.append(.processKeys) }
-        case let .key(chord):
-            if posts && (!chord || skyLight) { steps.append(.processKeys) }
+            // Chromium says yes to AXSelectedText and does nothing; the read-back would catch it, but slowly.
+            if traits.insertable && family != .chromium { steps.append(.axInsert) }
+        case .key:
+            break
         case .scroll:
             if traits.scrollBar { steps.append(.axScrollBar) }
-            if posts { steps.append(.processScroll) }
         }
         if borrowed { steps.append(.real) }
         return steps
@@ -108,17 +95,6 @@ public enum Delivery {
         switch action {
         case .click, .scroll: .mouse
         case .type, .key: .keyboard
-        }
-    }
-
-    /// Whether a failed step may hand over to the next one. A posted click or key can land without anything
-    /// Milo can read changing, so after it nothing else is tried: a second try could click or type twice.
-    public static func mayFallThrough(after step: Step, verified: Bool?) -> Bool {
-        switch step {
-        case .axPress, .axFocus, .axShowMenu, .axInsert, .axScrollBar: true
-        // Keys whose effect could be read and didn't show may go on to the borrowed keyboard.
-        case .processKeys: verified == false
-        case .processClick, .processScroll, .real: false
         }
     }
 

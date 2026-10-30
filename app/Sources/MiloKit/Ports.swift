@@ -82,15 +82,56 @@ public protocol HandsExecutor: AnyObject {
                  completion: @escaping (Result<[String: JSONValue], HandsFailure>) -> Void)
     /// Stop what is still running, e.g. an AppleScript.
     func cancel()
+    /// The user lent the real mouse and keyboard. Without it, an action that can't be done in the background
+    /// fails with `HandsFailure.borrow` and touches nothing.
+    var borrowed: Bool { get set }
 }
 
 public struct HandsFailure: Error, Equatable, Sendable {
     /// Plain words for the worker agent, e.g. "There is no element e9. Call ax_tree again."
     public let message: String
+    /// "mouse" or "keyboard" when the action needs the real one, which the user must lend first.
+    public let borrow: String?
 
-    public init(_ message: String) {
+    public init(_ message: String, borrow: String? = nil) {
         self.message = message
+        self.borrow = borrow
     }
+}
+
+/// Milo's own pointer, drawn over everything. It never moves the user's. Points are AppKit global coordinates.
+public protocol CursorDisplay: AnyObject {
+    /// Glide to where Milo is about to act. `arrived` runs once it is there, on the main queue.
+    func glide(to point: CGPoint, arrived: @escaping () -> Void)
+    /// A click landed here: a small ripple.
+    func click(at point: CGPoint)
+    /// Milo types here: a caret and a hint.
+    func typing(at point: CGPoint)
+    /// The work is over: fade out.
+    func rest()
+}
+
+/// Follows a window of another app while Milo works in it. Frames are global points, origin top-left.
+public protocol WindowWatcher: AnyObject {
+    /// Watch the window of `pid` with this frame; `changed` gets its new frame on every move or resize, and nil
+    /// once it closes. Replaces the window watched before.
+    func watch(pid: Int32, frame: CGRect, changed: @escaping (CGRect?) -> Void)
+    func stop()
+}
+
+/// For a screen without Milo's cursor (tests, or before the overlay exists).
+public final class NoCursor: CursorDisplay {
+    public init() {}
+    public func glide(to point: CGPoint, arrived: @escaping () -> Void) { arrived() }
+    public func click(at point: CGPoint) {}
+    public func typing(at point: CGPoint) {}
+    public func rest() {}
+}
+
+public final class NoWindowWatcher: WindowWatcher {
+    public init() {}
+    public func watch(pid: Int32, frame: CGRect, changed: @escaping (CGRect?) -> Void) {}
+    public func stop() {}
 }
 
 /// Mouse and keyboard input from every app while the worker acts. Callbacks on the main queue.
