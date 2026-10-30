@@ -10,7 +10,8 @@ import numpy as np
 
 from milo.core.events import Event
 from milo.core.ports import LevelCallback
-from milo.core.types import Audio, Emotion, HarnessError, Nudge, Reminder, Reply, Signals, Step, Usage
+from milo.core.types import (Audio, Emotion, HandsError, HarnessError, Nudge, Reminder, Reply, ScreenCapture, Signals,
+                             Step, Usage)
 
 
 class FakeClock:
@@ -170,6 +171,8 @@ class FakeLiveModel:
         self.gate = gate
         self.system_prompts: list[str] = []
         self.turns: list[str] = []
+        self.images: list[list] = []
+        """The images sent with each turn."""
         self.interrupts = 0
         self.closed = False
         self.last_usage = Usage()
@@ -178,10 +181,11 @@ class FakeLiveModel:
     async def start(self, system_prompt: str) -> None:
         self.system_prompts.append(system_prompt)
 
-    async def turn(self, text: str):
+    async def turn(self, text: str, images=()):
         if not self.system_prompts:
             self.system_prompts.append("")
         self.turns.append(text)
+        self.images.append(list(images))
         self._interrupted.clear()
         item = self.script.popleft() if self.script else ["[neutral] ok."]
         if isinstance(item, HarnessError):
@@ -303,3 +307,64 @@ class MemoryTranscript:
 
     def tail(self, n: int) -> list[dict]:
         return self.entries[-n:] if n > 0 else []
+
+
+class FakeEyes:
+    """ScreenEyes that returns queued captures, then an empty one with an error."""
+
+    def __init__(self, *captures: ScreenCapture):
+        self.captures = deque(captures)
+        self.modes: list[str] = []
+
+    async def look(self, mode: str = "window") -> ScreenCapture:
+        self.modes.append(mode)
+        await asyncio.sleep(0)
+        return self.captures.popleft() if self.captures else ScreenCapture(error="nothing to see")
+
+
+class FakeHands:
+    """AppHands. `targets[tool]` answers describe; `results[tool]` is a dict or a HandsError to raise.
+
+    `gate` (an asyncio.Event) holds every non-describe action until set or cancel()."""
+
+    def __init__(self, targets: dict | None = None, results: dict | None = None, gate: asyncio.Event | None = None):
+        self.targets = targets or {}
+        self.results = results or {}
+        self.gate = gate
+        self.calls: list[tuple[str, dict]] = []
+        self.cancels = 0
+        self._cancelled = asyncio.Event()
+
+    async def act(self, tool: str, args: dict) -> dict:
+        self.calls.append((tool, args))
+        if tool == "describe":
+            return dict(self.targets.get(args["tool"], {}))
+        if self.gate is not None:
+            await asyncio.wait([asyncio.ensure_future(self.gate.wait()),
+                                asyncio.ensure_future(self._cancelled.wait())], return_when=asyncio.FIRST_COMPLETED)
+            if self._cancelled.is_set():
+                raise HandsError("stopped")
+        result = self.results.get(tool, {"text": f"{tool} done"})
+        if isinstance(result, HandsError):
+            raise result
+        return result
+
+    def cancel(self) -> None:
+        self.cancels += 1
+        self._cancelled.set()
+
+    @property
+    def actions(self) -> list[str]:
+        return [tool for tool, _ in self.calls if tool != "describe"]
+
+
+class FakeConfirm:
+    """ConfirmGate that answers from a script (default no) and keeps the questions."""
+
+    def __init__(self, *answers: bool):
+        self.answers = deque(answers)
+        self.asked: list[str] = []
+
+    async def confirm(self, summary: str) -> bool:
+        self.asked.append(summary)
+        return self.answers.popleft() if self.answers else False

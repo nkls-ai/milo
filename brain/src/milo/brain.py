@@ -3,23 +3,37 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from .config import UiSettings
-from .core.events import (Command, ContextUpdate, EmotionChanged, Event, GetHistory, ListenCancel, ListenConfirm,
-                          ListenStart, ListenStop, Mute, StateChanged, TextInput, UiConfig)
+from .core.events import (Command, ConfirmResult, ContextUpdate, EmotionChanged, Event, GetHistory, HandsResult,
+                          HandsStop, ListenCancel, ListenConfirm, ListenStart, ListenStop, LookResult, Mute,
+                          StateChanged, TextInput, UiConfig, WhatsThis)
+from .services.app_bridge import AppBridge
 from .services.context import UserContext
+from .services.hands import HandsService
 from .services.heartbeat_runner import HeartbeatRunner
 from .services.listening import Listening
 from .services.live_talk import LiveTalk
+from .services.screen import checked, inside
 from .services.transcript import Transcript
 from .services.ui_state import UiState
 
 log = logging.getLogger("milo.brain")
 
+WHATS_THIS = "What's this?"
+
 
 class Brain:
+    """`bridge` resolves the app's answers to looks, Mac actions and questions. `screens` is state/screens:
+    an image path from the app counts only if it points in there."""
+
     def __init__(self, ui: UiState, listening: Listening, live_talk: LiveTalk, context: UserContext,
-                 heartbeat: HeartbeatRunner | None, ui_settings: UiSettings, transcript: Transcript | None = None):
+                 heartbeat: HeartbeatRunner | None, ui_settings: UiSettings, transcript: Transcript | None = None,
+                 *, bridge: AppBridge | None = None, hands: HandsService | None = None, screens: Path | None = None):
+        self._bridge = bridge
+        self._hands = hands
+        self._screens = screens
         self._ui = ui
         self._transcript = transcript
         self._listening = listening
@@ -31,7 +45,8 @@ class Brain:
     def greeting(self) -> list[Event]:
         """What a newly connected app needs to draw Milo as he is right now."""
         return [StateChanged(self._ui.state), EmotionChanged(self._ui.emotion),
-                UiConfig(self._ui_settings.dictate_key, self._ui_settings.talk_key),
+                UiConfig(self._ui_settings.dictate_key, self._ui_settings.talk_key,
+                         whats_this_key=self._ui_settings.whats_this_key),
                 *self._history()]
 
     def _history(self) -> list[Event]:
@@ -54,9 +69,26 @@ class Brain:
                     self._ui.emit(event)
             case ContextUpdate(app, idle_s):
                 self._context.update(app, idle_s)
+            case LookResult(id, capture):
+                self._answer(id, checked(capture, self._screens))
+            case WhatsThis(capture):
+                self._live_talk.start(WHATS_THIS, via="typed", capture=checked(capture, self._screens))
+            case HandsResult(id, ok, result, error):
+                if "image" in result:
+                    result = {**result, "image": inside(str(result["image"]), self._screens)}
+                self._answer(id, (ok, result, error))
+            case HandsStop(reason):
+                if self._hands is not None:
+                    self._hands.stop(reason)
+            case ConfirmResult(id, yes):
+                self._answer(id, yes)
             case Mute(on):
                 log.info("proactive nudges %s", "muted" if on else "on")
                 if self._heartbeat is not None:
                     self._heartbeat.muted = on
             case _:
                 log.warning("no handler for %s", command.type)
+
+    def _answer(self, id: str, value: object) -> None:
+        if self._bridge is not None:
+            self._bridge.answer(id, value)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import StrEnum
 
@@ -201,3 +201,38 @@ class TranscriptEntry:
             status=StepStatus(d.get("status", "done")), result=str(d.get("result", "")),
             steps=[Step.from_dict(s) for s in d.get("steps", [])],
         )
+
+
+@dataclass(frozen=True)
+class ScreenCapture:
+    """What the app saw in the frontmost window: its text through Accessibility, and a screenshot.
+
+    Everything in here comes from the screen and is untrusted. `image` is the path of a PNG under
+    state/screens, "" without one. `error` says in plain words what couldn't be read, e.g. a missing
+    permission; the other fields hold whatever was read anyway.
+    """
+
+    app: str = ""
+    window: str = ""
+    focused: str = ""
+    selection: str = ""
+    text: str = ""
+    image: str = ""
+    error: str = ""
+
+    @property
+    def empty(self) -> bool:
+        return not (self.app or self.window or self.focused or self.selection or self.text or self.image)
+
+    def to_dict(self) -> dict:
+        return {k: v for k, v in asdict(self).items() if v}
+
+    @staticmethod
+    def from_dict(d: object) -> ScreenCapture:
+        if not isinstance(d, dict):
+            raise ValueError("capture must be an object")
+        return ScreenCapture(**{f: str(d.get(f) or "") for f in ScreenCapture.__dataclass_fields__})
+
+
+class HandsError(Exception):
+    """A computer-use action could not run. The message is told to the worker agent as the tool's error."""

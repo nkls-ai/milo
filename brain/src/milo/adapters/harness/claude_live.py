@@ -3,7 +3,8 @@
 The process keeps the conversation in memory, so a turn sends only the new user message and the
 reply streams back token by token. Protocol (measured against claude 2.x):
 
-- in:  `{"type":"user","message":{"role":"user","content":...}}` per turn, and
+- in:  `{"type":"user","message":{"role":"user","content":...}}` per turn (a string, or text and base64
+       image blocks when a screenshot goes along; checked against claude 2.1), and
        `{"type":"control_request","request_id":...,"request":{"subtype":"interrupt"}}` to stop a reply.
 - out: `stream_event` lines carrying `content_block_delta`/`text_delta`, then one `result` per turn
        (`error_during_execution` after an interrupt). The process survives an interrupt.
@@ -16,11 +17,12 @@ other's lines.
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import itertools
 import json
 import logging
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -147,7 +149,7 @@ class ClaudeLiveModel:
         self._system_prompt = system_prompt
         self._session = await self._spawn()
 
-    async def turn(self, text: str) -> AsyncIterator[str]:
+    async def turn(self, text: str, images: Sequence[Path] = ()) -> AsyncIterator[str]:
         async with self._lock:
             session = await self._ready_session()
             turn = self._turn = _Turn(session)
@@ -156,7 +158,7 @@ class ClaudeLiveModel:
             self.last_usage = Usage()
             got_result = False
             try:
-                await session.send({"type": "user", "message": {"role": "user", "content": text}})
+                await session.send({"type": "user", "message": {"role": "user", "content": content(text, images)}})
                 while True:
                     event = await session.events.get()
                     if event is _EOF:
@@ -240,6 +242,19 @@ class ClaudeLiveModel:
     def _interrupt_request(self) -> dict:
         return {"type": "control_request", "request_id": f"milo-interrupt-{next(self._ids)}",
                 "request": {"subtype": "interrupt"}}
+
+
+def content(text: str, images: Sequence[Path] = ()) -> str | list[dict]:
+    """A user message's content: the plain text, or a text block followed by one block per readable PNG."""
+    blocks: list[dict] = []
+    for path in images:
+        try:
+            data = base64.b64encode(Path(path).read_bytes()).decode()
+        except OSError as e:
+            log.warning("claude_live: leaving out an image: %s", e)
+            continue
+        blocks.append({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": data}})
+    return [{"type": "text", "text": text}, *blocks] if blocks else text
 
 
 def _text_delta(event: dict) -> str:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import re
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -16,7 +17,8 @@ log = logging.getLogger("milo.config")
 
 KEY_NAMES = ("fn", "right_option", "right_command", "right_control")
 PLUGGABLE = ("chat", "harness", "stt", "tts", "audio", "dictation")
-SECTIONS = (*PLUGGABLE, "ui", "heartbeat")
+SECTIONS = (*PLUGGABLE, "ui", "heartbeat", "hands")
+_COMBO = re.compile(r"^((ctrl|control|option|alt|shift|cmd|command)\+)+[a-z0-9]+$|^f([1-9]|1[0-9])$")
 
 # `use` when a section leaves it out. Lets configs written before [chat] existed keep working.
 DEFAULT_USE = {"chat": "claude_live"}
@@ -50,14 +52,27 @@ class DictationSettings:
 class UiSettings:
     dictate_key: str = "fn"
     talk_key: str = "right_option"
+    whats_this_key: str = "ctrl+option+m"
+    """A shortcut with at least one modifier (or an F key), held by nobody else. "" turns it off."""
 
     def __post_init__(self):
+        if self.whats_this_key and not _COMBO.match(str(self.whats_this_key).lower().replace(" ", "")):
+            raise ConfigError('[ui] whats_this_key must look like "ctrl+option+m" (modifiers joined with +) or be ""')
         for name in ("dictate_key", "talk_key"):
             if getattr(self, name) not in KEY_NAMES:
                 raise ConfigError(f"[ui] {name} must be one of {', '.join(KEY_NAMES)}")
         if self.dictate_key == self.talk_key:
             # The app ignores a ui_config that puts both modes on one key, so fail here instead.
             raise ConfigError(f"[ui] dictate_key and talk_key can't be the same key ({self.talk_key!r})")
+
+
+@dataclass(frozen=True)
+class HandsSettings:
+    enabled: bool = True
+    """Give the worker agent the milo-mac tools: read windows, press buttons, type, click."""
+    applescript: bool = True
+    confirm_timeout_s: float = 60.0
+    """How long a yes-or-no question waits. No answer counts as no."""
 
 
 @dataclass(frozen=True)
@@ -99,6 +114,7 @@ class Config:
         self.ui = _typed(options_from(UiSettings, raw.get("ui", {}), "ui"), "ui")
         heartbeat = {k: v for k, v in raw.get("heartbeat", {}).items() if k == "enabled"}
         self.heartbeat = _typed(HeartbeatSettings(**heartbeat), "heartbeat")
+        self.hands = _typed(options_from(HandsSettings, raw.get("hands", {}), "hands"), "hands")
 
     @classmethod
     def load(cls, path: Path) -> Config:

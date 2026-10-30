@@ -9,6 +9,7 @@ from milo.core.types import Emotion, HarnessError
 
 from .context import UserContext
 from .conversation import Conversation
+from .hands import HandsService
 from .quiet import POLL_S, wait_while
 from .speaker import Speaker
 from .transcript import Transcript, unrecorded
@@ -25,13 +26,15 @@ class TaskRunner:
     Tasks run in the background one at a time, on the harness session in `conversation`, so the agent
     keeps context across them and works in its sandbox. When one finishes Milo says the result. If the
     user is mid-turn (`quiet()`), the result waits for the turn to end, and is shown silently if that
-    takes longer than `wait_s`. Each task and the steps the agent takes show in `transcript`.
+    takes longer than `wait_s`. Each task and the steps the agent takes show in `transcript`. The Mac
+    tools in `hands` work only while a task runs.
     """
 
     def __init__(self, conversation: Conversation, speaker: Speaker, context: UserContext,
                  quiet: Callable[[], bool] = lambda: False, *, wait_s: float = WAIT_FOR_QUIET_S,
-                 poll_s: float = POLL_S, transcript: Transcript | None = None):
+                 poll_s: float = POLL_S, transcript: Transcript | None = None, hands: HandsService | None = None):
         self._conversation = conversation
+        self._hands = hands
         self._transcript = transcript or unrecorded()
         self._speaker = speaker
         self._context = context
@@ -65,8 +68,7 @@ class TaskRunner:
         log.info("task started: %s", description)
         task_id = self._transcript.task_started(description)
         try:
-            reply = await self._conversation.chat(description, self._context.app, source="task",
-                                                  on_step=lambda step: self._transcript.task_step(task_id, step))
+            reply = await self._chat(description, task_id)
         except HarnessError as e:
             log.error("task failed: %s", e)
             self._transcript.task_finished(task_id, False, TASK_FAILED)
@@ -83,6 +85,16 @@ class TaskRunner:
             self.on_result(description, reply.say)
         if reply.say.strip():
             await self._report(reply.say, reply.emotion)
+
+    async def _chat(self, description: str, task_id: str):
+        if self._hands is not None:
+            self._hands.begin(task_id)
+        try:
+            return await self._conversation.chat(description, self._context.app, source="task",
+                                                 on_step=lambda step: self._transcript.task_step(task_id, step))
+        finally:
+            if self._hands is not None:
+                self._hands.end(task_id)
 
     async def _report(self, text: str, emotion: Emotion, *, speak: bool = True) -> None:
         free = await wait_while(self._quiet, self._wait_s, self._poll_s)

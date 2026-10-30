@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from milo.core.hands import SERVER_NAME
 from milo.core.ports import StepCallback
 from milo.core.types import Step, StepStatus
 
@@ -239,6 +240,8 @@ def codex_step(item: dict, completed: bool, workdir: Path) -> Step | None:
             what = ("edit", f"Changing {len(changes)} files")
         return _step(sid, *what, detail, status)
     if kind == "mcp_tool_call":
+        if item.get("server") == SERVER_NAME:
+            return None  # the brain logs Mac actions itself, with what they touched
         tool = str(item.get("tool", ""))
         detail = f"{item.get('server', '')}.{tool} {json.dumps(item.get('arguments'), ensure_ascii=False)}"
         if item.get("error"):
@@ -306,7 +309,7 @@ class ClaudeActivity:
 
 def claude_step(id: str, name: str, args: dict, workdir: Path) -> Step | None:
     """A Claude Code tool_use block as a running step, or None for bookkeeping tools like TodoWrite."""
-    if name in _SKIPPED_CLAUDE_TOOLS or not isinstance(args, dict):
+    if name in _SKIPPED_CLAUDE_TOOLS or not isinstance(args, dict) or name.startswith(f"mcp__{SERVER_NAME}__"):
         return None
     path = str(args.get("file_path") or args.get("notebook_path") or "")
     if name == "Bash":

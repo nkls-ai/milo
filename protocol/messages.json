@@ -14,7 +14,7 @@
     {"type": "dictation", "text": "Sounds good, ship it."},
     {"type": "status", "text": "Mic unavailable: no input device"},
     {"type": "partial", "text": "Sounds good, sh"},
-    {"type": "ui_config", "dictate_key": "fn", "talk_key": "right_option", "hands_free_max_s": 300.0},
+    {"type": "ui_config", "dictate_key": "fn", "talk_key": "right_option", "hands_free_max_s": 300.0, "whats_this_key": "ctrl+option+m"},
     {"type": "history", "entries": [
       {"id": "5f2a9c1e04b7", "ts": "2026-10-30T09:12:03", "kind": "user", "text": "rename the photos from Friday", "via": "voice"},
       {"id": "8d41e0a7c2f3", "ts": "2026-10-30T09:12:05", "kind": "milo", "text": "On it, I'll sort them by date.", "emotion": "happy", "done": true},
@@ -24,7 +24,15 @@
     ]},
     {"type": "entry", "entry": {"id": "e9a0f61b7d58", "ts": "2026-10-30T09:14:00", "kind": "milo", "text": "", "emotion": "neutral", "done": false}},
     {"type": "reply_delta", "id": "e9a0f61b7d58", "text": "Sure, "},
-    {"type": "activity", "task_id": "c07b3e9d1a26", "step": {"id": "item_2", "kind": "edit", "title": "Editing notes.md", "detail": "update /Users/you/Milo/notes.md", "status": "failed"}}
+    {"type": "activity", "task_id": "c07b3e9d1a26", "step": {"id": "item_2", "kind": "edit", "title": "Editing notes.md", "detail": "update /Users/you/Milo/notes.md", "status": "failed"}},
+    {"type": "look_request", "id": "look-1", "mode": "window"},
+    {"type": "looking", "on": true},
+    {"type": "hands_request", "id": "hands-2", "tool": "click", "args": {"x": 640, "y": 412}},
+    {"type": "hands_session", "on": true},
+    {"type": "fly_to", "point": {"x": 812.0, "y": 430.5}},
+    {"type": "fly_to", "point": null},
+    {"type": "confirm_request", "id": "confirm-3", "text": "I'm about to click “Send” in Mail. Go ahead?"},
+    {"type": "confirm_end", "id": "confirm-3"}
   ],
   "app_to_brain": [
     {"type": "listen_start", "mode": "dictate"},
@@ -37,6 +45,13 @@
     {"type": "text", "text": "what's on today", "speak": false},
     {"type": "get_history"},
     {"type": "context", "app": "Xcode", "idle_s": 3.5},
-    {"type": "mute", "on": true}
+    {"type": "mute", "on": true},
+    {"type": "look_result", "id": "look-1", "capture": {"app": "Microsoft Excel", "window": "Budget.xlsx", "focused": "cell C4: =SUM(C1:C3)", "text": "Rent 900\nFood 320", "image": "/Users/you/Milo/state/screens/look-20261030-091400.png"}},
+    {"type": "look_result", "id": "look-4", "capture": {"app": "Safari", "error": "I can't take screenshots yet. Turn on Screen Recording for Milo in System Settings › Privacy & Security."}},
+    {"type": "whats_this", "capture": {"app": "Mail", "selection": "Your parcel is waiting. Pay 1.99 EUR customs here."}},
+    {"type": "hands_result", "id": "hands-2", "ok": true, "result": {"text": "Clicked."}},
+    {"type": "hands_result", "id": "hands-5", "ok": false, "result": {}, "error": "There is no element e99. Call ax_tree again."},
+    {"type": "hands_stop", "reason": "escape"},
+    {"type": "confirm_result", "id": "confirm-3", "yes": false}
   ]
 }

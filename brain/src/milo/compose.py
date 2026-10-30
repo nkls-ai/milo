@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,10 +14,12 @@ from .core.clock import SystemClock
 from .core.ports import Harness, LiveModel, Transcriber, Voice
 from .core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, HARNESSES, LIVE_MODELS, TEXT_CLEANERS, TRANSCRIBERS,
                             VOICES, AdapterContext, ConfigError, Registry)
+from .services.app_bridge import AppBridge, AppEyes, AppHands, BubbleConfirm
 from .services.context import UserContext
 from .services.conversation import Conversation
 from .services.dictation import DictationService
 from .services.fallback_voice import FallbackVoice
+from .services.hands import HandsService
 from .services.heartbeat_runner import HeartbeatRunner
 from .services.listening import Listening
 from .services.live_talk import LiveTalk
@@ -24,6 +27,7 @@ from .services.speaker import Speaker
 from .services.task_runner import TaskRunner
 from .services.transcript import Transcript
 from .services.ui_state import UiState
+from .transport.hands_socket import HandsSocketServer
 from .transport.unix_socket import UnixSocketServer
 
 log = logging.getLogger("milo.compose")
@@ -43,6 +47,7 @@ class Runtime:
     harness: Harness
     live_model: LiveModel
     live_talk: LiveTalk
+    hands_server: HandsSocketServer | None = None
 
 
 def build(home: Path) -> Runtime:
@@ -60,7 +65,10 @@ def build(home: Path) -> Runtime:
     config = Config.load(workspace.config_path)
     adapters.load_builtin()
     clock = SystemClock()
-    ctx = AdapterContext(home, workspace.state_dir, clock)
+    hands_socket = workspace.hands_socket_path
+    # The worker CLI starts the MCP server with the brain's own interpreter, so it needs no install step.
+    mac_tools = (sys.executable, "-m", "milo.mcp_server", "--socket", str(hands_socket)) if config.hands.enabled else ()
+    ctx = AdapterContext(home, workspace.state_dir, clock, mac_tools)
 
     def create(registry: Registry, section: str):
         name, options = config.pluggable(section)
@@ -88,10 +96,17 @@ def build(home: Path) -> Runtime:
     conversation = Conversation(harness, ledger, clock, idle_reset_s)
     speaker = Speaker(voice, output, ui, tts_executor)
     transcript = Transcript(ui, JsonlTranscript(workspace.transcript_path), clock)
+    bridge = AppBridge(ui, connected=server.connected)
+    hands = hands_server = None
+    if config.hands.enabled:
+        confirm = BubbleConfirm(bridge, ui, timeout_s=config.hands.confirm_timeout_s)
+        hands = HandsService(AppHands(bridge), confirm, ui, transcript=transcript,
+                             applescript=config.hands.applescript)
+        hands_server = HandsSocketServer(hands_socket, hands.call)
     tasks = TaskRunner(conversation, speaker, context, quiet=lambda: live_talk.busy or mic.active,
-                       transcript=transcript)
+                       transcript=transcript, hands=hands)
     live_talk = LiveTalk(live_model, speaker, ui, context, clock, profile, reminders, ledger,
-                         _persona(workspace.persona_path), idle_reset_s, tasks, transcript)
+                         _persona(workspace.persona_path), idle_reset_s, tasks, transcript, eyes=AppEyes(bridge))
     tasks.on_result = live_talk.note
     listening = Listening(mic, transcriber, stt_executor, ui, DictationService(cleaner, history, ui),
                           live_talk, context)
@@ -104,9 +119,10 @@ def build(home: Path) -> Runtime:
         heartbeat = HeartbeatRunner(engine, context, conversation, speaker, ui, mic, clock,
                                     busy=lambda: live_talk.busy)
 
-    brain = Brain(ui, listening, live_talk, context, heartbeat, config.ui, transcript)
+    brain = Brain(ui, listening, live_talk, context, heartbeat, config.ui, transcript, bridge=bridge, hands=hands,
+                  screens=workspace.screens_dir)
     return Runtime(brain, server, heartbeat, transcriber, voice, stt_executor, tts_executor, harness,
-                   live_model, live_talk)
+                   live_model, live_talk, hands_server)
 
 
 def _persona(path: Path):

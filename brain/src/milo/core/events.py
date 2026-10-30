@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any, ClassVar
 
-from .types import Emotion, ListenMode, MiloState
+from .types import Emotion, ListenMode, MiloState, ScreenCapture
 
 
 class ProtocolError(ValueError):
@@ -92,13 +92,15 @@ class Partial(Event):
 class UiConfig(Event):
     """Sent once per connection. Key names: "fn", "right_option", "right_command", "right_control".
 
-    hands_free_max_s caps a recording locked on by a double tap.
+    hands_free_max_s caps a recording locked on by a double tap. whats_this_key is a combo such as
+    "ctrl+option+m" for the "What's this?" shortcut; "" turns it off.
     """
 
     type: ClassVar[str] = "ui_config"
     dictate_key: str
     talk_key: str
     hands_free_max_s: float = 300.0
+    whats_this_key: str = ""
 
 
 @dataclass(frozen=True)
@@ -133,6 +135,70 @@ class Activity(Event):
     type: ClassVar[str] = "activity"
     task_id: str
     step: dict
+
+
+@dataclass(frozen=True)
+class LookRequest(Event):
+    """Capture the frontmost window and answer with look_result. mode "window": its text and a screenshot;
+    "selection": the selected text, or the window if nothing is selected."""
+
+    type: ClassVar[str] = "look_request"
+    id: str
+    mode: str = "window"
+
+
+@dataclass(frozen=True)
+class Looking(Event):
+    """Milo is looking at the screen (an eye shows on him) until `on` is false."""
+
+    type: ClassVar[str] = "looking"
+    on: bool
+
+
+@dataclass(frozen=True)
+class HandsRequest(Event):
+    """Run one computer-use action in the app (it holds the permissions) and answer with hands_result.
+
+    `tool` is a milo-mac tool name, or "describe", which only reports what an action would touch.
+    """
+
+    type: ClassVar[str] = "hands_request"
+    id: str
+    tool: str
+    args: dict
+
+
+@dataclass(frozen=True)
+class HandsSession(Event):
+    """The worker is acting on screen: show the "Milo is working" frame and stop on real user input."""
+
+    type: ClassVar[str] = "hands_session"
+    on: bool
+
+
+@dataclass(frozen=True)
+class FlyTo(Event):
+    """Where Milo is about to act, in global screen points with the origin top-left. None: back home."""
+
+    type: ClassVar[str] = "fly_to"
+    point: dict | None
+
+
+@dataclass(frozen=True)
+class ConfirmRequest(Event):
+    """Ask the user a yes-or-no question before an action that can't be undone. Answered by confirm_result."""
+
+    type: ClassVar[str] = "confirm_request"
+    id: str
+    text: str
+
+
+@dataclass(frozen=True)
+class ConfirmEnd(Event):
+    """The question `id` is settled (answered or timed out): take the buttons away."""
+
+    type: ClassVar[str] = "confirm_end"
+    id: str
 
 
 # ---- app -> brain
@@ -203,6 +269,49 @@ class Mute(Command):
     on: bool
 
 
+@dataclass(frozen=True)
+class LookResult(Command):
+    """What the app captured for look_request `id`."""
+
+    type: ClassVar[str] = "look_result"
+    id: str
+    capture: ScreenCapture
+
+
+@dataclass(frozen=True)
+class WhatsThis(Command):
+    """The "What's this?" shortcut: the selection, or the window if nothing was selected."""
+
+    type: ClassVar[str] = "whats_this"
+    capture: ScreenCapture
+
+
+@dataclass(frozen=True)
+class HandsResult(Command):
+    """The outcome of hands_request `id`. `error` is plain words for the worker when ok is false."""
+
+    type: ClassVar[str] = "hands_result"
+    id: str
+    ok: bool
+    result: dict
+    error: str = ""
+
+
+@dataclass(frozen=True)
+class HandsStop(Command):
+    """The user took over the mouse or keyboard, or pressed esc, while the worker acted on screen."""
+
+    type: ClassVar[str] = "hands_stop"
+    reason: str
+
+
+@dataclass(frozen=True)
+class ConfirmResult(Command):
+    type: ClassVar[str] = "confirm_result"
+    id: str
+    yes: bool
+
+
 def parse_command(raw: object) -> Command:
     if not isinstance(raw, dict):
         raise ProtocolError("message must be a JSON object")
@@ -229,6 +338,20 @@ def parse_command(raw: object) -> Command:
                 return ContextUpdate(str(app) if app else None, max(0.0, float(raw.get("idle_s", 0))))
             case "mute":
                 return Mute(bool(raw["on"]))
+            case "look_result":
+                return LookResult(str(raw["id"]), ScreenCapture.from_dict(raw.get("capture") or {}))
+            case "whats_this":
+                return WhatsThis(ScreenCapture.from_dict(raw["capture"]))
+            case "hands_result":
+                result = raw.get("result")
+                result = {} if result is None else result
+                if not isinstance(result, dict):
+                    raise ProtocolError("hands_result result must be an object")
+                return HandsResult(str(raw["id"]), bool(raw["ok"]), result, str(raw.get("error") or ""))
+            case "hands_stop":
+                return HandsStop(str(raw.get("reason") or "user"))
+            case "confirm_result":
+                return ConfirmResult(str(raw["id"]), bool(raw["yes"]))
     except (KeyError, TypeError, ValueError) as e:
         raise ProtocolError(f"bad {kind} message: {e}") from None
     raise ProtocolError(f"unknown message type {kind!r}")

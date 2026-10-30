@@ -37,6 +37,8 @@ class AdapterContext:
     home: Path
     state_dir: Path
     clock: Clock
+    mac_tools: tuple[str, ...] = ()
+    """The command that starts the milo-mac MCP server for the worker harness. Empty: no Mac tools."""
 
 
 Factory = Callable[[Mapping[str, Any], AdapterContext], T]
