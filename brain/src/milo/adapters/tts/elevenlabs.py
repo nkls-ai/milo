@@ -330,8 +330,7 @@ class ElevenLabsStream:
     def cancel(self) -> None:
         if self._done:
             return
-        if self._started and self.voice._connection is not None and not self.voice._connection.closed:
-            self.voice._connection.send(self, {"context_id": self.context_id, "close_context": True})
+        self._close_context(again=True)  # also after finish(): the user cut it off, stop the audio now
         self._end(_END)
 
     async def __aiter__(self) -> AsyncIterator[tuple[int, Audio]]:
@@ -390,6 +389,7 @@ class ElevenLabsStream:
 
     def _fail(self, reason: str) -> None:
         if not self._done:
+            self._close_context()  # the server keeps only a few open; a stalled or failed one must not count
             self._end(VoiceUnavailable(reason))
 
     # ---- internals
@@ -412,7 +412,13 @@ class ElevenLabsStream:
     def _stalled(self) -> None:
         if not self._done and self._sent - self._spoken > 1:
             self._fail(f"no audio from ElevenLabs for {NO_AUDIO_S:.0f} s")
-            self.cancel()
+
+    def _close_context(self, again: bool = False) -> None:
+        """Tell the server this context is over, unless finish() did (`again`: even then) or there is no
+        connection to tell."""
+        connection = self.voice._connection
+        if self._started and (again or not self._finished) and connection is not None and not connection.closed:
+            connection.send(self, {"context_id": self.context_id, "close_context": True})
 
 
 def _samples(pcm: bytes) -> Audio:
