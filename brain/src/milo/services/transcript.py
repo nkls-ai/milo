@@ -194,8 +194,10 @@ class Transcript:
         return info
 
     def meeting(self, id: str, title: str, text: str) -> str:
-        """A meeting's notes: a conversation of its own, named after the meeting."""
-        conversation = self._new("meeting", clean_title(title) or "Meeting notes", source=f"meeting:{id}")
+        """A meeting's notes: a conversation of its own, named after the meeting. Other people's words, so
+        it counts as outside text: its recap is untrusted."""
+        conversation = self._new("meeting", clean_title(title) or "Meeting notes", source=f"meeting:{id}",
+                                 outside=True)
         return self._add(EntryKind.MILO, text, finished=True, emotion=Emotion.HAPPY, conversation=conversation).id
 
     # ---- tasks
@@ -272,12 +274,12 @@ class Transcript:
         log.info("a new conversation (%s)", why)
         return self._current
 
-    def _new(self, kind: str, title: str, *, source: str = "") -> str:
+    def _new(self, kind: str, title: str, *, source: str = "", outside: bool = False) -> str:
         """A conversation with nothing in it yet. Its id comes from the entry that will be its first."""
         self._next_id = uuid.uuid4().hex[:12]
         ts = self._clock.now().isoformat(timespec="seconds")
         info = ConversationInfo(conversation_id(self._next_id), kind, ts, ts, title or "A conversation", "words",
-                                source=source)
+                                outside=outside, source=source)
         self._keep(info)
         return info.id
 

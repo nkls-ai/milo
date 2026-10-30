@@ -196,6 +196,8 @@ def test_routine_runs_on_their_schedule_and_meeting_notes_get_conversations_of_t
     assert kinds["meeting"].source == "meeting:2026-10-29-1400-sync" and kinds["meeting"].title == "Weekly sync"
     assert kinds["chat"].turns == 1 and kinds["chat"].tasks == ()
     assert w.transcript.current == kinds["chat"].id, "neither took over the chat"
+    assert kinds["meeting"].outside, "a meeting is other people's words: picking it up must not trust them"
+    assert kinds["routine"].outside
 
 
 def test_picking_up_an_old_conversation_gives_milo_a_recap_that_does_not_taint():
