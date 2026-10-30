@@ -35,6 +35,7 @@ from urllib.parse import urlencode
 
 import numpy as np
 
+from milo.core.secrets import SecretError, read_secret
 from milo.core.registry import VOICES, AdapterContext, ConfigError, options_from
 from milo.core.types import Audio, VoiceUnavailable
 
@@ -147,12 +148,10 @@ class ElevenLabsVoice:
     def _read_key(self) -> str:
         if self._key is None:
             try:
-                key = self.key_file.expanduser().read_text(encoding="utf-8").strip()
-            except OSError:
-                raise VoiceUnavailable(f"no ElevenLabs key in {self.key_file}") from None
-            if not key:
-                raise VoiceUnavailable(f"{self.key_file} is empty")
-            self._key = key
+                self._key = read_secret(self.key_file, "The ElevenLabs key",
+                                        missing=f"no ElevenLabs key in {self.key_file}")
+            except SecretError as e:
+                raise VoiceUnavailable(str(e)) from None
         return self._key
 
     def _url(self) -> str:

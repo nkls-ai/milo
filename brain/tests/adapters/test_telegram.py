@@ -3,6 +3,7 @@
 import asyncio
 import json
 import os
+import stat
 import threading
 from email.parser import BytesParser
 from email.policy import HTTP
@@ -107,9 +108,8 @@ def test_the_token_file_must_be_private_plain_and_hold_a_token(tmp_path, token_f
     with pytest.raises(ChannelError, match="There's no Telegram bot token yet"):
         read_token(tmp_path / "missing")
     os.chmod(token_file, 0o644)
-    with pytest.raises(ChannelError, match="chmod 600"):
-        read_token(token_file)
-    os.chmod(token_file, 0o600)
+    assert read_token(token_file) == TOKEN, "a token only others could read too is made private, not refused"
+    assert stat.S_IMODE(token_file.stat().st_mode) == 0o600
     link = tmp_path / "link"
     link.symlink_to(token_file)
     with pytest.raises(ChannelError, match="plain file"):

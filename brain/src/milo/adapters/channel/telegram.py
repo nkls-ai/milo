@@ -12,7 +12,6 @@ import json
 import logging
 import os
 import re
-import stat
 import threading
 import urllib.error
 import urllib.parse
@@ -23,6 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from milo.core.secrets import SecretError, read_secret
 from milo.core.registry import CHANNELS, AdapterContext, ConfigError, options_from
 from milo.core.types import ChannelError, Inbound
 
@@ -59,21 +59,13 @@ class TelegramOptions:
 
 
 def read_token(path: Path) -> str:
-    """The bot token, if the file is the user's own, a plain file, and readable by nobody else."""
+    """The bot token, if the file is the user's own and a plain file (see milo.core.secrets)."""
     try:
-        info = path.lstat()
-    except FileNotFoundError:
-        raise ChannelError(f"There's no Telegram bot token yet. Put the token from @BotFather in {path} "
-                           f"(see docs/setup/messages.md).") from None
-    except OSError as e:
-        raise ChannelError(f"Can't read the Telegram token file {path}: {e.strerror}.") from None
-    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
-        raise ChannelError(f"The Telegram token file {path} must be a plain file, not a link or a folder.")
-    if info.st_uid != os.getuid():
-        raise ChannelError(f"The Telegram token file {path} belongs to another user.")
-    if info.st_mode & 0o077:
-        raise ChannelError(f"Others on this Mac can read the Telegram token. Run: chmod 600 {path}")
-    token = path.read_text(encoding="utf-8").strip()
+        token = read_secret(path, "The Telegram token",
+                            missing=f"There's no Telegram bot token yet. Put the token from @BotFather in {path} "
+                                    f"(see docs/setup/messages.md).")
+    except SecretError as e:
+        raise ChannelError(str(e)) from None
     if not TOKEN.fullmatch(token):
         raise ChannelError(f"{path} doesn't hold a bot token. It looks like 123456789:AAE… and comes from "
                            f"@BotFather in Telegram.")
