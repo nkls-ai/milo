@@ -93,6 +93,8 @@ async def _serve(runtime: Runtime) -> None:
     warming = asyncio.create_task(_warm_all({
         "stt": (runtime.stt_executor, runtime.transcriber.warm),
         "tts": (runtime.tts_executor, runtime.voice.warm),
+        # Queued behind the voice on the one TTS thread: the "Hm." clips for slow replies, in his voice.
+        **({"backchannels": (runtime.tts_executor, runtime.backchannel.warm)} if runtime.backchannel else {}),
         # Starts the chat model's process with the system prompt now, saving 1-2 s on the first turn.
         "chat": runtime.live_talk.warm,
     }))

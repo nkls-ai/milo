@@ -17,6 +17,7 @@ from .core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, HARNESSES, LIVE_MODELS,
 from .core.types import LiveMode, ToolServer
 from .services.app_bridge import AppBridge, AppEyes, AppHands
 from .services.approvals import ActionPolicy, Approvals
+from .services.backchannel import Backchannel
 from .services.barge_in import BargeIn
 from .services.context import UserContext
 from .services.conversation import Conversation
@@ -55,6 +56,7 @@ class Runtime:
     tool_server: ToolSocketServer
     hands_server: HandsSocketServer | None = None
     barge_in: BargeIn | None = None
+    backchannel: Backchannel | None = None
 
 
 def build(home: Path) -> Runtime:
@@ -102,6 +104,7 @@ def build(home: Path) -> Runtime:
     idle_reset_s = config.chat.conversation_idle_reset_s
     conversation = Conversation(harness, ledger, clock, idle_reset_s)
     speaker = Speaker(voice, output, ui, tts_executor)
+    backchannel = Backchannel(speaker, enabled=config.chat.backchannels)
     transcript = Transcript(ui, JsonlTranscript(workspace.transcript_path), clock)
     approvals = Approvals(ui, speaker, ActionPolicy(config.approval_levels), timeout_s=config.approvals.timeout_s,
                           speak=config.approvals.speak, quiet=lambda: live_talk.busy or mic.active,
@@ -119,7 +122,7 @@ def build(home: Path) -> Runtime:
                        transcript=transcript, hands=hands)
     live_talk = LiveTalk(live_model, speaker, ui, context, clock, profile, reminders, ledger,
                          _persona(workspace.persona_path), idle_reset_s, tasks, transcript, eyes=AppEyes(bridge),
-                         approvals=approvals)
+                         approvals=approvals, backchannel=backchannel)
     tasks.on_result = live_talk.note
     listening = Listening(mic, transcriber, stt_executor, ui, DictationService(cleaner, history, ui),
                           live_talk, context, LiveMode(config.dictation.stream))
@@ -144,7 +147,7 @@ def build(home: Path) -> Runtime:
     brain = Brain(ui, listening, live_talk, context, heartbeat, config.ui, transcript, approvals=approvals,
                   bridge=bridge, hands=hands, screens=workspace.screens_dir)
     return Runtime(brain, server, heartbeat, transcriber, voice, stt_executor, tts_executor, harness,
-                   live_model, live_talk, tool_server, hands_server, barge_in)
+                   live_model, live_talk, tool_server, hands_server, barge_in, backchannel)
 
 
 def _tool_servers(config: Config, home: Path) -> tuple[ToolServer, ...]:

@@ -12,6 +12,7 @@ from milo.core.ports import Clock, LiveModel, ProfileMemory, ReminderBook, Scree
 from milo.core.types import Emotion, HarnessError, MiloState, ScreenCapture
 
 from .approvals import Approvals
+from .backchannel import Backchannel
 from .context import UserContext
 from .conversation import stamp
 from .reply_stream import ReplyParser
@@ -92,8 +93,9 @@ class LiveTalk:
                  profile: ProfileMemory, reminders: ReminderBook, ledger: UsageLedger,
                  persona: Callable[[], str], idle_reset_s: float, tasks: TaskRunner,
                  transcript: Transcript | None = None, eyes: ScreenEyes | None = None,
-                 approvals: Approvals | None = None):
+                 approvals: Approvals | None = None, backchannel: Backchannel | None = None):
         self._model = model
+        self._backchannel = backchannel
         self._eyes = eyes
         self._approvals = approvals
         self._saw_screen = False
@@ -275,6 +277,8 @@ class LiveTalk:
         started = self._clock.monotonic()
         first_at: float | None = None
         notes, self._notes = self._notes, []
+        if speak and self._backchannel is not None:
+            self._backchannel.arm()
         try:
             await self._ensure_conversation()
             self._tainted = self._tainted or bool(notes)
@@ -287,7 +291,8 @@ class LiveTalk:
                         self._looking(False)  # he has seen it and starts to answer
                 speech = parser.feed(delta)
                 if speak and utterance is None and parser.emotion is not None:
-                    utterance = self._speaker.utterance(parser.emotion)
+                    utterance = (self._backchannel.utterance(parser.emotion) if self._backchannel is not None
+                                 else self._speaker.utterance(parser.emotion))
                 if speech:
                     shown = self._show(shown, parser, speech)
                     if speak:
@@ -311,6 +316,8 @@ class LiveTalk:
         finally:
             self._streaming = False
             self._ui.thinking = False
+            if self._backchannel is not None:
+                self._backchannel.release()
 
         self._last_turn_at = self._clock.monotonic()
         rest = parser.finish()
@@ -329,7 +336,8 @@ class LiveTalk:
             return parser
         if utterance is None:
             if rest:
-                utterance = self._speaker.utterance(parser.emotion)
+                utterance = (self._backchannel.utterance(parser.emotion) if self._backchannel is not None
+                             else self._speaker.utterance(parser.emotion))
             else:
                 self._ui.set_emotion(parser.emotion)
                 self._ui.rest()
