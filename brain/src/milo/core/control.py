@@ -26,9 +26,10 @@ WORK_FOLDER = "work"
 
 STEERING = ("AGENTS.md", "AGENTS.override.md", "CLAUDE.md", "CLAUDE.local.md", ".codex", ".claude", ".mcp.json",
             ".agents")
-"""What Codex or Claude Code would read from their working folder as instructions, settings or tools. The
-worker's folder is its own to write, so a helper could leave these for the next one: they are removed before
-every run (`clear_steering`)."""
+"""What Codex or Claude Code would read from their working folder (or a folder below, where Claude Code reads
+CLAUDE.md when it opens files there) as instructions, settings or tools. The worker's folder is its own to
+write, so a helper could leave these for the next one: they are removed at any depth before every run
+(`clear_steering`), Claude Code is denied writing them, and Codex reads no AGENTS.md but its home's."""
 STEERING_FOLDERS = (".codex", ".claude", ".agents")
 
 log = logging.getLogger("milo.control")
@@ -100,8 +101,9 @@ def _fold(path: Path) -> str:
 def clear_steering(workdir: Path) -> None:
     """Remove what a helper could have left in its folder to steer the next one (STEERING). A link is removed
     itself, never what it points at. Raises OSError if one is still there."""
-    for name in STEERING:
-        path = workdir / name
+    found = [Path(top) / name for top, dirs, files in os.walk(workdir)  # never follows a link
+             for name in (*dirs, *files) if name in STEERING]
+    for path in found:
         try:
             if path.is_symlink() or not path.is_dir():
                 path.unlink()
@@ -112,7 +114,7 @@ def clear_steering(workdir: Path) -> None:
         except OSError as e:
             log.warning("could not remove %s from the worker's folder: %s", path, e)
             continue
-        log.warning("removed %s a helper left in its folder", name)
-    left = [name for name in STEERING if os.path.lexists(workdir / name)]
+        log.warning("removed %s a helper left in its folder", path.relative_to(workdir))
+    left = [str(path.relative_to(workdir)) for path in found if os.path.lexists(path)]
     if left:
         raise OSError(f"{', '.join(left)} in {workdir} can't be removed")

@@ -118,7 +118,7 @@ def move(paths: list[str], into: str, scope: Path, protected: Protected | None =
         raise ToolError("Two of those files have the same name, so I moved nothing.")
     dest.mkdir(parents=True, exist_ok=True)
     moved = []
-    into_fd = _pinned(dest, scope, protected)
+    into_fd = _pinned(dest, scope, protected, into=True)
     try:
         for f in files:
             target = dest / f.name
@@ -139,15 +139,19 @@ def move(paths: list[str], into: str, scope: Path, protected: Protected | None =
     return {"moved": moved, "folder": describe_folder(dest)}
 
 
-def _pinned(folder: Path, scope: Path, protected: Protected | None) -> int:
-    """A handle on `folder`, checked again through the handle itself. The folders were checked by path, and
-    a helper can make links in its own folder: one swapped in since then can't redirect the move now."""
+def _pinned(folder: Path, scope: Path, protected: Protected | None, *, into: bool = False) -> int:
+    """A handle on `folder` (resolved when it was checked), checked again through the handle itself. The
+    folders were checked by path, and a helper can make links in its own folder: one swapped in since then
+    can't redirect the move now. `into`: the destination, which mustn't be shared either."""
     fd = os.open(folder, os.O_RDONLY | os.O_DIRECTORY)
     try:
         real = Path(_path_of(fd))
-        if real != folder.resolve() or (protected is not None and protected.covers(real)) or \
-                not allowed(real, scope, protected=protected):
-            raise ToolError(MILOS if protected is not None and protected.covers(real) else OUTSIDE)
+        if protected is not None and protected.covers(real):
+            raise ToolError(MILOS)
+        if str(real).casefold() != str(folder).casefold() or not allowed(real, scope, protected=protected):
+            raise ToolError(OUTSIDE)
+        if into and shared(real):
+            raise ToolError(SHARED)
     except BaseException:
         os.close(fd)
         raise

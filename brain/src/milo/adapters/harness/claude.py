@@ -78,11 +78,12 @@ class ClaudeHarness:
         self.disallowed_tools = disallowed_tools
         # And what in its own folder would steer the next task (instructions, settings, MCP servers). They are
         # removed before each run too, which also covers Codex.
-        own = [f"/{workdir.resolve()}/{name}" + ("/**" if name in STEERING_FOLDERS else "") for name in STEERING]
+        own = [f"/{workdir.resolve()}/{deep}{name}" + ("/**" if name in STEERING_FOLDERS else "")
+               for name in STEERING for deep in ("", "**/")]
         self.deny = [*(protected.deny_rules() if protected is not None else []),
                      *(f"{tool}({path})" for path in own for tool in ("Edit", "Write"))]
         self.no_writes = [*(protected.resolved() if protected is not None else []),
-                          *(str(workdir.resolve() / name) for name in STEERING)]
+                          *(str(workdir.resolve() / deep / name) for name in STEERING for deep in ("", "**"))]
         self.no_reads = [str((protected.home / "secrets").resolve())] if protected is not None else []
         self.restricted = restricted
         self.servers = (*mac_server(self.mac_tools), *tool_servers)

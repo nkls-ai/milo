@@ -40,6 +40,8 @@ BUNDLED_CODEX = Path("/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin
 HOME_CONFIG = """\
 # Written by Milo before every task; edits are overwritten. Milo's worker uses only Milo's tools.
 check_for_update_on_startup = false
+# Instructions come only from this home's AGENTS.md (Milo's), never from one a helper left in its folder.
+project_doc_max_bytes = 0
 
 [features]
 computer_use = false

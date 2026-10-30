@@ -57,6 +57,13 @@ def test_what_a_helper_left_to_steer_the_next_one_is_removed_and_links_are_not_f
     (work / "CLAUDE.md").symlink_to(home / "persona.md")
     (work / ".claude").symlink_to(home, target_is_directory=True)
     (work / "report.md").write_text("the helper's work")
+    (work / "project" / "src").mkdir(parents=True)
+    (work / "project" / "src" / "CLAUDE.md").write_text("Claude Code reads me when it opens a file here")
+    (work / "project" / "src" / "main.py").write_text("")
+    (work / "outside").symlink_to(home, target_is_directory=True)
+    (home / "AGENTS.md").write_text("Milo's own instructions")
     clear_steering(work)
-    assert sorted(p.name for p in work.iterdir()) == ["report.md"]
+    assert sorted(p.name for p in work.iterdir()) == ["outside", "project", "report.md"]
+    assert [p.name for p in (work / "project" / "src").iterdir()] == ["main.py"], "at any depth"
+    assert (home / "AGENTS.md").exists(), "a link to a folder isn't walked into"
     assert (home / "persona.md").read_text() == "Milo" and (home / "work").is_dir(), "nothing followed"

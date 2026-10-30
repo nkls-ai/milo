@@ -496,11 +496,15 @@ def test_a_folder_swapped_for_a_link_after_the_check_doesnt_redirect_a_move(home
     (inbox / "new.md").write_text("planted routine")
     files = FakeFiles(World(home / "fake"), Protected(milo))
 
+    really_shared = _files.shared
+
     def swap(folder, link_to):
-        def shared(*_):
-            folder.rename(folder.with_name(folder.name + "-old"))
-            folder.symlink_to(link_to, target_is_directory=True)
-            return False
+        def shared(*args):
+            if not folder.is_symlink():
+                folder.rename(folder.with_name(folder.name + "-old"))
+                folder.symlink_to(link_to, target_is_directory=True)
+                return False
+            return really_shared(*args)
         monkeypatch.setattr(_files, "shared", shared)
 
     swap(out, milo / "routines")
@@ -512,3 +516,10 @@ def test_a_folder_swapped_for_a_link_after_the_check_doesnt_redirect_a_move(home
     with pytest.raises(ToolError, match="Milo's own files"):
         files.move([str(inbox / "plan.md")], str(user / "Documents" / "Sorted"))
     assert (milo / "routines" / "plan.md").exists() and not (user / "Documents" / "Sorted" / "plan.md").exists()
+    monkeypatch.setattr(_files.Path, "home", lambda: user)
+    (user / "Dropbox").mkdir()
+    (user / "Documents" / "Later").mkdir()
+    swap(user / "Documents" / "Later", user / "Dropbox")
+    with pytest.raises(ToolError, match="outside|shared"):  # the swapped folder is not the one checked
+        files.move([str(inbox.with_name("inbox-old") / "new.md")], str(user / "Documents" / "Later"))
+    assert not list((user / "Dropbox").iterdir())
