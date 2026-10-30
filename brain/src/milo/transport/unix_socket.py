@@ -9,13 +9,18 @@ import struct
 from collections.abc import Awaitable, Callable, Iterable
 from pathlib import Path
 
-from milo.core.events import Command, Event, parse_command
+from milo.core.events import Command, Event, Level, parse_command
 
 log = logging.getLogger("milo.transport")
 
 CommandHandler = Callable[[Command], Awaitable[None]]
 ConnectHandler = Callable[[], Iterable[Event]]
 DisconnectHandler = Callable[[], None]
+
+SOFT_LIMIT = 256 * 1024
+"""Bytes queued for an app that isn't reading: past this, loudness levels for it are dropped."""
+HARD_LIMIT = 8 * 1024 * 1024
+"""Past this the app is hung: its connection is closed. When it reads again it reconnects and gets a greeting."""
 
 
 class UnixSocketServer:
@@ -27,8 +32,11 @@ class UnixSocketServer:
     """
 
     def __init__(self, path: Path, on_command: CommandHandler, on_connect: ConnectHandler,
-                 on_disconnect: DisconnectHandler = lambda: None):
+                 on_disconnect: DisconnectHandler = lambda: None, *, soft_limit: int = SOFT_LIMIT,
+                 hard_limit: int = HARD_LIMIT):
         self.path = path
+        self._soft_limit = soft_limit
+        self._hard_limit = hard_limit
         self._on_command = on_command
         self._on_connect = on_connect
         self._on_disconnect = on_disconnect
@@ -40,10 +48,20 @@ class UnixSocketServer:
         return any(not w.is_closing() for w in self._clients)
 
     def emit(self, event: Event) -> None:
+        """Queue `event` for every app. An app that stops reading gets no more levels once SOFT_LIMIT bytes
+        wait for it (they are only a meter, and the next state resets it), and is cut off at HARD_LIMIT."""
         line = _encode(event)
         for writer in list(self._clients):
             if writer.is_closing():
                 self._clients.discard(writer)
+                continue
+            queued = writer.transport.get_write_buffer_size()
+            if queued + len(line) > self._hard_limit:
+                log.warning("the app stopped reading (%d KB waiting); closing its connection", queued // 1024)
+                self._clients.discard(writer)
+                writer.transport.abort()
+                continue
+            if isinstance(event, Level) and queued > self._soft_limit:
                 continue
             try:
                 writer.write(line)

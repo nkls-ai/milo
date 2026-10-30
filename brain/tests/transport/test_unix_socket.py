@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from milo.core.events import Bubble, Command, StateChanged, TextInput, UiConfig
+from milo.core.events import Bubble, Command, Level, StateChanged, TextInput, UiConfig
 from milo.core.types import MiloState
 from milo.transport.unix_socket import UnixSocketServer, peer_uid
 
@@ -279,5 +279,34 @@ def test_the_last_client_hanging_up_is_reported_once_the_others_are_gone(sock_pa
         finally:
             await server.close()
         assert gone == [1], "closing the server isn't an app going away"
+
+    asyncio.run(run())
+
+
+def test_an_app_that_stops_reading_gets_no_more_levels_and_is_cut_off_when_it_hangs(sock_path):
+    # M1 in docs/review/2026-10-30.md: emit() queued without limit, 20,000 levels left 630 KB waiting.
+    gone: list[int] = []
+
+    async def run():
+        server = UnixSocketServer(sock_path, lambda c: asyncio.sleep(0), lambda: list(GREETING),
+                                  on_disconnect=lambda: gone.append(1), soft_limit=64 * 1024,
+                                  hard_limit=1024 * 1024)
+        await server.start()
+        try:
+            client = await Client.connect(sock_path)  # never reads, like an app whose main thread hangs
+            await asyncio.sleep(0.05)
+            writer = next(iter(server._clients))
+            for _ in range(50_000):
+                server.emit(Level(0.5))
+            assert writer.transport.get_write_buffer_size() < 64 * 1024 + 100, "levels stop at the soft limit"
+            server.emit(Bubble("still here"))
+            assert writer.transport.get_write_buffer_size() > 64 * 1024, "real events still go out"
+            for _ in range(200):
+                server.emit(Bubble("x" * 10_000))
+            await asyncio.sleep(0.05)
+            assert not server.connected() and gone == [1], "a hung app is cut off and may reconnect"
+            await client.close()
+        finally:
+            await server.close()
 
     asyncio.run(run())
