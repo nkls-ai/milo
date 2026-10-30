@@ -52,3 +52,48 @@ def test_an_async_warmup_runs_on_the_loop_and_is_logged_with_the_others(caplog):
     messages = [r.getMessage() for r in caplog.records]
     assert started == ["chat"]
     assert messages == ["stt engine ready", "chat engine ready", "other engine failed to load"]
+
+
+def test_a_background_loop_that_crashes_is_logged_and_started_again(caplog):
+    # M10: one bad tick used to end the loop for the brain's life, with nothing in the log until exit.
+    from milo.server import supervised
+
+    runs = []
+
+    async def flaky():
+        runs.append(len(runs))
+        if len(runs) < 3:
+            raise RuntimeError(f"bad tick {len(runs)}")
+        await asyncio.sleep(10)
+
+    async def main():
+        task = asyncio.create_task(supervised("the heartbeat", flaky, restart_s=(0.01, 0.02)))
+        await asyncio.sleep(0.2)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            return "cancelled"
+
+    assert asyncio.run(main()) == "cancelled", "cancelling still stops it"
+    assert runs == [0, 1, 2]
+    assert caplog.text.count("the heartbeat crashed; starting it again") == 2 and "bad tick 1" in caplog.text
+
+
+def test_a_failing_check_doesnt_end_the_every_loop(caplog):
+    from milo import server
+
+    calls = []
+
+    async def check():
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("the guard broke once")
+
+    async def main():
+        task = asyncio.create_task(server._every(0.01, check))
+        await asyncio.sleep(0.1)
+        task.cancel()
+
+    asyncio.run(main())
+    assert len(calls) >= 3 and "the guard broke once" in caplog.text
