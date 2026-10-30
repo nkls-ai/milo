@@ -42,7 +42,8 @@ from .live_talk import LiveTalk, untrusted
 from .pairing import Pairing, as_code, spaced
 from .quiet import wait_while
 from .settings_guard import SettingsGuard
-from .sharing import NotShareable, shareable, size_text
+from . import sharing
+from .sharing import NotShareable, Outgoing, size_text
 from .speaker import Speaker
 from .transcript import Transcript, unrecorded
 
@@ -260,7 +261,9 @@ class MessageService:
         if self.paused:
             if m.answer:
                 await self._channel.acknowledge(m, "Milo is paused.")
-            if not self._told_paused:
+            elif m.text.strip().lower().startswith("/resume"):
+                await self._command("/resume")
+            elif not self._told_paused:
                 self._told_paused = True
                 await self._send(PAUSED)
             return
@@ -495,26 +498,29 @@ class MessageService:
 
     # ---- files (the send_to_phone tool, through ToolRequests)
 
-    def check(self, path: str) -> Path:
+    def check(self, path: str) -> Outgoing:
         """The file `path` names if it may go to the phone now. Raises ChannelError or NotShareable."""
         if self.owner is None:
             raise ChannelError("No phone is connected to Milo yet, so there's nowhere to send it.")
         if self.paused:
             raise ChannelError("Messages to the phone are paused on the Mac.")
-        return shareable(path, home=self._home, milo=self._milo, max_mb=self.settings.max_file_mb)
+        return sharing.shareable(path, home=self._home, milo=self._milo, max_mb=self.settings.max_file_mb)
 
-    def question(self, path: Path) -> str:
-        return f"Send {path.name} ({size_text(path.stat().st_size)}) to your phone?"
+    def question(self, outgoing: Outgoing) -> str:
+        return f"Send {outgoing.name} ({size_text(outgoing.size)}) to your phone?"
 
-    async def send_file(self, path: Path, caption: str = "") -> dict:
-        """Send a file `check` passed and the user said yes to. Raises ChannelError."""
+    async def send_file(self, outgoing: Outgoing, caption: str = "") -> dict:
+        """Send a file `check` passed and the user said yes to, if it is still that file. Raises ChannelError
+        or NotShareable."""
         owner = self.owner
         if owner is None or self.paused:
             raise ChannelError("The phone was disconnected or paused meanwhile.")
-        await self._channel.send_file(str(owner["chat"]), path, caption[:200])
+        data = await asyncio.to_thread(sharing.read, outgoing, home=self._home, milo=self._milo,
+                                       max_mb=self.settings.max_file_mb)
+        await self._channel.send_file(str(owner["chat"]), outgoing.name, data, caption[:200])
         self._last_question = None
-        log.info("sent a file to the phone, %s", size_text(path.stat().st_size))
-        return {"sent": path.name}
+        log.info("sent a file to the phone, %s", size_text(len(data)))
+        return {"sent": outgoing.name}
 
     # ---- plumbing
 
@@ -562,6 +568,8 @@ class MessageService:
             self._store.save(self._state)
         except OSError:
             log.exception("could not save the messages state")
+        if self._guard is not None:
+            self._guard.refresh(getattr(self._store, "path", None))
 
 
 class _NoReminders:

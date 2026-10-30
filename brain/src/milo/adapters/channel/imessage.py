@@ -20,7 +20,10 @@ import json
 import logging
 import os
 import re
+import shutil
 import sqlite3
+import time
+import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -159,11 +162,14 @@ class IMessageChannel:
     async def typing(self, chat: str) -> None:
         pass  # Messages has no way to show it from a script
 
-    async def send_file(self, chat: str, path: Path, caption: str = "") -> None:
+    async def send_file(self, chat: str, name: str, data: bytes, caption: str = "") -> None:
+        """Messages sends files by path, so the checked bytes go to a copy only the user can read first.
+        Copies older than a day are cleaned up on the next send."""
         self._only_owner(chat)
+        copy = await asyncio.to_thread(_outbox_copy, self._state_path.parent / "imessage-outbox", name, data)
         if caption:
             await self.send(chat, caption)
-        await self._osascript(_SEND_FILE, str(path))
+        await self._osascript(_SEND_FILE, str(copy))
 
     async def acknowledge(self, inbound: Inbound, text: str = "") -> None:
         pass  # no buttons in iMessage
@@ -215,6 +221,24 @@ class IMessageChannel:
                     self._last = newest
                     _save_last(self._state_path, newest)
         return [(int(r[0]), r[1], r[2], int(r[3] or 0)) for r in rows]
+
+
+def _outbox_copy(outbox: Path, name: str, data: bytes) -> Path:
+    outbox.mkdir(mode=0o700, parents=True, exist_ok=True)
+    now = time.time()
+    for old in outbox.iterdir():
+        try:
+            if now - old.stat().st_mtime > 86400:
+                shutil.rmtree(old) if old.is_dir() else old.unlink()
+        except OSError:
+            pass
+    folder = outbox / uuid.uuid4().hex[:12]
+    folder.mkdir(mode=0o700)
+    copy = folder / (Path(name).name or "file")
+    fd = os.open(copy, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "wb") as f:
+        f.write(data)
+    return copy
 
 
 def _load_last(path: Path) -> int | None:

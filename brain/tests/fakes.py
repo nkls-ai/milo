@@ -462,6 +462,7 @@ class FakeChannel:
         self.sent: list[tuple[str, str]] = []
         self.questions: list[tuple[str, str, str]] = []
         self.files: list[tuple[str, str, str]] = []
+        self.file_data: list[bytes] = []
         self.acks: list[tuple[str, str]] = []
         self.typing_count = 0
         self.starts = 0
@@ -498,8 +499,9 @@ class FakeChannel:
     async def typing(self, chat: str) -> None:
         self.typing_count += 1
 
-    async def send_file(self, chat: str, path, caption: str = "") -> None:
-        self.files.append((chat, str(path), caption))
+    async def send_file(self, chat: str, name: str, data: bytes, caption: str = "") -> None:
+        self.files.append((chat, name, caption))
+        self.file_data.append(data)
 
     async def acknowledge(self, inbound, text: str = "") -> None:
         self.acks.append((inbound.answer, text))

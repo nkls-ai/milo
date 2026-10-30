@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Collection
-from pathlib import Path
 from typing import Any, Protocol
 
 from milo.core.types import ChannelError
@@ -28,13 +27,14 @@ REFUSED = {"no": "The user said no.", "timeout": "The user didn't answer, so it 
 
 
 class Phone(Protocol):
-    """The owner's phone, for files a helper sends there (MessageService)."""
+    """The owner's phone, for files a helper sends there (MessageService). `check` returns the file it will
+    send (an Outgoing); `send_file` sends it only if it is still the same file."""
 
-    def check(self, path: str) -> Path: ...
+    def check(self, path: str) -> Any: ...
 
-    def question(self, path: Path) -> str: ...
+    def question(self, outgoing: Any) -> str: ...
 
-    async def send_file(self, path: Path, caption: str = "") -> dict: ...
+    async def send_file(self, outgoing: Any, caption: str = "") -> dict: ...
 
 
 NO_PHONE = "Milo can't send files to your phone: messages are switched off in Milo's settings."
@@ -91,11 +91,11 @@ class ToolRequests:
                 case "send_to_phone":
                     if self._phone is None:
                         return _error(NO_PHONE)
-                    path = self._phone.check(str(request["path"]))
-                    decision = await self._approvals.approve("share", self._phone.question(path))
+                    outgoing = self._phone.check(str(request["path"]))
+                    decision = await self._approvals.approve("share", self._phone.question(outgoing))
                     if not decision.allowed:
                         return _error(REFUSED.get(decision.answer, REFUSED["refused"]))
-                    return _ok(await self._phone.send_file(path, str(request.get("caption") or "")))
+                    return _ok(await self._phone.send_file(outgoing, str(request.get("caption") or "")))
         except (AppError, NotShareable, ChannelError) as e:
             return _error(str(e))
         except KeyError as e:

@@ -132,13 +132,11 @@ class TelegramChannel:
         except ChannelError:
             pass
 
-    async def send_file(self, chat: str, path: Path, caption: str = "") -> None:
-        size = path.stat().st_size
-        if size > MAX_FILE_BYTES:
-            raise ChannelError(f"{path.name} is too big for Telegram (bots may send up to 50 MB).")
-        data = await asyncio.to_thread(path.read_bytes)
+    async def send_file(self, chat: str, name: str, data: bytes, caption: str = "") -> None:
+        if len(data) > MAX_FILE_BYTES:
+            raise ChannelError(f"{name} is too big for Telegram (bots may send up to 50 MB).")
         fields = {"chat_id": chat, **({"caption": caption[:1024]} if caption else {})}
-        await self._call("sendDocument", fields, file=("document", path.name, data), timeout_s=300)
+        await self._call("sendDocument", fields, file=("document", name, data), timeout_s=300)
 
     async def acknowledge(self, inbound: Inbound, text: str = "") -> None:
         if not inbound.ref:

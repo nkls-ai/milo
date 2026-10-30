@@ -159,7 +159,8 @@ def build(home: Path) -> Runtime:
                                      brief_time(m.brief_at), m.max_file_mb, "calendar" in enabled,
                                      "reminders" in enabled),
             helpers=lambda: helpers.helpers, board=helpers.board, reminders=reminders, app=bridge.call,
-            guard=SettingsGuard(workspace.config_path, show), transcript=transcript, home=Path.home(), milo=home)
+            guard=SettingsGuard([workspace.config_path, workspace.remote_state_path], [workspace.secrets_dir], show),
+            transcript=transcript, home=Path.home(), milo=home)
         approvals.relays.append(messages)
         helpers.watchers.append(messages.helper_changed)
     tool_server = ToolSocketServer(workspace.tools_socket_path,

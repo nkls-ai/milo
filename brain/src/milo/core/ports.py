@@ -217,8 +217,8 @@ class Channel(Protocol):
         """Show that Milo is writing, for a few seconds. Never raises."""
         ...
 
-    async def send_file(self, chat: str, path: Path, caption: str = "") -> None:
-        """Send one file. Raises ChannelError."""
+    async def send_file(self, chat: str, name: str, data: bytes, caption: str = "") -> None:
+        """Send one file's bytes under `name`. The caller has read and checked them. Raises ChannelError."""
         ...
 
     async def acknowledge(self, inbound: Inbound, text: str = "") -> None:
