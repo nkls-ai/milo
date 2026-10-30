@@ -41,6 +41,7 @@ from .services.live_talk import LiveTalk, untrusted
 from .services.meetings import MeetingOptions, MeetingService
 from .services.messages import MessageService, MessageSettings
 from .services.orchestrator import HelperQuestions, Orchestrator
+from .services.permits import Permits
 from .services.memory import Memory, MemoryParts, TurnMemory
 from .services.memory_requests import MemoryRequests
 from .services.sleep import SleepRunner
@@ -246,9 +247,11 @@ def _presence(p: Parts) -> None:
     p.conversations = ConversationBrowser(transcript, store, ui, clock,
                                           memory=mem.memory.search if mem is not None else None,
                                           reminders=p.reminders)
+    p.permits = Permits(config.approvals.ask, config.approvals.allowed_apps)  # saves once Settings exists
     p.approvals = approvals = Approvals(ui, speaker, ActionPolicy(config.approval_levels),
                                         timeout_s=config.approvals.timeout_s, speak=config.approvals.speak,
-                                        quiet=attention.in_conversation, transcript=p.transcript)
+                                        quiet=attention.in_conversation, transcript=p.transcript,
+                                        permits=p.permits)
     attention.attach(question=lambda: approvals.pending)
     p.bridge = AppBridge(p.server)  # each request to one app; one that hangs up fails what it owed at once
     p.server.on_client_gone.append(p.bridge.app_gone)
@@ -280,6 +283,8 @@ def _helpers(p: Parts) -> None:
                                        max_helpers=p.live_settings.max_helpers, quiet=p.attention.in_conversation,
                                        updates=p.updates, milestones=Milestones(), inert=untrusted)
     p.attention.attach(helpers=lambda: helpers.busy)
+    helpers.on_done.append(lambda helper: p.permits.end(helper.id))  # an Allow lasts as long as its helper
+    p.permits.user_asked = helpers.user_asked
     p.routines = None
     if config.routines.enabled:
         book = MarkdownRoutineBook(workspace.routines_dir, workspace.routine_runs_path, workspace.routine_drafts_dir)
@@ -430,10 +435,18 @@ def _brain(p: Parts) -> None:
     def use_updates(changed: Config) -> None:
         live_settings.use(changed.chat.updates, changed.harness.max_helpers)
 
+    def use_ask(changed: Config) -> None:
+        p.permits.ask = changed.approvals.ask
+
+    def use_allowed(changed: Config) -> None:
+        p.permits.use(changed.approvals.allowed_apps)
+
     live = {("ui", "dictate_key"): use_ui, ("ui", "talk_key"): use_ui,
             ("ui", "whats_this_key"): use_ui, ("ui", "voice"): use_voice, ("dictation", "stream"): use_stream,
-            ("chat", "updates"): use_updates}
+            ("chat", "updates"): use_updates, ("approvals", "ask"): use_ask,
+            ("approvals", "allowed_apps"): use_allowed}
     settings = Settings(TomlConfigFile(p.workspace.config_path), p.config, p.ui, live)
+    p.permits.save = lambda apps: settings.keep("approvals", "allowed_apps", apps)
     p.brain = Brain(p.ui, listening, p.live_talk, p.context, p.heartbeat, p.config.ui, p.transcript,
                     approvals=p.approvals, bridge=p.bridge, hands=p.hands, screens=p.workspace.screens_dir,
                     helpers=p.helpers, memory=p.mem.memory if p.mem is not None else None, routines=p.routines,

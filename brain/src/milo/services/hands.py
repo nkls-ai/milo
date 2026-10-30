@@ -14,7 +14,7 @@ from milo.core.ports import AppHands, Confirmer, EventSink
 from milo.core.types import AppRef, BorrowNeeded, HandsError, Scope, Step, StepStatus
 
 from . import documents, sheets
-from .risk import WORK, Risk, Verdict, classify, normalize_combo, plain_app
+from .risk import WORK, Risk, Verdict, classify, coverable_script, normalize_combo, plain_app
 from .screen import NOTE, screen_data
 from .transcript import Transcript, unrecorded
 
@@ -206,12 +206,13 @@ class HandsService:
 
     def _scope(self, tool: str, args: dict, target: dict, verdict: Verdict, app: str) -> Scope | None:
         """The work in an app a question is about, which an Allow covers for the rest of this task (ADR 0022).
-        None for anything else: sending, deleting, code, settings, and scripts that don't say which apps they
-        talk to."""
+        None for anything else: sending, deleting, code, settings, files, clicks on something unnamed, and scripts
+        that don't say which apps they talk to or reach outside them."""
         if verdict.reason not in WORK:
             return None
         if tool == "run_applescript":
-            apps = script_apps(str(args.get("script", "")))
+            script = str(args.get("script", ""))
+            apps = script_apps(script) if coverable_script(script) else None
         else:
             apps = [AppRef(app, str(target.get("bundle") or "") if app == str(target.get("app") or "") else "")]
         if not apps or not all(plain_app(a.name, a.bundle) for a in apps):

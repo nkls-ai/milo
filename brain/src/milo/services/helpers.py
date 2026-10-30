@@ -76,6 +76,10 @@ class Helper:
     careful: bool = False
     """Asked for in a conversation that read outside text (the screen): its tools ask before changes too.
     See ADR 0014."""
+    user_asked: bool = False
+    """The user asked for it themselves, in a conversation without outside text (a look at the screen they asked
+    for doesn't count as outside). In auto mode its work in apps needs no question (ADR 0022). Routines, meeting
+    follow-ups and anything a mail or web page could have suggested are False."""
     instructions: str = ""
     """What the worker gets instead of the description, when that is long: a routine's recipe. The
     description stays short, for the Milo window."""

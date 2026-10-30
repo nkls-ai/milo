@@ -134,6 +134,7 @@ class Stack:
                                  poll_s=0.005)
         self.tasks.on_done.append(self.routines.seen)
         self.tasks.on_done.append(lambda helper: self.permits.end(helper.id))
+        self.permits.user_asked = self.tasks.user_asked
         self.live_talk = LiveTalk(self.model, self.speaker, self.ui, self.context, self.clock, self.profile,
                                   self.reminders, self.ledger, lambda: self.persona, self.idle_reset_s, self.tasks,
                                   eyes=self.eyes, approvals=self.approvals, memory=self.turn_memory,

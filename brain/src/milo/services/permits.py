@@ -16,14 +16,14 @@ from milo.core.types import AppRef, Scope
 
 log = logging.getLogger("milo.permits")
 
-ASK = ("task", "step")
-"""`[approvals] ask`: Allow covers the rest of the task's work in that app ("task"), or only that step."""
 
 class Permits:
     """What the user already allowed: work in an app for one task (Allow), or always (Allow always).
 
-    `ask` is "task" (an Allow covers the rest of that task in that app) or "step" (only that one step). Allow
-    always works either way. `save` gets the always-allowed apps whenever they change, as dicts for config.toml.
+    `ask` is "step" (an Allow covers only that step), "task" (the rest of that task in that app) or "auto" (work
+    the user asked for needs no question at all: `user_asked(task)` says whether they did; anything else is
+    asked once per task). Allow always works in every mode. `save` gets the always-allowed apps whenever they
+    change, as dicts for config.toml.
     """
 
     def __init__(self, ask: str = "task", always: Iterable[AppRef | Mapping | str] = (),
@@ -32,6 +32,7 @@ class Permits:
         self._always: list[AppRef] = []
         self.use(always)
         self.save = save
+        self.user_asked: Callable[[str], bool] = lambda task: False
         self._tasks: dict[str, list[AppRef]] = {}
 
     @property
@@ -52,7 +53,9 @@ class Permits:
             return ""
         if all(any(app.same(a) for a in self._always) for app in scope.apps):
             return "always"
-        granted = self._tasks.get(scope.task, []) if scope.task and self.ask == "task" else []
+        if self.ask == "auto" and scope.task and self.user_asked(scope.task):
+            return "auto"
+        granted = self._tasks.get(scope.task, []) if scope.task and self.ask != "step" else []
         if all(any(app.same(a) for a in granted) for app in scope.apps) and granted:
             return "task"
         return ""
@@ -65,7 +68,7 @@ class Permits:
                 self._always.extend(new)
                 log.info("always allowed now: %s", ", ".join(a.label for a in new))
                 self._save()
-        if scope.task and self.ask == "task":
+        if scope.task and self.ask != "step":
             granted = self._tasks.setdefault(scope.task, [])
             granted.extend(app for app in scope.apps if not any(app.same(a) for a in granted))
 

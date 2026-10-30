@@ -34,7 +34,7 @@ RETIRED = {("harness", "conversation_idle_reset_s"): "it moved to [chat]",
 
 
 UPDATES = ("quiet", "bubble", "chatty")
-ASK = ("task", "step")
+ASK = ("step", "task", "auto")
 MAX_HELPERS = 8
 
 
@@ -144,8 +144,9 @@ class ApprovalSettings:
     speak: bool = True
     """Say the question aloud, besides showing it."""
     ask: str = "task"
-    """How often Milo asks about work in an app (ADR 0022): "task" (one Allow covers the rest of that task in that
-    app) or "step" (every step that would ask). Sending, deleting and buying ask every time either way."""
+    """How often Milo asks about work in an app (ADR 0022): "step" (every step that would ask), "task" (one Allow
+    covers the rest of that task in that app) or "auto" (what the user asked for needs no question). Sending,
+    deleting and buying ask every time, and passwords, money and security settings are refused, in every mode."""
     allowed_apps: tuple[dict, ...] = ()
     """Apps the user said Allow always to, each {name, bundle}. Milo adds them; the Settings window takes them away."""
 

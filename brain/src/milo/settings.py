@@ -40,7 +40,7 @@ SETTINGS = (
     Setting("ui", "whats_this_key", ("ctrl+option+m", "ctrl+option+w", "ctrl+shift+m", ""),
             ("Control-Option-M", "Control-Option-W", "Control-Shift-M", "Off")),
     Setting("ui", "voice"),
-    Setting("approvals", "ask", ASK, ("Once per task", "Every step")),
+    Setting("approvals", "ask", ASK, ("Every step", "Once per task", "Don't ask (auto)")),
     Setting("approvals", "allowed_apps"),
 )
 ALLOWED_APPS = ("approvals", "allowed_apps")

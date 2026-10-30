@@ -614,8 +614,12 @@ class LiveTalk:
             self._looking(True)
             self._ui.thinking = True
             self._look_started = asyncio.create_task(self._eyes.look("window"))
-        ask_tasks = self._tainted or screen
+        # Auto mode (ADR 0022): the user's own request is the yes, also for a task from a look they asked for.
+        # Outside text (task results, mail, web pages, messages passed on) still makes every tag ask.
+        auto = self._approvals is not None and self._approvals.permits.ask == "auto"
+        ask_tasks = self._tainted or (screen and not auto)
         careful = self._saw_screen or self._tainted
+        user_asked = not self._tainted
         effects: list[tuple[str, str, Callable[[], None], bool]] = []
         for fact in () if screen else parser.remembers:
             effects.append((f"Should I remember this: {fact}?", "", lambda fact=fact: self._remember(fact),
@@ -628,12 +632,13 @@ class LiveTalk:
             # The whole task shows under the short question in the window: the user approves all of it.
             detail = "" if question.rstrip("?") == task.description.rstrip(".?") else task.description
             effects.append((question, detail, lambda task=task: self._tasks.submit(
-                task.description, title=task.title, screen=task.screen, careful=careful), ask_tasks))
+                task.description, title=task.title, screen=task.screen, careful=careful, user_asked=user_asked),
+                            ask_tasks))
         for ref, change in parser.steers:  # a change to a task is a task: same rule
             question = task_question(f"Change the task to {change}")
             detail = change if question.endswith("…?") else ""
             effects.append((question, detail, lambda ref=ref, change=change: self._tasks.steer(
-                ref, change, careful=careful), ask_tasks))
+                ref, change, careful=careful, user_asked=user_asked), ask_tasks))
         if self._routines is not None:  # a routine run is a task: same rule, unless the routine says otherwise
             for question, detail, apply, ask in self._routines.effects(parser.routines, careful=careful):
                 effects.append((question, detail, apply, ask_tasks if ask is None else ask))
