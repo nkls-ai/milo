@@ -4,6 +4,7 @@ import asyncio
 import logging
 from collections.abc import Callable
 
+from milo.core.logtext import private
 from milo.core.ports import AudioInput, Clock, ProactiveEngine
 from milo.core.types import HarnessError, Nudge, Signals
 
@@ -61,7 +62,7 @@ class HeartbeatRunner:
     async def deliver(self, nudge: Nudge) -> None:
         if self.muted and nudge.rule not in REMINDER_RULES:
             return
-        log.info("nudge %s: %s", nudge.rule, nudge.text)
+        log.info("nudge %s: %s", nudge.rule, private(nudge.text))
         await wait_while(self._busy, self._wait_s, self._poll_s)
         text = nudge.text
         today = self._clock.now().date()

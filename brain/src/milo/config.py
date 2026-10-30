@@ -15,11 +15,11 @@ from .core.registry import ConfigError, options_from
 log = logging.getLogger("milo.config")
 
 KEY_NAMES = ("fn", "right_option", "right_command", "right_control")
-PLUGGABLE = ("chat", "harness", "stt", "tts", "audio", "dictation")
-SECTIONS = (*PLUGGABLE, "ui", "heartbeat")
+PLUGGABLE = ("chat", "harness", "stt", "tts", "audio", "dictation", "connections")
+SECTIONS = (*PLUGGABLE, "ui", "heartbeat", "approvals", "logging")
 
-# `use` when a section leaves it out. Lets configs written before [chat] existed keep working.
-DEFAULT_USE = {"chat": "claude_live"}
+# `use` when a section leaves it out. Lets configs written before a section existed keep working.
+DEFAULT_USE = {"chat": "claude_live", "connections": "mac"}
 
 # Keys older templates had. ~/Milo/config.toml is never overwritten, so they are skipped with a warning.
 RETIRED = {("harness", "conversation_idle_reset_s"): "it moved to [chat]"}
@@ -66,6 +66,38 @@ class HeartbeatSettings:
 
 
 @dataclass(frozen=True)
+class ConnectionSettings:
+    """What the worker may reach through Milo's app connections. Each switch turns one off."""
+
+    enabled: bool = True
+    calendar: bool = True
+    reminders: bool = True
+    mail: bool = True
+    notes: bool = True
+    shortcuts: bool = True
+    files: bool = True
+    files_scope: str = "~"
+    """Files outside this folder are never found or read. ~/Library and hidden folders are always left out."""
+
+
+@dataclass(frozen=True)
+class ApprovalSettings:
+    timeout_s: float = 60.0
+    """How long Milo waits for a yes. No answer means no."""
+    speak: bool = True
+    """Say the question aloud, besides showing it."""
+
+
+@dataclass(frozen=True)
+class LoggingSettings:
+    content: bool = False
+    """Put what was said, replies, facts and reminder texts in brain.log. For debugging only."""
+    max_mb: float = 2.0
+    keep: int = 3
+    """Old logs kept besides brain.log, each up to max_mb."""
+
+
+@dataclass(frozen=True)
 class SttSettings:
     pass
 
@@ -77,7 +109,7 @@ class AudioSettings:
 
 _PLUGGABLE_SETTINGS: dict[str, type] = {
     "chat": ChatSettings, "harness": HarnessSettings, "stt": SttSettings, "tts": TtsSettings,
-    "audio": AudioSettings, "dictation": DictationSettings,
+    "audio": AudioSettings, "dictation": DictationSettings, "connections": ConnectionSettings,
 }
 
 
@@ -96,6 +128,13 @@ class Config:
         self.harness: HarnessSettings = settings["harness"]
         self.tts: TtsSettings = settings["tts"]
         self.dictation: DictationSettings = settings["dictation"]
+        self.connections: ConnectionSettings = settings["connections"]
+        approvals = raw.get("approvals", {})
+        self.approvals = _pluggable_settings(ApprovalSettings, approvals, "approvals")
+        if not isinstance(approvals.get("levels", {}), dict):
+            raise ConfigError("[approvals.levels] must be a table")
+        self.approval_levels: dict[str, Any] = dict(approvals.get("levels", {}))
+        self.logging = _typed(options_from(LoggingSettings, raw.get("logging", {}), "logging"), "logging")
         self.ui = _typed(options_from(UiSettings, raw.get("ui", {}), "ui"), "ui")
         heartbeat = {k: v for k, v in raw.get("heartbeat", {}).items() if k == "enabled"}
         self.heartbeat = _typed(HeartbeatSettings(**heartbeat), "heartbeat")

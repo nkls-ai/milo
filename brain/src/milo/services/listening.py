@@ -6,6 +6,7 @@ import time
 from concurrent.futures import Executor
 
 from milo.core.events import Status
+from milo.core.logtext import private
 from milo.core.ports import AudioInput, Transcriber
 from milo.core.types import STT_SAMPLE_RATE, ListenMode, MiloState
 
@@ -66,7 +67,8 @@ class Listening:
             self._ui.emit(Status("I couldn't transcribe that."))
             self._ui.rest()
             return
-        log.info("stt %.2fs audio in %.2fs: %r", len(audio) / STT_SAMPLE_RATE, time.monotonic() - started, text)
+        log.info("stt %.2fs audio in %.2fs: %s", len(audio) / STT_SAMPLE_RATE, time.monotonic() - started,
+                 private(text))
         text = text.strip()
         if mode is ListenMode.DICTATE:
             self._dictation.handle(text, self._context.app)

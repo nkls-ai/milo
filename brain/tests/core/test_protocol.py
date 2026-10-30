@@ -26,6 +26,9 @@ OUTBOUND = {
     "entry": lambda m: ev.EntryChanged(m["entry"]),
     "reply_delta": lambda m: ev.ReplyDelta(m["id"], m["text"]),
     "activity": lambda m: ev.Activity(m["task_id"], m["step"]),
+    "confirm": lambda m: ev.Confirm(m["id"], m["question"]),
+    "confirm_done": lambda m: ev.ConfirmDone(m["id"], m["answer"]),
+    "app_request": lambda m: ev.AppRequest(m["id"], m["op"], m["args"]),
 }
 
 
@@ -54,11 +57,17 @@ def test_fixture_covers_every_command_type():
 def test_parsed_values():
     assert ev.parse_command({"type": "listen_start", "mode": "dictate"}) == ev.ListenStart(ListenMode.DICTATE)
     assert ev.parse_command({"type": "context", "app": "", "idle_s": -3}) == ev.ContextUpdate(None, 0.0)
+    assert ev.parse_command({"type": "confirm_answer", "id": "q1", "yes": False}) == ev.ConfirmAnswer("q1", False)
+    assert ev.parse_command({"type": "app_response", "id": "a1", "ok": True, "result": [1]}) == \
+        ev.AppResponse("a1", True, [1])
+    assert ev.parse_command({"type": "app_response", "id": "a1", "ok": "yes"}).ok is False
 
 
 @pytest.mark.parametrize("raw", [
     [], {"type": "nope"}, {"type": "listen_start", "mode": "shout"}, {"type": "text", "text": "  "},
     {"type": "text"}, {"type": "mute"}, {"type": "context", "idle_s": "soon"},
+    {"type": "confirm_answer", "id": "q1", "yes": "no"}, {"type": "confirm_answer", "yes": True},
+    {"type": "app_response", "ok": True},
 ])
 def test_bad_commands_raise_protocol_error(raw):
     with pytest.raises(ev.ProtocolError):

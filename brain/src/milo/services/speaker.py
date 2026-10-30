@@ -8,6 +8,7 @@ from concurrent.futures import Executor
 import numpy as np
 
 from milo.core.events import Bubble
+from milo.core.logtext import private
 from milo.core.ports import AudioOutput, Voice
 from milo.core.types import Audio, Emotion, MiloState
 
@@ -143,7 +144,7 @@ class Utterance:
                     ui.set_state(MiloState.SPEAKING)
                 now = loop.time()
                 if self._play_end and now > self._play_end + 0.05:
-                    log.info("speech gap %.2fs before %r", now - self._play_end, piece[:40])
+                    log.info("speech gap %.2fs before %s", now - self._play_end, private(piece[:40]))
                 self._play_end = max(now, self._play_end) + len(audio) / sample_rate
                 speaker.output.feed(audio)
                 self.shown = f"{self.shown} {piece}".strip()

@@ -135,6 +135,18 @@ class LiveModel(Protocol):
 
 
 @runtime_checkable
+class Confirmer(Protocol):
+    """Asks the user before an action. Any tool or service that is about to do something it can't undo uses it."""
+
+    async def confirm(self, summary: str) -> bool:
+        """Ask `summary`, a plain yes-or-no question naming the thing and the consequence.
+
+        True only for a yes. No, no answer before the timeout, or an error mean False.
+        """
+        ...
+
+
+@runtime_checkable
 class ProfileMemory(Protocol):
     """Durable facts about the user, kept as Markdown the user can read and edit."""
 

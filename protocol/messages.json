@@ -24,7 +24,10 @@
     ]},
     {"type": "entry", "entry": {"id": "e9a0f61b7d58", "ts": "2026-10-30T09:14:00", "kind": "milo", "text": "", "emotion": "neutral", "done": false}},
     {"type": "reply_delta", "id": "e9a0f61b7d58", "text": "Sure, "},
-    {"type": "activity", "task_id": "c07b3e9d1a26", "step": {"id": "item_2", "kind": "edit", "title": "Editing notes.md", "detail": "update /Users/you/Milo/notes.md", "status": "failed"}}
+    {"type": "activity", "task_id": "c07b3e9d1a26", "step": {"id": "item_2", "kind": "edit", "title": "Editing notes.md", "detail": "update /Users/you/Milo/notes.md", "status": "failed"}},
+    {"type": "confirm", "id": "3b9e7a01c4d2", "question": "I'm about to run your shortcut “Text Anna I'm late”. Go ahead?"},
+    {"type": "confirm_done", "id": "3b9e7a01c4d2", "answer": "yes"},
+    {"type": "app_request", "id": "a41f", "op": "calendar.add_event", "args": {"title": "Doctor", "start": "2026-11-05T15:00:00", "end": "2026-11-05T16:00:00"}}
   ],
   "app_to_brain": [
     {"type": "listen_start", "mode": "dictate"},
@@ -37,6 +40,9 @@
     {"type": "text", "text": "what's on today", "speak": false},
     {"type": "get_history"},
     {"type": "context", "app": "Xcode", "idle_s": 3.5},
-    {"type": "mute", "on": true}
+    {"type": "mute", "on": true},
+    {"type": "confirm_answer", "id": "3b9e7a01c4d2", "yes": true},
+    {"type": "app_response", "id": "a41f", "ok": true, "result": {"id": "E1F2-77", "title": "Doctor", "start": "2026-11-05T15:00:00", "end": "2026-11-05T16:00:00", "calendar": "Home"}},
+    {"type": "app_response", "id": "a42f", "ok": false, "error": "Milo isn't allowed to use your calendar. Turn it on in System Settings › Privacy & Security › Calendars."}
   ]
 }

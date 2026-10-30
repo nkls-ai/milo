@@ -5,8 +5,10 @@ from __future__ import annotations
 import logging
 
 from .config import UiSettings
-from .core.events import (Command, ContextUpdate, EmotionChanged, Event, GetHistory, ListenCancel, ListenConfirm,
-                          ListenStart, ListenStop, Mute, StateChanged, TextInput, UiConfig)
+from .core.events import (AppResponse, Command, ConfirmAnswer, ContextUpdate, EmotionChanged, Event, GetHistory,
+                          ListenCancel, ListenConfirm, ListenStart, ListenStop, Mute, StateChanged, TextInput, UiConfig)
+from .services.app_bridge import AppBridge
+from .services.approvals import Approvals
 from .services.context import UserContext
 from .services.heartbeat_runner import HeartbeatRunner
 from .services.listening import Listening
@@ -19,8 +21,11 @@ log = logging.getLogger("milo.brain")
 
 class Brain:
     def __init__(self, ui: UiState, listening: Listening, live_talk: LiveTalk, context: UserContext,
-                 heartbeat: HeartbeatRunner | None, ui_settings: UiSettings, transcript: Transcript | None = None):
+                 heartbeat: HeartbeatRunner | None, ui_settings: UiSettings, transcript: Transcript | None = None,
+                 approvals: Approvals | None = None, bridge: AppBridge | None = None):
         self._ui = ui
+        self._approvals = approvals
+        self._bridge = bridge
         self._transcript = transcript
         self._listening = listening
         self._live_talk = live_talk
@@ -58,5 +63,11 @@ class Brain:
                 log.info("proactive nudges %s", "muted" if on else "on")
                 if self._heartbeat is not None:
                     self._heartbeat.muted = on
+            case ConfirmAnswer(id, yes):
+                if self._approvals is not None and not self._approvals.answer(id, yes):
+                    log.info("an answer came for a question that is over")
+            case AppResponse():
+                if self._bridge is not None:
+                    self._bridge.resolve(command)
             case _:
                 log.warning("no handler for %s", command.type)

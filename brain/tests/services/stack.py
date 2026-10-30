@@ -10,6 +10,8 @@ from milo.brain import Brain
 from milo.config import UiSettings
 from milo.core.events import Bubble, StateChanged
 from milo.core.types import MiloState
+from milo.services.app_bridge import AppBridge
+from milo.services.approvals import Approvals
 from milo.services.context import UserContext
 from milo.services.conversation import Conversation
 from milo.services.dictation import DictationService
@@ -56,6 +58,7 @@ class Stack:
     persona: str = PERSONA
     idle_reset_s: float = 600
     wait_s: float = 0.05  # how long task results and nudges wait for a live turn to end
+    confirm_timeout_s: float = 1.0
 
     def __post_init__(self):
         executor = InlineExecutor()
@@ -66,8 +69,12 @@ class Stack:
         self.tasks = TaskRunner(self.conversation, self.speaker, self.context,
                                 quiet=lambda: self.live_talk.busy or self.mic.active, wait_s=self.wait_s,
                                 poll_s=0.005)
+        self.approvals = Approvals(self.ui, self.speaker, timeout_s=self.confirm_timeout_s,
+                                   quiet=lambda: self.live_talk.busy)
+        self.bridge = AppBridge(self.ui, timeout_s=self.confirm_timeout_s)
         self.live_talk = LiveTalk(self.model, self.speaker, self.ui, self.context, self.clock, self.profile,
-                                  self.reminders, self.ledger, lambda: self.persona, self.idle_reset_s, self.tasks)
+                                  self.reminders, self.ledger, lambda: self.persona, self.idle_reset_s, self.tasks,
+                                  approvals=self.approvals)
         self.tasks.on_result = self.live_talk.note
         self.dictation = DictationService(UpperCleaner(), self.history, self.ui)
         self.listening = Listening(self.mic, self.transcriber, executor, self.ui, self.dictation, self.live_talk,
@@ -75,7 +82,8 @@ class Stack:
         self.heartbeat = HeartbeatRunner(self.engine, self.context, self.conversation, self.speaker, self.ui,
                                          self.mic, self.clock, busy=lambda: self.live_talk.busy,
                                          wait_s=self.wait_s, poll_s=0.005)
-        self.brain = Brain(self.ui, self.listening, self.live_talk, self.context, self.heartbeat, UiSettings())
+        self.brain = Brain(self.ui, self.listening, self.live_talk, self.context, self.heartbeat, UiSettings(),
+                           approvals=self.approvals, bridge=self.bridge)
 
     def states(self) -> list[MiloState]:
         return [e.state for e in self.sink.of(StateChanged)]

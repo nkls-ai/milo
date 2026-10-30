@@ -135,6 +135,37 @@ class Activity(Event):
     step: dict
 
 
+@dataclass(frozen=True)
+class Confirm(Event):
+    """Milo asks a yes-or-no question before an action. Shown with Yes and No until `confirm_done` for this id."""
+
+    type: ClassVar[str] = "confirm"
+    id: str
+    question: str
+
+
+@dataclass(frozen=True)
+class ConfirmDone(Event):
+    """The question `id` is over. answer: "yes", "no" or "timeout" (which counts as no)."""
+
+    type: ClassVar[str] = "confirm_done"
+    id: str
+    answer: str
+
+
+@dataclass(frozen=True)
+class AppRequest(Event):
+    """Work only the app has permission for, such as Calendar and Reminders through EventKit.
+
+    The app answers with `app_response` and the same id. Ops are listed in docs/ARCHITECTURE.md.
+    """
+
+    type: ClassVar[str] = "app_request"
+    id: str
+    op: str
+    args: dict
+
+
 # ---- app -> brain
 
 
@@ -203,6 +234,26 @@ class Mute(Command):
     on: bool
 
 
+@dataclass(frozen=True)
+class ConfirmAnswer(Command):
+    """The user clicked Yes or No on the question `id`."""
+
+    type: ClassVar[str] = "confirm_answer"
+    id: str
+    yes: bool
+
+
+@dataclass(frozen=True)
+class AppResponse(Command):
+    """The answer to `app_request` `id`: `result` when ok, else a plain `error`."""
+
+    type: ClassVar[str] = "app_response"
+    id: str
+    ok: bool
+    result: Any = None
+    error: str = ""
+
+
 def parse_command(raw: object) -> Command:
     if not isinstance(raw, dict):
         raise ProtocolError("message must be a JSON object")
@@ -229,6 +280,12 @@ def parse_command(raw: object) -> Command:
                 return ContextUpdate(str(app) if app else None, max(0.0, float(raw.get("idle_s", 0))))
             case "mute":
                 return Mute(bool(raw["on"]))
+            case "confirm_answer":
+                if not isinstance(raw["yes"], bool):
+                    raise ProtocolError("yes must be true or false")
+                return ConfirmAnswer(str(raw["id"]), raw["yes"])
+            case "app_response":
+                return AppResponse(str(raw["id"]), raw["ok"] is True, raw.get("result"), str(raw.get("error") or ""))
     except (KeyError, TypeError, ValueError) as e:
         raise ProtocolError(f"bad {kind} message: {e}") from None
     raise ProtocolError(f"unknown message type {kind!r}")

@@ -88,7 +88,35 @@ def check_mute(s: Stack, msg: dict) -> None:
     assert s.heartbeat.muted is msg["on"]
 
 
+def check_confirm_answer(s: Stack, msg: dict) -> None:
+    async def go():
+        asking = asyncio.create_task(s.approvals.confirm("Send it?"))
+        await settle()
+        s.approvals._pending = (msg["id"], s.approvals._pending[1])  # the fixture's id
+        await s.brain.handle(parse_command(msg))
+        return await asking
+
+    assert asyncio.run(go()) is msg["yes"]
+
+
+def check_app_response(s: Stack, msg: dict) -> None:
+    async def go():
+        calling = asyncio.create_task(s.bridge.call("calendar.events", {}))
+        await settle()
+        [waiting] = s.bridge._waiting
+        s.bridge._waiting[msg["id"]] = s.bridge._waiting.pop(waiting)
+        await s.brain.handle(parse_command(msg))
+        try:
+            return await calling
+        except Exception as e:
+            return str(e)
+
+    assert asyncio.run(go()) == (msg["result"] if msg["ok"] else msg["error"])
+
+
 CHECKS = {
+    "confirm_answer": check_confirm_answer,
+    "app_response": check_app_response,
     "listen_start": check_listen_start,
     "listen_stop": check_listen_stop,
     "listen_cancel": check_listen_cancel,
