@@ -21,6 +21,7 @@ brain/src/milo/
   adapters/       concrete engines, each registering itself by name
     harness/      codex, claude (agent harnesses), claude_live (the streaming chat model)
     stt/          mlx_whisper
+    diarize/      sherpa_onnx (voice embeddings for meeting notes, TitaNet-small by default)
     tts/          omnivoice, say
     audio/        sounddevice (mic in, speaker out)
     text/         fillers, plain (dictation cleanup)
@@ -30,7 +31,7 @@ brain/src/milo/
   connect/        the MCP tool server the worker loads (python -m milo.connect)
   eval/           the 30-task eval (python -m milo.eval) and the on-screen eval (python -m milo.eval.screen)
   memory/         Workspace paths and bootstrap, profile.md, reminders.md, usage ledger, dictation history,
-                  transcript (the Milo window's conversation)
+                  transcript (the Milo window's conversation), meetings (FileMeetingStore, JsonVoiceBook)
   proactive/      heartbeat engine, daily LLM budget, rules (one class per rule, registered by name)
   services/       use cases built only on ports: listening (push-to-talk, barge-in), dictation,
                   live_transcript (pause segmenter and partial passes while recording),
@@ -41,7 +42,8 @@ brain/src/milo/
                   (action levels and yes-or-no questions), app_bridge (requests to the app and their answers:
                   AppEyes, AppHands, Calendar and Reminders work), tool_requests (what the tool socket may do),
                   screen (screen data for the chat model), hands + risk (checking and logging the worker's Mac
-                  actions), sheets + documents (the AppleScript behind sheet_write and write_document), plus small shared pieces: ui_state, context (latest app/idle report), levels
+                  actions), sheets + documents (the AppleScript behind sheet_write and write_document), meetings +
+                  meeting_text + meeting_speakers + background_stt (meeting notes, see below), plus small shared pieces: ui_state, context (latest app/idle report), levels
                   (throttled meters), quiet (wait for a turn to end), fallback_voice
   transport/      Unix socket JSONL servers: brain.sock (an EventSink), hands.sock, and the tool socket and its
                   client
@@ -148,6 +150,16 @@ The window shows the conversation as text and lets the user type to Milo. Clicki
 - **Questions.** While Milo waits for a yes or no, the bubble shows the question with Yes and No buttons and stays up, and a bar above the text field shows it too.
 - **Typing.** The text field sends `text`. The window's "speak replies" toggle (off by default, kept in UserDefaults) adds `"speak": false`, and Milo then answers in the bubble and the window without audio.
 
+## Meeting notes
+
+See [docs/design/meetings.md](design/meetings.md) and [docs/research/meetings.md](research/meetings.md).
+
+- **The app records, the brain decides.** `Meetings/MeetingController` polls `CallSignals` (`Adapters/MacCallSignals`: who uses the mic, from Core Audio's process list, and browser window titles) and turns them into `call_started` and `call_ended` through the pure `CallDetector`. The brain's `MeetingService` asks once through `Approvals` ("Looks like a meeting. Should I take notes?", shown, not spoken) or starts on its own for `[meetings] auto = "calendar"` when the calendar has an event now. It sends `meeting_record` with the folder. The app's `MeetingRecorder` (`Adapters/MacMeetingRecorder`) writes two tracks, `me` (the mic) and `them` (a Core Audio process tap of everything but Milo and the brain, or ScreenCaptureKit), as 30 s WAV chunks through `Meetings/ChunkWriter`, and sends `meeting_chunk` for each one on disk. `meeting_recording` says which tracks are recorded, on every connect too, so a restarted brain goes on with the meeting the app is still recording. A red dot shows on Milo and in the menu bar, whose "Take meeting notes" item sends `meeting_toggle`.
+- **Passes.** `MeetingService` transcribes the track furthest behind in passes of up to 30 s, cut at the quietest moment, with `TimedTranscriber.words` (Whisper word times) through `BackgroundStt`, which waits while the user dictates or talks. Each pass appends its lines and a progress mark to `meetings/<id>/transcript.jsonl` in one write (`MeetingStore`), and re-renders `transcript.md`. A crash repeats at most the pass it was in, and its lines count once.
+- **Speakers.** The `them` track's Whisper segments go to the `Diarizer` (`DIARIZERS` registry, `[meetings] diarizer`), one voice embedding each. `SpeakerTracker` keeps the meeting's voices across passes. Names come from `VoiceBook` (voices the user named before), the calendar (one attendee and one voice), and the user ("that was Anna", "Speaker 2 is Tom").
+- **During the call.** LiveTalk asks `MeetingService.before_turn(text)` for a `<meeting>` block with what was said, newest last and escaped, and treats it like screen data: untrusted, and the conversation counts as tainted.
+- **After.** A fresh chat-model session writes the summary, decisions, to-dos and a follow-up draft as JSON (`meeting_text.SUMMARY_RULES`). The brain writes `notes.md`, deletes the audio unless `[meetings] keep_audio`, offers the user's to-dos as Reminders and the mail draft through `Approvals` (the draft goes to a careful helper with the meeting text as data), and hands a memory episode stub to `on_episode` (not wired yet; the memory track connects it).
+
 ## Heartbeat cost model
 
 The heartbeat must not burn tokens. One tick does a `stat()` on `reminders.md`, runs the enabled rules in memory and writes `state/heartbeat.json`. That's zero harness calls. A rule can attach an `llm_prompt` asking for nicer wording, but the runner uses it only if `LlmBudget.allow(today)` is true. The default `llm_calls_per_day = 0` means it never is. `tests/proactive` simulates a full day of ticks and asserts zero calls.
@@ -170,7 +182,8 @@ app/
                      Screen/Delivery + Screen/CursorGlide. The character: Views/PipFigure (the bird, default) or
                      Views/CharacterView's CharacterFigure (the robot, [ui] character = "classic"), both
                      posed by CharacterLife. Flight.swift + AppKit/FlightDriver fly the overlay panel to
-                     MiloModel.flyTarget (AppKit global screen coordinates) and back
+                     MiloModel.flyTarget (AppKit global screen coordinates) and back. Meetings/: MeetingController,
+                     CallDetector, ChunkWriter; Adapters/MacMeetingRecorder + CoreAudioProcesses
   Sources/Milo/      main.swift: builds concrete adapters, hands them to MiloController
   Tests/MiloKitTests Swift Testing; decodes protocol/messages.json, drives the controller with fakes.
                      MILO_RENDER_DIR=/tmp/milo-render swift test --filter ConversationRender renders the
