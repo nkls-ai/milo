@@ -54,7 +54,9 @@ public final class ScreenController {
     private var gliding = false
     private var waiting: [() -> Void] = []
     private var glideTimeout: ScheduledTask?
-    private var lapse: ScheduledTask?
+    /// The devices the user lent ("mouse", "keyboard"), each with its own give-back timer.
+    private var lent: Set<String> = []
+    private var lapses: [String: ScheduledTask] = [:]
     private var watchedPid: Int32?
 
     /// `now` is on the input events' clock. `toAppKit` turns a top-left-origin point into AppKit's.
@@ -108,8 +110,8 @@ public final class ScreenController {
             perform(id: id, tool: tool, args: args)
         case let .handsSession(on):
             session(on)
-        case let .handsBorrow(on):
-            if model.handsActive { lend(on) }
+        case let .handsBorrow(on, what):
+            if model.handsActive { lend(what, on) }
         case let .flyTo(point):
             // While a window is known Pip stays perched on it; Milo's cursor shows the spot.
             if point == nil || model.workingWindow == nil { model.flyTarget = point.map(toAppKit) }
@@ -136,7 +138,7 @@ public final class ScreenController {
             if stoppedLocally && tool != "describe" {
                 return brain.send(.handsResult(id: id, ok: false, result: [:], error: "stopped"))
             }
-            if model.handsBorrowed { lapse?.cancel() }
+            if let device = Self.device(for: tool) { lapses[device]?.cancel() }
             detector.miloActs(at: now())
             ports.hands.perform(tool, args: args) { [weak self] result in
                 self?.finished(id: id, tool: tool, args: args, result: result)
@@ -149,7 +151,8 @@ public final class ScreenController {
     private func finished(id: String, tool: String, args: [String: JSONValue],
                           result: Result<[String: JSONValue], HandsFailure>) {
         detector.miloActs(at: now())
-        if model.handsBorrowed { lapse?.cancel(); lapse = scheduler.after(Self.lendFor) { [weak self] in self?.lend(false) } }
+        // Each lent device's give-back clock restarts after an action that used it.
+        if let device = Self.device(for: tool), lent.contains(device) { startLapse(device) }
         switch result {
         case let .success(value):
             if tool == "describe" { aim(at: HandsTarget(describe: value), tool: args["tool"]?.string ?? "") }
@@ -216,7 +219,7 @@ public final class ScreenController {
         stoppedLocally = false
         model.handsActive = on
         if on {
-            detector.mode = model.handsBorrowed ? .borrowed : .background
+            detector.mode = lent.isEmpty ? .background : .borrowed
             if model.question == nil { detector.arm() }
             ports.input.start()
         } else {
@@ -226,13 +229,34 @@ public final class ScreenController {
         }
     }
 
-    /// The real mouse and keyboard are lent (`on`) or given back.
-    private func lend(_ on: Bool) {
-        lapse?.cancel()
-        lapse = on ? scheduler.after(Self.lendFor) { [weak self] in self?.lend(false) } : nil
-        ports.hands.borrowed = on
-        model.handsBorrowed = on
-        detector.mode = on ? .borrowed : .background
+    /// Which device an action uses, so only that one's give-back clock restarts.
+    static func device(for tool: String) -> String? {
+        switch tool {
+        case "click", "scroll": Delivery.Need.mouse.rawValue
+        case "type", "key": Delivery.Need.keyboard.rawValue
+        default: nil
+        }
+    }
+
+    /// Lend one device ("mouse" or "keyboard") or give it back. Only the device the user agreed to is lent,
+    /// so a yes for the mouse can't let Milo type with the real keyboard, and each is handed back on its own.
+    private func lend(_ what: String, _ on: Bool) {
+        guard what == Delivery.Need.mouse.rawValue || what == Delivery.Need.keyboard.rawValue else { return }
+        lapses[what]?.cancel()
+        lapses[what] = nil
+        if on { lent.insert(what); startLapse(what) } else { lent.remove(what) }
+        apply(lent: lent)
+    }
+
+    private func startLapse(_ what: String) {
+        lapses[what]?.cancel()
+        lapses[what] = scheduler.after(Self.lendFor) { [weak self] in self?.lend(what, false) }
+    }
+
+    private func apply(lent devices: Set<String>) {
+        ports.hands.borrowed = devices
+        model.handsBorrowed = !devices.isEmpty
+        detector.mode = devices.isEmpty ? .background : .borrowed
     }
 
     private func handle(_ input: UserInput) {
@@ -251,8 +275,10 @@ public final class ScreenController {
     }
 
     private func clearScreen() {
-        lend(false)
-        lapse = nil
+        lapses.values.forEach { $0.cancel() }
+        lapses.removeAll()
+        lent.removeAll()
+        apply(lent: lent)
         model.flyTarget = nil
         model.workingWindow = nil
         watchedPid = nil

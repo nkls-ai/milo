@@ -135,7 +135,7 @@ class HandsService:
         if not await self._confirm.confirm(borrow_question(tool, target, need.what)):
             raise HandsError(KEEP_IT.format(what=need.what))
         self._check()
-        self._sink.emit(HandsBorrow(True))
+        self._sink.emit(HandsBorrow(True, need.what))
         try:
             return await self._act(tool, args)
         except BorrowNeeded:

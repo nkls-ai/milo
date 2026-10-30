@@ -134,7 +134,7 @@ final class FakeHandsExecutor: HandsExecutor {
     var result: Result<[String: JSONValue], HandsFailure> = .success(["text": "done"])
     /// Answers for particular tools, e.g. "describe".
     var results: [String: Result<[String: JSONValue], HandsFailure>] = [:]
-    var borrowed = false
+    var borrowed: Set<String> = []
     var hold = false
     private(set) var performed: [String] = []
     private(set) var cancels = 0

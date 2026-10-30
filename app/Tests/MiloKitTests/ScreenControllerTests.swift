@@ -39,7 +39,7 @@ private final class Rig {
     /// Starts a session with the pointer resting at (0, 0) a while ago. `borrowed`: the user lent the mouse.
     func startSession(borrowed: Bool = false) {
         brain.emit(.handsSession(true))
-        if borrowed { brain.emit(.handsBorrow(true)) }
+        if borrowed { brain.emit(.handsBorrow(on: true, what: "mouse")) }
         input.send(UserInput(.mouseMoved(x: 0, y: 0), at: clock))
         clock += 1
     }
@@ -254,7 +254,7 @@ private final class Rig {
         r.describesAButton()
         r.brain.emit(.handsRequest(id: "h1", tool: "describe", args: ["tool": "click", "x": 1, "y": 2]))
         r.brain.emit(.handsSession(false))
-        #expect(r.model.workingWindow == nil && !r.model.handsBorrowed && !r.hands.borrowed)
+        #expect(r.model.workingWindow == nil && !r.model.handsBorrowed && r.hands.borrowed.isEmpty)
         #expect(r.windows.stops >= 1 && r.cursor.calls.last == "rest")
     }
 
@@ -270,14 +270,14 @@ private final class Rig {
     @Test func theMouseGoesBackAWhileAfterTheLastBorrowedAction() {
         let r = Rig()
         r.startSession()
-        r.brain.emit(.handsBorrow(true))
-        #expect(r.model.handsBorrowed && r.hands.borrowed)
+        r.brain.emit(.handsBorrow(on: true, what: "mouse"))
+        #expect(r.model.handsBorrowed && r.hands.borrowed == ["mouse"])
         r.scheduler.advance(by: ScreenController.lendFor - 1)
         r.brain.emit(.handsRequest(id: "h1", tool: "click", args: ["x": 1, "y": 2]))
         r.scheduler.advance(by: ScreenController.lendFor - 1)
         #expect(r.model.handsBorrowed, "each action starts the wait again")
         r.scheduler.advance(by: 1)
-        #expect(!r.model.handsBorrowed && !r.hands.borrowed)
+        #expect(!r.model.handsBorrowed && r.hands.borrowed.isEmpty)
         r.input.send(UserInput(.mouseDown, at: r.clock + 5))
         #expect(r.model.handsActive, "back in the background, touching the mouse is fine again")
     }
@@ -291,7 +291,18 @@ private final class Rig {
 
     @Test func aBorrowOutsideASessionIsIgnored() {
         let r = Rig()
-        r.brain.emit(.handsBorrow(true))
-        #expect(!r.model.handsBorrowed && !r.hands.borrowed)
+        r.brain.emit(.handsBorrow(on: true, what: "mouse"))
+        #expect(!r.model.handsBorrowed && r.hands.borrowed.isEmpty)
+    }
+
+    @Test func lendingTheMouseDoesNotLendTheKeyboard() {
+        let r = Rig()
+        r.startSession()
+        r.brain.emit(.handsBorrow(on: true, what: "mouse"))
+        #expect(r.hands.borrowed == ["mouse"], "a yes for the mouse never lends the keyboard")
+        r.brain.emit(.handsBorrow(on: true, what: "keyboard"))
+        #expect(r.hands.borrowed == ["mouse", "keyboard"])
+        r.brain.emit(.handsSession(false))
+        #expect(r.hands.borrowed.isEmpty)
     }
 }

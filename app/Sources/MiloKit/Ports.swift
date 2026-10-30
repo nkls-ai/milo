@@ -82,9 +82,9 @@ public protocol HandsExecutor: AnyObject {
                  completion: @escaping (Result<[String: JSONValue], HandsFailure>) -> Void)
     /// Stop what is still running, e.g. an AppleScript.
     func cancel()
-    /// The user lent the real mouse and keyboard. Without it, an action that can't be done in the background
-    /// fails with `HandsFailure.borrow` and touches nothing.
-    var borrowed: Bool { get set }
+    /// The devices the user lent ("mouse", "keyboard"). An action falls back to the real pointer or keyboard
+    /// only for a device in this set; otherwise it fails with `HandsFailure.borrow` and touches nothing.
+    var borrowed: Set<String> { get set }
 }
 
 public struct HandsFailure: Error, Equatable, Sendable {

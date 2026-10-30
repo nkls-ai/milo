@@ -15,15 +15,21 @@ public final class MacHands: HandsExecutor {
     private var lastShot: ScreenShots.Shot?
     /// The app that had the keyboard focus when type or key was checked; the action refuses if it moved.
     private var checkedFocus: pid_t?
+    /// The exact element that had focus when type or key was checked; typing refuses if focus moved off it.
+    private var checkedElement: AXUIElement?
     private var script: Process?
     private let lock = NSLock()
-    private var lent = false
+    private var lent: Set<String> = []
 
-    /// The user lent the real mouse and keyboard; set on the main queue, read on the hands queue.
-    public var borrowed: Bool {
+    /// The devices the user lent ("mouse", "keyboard"); set on the main queue, read on the hands queue. An
+    /// action falls back to the real pointer or keyboard only for a device that was actually lent, so a yes to
+    /// borrowing the mouse never quietly lets Milo type with the real keyboard.
+    public var borrowed: Set<String> {
         get { lock.lock(); defer { lock.unlock() }; return lent }
         set { lock.lock(); lent = newValue; lock.unlock() }
     }
+
+    private func lent(_ need: Delivery.Need) -> Bool { borrowed.contains(need.rawValue) }
 
     public convenience init(screensFolder: URL) {
         self.init(shots: ScreenShots(folder: screensFolder), apps: FrontApps())
@@ -115,6 +121,7 @@ public final class MacHands: HandsExecutor {
         case "type", "key":
             element = AX.focused()
             checkedFocus = element.map(AX.pid)
+            checkedElement = element
             point = element.flatMap(Self.caret) ?? element.flatMap(AX.frame).map { CGPoint(x: $0.midX, y: $0.midY) }
         case "open_app":
             let name = args["name"]?.string ?? ""
@@ -305,7 +312,7 @@ public final class MacHands: HandsExecutor {
         traits.textual = element.map { AX.textRoles.contains(AX.role($0)) && AX.role($0) != "AXStaticText" } ?? false
         traits.menu = element.map { Self.actions($0).contains(kAXShowMenuAction) } ?? false
         let steps = Delivery.plan(.click(right: right, count: clicks), traits: traits, family: family(of: element),
-                                  borrowed: borrowed)
+                                  borrowed: lent(.mouse))
         for step in steps {
             switch step {
             case .axPress:
@@ -346,11 +353,16 @@ public final class MacHands: HandsExecutor {
         }
     }
 
-    /// The keyboard goes where it was checked to go, and never into a password field or a password app.
-    private func checkFocus(allowSecure: Bool = false) throws {
+    /// The keyboard goes to the exact element that had focus when the action was checked (`describe`), never a
+    /// different one that stole focus since, and never a password field or a password app. Returns that element.
+    @discardableResult
+    private func checkFocus(allowSecure: Bool = false) throws -> AXUIElement? {
         let focused = AX.focused()
         if let checked = checkedFocus, focused.map(AX.pid) != checked {
             throw HandsFailure("The keyboard focus moved to another app since I checked. Look again first.")
+        }
+        if let checked = checkedElement, let focused, !CFEqual(checked, focused) {
+            throw HandsFailure("The keyboard focus moved to another field since I checked. Look again first.")
         }
         if let focused, AX.isSecret(NSRunningApplication(processIdentifier: AX.pid(focused))) {
             throw HandsFailure(AX.secretRefused)
@@ -358,14 +370,15 @@ public final class MacHands: HandsExecutor {
         if !allowSecure, let focused, AX.isSecure(focused) {
             throw HandsFailure("Milo never types into password fields.")
         }
+        return focused
     }
 
     private func type(_ text: String) throws -> [String: JSONValue] {
-        try checkFocus()
-        let focused = AX.focused()
+        // The same element throughout: checked for focus and secrecy, then written to.
+        let focused = try checkFocus()
         var traits = Delivery.Traits()
         traits.insertable = focused.map { Self.settable($0, kAXSelectedTextAttribute) } ?? false
-        for step in Delivery.plan(.type, traits: traits, family: family(of: focused), borrowed: borrowed) {
+        for step in Delivery.plan(.type, traits: traits, family: family(of: focused), borrowed: lent(.keyboard)) {
             switch step {
             case .axInsert:
                 if let focused, Self.insert(text, into: focused) { return Self.done("Typed in the background.", route: "ax") }
@@ -399,7 +412,7 @@ public final class MacHands: HandsExecutor {
         // In a password field only moving on is allowed: tab, shift+tab, escape.
         let movesOn = [48, 53].contains(parsed.keyCode) && parsed.modifiers.subtracting(.shift).isEmpty
         try checkFocus(allowSecure: movesOn)
-        guard Delivery.plan(.key, traits: .init(), family: .cocoa, borrowed: borrowed).contains(.real) else {
+        guard lent(.keyboard) else {
             throw HandsFailure("Pressing keys needs the real keyboard.", borrow: Delivery.need(for: .key).rawValue)
         }
         var flags: CGEventFlags = []
@@ -421,7 +434,7 @@ public final class MacHands: HandsExecutor {
         let area = AX.element(at: point ?? Self.pointerLocation()).flatMap(Self.scrollArea)
         var traits = Delivery.Traits()
         traits.scrollBar = area != nil
-        for step in Delivery.plan(.scroll, traits: traits, family: .cocoa, borrowed: borrowed) {
+        for step in Delivery.plan(.scroll, traits: traits, family: .cocoa, borrowed: lent(.mouse)) {
             switch step {
             case .axScrollBar:
                 if let area, Self.scroll(area, lines: lines) { return Self.done("Scrolled in the background.", route: "ax") }

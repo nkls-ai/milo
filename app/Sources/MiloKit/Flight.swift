@@ -31,6 +31,24 @@ enum FlightPlan {
         return (center, direction(from: center, to: target))
     }
 
+    /// His centre while Milo works in `window`: sitting on its top edge near the right corner, looking down
+    /// into it. Where the top edge has no room above it (a window under the menu bar), he sits on the right
+    /// side instead, and where that has none either, just inside the corner.
+    static func perch(onCornerOf window: CGRect, within screen: CGRect) -> (center: CGPoint, toward: CGVector) {
+        let target = CGPoint(x: window.midX, y: window.midY)
+        var center: CGPoint
+        if window.maxY + margin <= screen.maxY {
+            center = CGPoint(x: window.maxX - 56, y: window.maxY + 40)
+        } else if window.maxX + margin <= screen.maxX {
+            center = CGPoint(x: window.maxX + 44, y: window.maxY - 70)
+        } else {
+            center = CGPoint(x: window.maxX - 70, y: window.maxY - 70)
+        }
+        center.x = min(max(center.x, screen.minX + margin), screen.maxX - margin)
+        center.y = min(max(center.y, screen.minY + margin), screen.maxY - margin)
+        return (center, direction(from: center, to: target))
+    }
+
     /// A unit vector in view coordinates from one AppKit point to another.
     static func direction(from a: CGPoint, to b: CGPoint) -> CGVector {
         let dx = b.x - a.x, dy = b.y - a.y

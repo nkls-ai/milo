@@ -68,7 +68,7 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .appRequest(id: "a41f", op: "calendar.add_event", args: .object([
                 "title": .string("Doctor"), "start": .string("2026-11-05T15:00:00"), "end": .string("2026-11-05T16:00:00"),
             ])),
-            .handsBorrow(true),
+            .handsBorrow(on: true, what: "mouse"),
         ])
     }
 

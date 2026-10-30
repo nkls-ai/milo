@@ -226,6 +226,7 @@ class HandsBorrow(Event):
 
     type: ClassVar[str] = "hands_borrow"
     on: bool
+    what: str = ""
 
 
 # ---- app -> brain

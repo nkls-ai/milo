@@ -203,7 +203,7 @@ def test_an_action_that_needs_the_mouse_asks_to_borrow_it_then_runs():
     t.service._sink.emit = _lend_on_borrow(t.sink.emit, hands)
     out = t.call("click", {"x": 1, "y": 2})
     assert t.confirm.asked == ["Can I borrow your mouse for a moment, to click in Microsoft Excel?"]
-    assert t.sink.of(HandsBorrow) == [HandsBorrow(True)]
+    assert t.sink.of(HandsBorrow) == [HandsBorrow(True, "mouse")]
     assert [c[0] for c in hands.calls] == ["describe", "click", "click"]
     assert out.text == "click done"
     assert t.steps()[-1][1] == "done"
@@ -231,7 +231,7 @@ def test_a_risky_action_asks_its_own_question_before_the_borrow_question():
 def _lend_on_borrow(emit, hands: BorrowingHands):
     """The app answers hands_borrow by using the real mouse from then on."""
     def wrapped(event):
-        if isinstance(event, HandsBorrow):
+        if isinstance(event, HandsBorrow) and event.what == hands.what:
             hands.lent = event.on
         emit(event)
     return wrapped

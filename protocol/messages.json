@@ -34,7 +34,7 @@
     {"type": "confirm", "id": "3b9e7a01c4d2", "question": "I'm about to run your shortcut “Text Anna I'm late”. Go ahead?"},
     {"type": "confirm_done", "id": "3b9e7a01c4d2", "answer": "yes"},
     {"type": "app_request", "id": "a41f", "op": "calendar.add_event", "args": {"title": "Doctor", "start": "2026-11-05T15:00:00", "end": "2026-11-05T16:00:00"}},
-    {"type": "hands_borrow", "on": true}
+    {"type": "hands_borrow", "on": true, "what": "mouse"}
   ],
   "app_to_brain": [
     {"type": "listen_start", "mode": "dictate"},
