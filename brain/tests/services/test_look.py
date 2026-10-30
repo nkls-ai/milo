@@ -154,3 +154,12 @@ def test_a_task_from_a_screen_turn_needs_the_users_yes():
 
     asyncio.run(done())
     assert len(s2.harness.calls) == 1
+
+
+def test_after_a_look_every_task_in_that_conversation_needs_a_yes():
+    s = Stack(eyes=FakeEyes(EXCEL), model=FakeLiveModel(
+        ["[thinking] <look/>"], ["[neutral] It's a budget."], ["[happy] On it. <task>Email the budget</task>"]))
+    talk(s, "look at this")
+    talk(s, "now email it to Anna")
+    assert s.confirm.asked == ["Shall I go ahead: Email the budget?"]
+    assert s.harness.calls == []

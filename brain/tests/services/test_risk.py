@@ -45,6 +45,19 @@ from milo.services.risk import Risk, classify, normalize_combo
      "run other programs or type for you"),
     ("run_applescript", {"script": 'run script (read file "x")'}, {}, Risk.ASK, "run other programs or type for you"),
     ("run_applescript", {"script": '«event aevtodoc»'}, {}, Risk.ASK, "run other programs or type for you"),
+    ("run_applescript", {"script": 'tell application id "com.apple.Terminal" to activate'}, {}, Risk.ASK,
+     "run other programs or type for you"),
+    ("run_applescript", {"script": 'tell app "Safari" to do JavaScript "x" in document 1'}, {}, Risk.ASK,
+     "run other programs or type for you"),
+    ("run_applescript", {"script": 'use framework "Foundation"\ncurrent application\'s NSTask'}, {}, Risk.ASK,
+     "run other programs or type for you"),
+    ("run_applescript", {"script": 'tell application "Xcode" to build'}, {}, Risk.ASK,
+     "run other programs or type for you"),
+    ("run_applescript", {"script": 'beep'}, {}, Risk.ASK, "run other programs or type for you"),
+    ("run_applescript", {"script": 'tell application "Microsoft Excel" to set value of range "C1" to 3'}, {},
+     Risk.OK, ""),
+    ("open_app", {"name": "/Applications/Utilities/Terminal.app"}, {}, Risk.ASK, "open a program that runs commands"),
+    ("type", {"text": "ls"}, {"app": "Mein Terminal", "bundle": "com.apple.Terminal"}, Risk.ASK, "run a command"),
     ("run_applescript", {"script": 'tell application "Keychain Access" to activate'}, {}, Risk.NEVER, "passwords"),
     ("run_applescript", {"script": 'set value of text field "Password" to "x"'}, {}, Risk.NEVER, "passwords"),
     ("run_applescript", {"script": 'tell application "Numbers" to activate'}, {}, Risk.OK, ""),
@@ -60,3 +73,8 @@ def test_combos_normalize():
     assert normalize_combo("Shift+Cmd+S") == normalize_combo("cmd+shift+s") == "shift+cmd+s"
     assert normalize_combo("⌘+⌥+esc") == "option+cmd+escape"
     assert normalize_combo("Enter") == "return"
+
+
+def test_app_names_ignore_paths_case_and_the_app_suffix():
+    from milo.services.risk import app_names
+    assert app_names("/Applications/Terminal.app/", "com.apple.Terminal", "", None) == {"terminal", "com.apple.terminal"}

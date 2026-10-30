@@ -77,6 +77,8 @@ class LiveTalk:
         self._eyes = eyes
         self._confirm = confirm
         self._asking: set[asyncio.Task] = set()
+        self._saw_screen = False
+        """The running conversation has read screen data. Until it restarts, its tasks need the user's yes."""
         self._look_started: asyncio.Task[ScreenCapture] | None = None
         self._ui_looking = False
         self._transcript = transcript or unrecorded()
@@ -241,6 +243,7 @@ class LiveTalk:
         return parser
 
     def _screen_message(self, capture: ScreenCapture, question: str) -> tuple[str, list[Path]]:
+        self._saw_screen = True
         images = [Path(capture.image)] if capture.image else []
         return self._prompt(look_prompt(capture, question, image=bool(images))), images
 
@@ -280,6 +283,7 @@ class LiveTalk:
             if self._system is None or idle or unused_but_stale:
                 await self._model.start(system)
                 self._system, self._last_turn_at = system, None
+                self._saw_screen = False
 
     def _system_prompt(self) -> str:
         parts = [self._persona().strip() or DEFAULT_PERSONA, REPLY_RULES.strip()]
@@ -320,7 +324,7 @@ class LiveTalk:
             except Exception:
                 log.exception("could not save the reminder: %s %s", due, what)
         for description in parser.tasks:
-            if not screen:
+            if not (screen or self._saw_screen):
                 self._tasks.submit(description)
             elif self._confirm is not None:
                 # Text on the screen may be written to start work; only the user's yes may.
@@ -331,7 +335,7 @@ class LiveTalk:
                 log.warning("dropping a task from a turn with screen data, nobody to confirm it: %s", description)
 
     async def _confirmed_task(self, description: str) -> None:
-        if await self._confirm.confirm(f"Shall I go ahead: {_clip(description, 160)}?"):
+        if await self._confirm.confirm(f"Shall I go ahead: {description}?"):
             self._tasks.submit(description)
         else:
             log.info("the user didn't confirm a task from a screen turn: %s", description)
@@ -351,7 +355,3 @@ class LiveTalk:
         log.info("chat %s turn %.1fs, first delta %s, %d in (%d cached), %d out: %r", self._model.name,
                  self._clock.monotonic() - started, first, u.input_tokens, u.cached_input_tokens,
                  u.output_tokens, spoken)
-
-
-def _clip(text: str, n: int) -> str:
-    return text if len(text) <= n else text[:n - 1].rstrip() + "…"

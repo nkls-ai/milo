@@ -189,11 +189,11 @@ def confirm_question(tool: str, args: dict, target: dict, reason: str) -> str:
     """A yes-or-no question naming the thing, like "I'm about to click “Send” in Mail. Go ahead?"."""
     app = str(target.get("app") or "")
     in_app = f" in {app}" if app else ""
-    what = _clip(str(target.get("title") or ""), 40)
+    what = " ".join(str(target.get("title") or "").split())  # never shortened: the user approves all of it
     if tool in ("click", "ax_press") and what:
         return f"I'm about to click “{what}”{in_app}. Go ahead?"
     if tool == "type":
-        return f"I'm about to type “{_clip(str(args['text']), 60)}”{in_app}, which may {reason}. Go ahead?"
+        return f"I'm about to type “{args['text']}”{in_app}, which may {reason}. Go ahead?"
     if tool == "key":
         return f"I'm about to press {_pretty_combo(str(args['combo']))}{in_app}, which may {reason}. Go ahead?"
     if tool == "run_applescript":
