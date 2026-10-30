@@ -49,8 +49,11 @@ _CODE = re.compile(r"\b(do\s+shell\s+script|do\s+script|do\s+javascript|run\s+sc
                    r"|use\s+framework|current\s+application|system\s+events|keystroke|key\s+code)\b|«",
                    re.IGNORECASE)
 _SETTINGS_APPS = ("system settings", "system preferences", "systemeinstellungen", "com.apple.systempreferences")
-_SECRET_APPS = ("keychain access", "schlüsselbundverwaltung", "passwords", "passwörter", "com.apple.keychainaccess",
-                "com.apple.passwords")
+# Password managers, the same list as AX.secretApps in the app.
+_SECRET_APPS = ("keychain access", "schlüsselbundverwaltung", "passwords", "passwörter", "1password", "1password 7",
+                "bitwarden", "lastpass", "dashlane", "keepassxc", "com.apple.keychainaccess", "com.apple.passwords",
+                "com.1password.1password", "com.agilebits.onepassword7", "com.bitwarden.desktop",
+                "com.lastpass.lastpass", "com.dashlane.dashlanephonefinal", "org.keepassxc.keepassxc")
 _SECURITY_WORDS = re.compile(r"(privacy|security|datenschutz|sicherheit|filevault|firewall|password|passwort"
                              r"|login items|anmeldeobjekte|users|benutzer)", re.IGNORECASE)
 # Typing into these runs commands.

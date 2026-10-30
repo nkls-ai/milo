@@ -17,6 +17,8 @@ from milo.services.risk import Risk, classify, normalize_combo
     ("ax_press", {"element": "e1"}, {"title": "Sign in"}, Risk.OK, ""),
     ("click", {"x": 1, "y": 1}, {}, Risk.OK, ""),
     ("click", {"x": 1, "y": 1}, {"unresolved": True}, Risk.ASK, "click something I can't name"),
+    ("click", {"x": 1, "y": 1}, {"unresolved": True, "app": "1Password", "bundle": "com.1password.1password"},
+     Risk.NEVER, "a security setting"),
     ("type", {"text": "hunter2"}, {"secure": True}, Risk.NEVER, "a password field"),
     ("ax_set_value", {"element": "e1", "text": "x"}, {"secure": True}, Risk.NEVER, "a password field"),
     ("type", {"text": "Dear Anna"}, {"title": "Message"}, Risk.OK, ""),

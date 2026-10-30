@@ -94,8 +94,13 @@ public final class MacHands: HandsExecutor {
                 point = Self.pointerLocation()
             }
             element = point.flatMap(AX.element)
-            if element == nil && point != nil && args["tool"]?.string == "click" {
-                return ["unresolved": true, "point": point.map { .object(["x": .number($0.x), "y": .number($0.y)]) } ?? .null]
+            if element == nil, let point, args["tool"]?.string == "click" {
+                // The brain still checks the app: a secret one among them is never clicked.
+                let owners = AX.owners(at: point)
+                let owner = owners.first(where: AX.isSecret) ?? owners.last ?? front
+                return ["unresolved": true, "app": .string(owner?.localizedName ?? ""),
+                        "bundle": .string(owner?.bundleIdentifier ?? ""),
+                        "point": .object(["x": .number(point.x), "y": .number(point.y)])]
             }
         case "ax_press", "ax_set_value":
             element = args["element"]?.string.flatMap { elements[$0] }
@@ -278,6 +283,7 @@ public final class MacHands: HandsExecutor {
 
     private func click(_ args: [String: JSONValue]) throws -> [String: JSONValue] {
         let point = try screenPoint(args)
+        if AX.owners(at: point).contains(where: AX.isSecret) { throw HandsFailure(AX.secretRefused) }
         let right = args["button"]?.string == "right"
         let clicks = args["double"]?.bool == true ? 2 : 1
         let (down, up): (CGEventType, CGEventType) = right ? (.rightMouseDown, .rightMouseUp) : (.leftMouseDown, .leftMouseUp)

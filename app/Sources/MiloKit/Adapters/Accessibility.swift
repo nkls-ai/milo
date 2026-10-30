@@ -67,25 +67,31 @@ enum AX {
            let element, pid(element) != getpid() {
             return element
         }
-        guard let owner = windowOwner(at: point) else { return nil }
+        // Only an ordinary window on top is looked into. A menu or overlay on top could take the click.
+        guard let top = windows(at: point).first, top.layer == 0 else { return nil }
         var inner: AXUIElement?
-        guard AXUIElementCopyElementAtPosition(application(owner), Float(point.x), Float(point.y), &inner) == .success
+        guard AXUIElementCopyElementAtPosition(application(top.pid), Float(point.x), Float(point.y), &inner) == .success
         else { return nil }
         return inner
     }
 
-    /// The process owning the frontmost ordinary window under `point`, Milo's skipped.
-    static func windowOwner(at point: CGPoint) -> pid_t? {
+    /// The windows of other apps under `point`, front to back, Milo's skipped.
+    static func windows(at point: CGPoint) -> [(pid: pid_t, layer: Int)] {
         let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
             as? [[String: Any]] ?? []
-        for window in info {  // front to back
+        return info.compactMap { window in
             guard let pid = window[kCGWindowOwnerPID as String] as? pid_t, pid != getpid(),
-                  (window[kCGWindowLayer as String] as? Int) == 0,
                   let bounds = window[kCGWindowBounds as String] as? NSDictionary,
-                  let rect = CGRect(dictionaryRepresentation: bounds), rect.contains(point) else { continue }
-            return pid
+                  let rect = CGRect(dictionaryRepresentation: bounds), rect.contains(point) else { return nil }
+            return (pid, window[kCGWindowLayer as String] as? Int ?? 0)
         }
-        return nil
+    }
+
+    /// The apps that could get a click at `point`: every window down to the first ordinary one.
+    static func owners(at point: CGPoint) -> [NSRunningApplication] {
+        let stack = windows(at: point)
+        let reach = stack.firstIndex { $0.layer == 0 }.map { stack.prefix(through: $0) } ?? stack[...]
+        return reach.compactMap { NSRunningApplication(processIdentifier: $0.pid) }
     }
 
     /// Password managers: Milo never reads or looks at them.
