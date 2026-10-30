@@ -27,6 +27,8 @@ class Tool:
     required: tuple[str, ...]
     run: Callable[[Any, dict], Any]
     """(the connection, the arguments) -> a JSON-ready result. Raises ToolError."""
+    about: Callable[[Any, dict], dict] | None = None
+    """(the connection, the arguments) -> facts the question names, looked up before asking."""
 
     def schema(self) -> dict:
         return {"type": "object", "properties": self.properties, "required": list(self.required),
@@ -100,15 +102,23 @@ def _add_event(cal, args):
 
 def _draft(mail, args):
     to = _list(args, "to")
-    reply_to, forward = _text(args, "reply_to"), _text(args, "forward")
-    if reply_to and forward:
-        raise ToolError("give reply_to or forward, not both")
-    if forward and not to:
-        raise ToolError("say who to pass it on to (to)")
+    reply_to = _text(args, "reply_to")
     if not to and not reply_to:
         raise ToolError("say who it is for (to) or which email it answers (reply_to)")
-    body = _text(args, "body") if forward else _need(args, "body")
-    return mail.draft(to, _text(args, "subject"), body, reply_to, forward)
+    return mail.draft(to, _text(args, "subject"), _need(args, "body"), reply_to)
+
+
+def _forward(mail, args):
+    to = _list(args, "to")
+    if not to:
+        raise ToolError("say who to pass it on to (to)")
+    return mail.forward(_need(args, "id"), to)
+
+
+def _email(mail, args) -> dict:
+    """Whose email and which, so the question names what goes where."""
+    found = mail.read(_need(args, "id"))
+    return {"email": {"from": found.get("from", ""), "subject": found.get("subject", "")}}
 
 
 def _str(description: str) -> dict:
@@ -154,13 +164,18 @@ TOOLS: tuple[Tool, ...] = (
          {"id": _str("The email's id.")}, ("id",), lambda m, a: m.read(_need(a, "id"))),
     Tool("mail_draft", "mail", "draft",
          "Write an email as a draft and open it in Mail for the user to check. Milo can't send mail; the "
-         "user presses Send. Whenever the user wants to write, answer or pass on an email, make the draft "
-         "with this tool, never just the text. Use reply_to with an id from mail_search to answer an email, "
-         "or forward with an id to pass one on with its attachments.",
+         "user presses Send. Whenever the user wants to write or answer an email, make the draft with this "
+         "tool, never just the text. Use reply_to with an id from mail_search to answer an email. To pass an "
+         "email on, use mail_forward.",
          {"to": {"type": "array", "items": {"type": "string"}, "description": "Addresses or contact names."},
           "subject": _str("Subject line. Left out for replies."), "body": _str("The email text, in the user's voice."),
-          "reply_to": _str("The id of the email this answers."),
-          "forward": _str("The id of an email to pass on, attachments and all. Needs to.")}, (), _draft),
+          "reply_to": _str("The id of the email this answers.")}, ("body",), _draft),
+    Tool("mail_forward", "mail", "share",
+         "Pass an email on to someone, attachments and all, as a draft in Mail. The user is asked first, "
+         "and presses Send themselves.",
+         {"id": _str("The email's id from mail_search."),
+          "to": {"type": "array", "items": {"type": "string"}, "description": "Addresses or contact names."}},
+         ("id", "to"), _forward, about=_email),
     Tool("notes_search", "notes", "read",
          "Search the user's notes in the Notes app by title and text. Locked notes are skipped.",
          {"query": _str("Words to look for."), "limit": LIMIT}, ("query",),

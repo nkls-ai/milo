@@ -20,6 +20,12 @@ def first_name(address: str) -> str:
     return word[:1].upper() + word[1:]
 
 
+def _everyone(args: dict) -> str:
+    """Every recipient in full, so a question can't hide one."""
+    to = args.get("to") or []
+    return ", ".join(s for s in (str(a).strip() for a in (to if isinstance(to, list) else [to])) if s)
+
+
 def _quoted(text: object, n: int = 30) -> str:
     text = " ".join(str(text or "").split())
     return f"“{text if len(text) <= n else text[:n - 1].rstrip() + '…'}”"
@@ -50,12 +56,12 @@ def title(tool: str, args: dict) -> str | None:
             return f"Looking through your mail for {_quoted(q)}" if q else "Looking through your mail"
         case "mail_read":
             return "Reading an email"
+        case "mail_forward":
+            return f"Passing on an email to {_to(args)}" if _to(args) else "Passing on an email"
         case "mail_draft":
             to = _to(args)
             if args.get("reply_to"):
                 return f"Writing a reply to {to}" if to else "Writing a reply"
-            if args.get("forward"):
-                return f"Passing on an email to {to}" if to else "Passing on an email"
             return f"Writing a draft to {to}" if to else "Writing a draft"
         case "notes_search":
             q = args.get("query")
@@ -113,10 +119,14 @@ def question(tool: str, args: dict) -> str:
         case "reminders_complete":
             return "Tick off that reminder?"
         case "mail_draft":
-            to = args.get("to") or []
-            everyone = ", ".join(str(a).strip() for a in (to if isinstance(to, list) else [to]))
-            return (f"Write a draft to {everyone}? It stays in Mail until you send it." if everyone.strip()
+            everyone = _everyone(args)
+            return (f"Write a draft to {everyone}? It stays in Mail until you send it." if everyone
                     else "Write a reply draft? It stays in Mail until you send it.")
+        case "mail_forward":
+            email = args.get("email") or {}
+            what = (f"{first_name(str(email.get('from', '')))}'s email {_quoted(email.get('subject'), 50)}"
+                    if email.get("from") else "that email")
+            return f"Pass on {what} to {_everyone(args)}, with anything attached? It stays in Mail until you send it."
         case "notes_create":
             return f"Make a new note called {_quoted(args.get('title'), 50)}?"
         case "notes_append":

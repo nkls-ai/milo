@@ -113,13 +113,22 @@ def test_a_no_stops_the_tool_and_says_so(home):
     assert World(home / "fake").load()["shortcut_runs"] == []
 
 
-def test_forwarding_drafts_the_whole_email_to_someone(home):
-    server = mcp_server(toolbox(home))
-    ok, draft = call(server, "mail_draft", {"forward": "m1", "to": ["lisa@example.com"]})
+def test_forwarding_asks_first_naming_the_email_and_everyone_it_goes_to(home):
+    brain = FakeBrain(share="yes")
+    server = mcp_server(toolbox(home, brain))
+    ok, draft = call(server, "mail_forward", {"id": "m1", "to": ["lisa@example.com", "Tom <tom@example.com>"]})
     assert ok and draft["sent"] is False and draft["subject"] == "Fwd: Sunday"
+    assert brain.asked == [("share", "Pass on Anna's email “Sunday” to lisa@example.com, Tom <tom@example.com>, "
+                                     "with anything attached? It stays in Mail until you send it.")]
     assert World(home / "fake").load()["drafts"][0]["body"] == "Are we still on for Sunday?"
-    assert call(server, "mail_draft", {"forward": "m1"}) == (False, "say who to pass it on to (to)")
-    assert call(server, "mail_draft", {"forward": "m1", "reply_to": "m1", "to": ["a@b.c"]})[0] is False
+
+
+def test_a_no_to_forwarding_leaves_no_draft(home):
+    server = mcp_server(toolbox(home, FakeBrain(share="no")))
+    ok, text = call(server, "mail_forward", {"id": "m1", "to": ["evil@example.com"]})
+    assert not ok and text.startswith("The user said no")
+    assert World(home / "fake").load()["drafts"] == []
+    assert call(server, "mail_draft", {"to": ["a@b.c"], "body": "x", "forward": "m1"})[0] is False
 
 
 def test_a_list_that_isnt_there_is_an_error_naming_the_ones_that_are(home):
@@ -203,7 +212,7 @@ def test_automation_refusal_is_explained(monkeypatch):
     ("mail_draft", {"to": ["anna.schmidt@example.com"], "body": "x"}, "Writing a draft to Anna"),
     ("mail_draft", {"to": ["Tom Berg <t@example.com>", "lisa@example.com"]}, "Writing a draft to Tom and Lisa"),
     ("mail_draft", {"reply_to": "m1"}, "Writing a reply"),
-    ("mail_draft", {"forward": "m4", "to": ["lisa@example.com"]}, "Passing on an email to Lisa"),
+    ("mail_forward", {"id": "m4", "to": ["lisa@example.com"]}, "Passing on an email to Lisa"),
     ("shortcuts_run", {"name": "Lights off"}, "Running your shortcut “Lights off”"),
     ("files_read", {"path": "/Users/x/Documents/Bill.pdf"}, "Reading Bill.pdf"),
 ])

@@ -86,7 +86,7 @@ Task results reach the chat model as `<task_result>` blocks with `<` and `>` esc
 
 ## App connections
 
-The worker reaches the user's apps through one MCP stdio server, `python -m milo.connect`, which `compose.py` passes to the harness as a `ToolServer`: Claude Code gets `--mcp-config state/mcp-servers.json --strict-mcp-config --allowedTools mcp__milo`, Codex gets `-c mcp_servers.milo.*`. The server's 17 tools sit on the connection ports in `milo.core.ports` (`Calendar`, `Reminders`, `Mail`, `Notes`, `Shortcuts`, `Files`). `[connections] use` picks the adapter set (`CONNECTIONS` registry): `mac` or `fake`. Each connection has its own switch.
+The worker reaches the user's apps through one MCP stdio server, `python -m milo.connect`, which `compose.py` passes to the harness as a `ToolServer`: Claude Code gets `--mcp-config state/mcp-servers.json --strict-mcp-config --allowedTools mcp__milo`, Codex gets `-c mcp_servers.milo.*`. The server's 18 tools sit on the connection ports in `milo.core.ports` (`Calendar`, `Reminders`, `Mail`, `Notes`, `Shortcuts`, `Files`). `[connections] use` picks the adapter set (`CONNECTIONS` registry): `mac` or `fake`. Each connection has its own switch.
 
 ```
 worker CLI ──stdio──▶ milo.connect ──run/tools.sock──▶ brain ──brain.sock──▶ Milo.app (EventKit)
@@ -98,7 +98,8 @@ worker CLI ──stdio──▶ milo.connect ──run/tools.sock──▶ brain
 
 - **Before any change** the server asks the brain over `run/tools.sock` (0600, peer UID checked, one JSON object per line, `id` echoed): `{"op": "approve", "kind": "send", "summary": "Write a draft to Anna?"}` returns `{"ok": true, "result": {"allowed": true, "level": "ask_first", "answer": "yes"}}`. `{"op": "confirm", "summary": ...}` returns `{"result": {"yes": bool}}`. If the brain can't be reached, reads go ahead and everything else is refused.
 - **Calendar and Reminders** run in the app: `{"op": "app", "name": "calendar.add_event", "args": {...}}` on the tool socket. The brain checks the connection switch, asks if the level says so, then sends `app_request` to the app and waits up to 90 s for `app_response`. Ops: `calendar.events` (start, end, query), `calendar.add_event` (title, start, end, location, notes, calendar), `reminders.list` (query, include_done), `reminders.add` (title, due, notes, list), `reminders.complete` (id). Times are local, `2026-11-05T15:00`.
-- **Kinds.** Reading is `read`, a mail draft is `draft`, a new event, reminder or note is `change`, running a shortcut is `shortcut`. See [ADR 6](adr/0006-app-connections-as-an-mcp-server.md) and [ADR 7](adr/0007-approvals-and-action-levels.md).
+- **Kinds.** Reading is `read`, a mail draft is `draft`, passing an email on is `share`, a new event, reminder or note is `change`, running a shortcut is `shortcut`. See [ADR 6](adr/0006-app-connections-as-an-mcp-server.md) and [ADR 7](adr/0007-approvals-and-action-levels.md).
+- **Unknown arguments** are refused, and a tool whose question needs facts (whose email is being passed on) looks them up with a read before asking.
 - **Step titles** for the window come from `milo.core.wording.title(tool, args)`, so a task shows "Looking in your calendar" and not `mcp__milo__calendar_events`.
 
 ## Approvals

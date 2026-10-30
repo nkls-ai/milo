@@ -38,9 +38,10 @@ class World:
         self.home = root / "home"
 
     def load(self) -> dict:
+        empty = json.loads(json.dumps(EMPTY_WORLD))  # a fresh copy: its lists get appended to
         if not self.path.exists():
-            return json.loads(json.dumps(EMPTY_WORLD))
-        return {**EMPTY_WORLD, **json.loads(self.path.read_text(encoding="utf-8"))}
+            return empty
+        return {**empty, **json.loads(self.path.read_text(encoding="utf-8"))}
 
     def save(self, world: dict) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
@@ -127,25 +128,31 @@ class FakeMail:
                 return {k: m.get(k, "") for k in ("id", "from", "to", "subject", "date", "text")}
         raise ToolError("I couldn't find that in Mail any more.")
 
-    def draft(self, to: list[str], subject: str, body: str, reply_to: str = "", forward: str = "") -> dict:
+    def draft(self, to: list[str], subject: str, body: str, reply_to: str = "") -> dict:
         world = self._world.load()
-        if reply_to or forward:
-            original = next((m for m in world["mail"] if m["id"] in (reply_to, forward)), None)
-            if original is None:
-                raise ToolError("I couldn't find that in Mail any more.")
-            if forward:
-                if not to:
-                    raise ToolError("say who to pass it on to (to)")
-                subject = subject or "Fwd: " + original["subject"]
-                body = (body + "\n\n" if body else "") + original["text"]
-            else:
-                to = to or [original["from"]]
-                subject = subject or "Re: " + original["subject"]
-        draft = {"id": _new_id(), "to": to, "subject": subject, "body": body, "reply_to": reply_to,
-                 "forward": forward}
+        if reply_to:
+            original = self._find(world, reply_to)
+            to = to or [original["from"]]
+            subject = subject or "Re: " + original["subject"]
+        return self._save(world, {"id": _new_id(), "to": to, "subject": subject, "body": body, "reply_to": reply_to})
+
+    def forward(self, id: str, to: list[str]) -> dict:
+        world = self._world.load()
+        original = self._find(world, id)
+        return self._save(world, {"id": _new_id(), "to": to, "subject": "Fwd: " + original["subject"],
+                                  "body": original["text"], "forward": id})
+
+    @staticmethod
+    def _find(world: dict, id: str) -> dict:
+        original = next((m for m in world["mail"] if m["id"] == id), None)
+        if original is None:
+            raise ToolError("I couldn't find that in Mail any more.")
+        return original
+
+    def _save(self, world: dict, draft: dict) -> dict:
         world["drafts"].append(draft)
         self._world.save(world)
-        return {"draft": True, "sent": False, "subject": subject, "to": to,
+        return {"draft": True, "sent": False, "subject": draft["subject"], "to": draft["to"],
                 "where": "Open in Mail for the user to check and send."}
 
 

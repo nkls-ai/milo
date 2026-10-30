@@ -27,8 +27,12 @@ class Toolbox:
     def call(self, name: str, args: dict) -> Any:
         tool = self.tools[name]
         backend = getattr(self._connections, tool.connection)
+        unknown = sorted(set(args) - set(tool.properties))
+        if unknown:
+            raise ToolError(f"{name} doesn't take {', '.join(unknown)}")
         if not getattr(backend, "approves_itself", False):
-            decision = self._brain.approve(tool.kind, tool.question(args))
+            facts = tool.about(backend, args) if tool.about and tool.kind != "read" else {}
+            decision = self._brain.approve(tool.kind, tool.question({**args, **facts}))
             if not decision.allowed:
                 raise ToolError(refusal(decision))
         log.info("%s: %s", tool.connection, name)
