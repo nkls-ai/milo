@@ -56,8 +56,11 @@ class HandsService:
     """
 
     def __init__(self, hands: AppHands, confirm: Confirmer, sink: EventSink, *,
-                 transcript: Transcript | None = None, applescript: bool = True):
+                 transcript: Transcript | None = None, applescript: bool = True, locale: str = ""):
+        """`locale` is the Mac's region (AppleLocale, like "en_US@rg=dezzzz"): money in spreadsheets uses its
+        currency."""
         self._hands = hands
+        self._locale = locale
         self._confirm = confirm
         self._sink = sink
         self._transcript = transcript or unrecorded()
@@ -182,7 +185,9 @@ class HandsService:
                     "text": sheets.table_text(found)}
         start = args.get("start", "A1")
         script = sheets.write_script(app, args["rows"], start, new_document=bool(args.get("new_document")),
-                                     header=bool(args.get("header")), money=args.get("money", ""))
+                                     header=bool(args.get("header")), bold=args.get("bold", ""),
+                                     money=args.get("money", ""), decimals=args.get("decimals", ""),
+                                     locale=self._locale)
         found = sheets.parse((await self._script(script))["text"])
         document = found.get("document", "")
         if args.get("new_document"):

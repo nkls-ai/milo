@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -108,7 +109,7 @@ def build(home: Path) -> Runtime:
     hands = hands_server = None
     if config.hands.enabled:
         hands = HandsService(AppHands(bridge), approvals, ui, transcript=transcript,
-                             applescript=config.hands.applescript)
+                             applescript=config.hands.applescript, locale=_mac_locale())
         hands_server = HandsSocketServer(hands_socket, hands.call)
     switches = config.connections
     enabled = [name for name in ("calendar", "reminders") if switches.enabled and getattr(switches, name)]
@@ -141,6 +142,16 @@ def _tool_servers(config: Config, home: Path) -> tuple[ToolServer, ...]:
     if not config.connections.enabled:
         return ()
     return (ToolServer("milo", (sys.executable, "-m", "milo.connect"), (("MILO_HOME", str(home)),)),)
+
+
+def _mac_locale() -> str:
+    """The Mac's region setting, like "en_US@rg=dezzzz", for money formats. "" if it can't be read."""
+    try:
+        done = subprocess.run(["/usr/bin/defaults", "read", "-g", "AppleLocale"], capture_output=True, text=True,
+                              timeout=5, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return done.stdout.strip()
 
 
 def _persona(path: Path):

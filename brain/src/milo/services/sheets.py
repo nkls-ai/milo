@@ -132,8 +132,33 @@ def _formula_cells(rows: list, start: str) -> list[tuple[str, str]]:
             if _is_formula(v)]
 
 
-# Money with two decimals; Excel shows the currency of the Mac's region settings in the cell's own style.
-EXCEL_MONEY = "#,##0.00"
+_EURO = {"at", "be", "cy", "de", "ee", "es", "fi", "fr", "gr", "hr", "ie", "it", "lt", "lu", "lv", "mt", "nl", "pt",
+         "si", "sk"}
+_MONEY = {"EUR": '#,##0.00 "€"', "USD": '"$"#,##0.00', "GBP": '"£"#,##0.00', "CHF": '"CHF" #,##0.00',
+          "JPY": '"¥"#,##0', "SEK": '#,##0.00 "kr"', "DKK": '#,##0.00 "kr."', "NOK": '"kr" #,##0.00',
+          "PLN": '#,##0.00 "zł"', "CAD": '"$"#,##0.00', "AUD": '"$"#,##0.00'}
+_REGION_CURRENCY = {"us": "USD", "gb": "GBP", "ch": "CHF", "li": "CHF", "jp": "JPY", "se": "SEK", "dk": "DKK",
+                    "no": "NOK", "pl": "PLN", "ca": "CAD", "au": "AUD"}
+
+
+def currency(locale_id: str) -> str:
+    """The currency of a macOS locale like "de_DE", "en_US@rg=dezzzz" or "en_DE@currency=EUR"; "" if unknown."""
+    base, _, extras = locale_id.partition("@")
+    options = dict(part.split("=", 1) for part in extras.split(";") if "=" in part)
+    if options.get("currency"):
+        return options["currency"].upper()
+    region = (options.get("rg", "")[:2] or (base.split("_")[1] if "_" in base else "")).lower()
+    return "EUR" if region in _EURO else _REGION_CURRENCY.get(region, "")
+
+
+def excel_money(locale_id: str) -> str:
+    """Excel's number format for money in the user's currency, two decimals."""
+    return _MONEY.get(currency(locale_id), "#,##0.00")
+
+
+def ranges(text: str) -> list[str]:
+    """"A1:B1, A9:B9" -> ["A1:B1", "A9:B9"]. Raises HandsError."""
+    return [check_range(r) for r in text.split(",") if r.strip()]
 
 _RUNNING = 'if application "{app}" is not running then error "{app} isn\'t open."\n'
 
@@ -149,9 +174,9 @@ def describe_script(app: str, rows: list, start: str) -> str:
                 + '  if (count of workbooks) is 0 then error "Excel has no workbook open."\n'
                 + '  set ws to active sheet\n'
                 + f'  set vals to value of range "{b.range}" of ws\n'
-                + '  set out to "document" & tab & (name of active workbook) & linefeed & "sheet" & tab & (name of ws)\n'
+                + "  set docName to name of active workbook\n  set sheetName to name of ws\n"
                 + "end tell\n"
-                + _COUNT_FILLED)
+                + _NAMES + _COUNT_FILLED)
     return (_RUNNING.format(app=NUMBERS)
             + 'tell application "Numbers"\n'
             + '  if (count of documents) is 0 then error "Numbers has no document open."\n'
@@ -164,10 +189,14 @@ def describe_script(app: str, rows: list, start: str) -> str:
             + f'      set vals to value of every cell of range ((name of cell {col} of row {row}) & ":" & '
             + '(name of cell c2 of row r2))\n    end if\n'
             + "  end tell\n"
-            + '  set out to "document" & tab & (name of doc) & linefeed & "sheet" & tab & (name of active sheet of doc)\n'
+            + "  set docName to name of doc\n  set sheetName to name of active sheet of doc\n"
             + "end tell\n"
-            + _COUNT_FILLED)
+            + _NAMES + _COUNT_FILLED)
 
+
+# Outside any `tell`: Excel and Numbers have their own meanings for `tab` and `linefeed`.
+_NAMES = 'set out to "document" & tab & docName & linefeed & "sheet" & tab & sheetName\n'
+_ADDRESS = 'set out to out & linefeed & "first" & tab & addr\n'
 
 # Counts non-empty values in `vals` (a value, a list, or a list of lists) and prints the result.
 _COUNT_FILLED = """\
@@ -189,10 +218,16 @@ return out & linefeed & "filled" & tab & filled
 
 
 def write_script(app: str, rows: list, start: str = "A1", *, new_document: bool = False, header: bool = False,
-                 money: str = "") -> str:
-    """Fill the front sheet (of a new document if asked) with `rows` from `start`. Formula cells start with =."""
+                 bold: str = "", money: str = "", decimals: str = "", locale: str = "") -> str:
+    """Fill the front sheet (of a new document if asked) with `rows` from `start`. Formula cells start with =.
+
+    `bold`, `money` and `decimals` are ranges, several joined with commas. Money is in the currency of
+    `locale` (the Mac's region, like "en_US@rg=dezzzz"), with two decimals.
+    """
     b = block(rows, start)
-    money = check_range(money) if money else ""
+    col, row = cell(b.first)
+    bolds = ([f"{b.first}:{column_letters(col + b.columns - 1)}{row}"] if header else []) + ranges(bold)
+    moneys, decimal_ranges = ranges(money), ranges(decimals)
     formulas = _formula_cells(rows, start)
     if app == EXCEL:
         lines = ['tell application "Microsoft Excel"', "  activate"]
@@ -204,22 +239,18 @@ def write_script(app: str, rows: list, start: str = "A1", *, new_document: bool 
         lines += ["  set ws to active sheet of wb",
                   f'  set value of range "{b.range}" of ws to {_grid(rows, b.columns, formulas=False)}']
         lines += [f'  set formula of range "{ref}" of ws to {literal(f)}' for ref, f in formulas]
-        if header:
-            first_row = f"{b.first}:{column_letters(cell(b.first)[0] + b.columns - 1)}{cell(b.first)[1]}"
-            lines.append(f'  set bold of font object of range "{first_row}" of ws to true')
-        if money:
-            lines.append(f'  set number format of range "{money}" of ws to {literal(EXCEL_MONEY)}')
+        lines += [f'  set bold of font object of range "{r}" of ws to true' for r in bolds]
+        lines += [f'  set number format of range "{r}" of ws to {literal("0.00")}' for r in decimal_ranges]
+        lines += [f'  set number format of range "{r}" of ws to {literal(excel_money(locale))}' for r in moneys]
         lines += [f'  autofit columns of range "{b.range}" of ws',
-                  '  return "document" & tab & (name of wb) & linefeed & "sheet" & tab & (name of ws)',
-                  "end tell"]
-        return "\n".join(lines) + "\n"
+                  "  set docName to name of wb", "  set sheetName to name of ws", "end tell"]
+        return "\n".join(lines) + "\n" + _NAMES + "return out\n"
     lines = ['tell application "Numbers"', "  activate"]
     if new_document:
         lines.append("  set doc to make new document")
     else:
         lines += ['  if (count of documents) is 0 then error "Numbers has no document open."',
                   "  set doc to front document"]
-    col, row = cell(b.first)
     lines += ["  tell table 1 of active sheet of doc",
               f"    if (row count) < {row + b.rows - 1} then set row count to {row + b.rows - 1}",
               f"    if (column count) < {col + b.columns - 1} then set column count to {col + b.columns - 1}"]
@@ -234,15 +265,14 @@ def write_script(app: str, rows: list, start: str = "A1", *, new_document: bool 
             if value is None and not new_document:
                 continue
             lines.append(f'    set value of cell "{column_letters(col + j)}{row + i}" to {literal(value)}')
-    if header and not new_document:
-        first_row = f"{b.first}:{column_letters(col + b.columns - 1)}{row}"
-        lines.append(f'    set font name of range "{first_row}" to "Helvetica Neue Bold"')
-    if money:
-        lines.append(f'    set format of range "{money}" to currency')
-    lines += ["  end tell",
-              '  return "document" & tab & (name of doc) & linefeed & "sheet" & tab & (name of active sheet of doc)',
+    # A new table's header row is bold already.
+    lines += [f'    set font name of range "{r}" to "HelveticaNeue-Bold"' for r in bolds[1 if header and new_document
+                                                                                          else 0:]]
+    lines += [f'    set format of range "{r}" to number' for r in decimal_ranges]
+    lines += [f'    set format of range "{r}" to currency' for r in moneys]
+    lines += ["  end tell", "  set docName to name of doc", "  set sheetName to name of active sheet of doc",
               "end tell"]
-    return "\n".join(lines) + "\n"
+    return "\n".join(lines) + "\n" + _NAMES + "return out\n"
 
 
 def read_script(app: str, range: str = "") -> str:
@@ -255,10 +285,10 @@ def read_script(app: str, range: str = "") -> str:
                 + "  set ws to active sheet\n"
                 + f"  set r to {target}\n"
                 + "  set vals to formula of r\n"
-                + '  set out to "document" & tab & (name of active workbook) & linefeed & "sheet" & tab & (name of ws)'
-                + ' & linefeed & "first" & tab & (get address of r without row absolute and column absolute)\n'
+                + "  set docName to name of active workbook\n  set sheetName to name of ws\n"
+                + "  set addr to get address of r without row absolute and column absolute\n"
                 + "end tell\n"
-                + _ROWS)
+                + _NAMES + _ADDRESS + _ROWS)
     target = f'range "{check_range(range)}"' if range else "cell range"
     return (_RUNNING.format(app=NUMBERS)
             + 'tell application "Numbers"\n'
@@ -272,10 +302,9 @@ def read_script(app: str, range: str = "") -> str:
             + "    end repeat\n"
             + "    set addr to name of r\n"
             + "  end tell\n"
-            + '  set out to "document" & tab & (name of doc) & linefeed & "sheet" & tab & (name of active sheet of doc)'
-            + ' & linefeed & "first" & tab & addr\n'
+            + "  set docName to name of doc\n  set sheetName to name of active sheet of doc\n"
             + "end tell\n"
-            + _ROWS)
+            + _NAMES + _ADDRESS + _ROWS)
 
 
 # Prints `vals` (a value, a row or rows) as "row<TAB>cell<TAB>cell" lines after `out`.

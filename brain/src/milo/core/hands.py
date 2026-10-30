@@ -84,14 +84,16 @@ TOOLS: tuple[Tool, ...] = (
     Tool("list_apps", "List the open apps and which one is in front. Instant; start here."),
     Tool("open_app", "Open an app, or bring it to the front if it is already open.",
          {"name": _s("The app's name, e.g. \"Numbers\".")}, ("name",), acts=True),
-    Tool("sheet_write", "Fill cells in Excel or Numbers in one go: values, formulas, a bold header row and money "
-         "formatting. With new_document it opens the app and makes a new blank document first, so a whole table "
+    Tool("sheet_write", "Fill cells in Excel or Numbers in one go: values, formulas, bold rows, money and two "
+         "decimals. Put the whole table and its formatting in one call; don't format through menus. With new_document it opens the app and makes a new blank document first, so a whole table "
          "is one call. Without it, it writes into the front sheet of the front document; replacing cells that "
          "already hold something waits for the user's yes. Several calls can build on each other.",
          {"app": _SHEET_APP, "rows": _CELLS, "start": _s("Top-left cell, default \"A1\"."),
           "new_document": _b("Make a new blank document first. Default false."),
           "header": _b("Make the first row bold, as a header. Default false."),
-          "money": _s("A range to format as money, like \"B2:B9\".")},
+          "bold": _s("Ranges to make bold, like \"A9:B9\"; several joined with commas."),
+          "money": _s("Ranges to show as money in the user's currency, like \"B2:B9\"."),
+          "decimals": _s("Ranges to show with two decimals, like \"C2:C9\".")},
          ("app", "rows"), acts=True),
     Tool("sheet_read", "Read the cells of the front sheet in Excel or Numbers, with column letters and row "
          "numbers; formulas show as formulas in Excel." + _UNTRUSTED,

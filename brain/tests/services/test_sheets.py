@@ -35,13 +35,16 @@ def test_the_block_from_a_start_cell():
 
 
 def test_excel_writes_values_in_one_go_then_formulas_header_and_money():
-    script = write_script(EXCEL, WEEK, new_document=True, header=True, money="b2:b4")
+    script = write_script(EXCEL, WEEK, new_document=True, header=True, money="b2:b4", bold="A4:B4",
+                          decimals="C1, D1", locale="en_US@rg=dezzzz")
     assert "set wb to make new workbook" in script
     assert ('set value of range "A1:B4" of ws to {{"Day", "Budget"}, {"Mon", 214.29}, {"Tue", 214.29}, '
             '{"Total", ""}}') in script
     assert 'set formula of range "B4" of ws to "=SUM(B2:B3)"' in script
     assert 'set bold of font object of range "A1:B1" of ws to true' in script
-    assert 'set number format of range "B2:B4" of ws to "#,##0.00"' in script
+    assert 'set bold of font object of range "A4:B4" of ws to true' in script
+    assert 'set number format of range "D1" of ws to "0.00"' in script
+    assert 'set number format of range "B2:B4" of ws to "#,##0.00 \\"€\\""' in script
     assert "make new" not in write_script(EXCEL, WEEK)
 
 
@@ -67,3 +70,11 @@ def test_app_names():
     assert sheets.app_name("excel") == EXCEL and sheets.app_name("com.apple.iWork.Numbers") == NUMBERS
     with pytest.raises(HandsError):
         sheets.app_name("Pages")
+
+
+@pytest.mark.parametrize("locale, money", [
+    ("en_US@rg=dezzzz", '#,##0.00 "€"'), ("de_DE", '#,##0.00 "€"'), ("en_US", '"$"#,##0.00'),
+    ("en_GB", '"£"#,##0.00'), ("de_CH", '"CHF" #,##0.00'), ("en_DE@currency=USD", '"$"#,##0.00'),
+    ("", "#,##0.00"), ("xx", "#,##0.00")])
+def test_money_is_in_the_currency_of_the_macs_region(locale, money):
+    assert sheets.excel_money(locale) == money
