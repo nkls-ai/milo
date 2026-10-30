@@ -39,6 +39,18 @@ class Toolbox:
         return tool.run(backend, args)
 
 
+class BrainPhone:
+    """The send_to_phone tool's connection: the brain checks the file, asks the user and sends it."""
+
+    approves_itself = True
+
+    def __init__(self, brain: BrainClient):
+        self._brain = brain
+
+    def send(self, path: str, caption: str = "") -> dict:
+        return self._brain.request({"op": "send_to_phone", "path": path, "caption": caption})
+
+
 def listing(tool: Tool) -> dict:
     read_only = tool.kind == "read"
     return {"name": tool.name, "description": tool.description, "inputSchema": tool.schema(),

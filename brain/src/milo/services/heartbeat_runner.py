@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 from milo.core.logtext import private
 from milo.core.ports import AudioInput, Clock, ProactiveEngine
@@ -43,6 +43,8 @@ class HeartbeatRunner:
         self._wait_s = wait_s
         self._poll_s = poll_s
         self.muted = False
+        self.on_tick: list[Callable[[], Awaitable[None]]] = []
+        """Other cheap checks that run on the same tick, like the morning brief to the phone. Zero tokens."""
 
     async def run(self) -> None:
         while True:
@@ -55,6 +57,8 @@ class HeartbeatRunner:
     async def tick(self) -> None:
         for nudge in self._engine.tick(self.signals()):
             await self.deliver(nudge)
+        for check in self.on_tick:
+            await check()
 
     def signals(self) -> Signals:
         return Signals(now=self._clock.now(), idle_s=self._context.idle_s(), app=self._context.app)

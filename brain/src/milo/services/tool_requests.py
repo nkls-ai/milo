@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Collection
-from typing import Any
+from pathlib import Path
+from typing import Any, Protocol
+
+from milo.core.types import ChannelError
 
 from milo.core.wording import question
 
 from .app_bridge import AppBridge, AppError
 from .approvals import Approvals
+from .sharing import NotShareable
 
 log = logging.getLogger("milo.tool_requests")
 
@@ -23,6 +27,19 @@ REFUSED = {"no": "The user said no.", "timeout": "The user didn't answer, so it 
            "refused": "Milo isn't allowed to do this."}
 
 
+class Phone(Protocol):
+    """The owner's phone, for files a helper sends there (MessageService)."""
+
+    def check(self, path: str) -> Path: ...
+
+    def question(self, path: Path) -> str: ...
+
+    async def send_file(self, path: Path, caption: str = "") -> dict: ...
+
+
+NO_PHONE = "Milo can't send files to your phone: messages are switched off in Milo's settings."
+
+
 class ToolRequests:
     """Answers the requests that arrive on the brain's tool socket (run/tools.sock).
 
@@ -36,12 +53,16 @@ class ToolRequests:
       The app lends its Calendar and Reminders permission here, so this side checks the connection is
       switched on and applies the op's action level itself, whoever calls. The question is written here
       from the arguments that go to the app, never taken from the caller.
+    - `send_to_phone` {path, caption?}: send one file to the owner's phone. Always a `share`, so it asks first
+      unless the user made sharing not ask; the question names the file and its size. Result: {sent}.
     """
 
-    def __init__(self, approvals: Approvals, bridge: AppBridge, enabled: Collection[str] = ("calendar", "reminders")):
+    def __init__(self, approvals: Approvals, bridge: AppBridge, enabled: Collection[str] = ("calendar", "reminders"),
+                 phone: Phone | None = None):
         self._approvals = approvals
         self._bridge = bridge
         self._enabled = frozenset(enabled)
+        self._phone = phone
 
     async def handle(self, request: dict) -> dict:
         """{"ok": true, "result": ...} or {"ok": false, "error": "plain words"}. Never raises."""
@@ -67,7 +88,15 @@ class ToolRequests:
                     if not decision.allowed:
                         return _error(REFUSED.get(decision.answer, REFUSED["refused"]))
                     return _ok(await self._bridge.call(name, args))
-        except AppError as e:
+                case "send_to_phone":
+                    if self._phone is None:
+                        return _error(NO_PHONE)
+                    path = self._phone.check(str(request["path"]))
+                    decision = await self._approvals.approve("share", self._phone.question(path))
+                    if not decision.allowed:
+                        return _error(REFUSED.get(decision.answer, REFUSED["refused"]))
+                    return _ok(await self._phone.send_file(path, str(request.get("caption") or "")))
+        except (AppError, NotShareable, ChannelError) as e:
             return _error(str(e))
         except KeyError as e:
             return _error(f"{op} needs {e}")

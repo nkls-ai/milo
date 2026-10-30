@@ -19,7 +19,7 @@ def main() -> None:
     from milo.memory.workspace import Workspace
 
     from milo.transport.tool_client import BrainClient
-    from .server import Toolbox, mcp_server
+    from .server import BrainPhone, Toolbox, mcp_server
 
     home = Path(os.environ.get("MILO_HOME", "~/Milo")).expanduser()
     workspace = Workspace(home)
@@ -35,9 +35,12 @@ def main() -> None:
     connections = CONNECTIONS.create(name, options, AdapterContext(home, workspace.state_dir, SystemClock()))
     switches = config.connections
     off = {f.name: None for f in dataclasses.fields(connections)
-           if not switches.enabled or not getattr(switches, f.name)}
+           if not switches.enabled or not getattr(switches, f.name, True)}
     connections = dataclasses.replace(connections, **off)
-    toolbox = Toolbox(connections, BrainClient(workspace.tools_socket_path))
+    brain = BrainClient(workspace.tools_socket_path)
+    if config.messages.enabled:
+        connections = dataclasses.replace(connections, phone=BrainPhone(brain))
+    toolbox = Toolbox(connections, brain)
     logging.getLogger("milo.connect").info("serving %d tools (%s)", len(toolbox.tools), name)
     mcp_server(toolbox).serve(sys.stdin, sys.stdout)
 

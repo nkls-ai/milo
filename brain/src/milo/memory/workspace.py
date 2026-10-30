@@ -7,6 +7,7 @@ from importlib.resources.abc import Traversable
 from pathlib import Path
 
 _DIRS = ("run", "state", "logs", "memory/journal")
+_PRIVATE_DIRS = ("secrets",)
 
 
 class Workspace:
@@ -20,6 +21,8 @@ class Workspace:
         _copy_missing(resources.files("milo") / "workspace_template", self.home)
         for sub in _DIRS:
             (self.home / sub).mkdir(parents=True, exist_ok=True)
+        for sub in _PRIVATE_DIRS:
+            (self.home / sub).mkdir(mode=0o700, parents=True, exist_ok=True)
 
     @property
     def config_path(self) -> Path:
@@ -88,6 +91,16 @@ class Workspace:
     @property
     def heartbeat_state_path(self) -> Path:
         return self.state_dir / "heartbeat.json"
+
+    @property
+    def secrets_dir(self) -> Path:
+        """Tokens like the Telegram bot's, readable by the user only. Never sent anywhere, never shared."""
+        return self.home / "secrets"
+
+    @property
+    def remote_state_path(self) -> Path:
+        """Whose phone may reach Milo by message, and whether that is paused (0600)."""
+        return self.state_dir / "messages.json"
 
 
 def _copy_missing(src: Traversable, dst: Path) -> None:
