@@ -1,6 +1,6 @@
 # Meeting notes: design
 
-Status: proposed, 2026-10-30. Builds on the listening pipeline (committed segments) and on [memory](memory.md).
+Status: built, 2026-10-30. The research, measured numbers and what is still unverified are in [docs/research/meetings.md](../research/meetings.md). Where the build differs from this proposal: chunks are WAV, not FLAC (`audio/me-0001.wav`, `audio/them-0001.wav`), the diarizer embeds Whisper's segments instead of running a segmentation model (it was more accurate on every test), and the tap is global, leaving Milo out, instead of one per call app.
 
 ## What the user gets
 

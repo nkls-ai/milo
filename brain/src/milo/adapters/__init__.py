@@ -29,6 +29,7 @@ BUILTIN = (
     "embed.hashing",
     "channel.telegram",
     "channel.imessage",
+    "diarize.sherpa",
 )
 
 

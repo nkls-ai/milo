@@ -131,9 +131,10 @@ class Approvals:
         answer = await self._ask(summary)
         return Decision(answer == "yes", level, answer)
 
-    async def confirm(self, summary: str, *, detail: str = "") -> bool:
-        """Confirmer: always ask. `detail` shows under the question in the Milo window, e.g. the whole task."""
-        return await self._ask(summary, detail) == "yes"
+    async def confirm(self, summary: str, *, detail: str = "", speak: bool = True) -> bool:
+        """Confirmer: always ask. `detail` shows under the question in the Milo window, e.g. the whole task.
+        speak=False only shows it, for a question asked while the user is in a call."""
+        return await self._ask(summary, detail, speak) == "yes"
 
     def answer(self, id: str, yes: bool, *, via: str = "button") -> bool:
         """Answer the waiting question `id`. False if it isn't the one waiting (already answered, timed out)."""
@@ -161,7 +162,7 @@ class Approvals:
         shown = self._ui.bubble.strip()
         return bool(shown) and question.startswith(shown)
 
-    async def _ask(self, question: str, detail: str = "") -> str:
+    async def _ask(self, question: str, detail: str = "", speak: bool = True) -> str:
         """Returns "yes", "no" or "timeout"."""
         async with self._one_at_a_time:
             id = uuid.uuid4().hex[:12]
@@ -179,7 +180,7 @@ class Approvals:
             else:
                 self._ui.emit(Confirm(id, question))
                 self._transcript.say(text, Emotion.THINKING)
-                self._speaker.say(question, Emotion.THINKING, speak=self._speak and not self._quiet())
+                self._speaker.say(question, Emotion.THINKING, speak=speak and self._speak and not self._quiet())
             answer = "no"
             try:
                 answer = "yes" if await asyncio.wait_for(future, timeout_s) else "no"

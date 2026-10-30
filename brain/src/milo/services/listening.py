@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Callable
 from concurrent.futures import Executor
 
 from milo.core.events import Partial, Status
@@ -42,7 +43,8 @@ class Listening:
 
     def __init__(self, mic: AudioInput, transcriber: Transcriber, executor: Executor, ui: UiState,
                  dictation: DictationService, live_talk: LiveTalk, context: UserContext,
-                 live: LiveMode = LiveMode.OFF, hearing: CloudHearing | None = None):
+                 live: LiveMode = LiveMode.OFF, hearing: CloudHearing | None = None, *,
+                 yield_stt: Callable[[], None] = lambda: None):
         self._mic = mic
         self._transcriber = transcriber
         self._executor = executor
@@ -51,6 +53,7 @@ class Listening:
         self._live_talk = live_talk
         self._context = context
         self._live_mode = live
+        self._yield_stt = yield_stt
         self._mode: ListenMode | None = None
         self._shown = False
         self._live: LiveTranscript | None = None
@@ -83,6 +86,7 @@ class Listening:
             return
         self._mode = mode
         self._shown = False
+        self._yield_stt()  # a meeting pass on the STT thread gives way, so nothing queues ahead of the user
         if not self._goes_to_cloud(mode):
             self._wake()
         if not tentative:

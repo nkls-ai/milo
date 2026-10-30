@@ -25,6 +25,7 @@ from .transcript import Transcript, unrecorded
 from .ui_state import UiState
 
 if TYPE_CHECKING:
+    from .meetings import MeetingService
     from .orchestrator import Orchestrator
     from .routines import Routines
 
@@ -152,8 +153,10 @@ class LiveTalk:
                  persona: Callable[[], str], idle_reset_s: float, tasks: Orchestrator,
                  transcript: Transcript | None = None, eyes: ScreenEyes | None = None,
                  approvals: Approvals | None = None, memory: TurnMemory | None = None,
-                 backchannel: Backchannel | None = None, routines: Routines | None = None):
+                 backchannel: Backchannel | None = None, routines: Routines | None = None,
+                 meetings: MeetingService | None = None):
         self._model = model
+        self._meetings = meetings
         self._backchannel = backchannel
         self._routines = routines
         self._memory = memory
@@ -394,11 +397,14 @@ class LiveTalk:
             self._backchannel.arm()
         try:
             await self._ensure_conversation()
-            recalled = await self._recall(text, screen, outside=self._tainted or bool(notes) or self._saw_screen)
-            self._tainted = self._tainted or bool(notes) or not recalled.trusted
+            meeting = await self._meeting(text) if tags and not screen else ""
+            recalled = await self._recall(text, screen,
+                                          outside=self._tainted or bool(notes) or bool(meeting) or self._saw_screen)
+            self._tainted = self._tainted or bool(notes) or bool(meeting) or not recalled.trusted
             self._saw_screen = self._saw_screen or screen
             self._streaming = True
-            async for delta in self._model.turn(self._prompt(text, [*notes, recalled.block]), images):
+            blocks = [*notes, recalled.block, *([meeting] if meeting else [])]
+            async for delta in self._model.turn(self._prompt(text, blocks), images):
                 if first_at is None:
                     first_at = self._clock.monotonic()
                     if self._ui_looking:
@@ -462,6 +468,16 @@ class LiveTalk:
         if self._ui.state is MiloState.THINKING and not self._ui.thinking:  # only tags, nothing was spoken
             self._ui.rest()
         return parser
+
+    async def _meeting(self, text: str) -> str:
+        """During a call Milo takes notes in: what was said, as data (see services/meetings.py)."""
+        if self._meetings is None:
+            return ""
+        try:
+            return await self._meetings.before_turn(text)
+        except Exception:
+            log.exception("the meeting context failed")
+            return ""
 
     def _screen_message(self, capture: ScreenCapture, question: str) -> tuple[str, list[Path]]:
         images = [Path(capture.image)] if capture.image else []

@@ -21,6 +21,7 @@ brain/src/milo/
   adapters/       concrete engines, each registering itself by name
     harness/      codex, claude (agent harnesses), claude_live (the streaming chat model)
     stt/          mlx_whisper
+    diarize/      sherpa_onnx (voice embeddings for meeting notes, TitaNet-small by default)
     tts/          omnivoice, say
     audio/        sounddevice (mic in, speaker out), wav (a real-time virtual sound card that writes WAV files,
                   and a WAV file as the mic, for timing tests and voice comparisons without the speakers)
@@ -37,7 +38,8 @@ brain/src/milo/
                   remote (state/messages.json: the paired phone), and
                   long-term memory: episodes and facts (append-only JSONL), fact_profile (profile.md as a view of
                   the facts), index (FTS5 and vectors in state/memory.sqlite), recall, when (time phrases),
-                  consolidate (the night), recall_eval
+                  consolidate (the night), recall_eval, meetings (FileMeetingStore,
+                  JsonVoiceBook)
   proactive/      heartbeat engine, daily LLM budget, rules (one class per rule, registered by name)
   services/       use cases built only on ports: listening (push-to-talk, barge-in), dictation,
                   live_transcript (pause segmenter, phrases committed while recording, live words),
@@ -53,6 +55,7 @@ brain/src/milo/
                   of turns, tasks, routine runs, looks and dictations), memory_requests (the worker's memory tools), sleep
                   (when the night's consolidation runs), routines (writing, running and scheduling recipes, see ADR 16),
                   messages + pairing + sharing + brief + settings_guard (Milo by message, ADR 17),
+                  meetings + meeting_text + meeting_speakers + background_stt (meeting notes, see below),
                   plus small shared pieces: ui_state, context (latest app/idle report), levels
                   (throttled meters), quiet (wait for a turn to end), fallback_voice
   transport/      Unix socket JSONL servers: brain.sock (an EventSink), hands.sock, and the tool socket and its
@@ -270,6 +273,17 @@ someView.themed(by: model)                     // puts model.theme in the enviro
 
 `primary` is the skin's main colour (buttons, selection, the thread of a task), `tint` a soft wash of it (window paper), `accent` a second colour that pops, `ink` text on `tint`, `glow` halos and highlights. Pip is lavender and airy, the robot purple, the dragon teal with ember sparks and bouncy springs, Kit paper and fox orange and crisp, Glow lantern amber on night blue and floaty. The API lives in `app/Sources/MiloKit/Theme.swift`; add a colour there rather than in a view. Windows use `.themed(by:)`; the always-there overlay panels (the cursor, the working outline, the borrowed-mouse frame) subscribe to `model.$character` instead and pass the theme into their view, so they redraw only when the skin changes. Task status colours (running, done, failed, needs you) stay the same under every skin.
 
+## Meeting notes
+
+See [docs/design/meetings.md](design/meetings.md) and [docs/research/meetings.md](research/meetings.md).
+
+- **The app records, the brain decides.** `Meetings/MeetingController` polls `CallSignals` (`Adapters/MacCallSignals`: who uses the mic, from Core Audio's process list, and browser window titles) and turns them into `call_started` and `call_ended` through the pure `CallDetector`. The brain's `MeetingService` asks once through `Approvals` ("Looks like a meeting. Should I take notes?", shown, not spoken) or starts on its own for `[meetings] auto = "calendar"` when the calendar has an event now. It sends `meeting_record` with the folder. The app's `MeetingRecorder` (`Adapters/MacMeetingRecorder`) writes two tracks, `me` (the mic) and `them` (a Core Audio process tap of everything but Milo and the brain, or ScreenCaptureKit), as 30 s WAV chunks through `Meetings/ChunkWriter`, and sends `meeting_chunk` for each one on disk. `meeting_recording` says which tracks are recorded, on every connect too, so a restarted brain goes on with the meeting the app is still recording. A red dot shows on Milo and in the menu bar, whose "Take meeting notes" item sends `meeting_toggle`.
+- **Passes.** `MeetingService` transcribes the track furthest behind in passes of up to 30 s, cut at the quietest moment, with `TimedTranscriber.words` (Whisper word times) through `BackgroundStt`, which waits while the user dictates or talks. When a dictate or talk key goes down, `Listening.start` calls `BackgroundStt.yield_now` before it queues `wake()`: a meeting call running on the STT thread ends with `Transcriber.interrupt()`, and one still waiting there never starts. The service rolls the speaker tracker back and runs that same pass again first, once the user is done, so the user's passes never wait on a meeting. Each pass appends its lines and a progress mark to `meetings/<id>/transcript.jsonl` in one write (`MeetingStore`), and re-renders `transcript.md`. A crash repeats at most the pass it was in, and its lines count once.
+- **Speakers.** The `them` track's Whisper segments go to the `Diarizer` (`DIARIZERS` registry, `[meetings] diarizer`), one voice embedding each. `SpeakerTracker` keeps the meeting's voices across passes. Names come from `VoiceBook` (voices the user named before), the calendar (one attendee and one voice), and the user ("that was Anna", "Speaker 2 is Tom").
+- **During the call.** LiveTalk asks `MeetingService.before_turn(text)` for a `<meeting>` block with what was said, newest last and escaped, and treats it like screen data: untrusted, and the conversation counts as tainted.
+- **After.** A fresh chat-model session writes the summary, decisions, to-dos and a follow-up draft as JSON (`meeting_text.SUMMARY_RULES`). The brain writes `notes.md`, deletes the audio unless `[meetings] keep_audio`, offers the user's to-dos as Reminders and the mail draft through `Approvals` (the draft goes to a careful helper with the meeting text as data), and records a `meeting` episode in memory (`Memory.record` through `on_episode`): the title and summary, the people named, the app, `source` `meeting:<id>`, untrusted because it's other people's words.
+
+
 ## Heartbeat cost model
 
 The heartbeat must not burn tokens. One tick does a `stat()` on `reminders.md`, runs the enabled rules in memory and writes `state/heartbeat.json`. That's zero harness calls. A rule can attach an `llm_prompt` asking for nicer wording, but the runner uses it only if `LlmBudget.allow(today)` is true. The default `llm_calls_per_day = 0` means it never is. `tests/proactive` simulates a full day of ticks and asserts zero calls.
@@ -303,7 +317,8 @@ app/
                      knows) takes them from MiloModel.theme and follows a skin change at once.
                      SettingsModel + Views/SettingsView + AppKit/SettingsWindow; SetupModel + Views/SetupView
                      + SetupScenes + AppKit/SetupWindow. Flight.swift + AppKit/FlightDriver fly the overlay
-                     panel to MiloModel.flyTarget (AppKit global screen coordinates) and back
+                     panel to MiloModel.flyTarget (AppKit global screen coordinates) and back. Meetings/: MeetingController,
+                     CallDetector, ChunkWriter; Adapters/MacMeetingRecorder + CoreAudioProcesses
   Sources/Milo/      main.swift: builds concrete adapters, hands them to MiloController
   Tests/MiloKitTests Swift Testing; decodes protocol/messages.json, drives the controller with fakes.
                      MILO_RENDER_DIR=/tmp/milo-render swift test --filter ConversationRender renders the

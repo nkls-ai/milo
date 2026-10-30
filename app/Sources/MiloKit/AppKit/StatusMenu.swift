@@ -22,6 +22,7 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
     private lazy var knowledge = KnowledgeWindow(controller: controller)
     private var styleMenu: NSMenu!
     private var restyle: AnyCancellable?
+    private var notesItem: NSMenuItem?
     /// Milo by message: hidden while messages are off.
     private var remoteItems: [NSMenuItem] = []
     private var remoteStatusItem: NSMenuItem!
@@ -40,10 +41,10 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
         hintItem = NSMenuItem(title: controller.bindings.hint, action: nil, keyEquivalent: "")
         super.init()
 
-        // A small sign of the skin he wears, drawn like every menu bar icon (it follows the menu bar's colour).
-        restyle = controller.model.$character.sink { [weak self] in
-            self?.statusItem.button?.image = NSImage(systemSymbolName: Self.symbol(for: $0), accessibilityDescription: "Milo")
-        }
+        // A small sign of the skin he wears, drawn like every menu bar icon (it follows the menu bar's colour),
+        // and a red dot instead while he records a meeting.
+        restyle = controller.model.$character.combineLatest(controller.model.$recording.removeDuplicates())
+            .sink { [weak self] style, recording in self?.showIcon(style, recording: recording) }
         let menu = NSMenu()
         hintItem.isEnabled = false
         menu.addItem(hintItem)
@@ -51,6 +52,9 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
         add(menu, "Open conversation", #selector(toggleWindow))
         add(menu, "What's this?", #selector(whatsThis))
         add(menu, "What Milo knows…", #selector(showKnowledge))
+        if controller.meetings != nil {
+            notesItem = add(menu, "Take meeting notes", #selector(toggleNotes))
+        }
         muteItem = add(menu, "Mute proactive nudges", #selector(toggleMute))
         add(menu, "Show / hide Milo", #selector(toggleVisible))
         add(menu, "Move Milo back to the corner", #selector(resetPosition))
@@ -91,6 +95,20 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
         remotePauseItem.state = remote.paused ? .on : .off
         remotePauseItem.isEnabled = remote.state == .paired
         remoteForgetItem.isHidden = remote.state != .paired
+    }
+
+    private func showIcon(_ style: CharacterStyle, recording: Bool) {
+        notesItem?.title = recording ? "Stop taking notes" : "Take meeting notes"
+        guard let button = statusItem.button else { return }
+        if recording {
+            let config = NSImage.SymbolConfiguration(paletteColors: [.white, .systemRed])
+            let image = NSImage(systemSymbolName: "record.circle.fill", accessibilityDescription: "Milo is taking notes")?
+                .withSymbolConfiguration(config)
+            image?.isTemplate = false
+            button.image = image
+        } else {
+            button.image = NSImage(systemSymbolName: Self.symbol(for: style), accessibilityDescription: "Milo")
+        }
     }
 
     static func symbol(for style: CharacterStyle) -> String {
@@ -157,6 +175,7 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
     @objc private func openSetup() { setup.open() }
     @objc private func whatsThis() { controller.screen?.whatsThis() }
     @objc private func showKnowledge() { knowledge.show() }
+    @objc private func toggleNotes() { controller.meetings?.toggle() }
     @objc private func resetPosition() { panel.placeBottomRight() }
     @objc private func openHome() { NSWorkspace.shared.open(paths.home) }
     @objc private func openLog() { NSWorkspace.shared.open(paths.brainLog) }

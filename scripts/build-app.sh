@@ -23,7 +23,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
-  <key>NSMicrophoneUsageDescription</key><string>Milo listens only while you hold the fn or right Option key.</string>
+  <key>NSMicrophoneUsageDescription</key><string>Milo listens only while you hold the fn or right Option key, or takes notes in a meeting you said yes to.</string>
+  <key>NSAudioCaptureUsageDescription</key><string>Milo hears the others in a call only while he takes meeting notes you said yes to. The audio stays on this Mac.</string>
   <key>NSCalendarsFullAccessUsageDescription</key><string>Milo looks at your calendar and puts appointments in it when you ask him to.</string>
   <key>NSRemindersFullAccessUsageDescription</key><string>Milo reads and adds reminders when you ask him to.</string>
   <key>NSAppleEventsUsageDescription</key><string>Milo reads your mail and notes, writes mail drafts and notes when you ask. He never sends mail.</string>

@@ -41,6 +41,7 @@ OUTBOUND = {
     "routines": lambda m: ev.Routines(m["routines"], m["drafts"]),
     "settings": lambda m: ev.SettingsReport(m["settings"], m["restart"], m["error"]),
     "remote": lambda m: ev.Remote(m["channel"], m["label"], m["state"], m["paused"], m["detail"]),
+    "meeting_record": lambda m: ev.MeetingRecord(m["id"], m["dir"], m["on"]),
 }
 
 
@@ -143,3 +144,23 @@ def test_routine_commands():
         ev.parse_command({"type": "routine", "id": "x", "action": "explode"})
     with pytest.raises(ev.ProtocolError):
         ev.parse_command({"type": "routine_draft_answer", "id": "d1", "save": "yes"})
+def test_meeting_commands_parse_into_their_values():
+    by_type = {m["type"]: ev.parse_command(m) for m in FIXTURE["app_to_brain"] if m["type"].startswith(("call", "meeting"))}
+    assert by_type["call_started"] == ev.CallStarted("Zoom", "us.zoom.xos", "Zoom Meeting")
+    assert by_type["call_ended"] == ev.CallEnded("Zoom")
+    chunk = by_type["meeting_chunk"]
+    assert (chunk.track, chunk.index, chunk.start, chunk.seconds) == ("them", 3, 60.0, 30.0)
+    assert chunk.path.endswith("them-0003.wav")
+    recording = by_type["meeting_recording"]
+    assert recording.on and recording.tracks == ("me",) and "System Audio Recording" in recording.error
+    assert by_type["meeting_toggle"] == ev.MeetingToggle(False)
+
+
+@pytest.mark.parametrize("bad", [
+    {"type": "meeting_chunk", "id": "m", "track": "both", "index": 1, "path": "x", "start": 0, "seconds": 30},
+    {"type": "meeting_chunk", "id": "m", "track": "me", "index": 0, "path": "x", "start": 0, "seconds": 30},
+    {"type": "meeting_recording", "id": "m", "on": True, "tracks": "me"},
+])
+def test_bad_meeting_commands_are_refused(bad):
+    with pytest.raises(ev.ProtocolError):
+        ev.parse_command(bad)

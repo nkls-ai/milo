@@ -37,7 +37,9 @@ let controller = MiloController(
     // MILO_DROWSY_AFTER (seconds) lets a test instance fall asleep sooner, to measure him asleep.
     settings: MiloController.Settings(drowsyAfter: environment["MILO_DROWSY_AFTER"].flatMap(Double.init) ?? 600,
                                       promptForAccessibility: false),
-    screen: screen)
+    screen: screen,
+    meetings: MeetingController(model: model, brain: brain, recorder: MacMeetingRecorder(brainLock: paths.brainLock),
+                                signals: MacCallSignals(), scheduler: scheduler))
 
 // Windows and the status item are created once the app has finished launching.
 var panel: OverlayPanel?

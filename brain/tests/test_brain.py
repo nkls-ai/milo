@@ -312,6 +312,21 @@ def check_remote_forget(s: Stack, msg: dict) -> None:
     run(Stack(), parse_command(msg))
 
 
+class HeardMeetings:
+    def __init__(self):
+        self.commands = []
+
+    def handle(self, command):
+        self.commands.append(command)
+
+
+def check_meeting(s: Stack, msg: dict) -> None:
+    meetings = HeardMeetings()
+    brain = Brain(s.ui, s.listening, s.live_talk, s.context, s.heartbeat, UiSettings(), meetings=meetings)
+    run(s, parse_command(msg), brain=brain)
+    assert meetings.commands == [parse_command(msg)]
+
+
 CHECKS = {
     "get_settings": check_get_settings,
     "set_setting": check_set_setting,
@@ -319,6 +334,11 @@ CHECKS = {
     "routine_draft_answer": check_routine_draft_answer,
     "remote_pause": check_remote_pause,
     "remote_forget": check_remote_forget,
+    "call_started": check_meeting,
+    "call_ended": check_meeting,
+    "meeting_chunk": check_meeting,
+    "meeting_recording": check_meeting,
+    "meeting_toggle": check_meeting,
     "stop_helper": check_stop_helper,
     "get_facts": check_get_facts,
     "forget_fact": check_forget_fact,

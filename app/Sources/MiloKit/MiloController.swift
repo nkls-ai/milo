@@ -45,6 +45,8 @@ public final class MiloController {
     public let settingsModel = SettingsModel()
     /// Looking at the screen and the worker's actions on it; nil without those ports.
     public let screen: ScreenController?
+    /// Calls and meeting recordings; nil without a recorder.
+    public let meetings: MeetingController?
     public private(set) var muted = false
     /// The dictation style the brain uses, from its `settings`; nil while no brain is connected.
     public var dictationStyle: DictationStyle? {
@@ -71,9 +73,10 @@ public final class MiloController {
     public init(model: MiloModel, brain: BrainClient, launcher: BrainLauncher, inserter: TextInserter,
                 keys: KeyEventSource, context: ContextProvider, accessibility: AccessibilityPermission,
                 scheduler: Scheduler, connections: AppConnections? = nil, settings: Settings = Settings(),
-                screen: ScreenController? = nil) {
+                screen: ScreenController? = nil, meetings: MeetingController? = nil) {
         self.model = model
         self.screen = screen
+        self.meetings = meetings
         self.brain = brain
         self.launcher = launcher
         self.inserter = inserter
@@ -103,6 +106,7 @@ public final class MiloController {
         keys.onEvent = { [weak self] in self?.handleKey($0) }
         keys.start()
         screen?.start()
+        meetings?.start()
 
         if !accessibility.isTrusted(prompt: settings.promptForAccessibility) {
             model.show("Grant me Accessibility in System Settings so I can hear the \(bindings.dictate.displayName) key and paste for you.")
@@ -150,6 +154,7 @@ public final class MiloController {
 
     private func received(_ event: BrainEvent) {
         if let screen, screen.apply(event) { return }
+        if let meetings, meetings.apply(event) { return }
         switch event {
         case let .dictation(text):
             // Without Accessibility macOS drops Milo's Cmd-V without an error. An ad-hoc signed
@@ -217,6 +222,7 @@ public final class MiloController {
 
     private func connectionChanged(_ up: Bool) {
         model.connected = up
+        meetings?.connectionChanged(up)
         guard up else {
             // A brain that died mid-answer never sends idle; don't leave Milo speaking or listening.
             // A new brain sends its own state on connect. Its helpers died with it.
