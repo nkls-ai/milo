@@ -21,7 +21,7 @@ Milo should remember episodes and facts for years, survive crashes without losin
   | Qwen3-Embedding-0.6B, 4-bit | 320 MB | 20 | 113 to 294 ms |
 
   Our code matches the reference model's vectors (cosine 1.0000). e5 is the only one fast enough to embed every turn without the user noticing; the larger two are slightly better at matching across German and English. `[memory] embedder = "hash"` is a no-model fallback for a Mac without room.
-- **Consolidation is one worker call per day,** at night, on power, while the user is away, capped by `consolidate_calls_per_day`. It sees at most 150 of the day's trusted episodes and 400 facts.
+- **Consolidation is one worker call per day,** at night, on power, while the user is away, capped by `consolidate_calls_per_day`. It sees at most 150 of the day's trusted episodes and 400 facts. A small day cost 22,000 input and 800 output tokens with Claude, most of it the CLI's own system prompt.
 
 ## Consequences
 
