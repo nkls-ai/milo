@@ -30,13 +30,14 @@ The Milo window was one endless scroll: chats, task steps, helper updates, phone
 ```
 
 - **Today** is home: what Milo is doing now, what waits for an answer (questions and recipe drafts), today's reminders, what got done today, and the conversation from a moment ago to carry on. The window opens here unless a conversation is still going.
+- **Usage** sits under Today: headline numbers for the range (tokens, model calls, dictations, active days), a bar per day for tokens or words dictated, where the tokens and the words went, and the accounts Milo uses with their plan. See ARCHITECTURE.md, Usage.
 - **Conversations** split on their own. Each has a short title Milo writes, a preview line and a time, grouped under Today, Yesterday, This week, This month and then by month. An icon says how it happened: a phone for messages from the phone, two people for meeting notes, a circle arrow for a routine that ran on its schedule. The rows hang on a thread with a bead each, like a task's steps: the conversation going on now has a breathing ring.
 - **A conversation** shows what was said, with each task as a compact card: what it is, its status, how many steps, a thin progress line. Clicking the card opens the task.
 - **A task page**: status, the description, every step on the thread (the raw command on request), the result, the files it touched with "Show in Finder", Stop while it runs, and a link back to the conversation that asked for it.
 - **Search** (⌘F) finds conversations by title, by what was said, and through memory's index by meaning ("the thing about the insurance").
 - **Picking an old conversation up again:** typing in an old conversation continues it. Milo gets a short recap of it, so "and what about the other one?" makes sense.
 
-Keyboard: ⌘1 Today, ⌘N new conversation, ⌘F search, ⌘[ back, ⌥⌘↑ / ⌥⌘↓ the previous and next conversation, ⌘L the text field, Esc closes search or goes back. Below 600 points of width the sidebar folds away behind a button (⌘0), so the old narrow window still works.
+Keyboard: ⌘1 Today, ⌘2 Usage, ⌘N new conversation, ⌘F search, ⌘[ back, ⌥⌘↑ / ⌥⌘↓ the previous and next conversation, ⌘L the text field, Esc closes search or goes back. Below 600 points of width the sidebar folds away behind a button (⌘0), so the old narrow window still works.
 
 ## Where things are
 

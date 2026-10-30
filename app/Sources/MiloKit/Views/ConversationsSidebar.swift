@@ -23,7 +23,8 @@ struct ConversationsSidebar: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     if route.search.trimmingCharacters(in: .whitespaces).isEmpty {
-                        todayRow.padding(.bottom, 6)
+                        todayRow
+                        usageRow.padding(.bottom, 6)
                         list
                     } else {
                         results
@@ -69,6 +70,27 @@ struct ConversationsSidebar: View {
             .padding(.horizontal, 8)
         }
         .accessibilityLabel(waiting > 0 ? "Today, \(waiting) waiting for you" : "Today")
+    }
+
+    private var usageRow: some View {
+        SidebarButton(selected: route.page == .usage, namespace: selection) {
+            route.go(.usage)
+        } label: {
+            HStack(spacing: 9) {
+                Image(systemName: "chart.bar.fill")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(theme.primary)
+                    .frame(width: 18)
+                Text("Usage")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(theme.ink)
+                Spacer(minLength: 4)
+                KeyHint("⌘2")
+            }
+            .padding(.vertical, 7)
+            .padding(.horizontal, 8)
+        }
+        .accessibilityLabel("Usage")
     }
 
     @ViewBuilder private var list: some View {

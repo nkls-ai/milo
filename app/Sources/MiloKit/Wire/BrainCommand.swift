@@ -50,6 +50,8 @@ public enum BrainCommand: Equatable, Sendable {
     case routineDraftAnswer(id: String, save: Bool)
     /// The Settings window opened: send the settings.
     case getSettings
+    /// The Usage page opened or changed its range: send `usage` for the last `span` days (1 to 366).
+    case getUsage(span: Int)
     /// Change one setting, e.g. section "ui", key "voice", value false.
     case setSetting(section: String, key: String, value: JSONValue)
     /// The menu's "Pause messages from your phone".
@@ -68,6 +70,8 @@ public enum BrainCommand: Equatable, Sendable {
     case meetingRecording(id: String, on: Bool, tracks: [String], error: String = "")
     /// The user chose "Take meeting notes" or "Stop taking notes" in the menu.
     case meetingToggle(Bool)
+    /// The user fixed words Milo had pasted. Only these pairs leave the app, never the field's text (ADR 21).
+    case dictationFixed([DictationFix])
 }
 
 public struct MeetingChunk: Equatable, Sendable {
@@ -99,7 +103,7 @@ extension BrainCommand: Encodable {
         case type, mode, text, app, on, tentative, speak, id, capture, ok, result, error, reason, yes, action, save
         case section, key, value
         case bundle, title, track, index, path, start, seconds, tracks
-        case conversation, before, query
+        case conversation, before, query, span, fixes, heard, meant
         case idleSeconds = "idle_s"
     }
 
@@ -198,6 +202,9 @@ extension BrainCommand: Encodable {
             try c.encode(save, forKey: .save)
         case .getSettings:
             try c.encode("get_settings", forKey: .type)
+        case let .getUsage(span):
+            try c.encode("get_usage", forKey: .type)
+            try c.encode(span, forKey: .span)
         case let .setSetting(section, key, value):
             try c.encode("set_setting", forKey: .type)
             try c.encode(section, forKey: .section)
@@ -233,6 +240,14 @@ extension BrainCommand: Encodable {
         case let .meetingToggle(on):
             try c.encode("meeting_toggle", forKey: .type)
             try c.encode(on, forKey: .on)
+        case let .dictationFixed(fixes):
+            try c.encode("dictation_fixed", forKey: .type)
+            var list = c.nestedUnkeyedContainer(forKey: .fixes)
+            for fix in fixes {
+                var item = list.nestedContainer(keyedBy: Key.self)
+                try item.encode(fix.heard, forKey: .heard)
+                try item.encode(fix.meant, forKey: .meant)
+            }
         }
     }
 }

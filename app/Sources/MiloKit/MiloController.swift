@@ -43,15 +43,23 @@ public final class MiloController {
     public let knowledge = KnowledgeModel()
     /// What the Settings window shows and changes. The menu's "Dictation style" reads and changes it too.
     public let settingsModel = SettingsModel()
+    /// What the Usage page in the Milo window shows.
+    public let usage = UsageModel()
     /// Looking at the screen and the worker's actions on it; nil without those ports.
     public let screen: ScreenController?
     /// Calls and meeting recordings; nil without a recorder.
     public let meetings: MeetingController?
+    /// Learns from the user's fixes to pasted dictation; nil without a field reader.
+    public let pasteWatcher: PasteWatcher?
     public private(set) var muted = false
     /// The dictation style the brain uses, from its `settings`; nil while no brain is connected.
     public var dictationStyle: DictationStyle? {
         guard model.connected, let value = settingsModel.value("dictation", "stream")?.string else { return nil }
         return DictationStyle(rawValue: value)
+    }
+    /// `[dictation] learn` as the brain last reported it. Off while no brain is connected: nothing is read then.
+    public var learnsFromFixes: Bool {
+        model.connected && settingsModel.value("dictation", "learn")?.bool == true
     }
     public var bindings: HotkeyBindings { pushToTalk.bindings }
     /// Called when `ui_config` changes the bindings.
@@ -73,10 +81,12 @@ public final class MiloController {
     public init(model: MiloModel, brain: BrainClient, launcher: BrainLauncher, inserter: TextInserter,
                 keys: KeyEventSource, context: ContextProvider, accessibility: AccessibilityPermission,
                 scheduler: Scheduler, connections: AppConnections? = nil, settings: Settings = Settings(),
-                screen: ScreenController? = nil, meetings: MeetingController? = nil) {
+                screen: ScreenController? = nil, meetings: MeetingController? = nil,
+                pasteWatcher: PasteWatcher? = nil) {
         self.model = model
         self.screen = screen
         self.meetings = meetings
+        self.pasteWatcher = pasteWatcher
         self.brain = brain
         self.launcher = launcher
         self.inserter = inserter
@@ -97,6 +107,8 @@ public final class MiloController {
         model.onRoutine = { [weak self] id, action in self?.brain.send(.routine(id: id, action: action)) }
         model.onDraftAnswer = { [weak self] id, save in self?.brain.send(.routineDraftAnswer(id: id, save: save)) }
         settingsModel.send = { [weak self] in self?.brain.send($0) }
+        usage.send = { [weak self] in self?.brain.send($0) }
+        pasteWatcher?.onFixes = { [weak self] in self?.brain.send(.dictationFixed($0)) }
         brain.onEvent = { [weak self] in self?.received($0) }
         brain.onConnectionChange = { [weak self] in self?.connectionChanged($0) }
         // Development brains are started by hand; only launch one if nothing answers.
@@ -166,6 +178,7 @@ public final class MiloController {
             if accessibility.isTrusted(prompt: false) {
                 inserter.insert(text)
                 model.pasted(text)
+                if learnsFromFixes { pasteWatcher?.pasted(text) } else { pasteWatcher?.stop() }
             } else {
                 inserter.copy(text)
                 NSLog("Milo: not trusted for Accessibility, dictation left on the clipboard")
@@ -185,6 +198,8 @@ public final class MiloController {
             knowledge.apply(event)
         case let .settings(report):
             settingsModel.apply(report)
+        case let .usage(report):
+            usage.apply(report)
         case let .appRequest(id, op, args):
             guard let connections else {
                 brain.send(.appResponse(id: id, outcome: .failure(Self.noConnections)))

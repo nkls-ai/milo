@@ -6,7 +6,7 @@ import logging
 import re
 import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -53,6 +53,28 @@ class MlxWhisperOptions:
     vocabulary: str = ""
 
 
+LEARNED_CHARS = 400
+"""Learned words in the prompt, at most (about 100 tokens; Whisper's prompt holds 224). Whisper copies the
+prompt's style, so a long list could cost punctuation; the first words are the user's own and the most seen."""
+
+
+def vocabulary_prompt(configured: str, words: Sequence[str]) -> str:
+    """`[stt.mlx_whisper] vocabulary`, then the words it doesn't already name, comma-separated, cut at LEARNED_CHARS."""
+    known = {w.strip().lower() for w in configured.split(",") if w.strip()}
+    extra: list[str] = []
+    size = 0
+    for word in words:
+        word = " ".join(word.split())
+        if not word or word.lower() in known:
+            continue
+        if size + len(word) + 2 > LEARNED_CHARS:
+            break
+        known.add(word.lower())
+        extra.append(word)
+        size += len(word) + 2
+    return ", ".join(p for p in (configured.strip().rstrip(","), *extra) if p)
+
+
 SHORT_PHRASE_S = 3.0
 """Language detection on a phrase shorter than this is a guess ("okay" sounds like many languages), so a
 phrase that continues a recording keeps the language its earlier phrases had."""
@@ -68,10 +90,16 @@ class MlxWhisper:
         self.model = model
         self.preview_model = preview_model or model
         self.language = language or None  # None lets Whisper detect it
+        self.vocabulary = vocabulary
         self.prompt = vocabulary or None  # names in the initial prompt bias Whisper's spelling
         self._models: dict[str, _Whisper] = {}
         self._last_language: str | None = None
         self._stop = threading.Event()
+
+    def use_vocabulary(self, words: Sequence[str]) -> None:
+        """Vocabulary: the dictionary's words go after `vocabulary` in the prompt, up to LEARNED_CHARS. Read by the
+        next pass; a str attribute is swapped whole, so the STT thread never sees half of it."""
+        self.prompt = vocabulary_prompt(self.vocabulary, words) or None
 
     def warm(self) -> None:
         """Download and load the models so the first real transcription is fast."""

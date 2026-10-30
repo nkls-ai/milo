@@ -12,11 +12,13 @@ public enum WindowPage: Hashable, Sendable {
     case conversation(String)
     /// A task's own page.
     case task(String)
+    /// Tokens, dictations and accounts, day by day.
+    case usage
 
     /// How deep it sits, so a move goes left or right: Today, then conversations, then tasks.
     var depth: Int {
         switch self {
-        case .today: 0
+        case .today, .usage: 0
         case .live, .conversation: 1
         case .task: 2
         }

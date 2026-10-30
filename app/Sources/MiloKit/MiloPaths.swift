@@ -21,6 +21,8 @@ public struct MiloPaths: Sendable {
     public var brainLog: URL { home.appendingPathComponent("logs/brain.log") }
     /// Where a brain launched by the app writes stdout and stderr.
     public var brainStdoutLog: URL { home.appendingPathComponent("logs/brain.stdout.log") }
+    /// The words dictation should get right and the fixes Milo learned (ADR 21). The brain makes it.
+    public var dictionary: URL { home.appendingPathComponent("dictionary.md") }
 }
 
 extension MiloPaths {

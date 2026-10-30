@@ -9,6 +9,7 @@
 - Let the brain ask the app whether a question still shows, instead of trusting its own record of the bubble, so a spoken yes can't land on a question already gone.
 - Run the eval on Codex as the worker too, and on a few German phrasings.
 - Thumbs up/down on unprompted nudges, stored in memory, so rules learn what you care about.
+- Dictation learning (ADR 21): try it live in Slack, Mail, Notes, Messages, Chrome and Safari text fields and VS Code, and note which apps don't expose their field's value. Check that ElevenLabs takes 50 keyterms in a realtime session. Measure a Whisper prompt with 400 characters of learned words against the dictation eval (punctuation loss).
 - Context-aware dictation formatting by frontmost app (casual in Slack, formal in Mail), via a local model `TextCleaner`.
 
 - Milo's CPU while he talks or listens is 4 to 6% of a core on a busy machine (2026-10-30, release; idle about 1%, asleep 0.02%). Drawing is under 0.1 ms a frame; the rest is the 60 fps display link and Core Animation commits. Next: drive speaking at 30 fps, and let the voice capsule's meter share his display link.
@@ -50,6 +51,7 @@
 ## Later
 - Wake word ("hey Milo") with a small local model.
 - Rive or sprite animations instead of SwiftUI shapes.
-- Usage readout in the menu (`JsonlUsageLedger.today_totals()` exists).
+- Usage readout in the menu (`JsonlUsageLedger.today_totals()` exists; the Usage page in the window has the full picture).
+- Usage page: count the characters Milo sends to ElevenLabs, so the voice's monthly credits show even with a key that can't read the plan.
 - Mic pre-roll buffer. Skipped for now: a ring buffer needs the input stream running all the time, which keeps the macOS orange mic indicator on permanently. Recording already starts at key-down (the app shows it 80 ms later), and a double tap records from the first tap.
 - Dev: a rebuilt app joins whatever brain holds the lock, even one running older code. build-app.sh now stops this checkout's brain; better would be the brain reporting its build and the app restarting a brain from another build.

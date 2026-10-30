@@ -22,7 +22,7 @@ public final class ConversationWindow: NSWindow {
         minSize = NSSize(width: 320, height: 300)
         contentView = NSHostingView(rootView: ConversationView(
             transcript: controller.transcript, model: controller.model, settings: settings, route: route,
-            actions: controller.windowActions)
+            actions: controller.windowActions, usage: controller.usage)
             .themed(by: controller.model))
         // The title bar shows the window's own colour: keep it Milo's paper.
         restyle = controller.model.$character.sink { [weak self] in

@@ -18,6 +18,7 @@ struct SettingsRenderTests {
                 labels: ["Only the answer", "Short notes in his bubble", "Tells you each step"], live: false),
         Setting(section: "dictation", key: "stream", value: "preview", options: ["off", "preview", "type"],
                 labels: ["When you let go", "Show the words as you speak", "Type as you speak"]),
+        Setting(section: "dictation", key: "learn", value: true),
         Setting(section: "ui", key: "dictate_key", value: "fn",
                 options: ["fn", "right_option", "right_command", "right_control"],
                 labels: ["fn", "Right Option", "Right Command", "Right Control"]),
@@ -105,7 +106,8 @@ struct SettingsRenderTests {
     private func render(_ settings: SettingsModel, _ style: CharacterStyle, name: String, dark: Bool) throws {
         let model = MiloModel(scheduler: ManualScheduler())
         model.character = style
-        try render(SettingsView(settings: settings, model: model, restart: {}).themed(by: model), size: Self.size,
+        try render(SettingsView(settings: settings, model: model, restart: {}, showWords: {}).themed(by: model),
+                   size: Self.size,
                    name: name, dark: dark)
     }
 

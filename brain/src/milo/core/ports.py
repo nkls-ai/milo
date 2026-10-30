@@ -15,10 +15,12 @@ from typing import Protocol, runtime_checkable
 import numpy as np
 
 from .conversations import ConversationInfo
+from .dictionary import Entries
 from .events import Event
 from .meetings import Chunk, MeetingInfo, MeetingNotes, TimedWord, Track, TranscriptLine, Turn
 from .memory import ConsolidationReport, Document, Episode, Fact, Hit, IndexItem, Recall, TurnContext
 from .routines import Routine
+from .usage import Account, Call, Dictated
 from .types import Audio, Inbound, Nudge, Reminder, Reply, ScreenCapture, Scope, Signals, Step, Usage
 
 LevelCallback = Callable[[float], None]
@@ -85,6 +87,17 @@ class Transcriber(Protocol):
     def interrupt(self) -> None:
         """End the pass running now as soon as possible, with Interrupted. Safe from any thread; does
         nothing if no pass runs or the engine can't stop one."""
+        ...
+
+
+@runtime_checkable
+class Vocabulary(Protocol):
+    """A transcriber that can be told which words to spell right (Whisper's prompt, Scribe's keyterms). Optional:
+    compose checks for it, like PlaybackTap."""
+
+    def use_vocabulary(self, words: Sequence[str]) -> None:
+        """From the next pass or session on, bias spelling towards these words, besides the ones config.toml
+        names. Any thread; the engine caps how many it takes."""
         ...
 
 
@@ -384,6 +397,24 @@ class TextCleaner(Protocol):
 
 
 @runtime_checkable
+class Dictionary(Protocol):
+    """dictionary.md: words dictation should get right, and the fixes learned from the user's corrections (ADR 21)."""
+
+    def entries(self) -> Entries:
+        """What the file says now. Cheap when it hasn't changed."""
+        ...
+
+    def changed(self) -> bool:
+        """The file changed since entries() last read it."""
+        ...
+
+    def learn(self, heard: str, meant: str) -> str:
+        """The user fixed `heard` to `meant` once. Returns "new", "again", "replaced", "undone", "kept", "full"
+        or "invalid" (see MarkdownDictionary.learn)."""
+        ...
+
+
+@runtime_checkable
 class EventSink(Protocol):
     """Where the brain sends UI events. Must be safe to call from the event loop thread only."""
 
@@ -415,6 +446,26 @@ class ReminderBook(ReminderSource, Protocol):
 @runtime_checkable
 class UsageLedger(Protocol):
     def record(self, source: str, harness: str, usage: Usage) -> None: ...
+
+
+@runtime_checkable
+class UsageHistory(Protocol):
+    """Reads back the usage ledger and the dictation history for the Usage page."""
+
+    def calls(self, since: date) -> list[Call]: ...
+
+    def dictations(self, since: date) -> list[Dictated]: ...
+
+    def first_day(self) -> date | None:
+        """The day of the oldest record in either file, or None before the first one."""
+        ...
+
+
+@runtime_checkable
+class AccountProbe(Protocol):
+    def accounts(self) -> list[Account]:
+        """Each service Milo is set up to use and who it's signed in as. Blocking: runs CLIs and asks APIs."""
+        ...
 
 
 @runtime_checkable

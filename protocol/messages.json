@@ -45,6 +45,16 @@
     {"type": "routines", "routines": [{"id": "monday-report", "name": "Monday report", "description": "Sums last week's sales into a one-page report.", "schedule": "every Monday at 09:00", "paused": false, "last_run": "2026-10-26 09:00, done", "next_run": "2026-11-02T09:00", "inputs": ["month"]}, {"id": "tidy-downloads", "name": "Tidy downloads", "description": "", "schedule": "", "paused": true, "last_run": "", "inputs": []}, {"id": "broken", "name": "broken", "problem": "it must start with a line of three dashes (---)"}], "drafts": [{"id": "d4e5f6a7", "name": "Invoice folder", "recipe": "---\nname: Invoice folder\nschedule:\npaused: no\nversion: 1\n---\n\n## Steps\n\n1. Move this month's invoices from Downloads into Invoices.\n   Check: Downloads has no invoice left.\n", "schedule": ""}]},
     {"type": "settings", "settings": [{"section": "ui", "key": "voice", "value": true, "options": [], "labels": [], "live": true}, {"section": "chat", "key": "updates", "value": "bubble", "options": ["quiet", "bubble", "chatty"], "labels": ["Only the answer", "Short notes in his bubble", "Tells you each step"], "live": true}, {"section": "dictation", "key": "stream", "value": "preview", "options": ["off", "preview", "type"], "labels": ["When you let go", "Show the words as you speak", "Type as you speak"], "live": true}], "restart": false, "error": ""},
     {"type": "settings", "settings": [], "restart": false, "error": "The dictate key and the talk key need to be different keys."},
+    {"type": "usage", "span": 3, "today": "2026-10-30", "since": "2026-10-29", "daily": [
+      {"day": "2026-10-28", "calls": 0, "input_tokens": 0, "cached_input_tokens": 0, "output_tokens": 0, "dictations": 0, "words": 0},
+      {"day": "2026-10-29", "calls": 4, "input_tokens": 61200, "cached_input_tokens": 38400, "output_tokens": 210, "dictations": 12, "words": 148},
+      {"day": "2026-10-30", "calls": 9, "input_tokens": 84050, "cached_input_tokens": 70100, "output_tokens": 655, "dictations": 31, "words": 402}
+    ], "sources": [{"source": "task", "calls": 2, "tokens": 98000}, {"source": "chat", "calls": 11, "tokens": 48115}], "apps": [{"app": "Slack", "dictations": 20, "words": 310}, {"app": "Mail", "dictations": 23, "words": 240}], "accounts": [
+      {"service": "Claude", "uses": ["Talking"], "state": "ok", "plan": "Max", "who": "you@example.com", "detail": "claude-haiku-5-5"},
+      {"service": "ChatGPT", "uses": ["Tasks"], "state": "ok", "plan": "", "who": "", "detail": "Signed in with ChatGPT"},
+      {"service": "ElevenLabs", "uses": ["Milo's voice", "Hearing you"], "state": "unknown", "plan": "", "who": "", "detail": "Can't see the plan: the API key lacks the user_read permission."},
+      {"service": "This Mac", "uses": ["Dictation"], "state": "local", "plan": "", "who": "", "detail": "Whisper, nothing leaves the Mac"}
+    ]},
     {"type": "remote", "channel": "telegram", "label": "Telegram", "state": "paired", "paused": false, "detail": "Niklas (@niklas)"},
     {"type": "remote", "channel": "telegram", "label": "Telegram", "state": "unpaired", "paused": false, "detail": "Message @milo_mac_bot from your phone to connect."},
     {"type": "meeting_record", "id": "2026-10-30-1400-weekly-sync", "dir": "/Users/you/Milo/meetings/2026-10-30-1400-weekly-sync/audio", "on": true},
@@ -99,6 +109,7 @@
     {"type": "routine", "id": "tidy-downloads", "action": "resume"},
     {"type": "routine_draft_answer", "id": "d4e5f6a7", "save": true},
     {"type": "get_settings"},
+    {"type": "get_usage", "span": 30},
     {"type": "set_setting", "section": "ui", "key": "voice", "value": true},
     {"type": "set_setting", "section": "ui", "key": "voice", "value": false},
     {"type": "remote_pause", "on": true},
@@ -107,6 +118,7 @@
     {"type": "call_ended", "app": "Zoom"},
     {"type": "meeting_chunk", "id": "2026-10-30-1400-weekly-sync", "track": "them", "index": 3, "path": "/Users/you/Milo/meetings/2026-10-30-1400-weekly-sync/audio/them-0003.wav", "start": 60.0, "seconds": 30.0},
     {"type": "meeting_recording", "id": "2026-10-30-1400-weekly-sync", "on": true, "tracks": ["me"], "error": "I can only hear you, not the others. Turn on System Audio Recording for Milo in System Settings › Privacy & Security."},
-    {"type": "meeting_toggle", "on": false}
+    {"type": "meeting_toggle", "on": false},
+    {"type": "dictation_fixed", "fixes": [{"heard": "Cloud Code", "meant": "Claude Code"}, {"heard": "Nicholas", "meant": "Niklas"}]}
   ]
 }

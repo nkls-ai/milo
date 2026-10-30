@@ -186,3 +186,24 @@ def test_interrupt_reaches_the_pass_and_the_next_pass_starts_clean(monkeypatch):
     stt.interrupt()
     assert stt.transcribe(SPEECH) == "ok"
     assert seen == [False], "an interrupt only ends the pass running when it came"
+
+
+def test_learned_words_follow_the_configured_vocabulary_in_the_prompt():
+    stt = MlxWhisper("big", vocabulary="Milo, Codex")
+    whisper = stt._models["big"] = FakeWhisper()
+    stt.use_vocabulary(["codex", "Claude Code", " Niklas  Dobberstein ", ""])
+    stt.transcribe(SPEECH)
+    assert whisper.passes[-1][1] == "Milo, Codex, Claude Code, Niklas Dobberstein"
+    stt.use_vocabulary([])
+    assert stt.prompt == "Milo, Codex"
+    assert MlxWhisper("big").prompt is None
+    empty = MlxWhisper("big")
+    empty.use_vocabulary(["Niklas"])
+    assert empty.prompt == "Niklas"
+
+
+def test_learned_words_in_the_prompt_are_capped():
+    prompt = mlx_whisper.vocabulary_prompt("Milo", [f"Word{i:03d}" for i in range(200)])
+    learned = prompt.removeprefix("Milo, ")
+    assert len(learned) <= mlx_whisper.LEARNED_CHARS
+    assert learned.startswith("Word000, Word001")

@@ -12,6 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import numpy as np
 import pytest
 from websockets.asyncio.server import serve
+from websockets.protocol import State
 
 from milo.adapters.tts import elevenlabs
 from milo.adapters.tts.elevenlabs import ElevenLabsOptions, ElevenLabsVoice
@@ -83,6 +84,7 @@ async def started(fake: FakeElevenLabs):
 def voice_for(url: str, tmp_path, **kw) -> ElevenLabsVoice:
     key = tmp_path / "elevenlabs.key"
     key.write_text(KEY + "\n")
+    kw.setdefault("model", "eleven_flash_v2_5")
     return ElevenLabsVoice(key, "voice123", server=url, **kw)
 
 
@@ -297,6 +299,153 @@ def test_whole_clips_come_over_http_and_the_key_is_never_logged(tmp_path, caplog
     assert seen["path"] == "/v1/text-to-speech/voice123?output_format=pcm_24000" and seen["key"] == KEY
     assert seen["body"]["model_id"] == "eleven_flash_v2_5"
     assert KEY not in caplog.text
+
+
+class FakeDialogue:
+    """The dialogue socket: no contexts, every flushed input is answered in order with audio whose samples equal
+    the input's number, then is_final_audio_for_turn. hold: buffer inputs until release() instead."""
+
+    def __init__(self, hold: bool = False):
+        self.hold = hold
+        self.received: list[dict] = []
+        self.paths: list[str] = []
+        self.sockets = []
+        self._held: list[tuple] = []
+        self._inputs = 0
+
+    async def handler(self, ws):
+        self.sockets.append(ws)
+        self.paths.append(ws.request.path)
+        async for raw in ws:
+            m = json.loads(raw)
+            self.received.append(m)
+            for item in m.get("inputs", ()):
+                self._inputs += 1
+                self._held.append((ws, self._inputs, item["text"]))
+            if m.get("flush") and not self.hold:
+                await self.release()
+            if m.get("close_socket"):
+                await ws.send(json.dumps({"is_final": True}))
+                await ws.close()
+
+    async def release(self) -> None:
+        held, self._held = self._held, []
+        for ws, n, text in held:
+            if ws.state is not State.OPEN:
+                continue  # the client dropped this socket
+            await ws.send(json.dumps({"audio": base64.b64encode(np.full(24, n, dtype="<i2").tobytes()).decode()}))
+            pcm = np.full(SAMPLES_PER_CHAR * len(text), n, dtype="<i2")
+            await ws.send(json.dumps({
+                "audio": base64.b64encode(pcm.tobytes()).decode(),
+                "alignment": {"chars": list(text), "char_start_times_ms": [24 + i for i in range(len(text))],
+                              "char_durations_ms": [1] * len(text)}}))
+            await ws.send(json.dumps({"is_final_audio_for_turn": True}))
+
+
+def test_v4_speaks_over_the_dialogue_socket_one_turn_per_reply(tmp_path):
+    fake = FakeDialogue()
+
+    async def run():
+        server = await serve(fake.handler, "127.0.0.1", 0)
+        async with server:
+            voice = voice_for(f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}", tmp_path,
+                              model="eleven_v4_turbo", stability=0.4)
+            stream = voice.stream()
+            stream.send("Klar, mach ich.")
+            stream.send("Morgen   um zehn.")
+            stream.finish()
+            items = await collect(stream)
+            again = voice.stream()
+            again.send("Noch was.")
+            again.finish()
+            more = await collect(again)
+            await voice.close()
+            return items, more
+
+    items, more = asyncio.run(run())
+    numbers = [(p, n) for p, n in message_numbers(items) if n]
+    assert numbers == [(0, {1}), (0, {1}), (1, {2}), (1, {2})], "each piece's lead-in stays with that piece"
+    assert message_numbers(more)[-1] == (0, set()), "the second reply ends with its own end-of-piece mark"
+    assert len(fake.paths) == 1, "one connection for every reply"
+    assert fake.paths[0].startswith("/v1/text-to-dialogue/stream-input?")
+    for part in ("model_id=eleven_v4_turbo", "output_format=pcm_24000", "sync_alignment=true"):
+        assert part in fake.paths[0]
+    assert fake.received[0] == {"voices": ["voice123"], "voice_settings": {"stability": 0.4}}
+    inputs = [m["inputs"][0] for m in fake.received if "inputs" in m]
+    assert inputs == [{"text": "Klar, mach ich. ", "voice_id": "voice123", "new_turn": True},
+                      {"text": "Morgen um zehn. ", "voice_id": "voice123", "new_turn": False},
+                      {"text": "Noch was. ", "voice_id": "voice123", "new_turn": True}]
+    assert all(m.get("flush") for m in fake.received if "inputs" in m), "each piece starts at once"
+
+
+def test_v4_barge_in_drops_the_connection_and_the_next_reply_gets_a_fresh_one(tmp_path):
+    fake = FakeDialogue(hold=True)
+
+    async def run():
+        server = await serve(fake.handler, "127.0.0.1", 0)
+        async with server:
+            voice = voice_for(f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}", tmp_path,
+                              model="eleven_v4_turbo")
+            stream = voice.stream()
+            stream.send("Das ist ein langer Satz.")
+            await asyncio.sleep(0.1)
+            stream.cancel()
+            assert await collect(stream) == []
+            await asyncio.sleep(0.1)
+            fake.hold = False
+            await fake.release()  # the old socket is gone: nothing of this reaches anyone
+            nxt = voice.stream()
+            nxt.send("Okay.")
+            nxt.finish()
+            items = await collect(nxt)
+            await voice.close()
+            return items
+
+    items = asyncio.run(run())
+    assert len(fake.paths) == 2, "the cut-off reply's socket was dropped, a new one opened"
+    assert message_numbers(items)[-1] == (0, set())
+    assert set().union(*(n for _, n in message_numbers(items))) == {2}, "nothing of the cut-off reply leaks in"
+
+
+def test_v4_idle_connection_gets_keep_alives(tmp_path, monkeypatch):
+    monkeypatch.setattr(elevenlabs, "KEEP_ALIVE_S", 0.05)
+    fake = FakeDialogue()
+
+    async def run():
+        server = await serve(fake.handler, "127.0.0.1", 0)
+        async with server:
+            voice = voice_for(f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}", tmp_path,
+                              model="eleven_v4_turbo")
+            stream = voice.stream()
+            stream.send("Hallo.")
+            stream.finish()
+            await collect(stream)
+            await asyncio.sleep(0.2)
+            await voice.close()
+
+    asyncio.run(run())
+    assert {"keep_alive": True} in fake.received
+
+
+def test_v4_error_from_the_server_is_voice_unavailable(tmp_path):
+    async def refuse(ws):
+        await ws.recv()
+        await ws.send(json.dumps({"message": "First message must include 'voices'", "error": "missing_voices",
+                                  "code": 1008}))
+        await ws.close(1008)
+
+    async def run():
+        server = await serve(refuse, "127.0.0.1", 0)
+        async with server:
+            voice = voice_for(f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}", tmp_path,
+                              model="eleven_v4_turbo")
+            stream = voice.stream()
+            stream.send("Hallo.")
+            with pytest.raises(VoiceUnavailable, match="voices"):
+                await collect(stream)
+            await voice.close()
+
+    asyncio.run(run())
 
 
 def test_options_are_checked():

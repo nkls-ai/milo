@@ -35,6 +35,7 @@ SETTINGS = (
     Setting("chat", "updates", UPDATES, ("Only the answer", "Short notes in his bubble", "Tells you each step")),
     Setting("dictation", "stream", tuple(m.value for m in LiveMode),
             ("When you let go", "Show the words as you speak", "Type as you speak")),
+    Setting("dictation", "learn"),
     Setting("ui", "dictate_key", KEY_NAMES, tuple(KEY_LABELS[k] for k in KEY_NAMES)),
     Setting("ui", "talk_key", KEY_NAMES, tuple(KEY_LABELS[k] for k in KEY_NAMES)),
     Setting("ui", "whats_this_key", ("ctrl+option+m", "ctrl+option+w", "ctrl+shift+m", ""),

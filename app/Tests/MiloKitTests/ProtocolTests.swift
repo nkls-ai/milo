@@ -114,6 +114,24 @@ private func entries(_ key: String) throws -> [[String: Any]] {
                         labels: ["When you let go", "Show the words as you speak", "Type as you speak"]),
             ])),
             .settings(SettingsReport(settings: [], error: "The dictate key and the talk key need to be different keys.")),
+            .usage(UsageReport(span: 3, today: "2026-10-30", since: "2026-10-29", daily: [
+                UsageDay(day: "2026-10-28"),
+                UsageDay(day: "2026-10-29", calls: 4, inputTokens: 61200, cachedInputTokens: 38400, outputTokens: 210,
+                         dictations: 12, words: 148),
+                UsageDay(day: "2026-10-30", calls: 9, inputTokens: 84050, cachedInputTokens: 70100, outputTokens: 655,
+                         dictations: 31, words: 402),
+            ], sources: [UsageSource(source: "task", calls: 2, tokens: 98000),
+                         UsageSource(source: "chat", calls: 11, tokens: 48115)],
+            apps: [UsageApp(app: "Slack", dictations: 20, words: 310), UsageApp(app: "Mail", dictations: 23, words: 240)],
+            accounts: [
+                UsageAccount(service: "Claude", uses: ["Talking"], plan: "Max", who: "you@example.com",
+                             detail: "claude-haiku-5-5"),
+                UsageAccount(service: "ChatGPT", uses: ["Tasks"], detail: "Signed in with ChatGPT"),
+                UsageAccount(service: "ElevenLabs", uses: ["Milo's voice", "Hearing you"], state: .unknown,
+                             detail: "Can't see the plan: the API key lacks the user_read permission."),
+                UsageAccount(service: "This Mac", uses: ["Dictation"], state: .local,
+                             detail: "Whisper, nothing leaves the Mac"),
+            ])),
             .remote(RemoteStatus(channel: "telegram", label: "Telegram", state: .paired, detail: "Niklas (@niklas)")),
             .remote(RemoteStatus(channel: "telegram", label: "Telegram", state: .unpaired,
                                  detail: "Message @milo_mac_bot from your phone to connect.")),
@@ -200,6 +218,7 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .routine(id: "tidy-downloads", action: .resume),
             .routineDraftAnswer(id: "d4e5f6a7", save: true),
             .getSettings,
+            .getUsage(span: 30),
             .setSetting(section: "ui", key: "voice", value: true),
             .setSetting(section: "ui", key: "voice", value: false),
             .remotePause(true), .remoteForget,
@@ -211,6 +230,8 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .meetingRecording(id: "2026-10-30-1400-weekly-sync", on: true, tracks: ["me"],
                               error: "I can only hear you, not the others. Turn on System Audio Recording for Milo in System Settings › Privacy & Security."),
             .meetingToggle(false),
+            .dictationFixed([DictationFix(heard: "Cloud Code", meant: "Claude Code"),
+                             DictationFix(heard: "Nicholas", meant: "Niklas")]),
         ]
         let encoder = JSONEncoder()
         let encoded = try commands.map { command in

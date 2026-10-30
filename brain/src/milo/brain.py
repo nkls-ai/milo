@@ -6,9 +6,11 @@ import logging
 from pathlib import Path
 
 from .config import UiSettings
-from .core.events import (AppResponse, CallEnded, CallStarted, Command, ConfirmAnswer, ContextUpdate, EditFact,
+from .core.events import (AppResponse, CallEnded, CallStarted, Command, ConfirmAnswer, ContextUpdate, DictationFixed,
+                          EditFact,
                           EmotionChanged, Event, Facts, ForgetFact, GetConversations, GetFacts, GetHistory,
-                          GetSettings, HandsResult, HandsStop, ListenCancel, ListenConfirm, ListenStart, ListenStop,
+                          GetSettings, GetUsage, HandsResult, HandsStop, ListenCancel, ListenConfirm, ListenStart,
+                          ListenStop,
                           LookResult, MeetingChunk, MeetingRecording, MeetingToggle, Mute, NewConversation,
                           OpenConversation, RemoteForget, RemotePause, RenameConversation, RoutineAction,
                           RoutineDraftAnswer, SearchConversations, SetSetting, StateChanged, StopHelper, TextInput,
@@ -17,6 +19,7 @@ from .core.types import ListenMode
 from .services.app_bridge import AppBridge
 from .services.approvals import Approvals
 from .services.context import UserContext
+from .services.corrections import Corrections
 from .services.conversations import ConversationBrowser
 from .services.hands import HandsService
 from .services.heartbeat_runner import HeartbeatRunner
@@ -30,6 +33,7 @@ from .services.routines import Routines
 from .services.screen import checked, inside
 from .services.transcript import Transcript
 from .services.ui_state import UiState
+from .services.usage import UsageService
 from .settings import Settings
 
 log = logging.getLogger("milo.brain")
@@ -40,7 +44,7 @@ WHATS_THIS = "What's this?"
 class Brain:
     """`bridge` resolves the app's answers to looks, Mac actions and app work; `approvals` takes the answers
     to Milo's questions. `screens` is state/screens: an image path from the app counts only if it points in there.
-    `settings` reads and changes config.toml for the Settings window and the menu."""
+    `settings` reads and changes config.toml for the Settings window and the menu. `usage` answers the Usage page."""
 
     def __init__(self, ui: UiState, listening: Listening, live_talk: LiveTalk, context: UserContext,
                  heartbeat: HeartbeatRunner | None, ui_settings: UiSettings, transcript: Transcript | None = None,
@@ -49,8 +53,11 @@ class Brain:
                  helpers: Orchestrator | None = None, memory: Memory | None = None,
                  routines: Routines | None = None, settings: Settings | None = None,
                  messages: MessageService | None = None, meetings: MeetingService | None = None,
-                 conversations: ConversationBrowser | None = None):
+                 conversations: ConversationBrowser | None = None, usage: UsageService | None = None,
+                 corrections: Corrections | None = None):
         self._conversations = conversations
+        self._usage = usage
+        self._corrections = corrections
         self._meetings = meetings
         self._memory = memory
         self._routines = routines
@@ -180,11 +187,17 @@ class Brain:
             case CallStarted() | CallEnded() | MeetingChunk() | MeetingRecording() | MeetingToggle():
                 if self._meetings is not None:
                     self._meetings.handle(command)
+            case DictationFixed(fixes):
+                if self._corrections is not None:
+                    self._corrections.fixed(fixes)
             case GetFacts() | ForgetFact() | EditFact():
                 self._facts(command)
             case GetSettings():
                 if self._settings is not None:
                     self._settings.send()
+            case GetUsage(span):
+                if self._usage is not None:
+                    self._usage.request(span)
             case SetSetting(section, key, value):
                 if self._settings is not None:
                     self._settings.change(section, key, value)

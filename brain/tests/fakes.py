@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 from datetime import date, datetime, timedelta
+from pathlib import Path
 
 import numpy as np
 
@@ -410,6 +411,42 @@ class MemoryProfile:
             self.facts.append(fact)
 
 
+class MemoryDictionary:
+    """Dictionary over a Markdown string, with the real format and learning rules."""
+
+    def __init__(self, markdown: str = ""):
+        from milo.memory.dictionary import MarkdownDictionary
+
+        self.markdown = markdown
+        self._file = MarkdownDictionary(Path("/nonexistent/dictionary.md"))
+        self._file._read = lambda: self.markdown
+        self._file._write = self._wrote
+        self._file._stat = lambda: (hash(self.markdown), len(self.markdown))
+        self.learned: list[tuple[str, str, str]] = []
+
+    def _wrote(self, text: str) -> None:
+        self.markdown = text
+
+    def entries(self):
+        return self._file.entries()
+
+    def changed(self) -> bool:
+        return self._file.changed()
+
+    def learn(self, heard: str, meant: str) -> str:
+        outcome = self._file.learn(heard, meant)
+        self.learned.append((heard, meant, outcome))
+        return outcome
+
+
+class ListVocabulary:
+    def __init__(self):
+        self.words: list[list[str]] = []
+
+    def use_vocabulary(self, words) -> None:
+        self.words.append(list(words))
+
+
 class UpperCleaner:
     def clean(self, text: str) -> str:
         return text.strip().upper()
@@ -456,6 +493,21 @@ class MemoryLedger:
 
     def record(self, source: str, harness: str, usage: Usage) -> None:
         self.entries.append((source, harness, usage))
+
+
+class MemoryUsageHistory:
+    def __init__(self, calls=(), dictations=()):
+        self.call_list = list(calls)
+        self.dictation_list = list(dictations)
+
+    def calls(self, since):
+        return [c for c in self.call_list if c.at.date() >= since]
+
+    def dictations(self, since):
+        return [d for d in self.dictation_list if d.at.date() >= since]
+
+    def first_day(self):
+        return min((r.at.date() for r in [*self.call_list, *self.dictation_list]), default=None)
 
 
 class MemoryHistory:
