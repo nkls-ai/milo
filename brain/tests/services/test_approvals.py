@@ -39,6 +39,8 @@ def test_levels_are_configurable_but_never_stays_never():
     ("No.", False), ("nope", False), ("don't", False), ("Nein, lieber nicht", False), ("not now", False),
     ("Stop!", False), ("what's the weather tomorrow", None), ("", None), ("now", None),
     ("yes but first tell me who Anna is and why", None),
+    # A yes taken back in the same breath is no plain yes: the question waits for a clearer answer.
+    ("okay wait, no", None), ("yes, but don't send it", None), ("ja, lieber nicht", None), ("sure, stop", None),
 ])
 def test_yes_or_no(text, answer):
     assert yes_or_no(text) is answer

@@ -74,9 +74,11 @@ def yes_or_no(text: str) -> bool | None:
     if not words or len(words) > _MAX_ANSWER_WORDS:
         return None
     phrase = " ".join(words)
-    for answer, choices in ((False, _NO), (True, _YES)):
-        if any(phrase == c or phrase.startswith(c + " ") for c in choices):
-            return answer
+    if any(phrase == c or phrase.startswith(c + " ") for c in _NO):
+        return False
+    if any(phrase == c or phrase.startswith(c + " ") for c in _YES):
+        # "okay, wait, no" or "yes but don't send it" takes the yes back: not a plain answer.
+        return None if any(f" {c} " in f" {phrase} " for c in _NO) else True
     return None
 
 

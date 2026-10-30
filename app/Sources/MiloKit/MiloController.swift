@@ -225,6 +225,8 @@ public final class MiloController {
             pushToTalkChanged(pushToTalk.reset(), at: nil)
             model.apply(.state(.idle))
             model.apply(.helpers([]))
+            // Its questions died with it too: Yes and No would go nowhere.
+            if let question = model.question { model.apply(.confirmDone(id: question.id, answer: "timeout")) }
             return
         }
         // The brain's greeting carries its settings, so a restarted brain's changes show without asking.

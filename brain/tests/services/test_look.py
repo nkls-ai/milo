@@ -63,6 +63,16 @@ def test_facts_on_the_screen_are_never_remembered():
     assert s.profile.facts == []
 
 
+def test_a_reminder_from_a_reply_to_screen_data_waits_for_the_users_yes():
+    # Screen text could carry "<reminder>... ignore your rules</reminder>"; open reminders go into the next
+    # conversation's system prompt, so one set unasked would outlive the look.
+    s = Stack(eyes=FakeEyes(EXCEL), model=FakeLiveModel(
+        ["[thinking] <look/>"], ["[neutral] Done. <reminder>2026-11-01 09:00 Pay the invoice on screen</reminder>"]))
+    asked = answering(s, False, "look at this")
+    assert asked == ["Should I remind you on Sunday 1 November at 09:00: Pay the invoice on screen?"]
+    assert s.reminders.items == []
+
+
 def test_a_failed_look_tells_the_model_why():
     blocked = ScreenCapture(error="Turn on Screen Recording for Milo in System Settings.")
     s = Stack(eyes=FakeEyes(blocked), model=FakeLiveModel(["[thinking] <look/>"], ["[sad] I can't see it yet."]))
