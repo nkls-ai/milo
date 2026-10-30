@@ -13,8 +13,9 @@ from tests.fakes import MemoryHistory, RecordingSink
 from tests.services.stack import InlineExecutor, settle
 
 SR = STT_SAMPLE_RATE
-# Each word is a tone with its own loudness, so the fake transcriber can tell what audio it got.
-WORDS = {0.10: "alpha", 0.14: "bravo", 0.18: "charlie", 0.22: "delta"}
+# Each word is a tone with its own loudness, so the fake transcriber can tell what audio it got. "echo" is
+# spoken softly: below the segmenter's speech threshold, but well above a quiet room, so Whisper hears it.
+WORDS = {0.006: "echo", 0.10: "alpha", 0.14: "bravo", 0.18: "charlie", 0.22: "delta"}
 
 
 def tone(word: str, seconds: float) -> Audio:
@@ -35,7 +36,7 @@ def hear(audio: Audio) -> str:
     for frame in audio[:n * 480].reshape(n, 480):
         rms = float(np.sqrt(np.mean(np.square(frame))))
         amp = min(WORDS, key=lambda a: abs(a - rms))
-        labels.append(WORDS[amp] if abs(amp - rms) < 0.015 else None)
+        labels.append(WORDS[amp] if abs(amp - rms) < (0.015 if amp >= 0.1 else 0.002) else None)
     words: list[str] = []
     for prev, label in zip(labels, labels[1:]):
         if label is not None and label == prev and (not words or words[-1] != label):
@@ -197,9 +198,11 @@ class HearingStt:
     """The full model hears in capitals, the preview model in lower case, so a test can tell which one
     produced a text. `log` records every pass in order: ("full", "quick" or "preview", seconds of audio,
     before). With `block`, full-model passes wait for `release` (for a thread executor); interrupt() ends
-    a waiting pass with Interrupted."""
+    a waiting pass with Interrupted. `quick_keeps` n: a quick pass hears only the first n words, like a
+    short-window decode that stopped early."""
 
-    def __init__(self, block: bool = False, fail_preview: bool = False):
+    def __init__(self, block: bool = False, fail_preview: bool = False, quick_keeps: int | None = None):
+        self.quick_keeps = quick_keeps
         self.log: list[tuple[str, float, str]] = []
         self.release = threading.Event()
         self.entered = threading.Event()
@@ -233,7 +236,8 @@ class HearingStt:
         finally:
             with self._lock:
                 self.running -= 1
-        return hear(audio).upper()
+        words = hear(audio).upper().split()
+        return " ".join(words[:self.quick_keeps] if quick and self.quick_keeps is not None else words)
 
     def interrupt(self) -> None:
         self._stop.set()
@@ -259,7 +263,7 @@ class HearingStt:
 
 
 def live(mic, stt, sink, on_phrase=None, executor=None, **kw):
-    kw = {"poll_s": 0, "gap_s": 0, "min_new_s": 0.5, **kw}
+    kw = {"poll_s": 0, "gap_s": 0, "min_new_s": 0.5, "min_words_per_s": 0.3, **kw}
     return LiveTranscript(mic, stt, executor or InlineExecutor(), sink, PauseSegmenter(), on_phrase=on_phrase, **kw)
 
 
@@ -500,9 +504,146 @@ def test_a_voice_too_quiet_for_the_segmenter_still_gets_one_pass_over_everything
 
     async def run():
         lt.start()
+        mic.say(quiet(1), tone("echo", 1), quiet(0.5))
+        await settle()
+        return await lt.finish(mic.stop())
+
+    assert asyncio.run(run()) == "ECHO"
+    assert [kind for kind, _, _ in stt.log] == ["quick"]
+
+
+def test_a_quiet_room_alone_needs_no_pass():
+    mic, stt, sink = GrowingMic(), HearingStt(), RecordingSink()
+    lt = live(mic, stt, sink)
+
+    async def run():
+        lt.start()
         mic.say(quiet(2))
         await settle()
         return await lt.finish(mic.stop())
 
     assert asyncio.run(run()) == ""
-    assert stt.log == [("quick", 2.0, "")]
+    assert stt.log == []
+
+
+# ---- LiveTranscript never loses words: everything a lenient check hears is transcribed.
+
+
+def test_soft_words_after_a_guess_are_not_lost():
+    mic, stt, sink = GrowingMic(), HearingStt(), RecordingSink()
+    lt = live(mic, stt, sink, settle_s=0.3)
+
+    async def run():
+        lt.start()
+        mic.say(tone("alpha", 1), quiet(0.4))
+        await settle()
+        assert [e.text for e in sink.of(Partial)][-1] == "ALPHA", "the guess"
+        mic.say(tone("echo", 0.8), quiet(0.05))  # the user trails off softly, then lets go
+        return await lt.finish(mic.stop())
+
+    assert asyncio.run(run()) == "ALPHA ECHO"
+
+
+def test_soft_words_after_a_committed_phrase_are_not_lost():
+    mic, stt, sink = GrowingMic(), HearingStt(), RecordingSink()
+    lt = live(mic, stt, sink)
+
+    async def run():
+        lt.start()
+        mic.say(tone("alpha", 1), quiet(1))
+        await settle()
+        assert lt.phrases == ["ALPHA"]
+        mic.say(tone("echo", 1))
+        return await lt.finish(mic.stop())
+
+    assert asyncio.run(run()) == "ALPHA ECHO"
+
+
+def test_a_soft_phrase_between_pauses_is_not_lost():
+    mic, stt, sink = GrowingMic(), HearingStt(), RecordingSink()
+    lt = live(mic, stt, sink)
+
+    async def run():
+        lt.start()
+        mic.say(tone("alpha", 1), quiet(1), tone("echo", 1), quiet(1), tone("bravo", 1), quiet(1))
+        await settle()
+        return await lt.finish(mic.stop())
+
+    assert asyncio.run(run()) == "ALPHA ECHO BRAVO"
+
+
+def test_more_words_after_a_pause_mid_sentence_and_a_quick_release():
+    mic, stt, sink = GrowingMic(), HearingStt(), RecordingSink()
+    lt = live(mic, stt, sink, settle_s=0.3)
+
+    async def run():
+        lt.start()
+        mic.say(tone("alpha", 1), quiet(0.4))
+        await settle()
+        mic.say(tone("bravo", 0.3))  # let go right after the last word, before the next poll
+        return await lt.finish(mic.stop())
+
+    assert asyncio.run(run()) == "ALPHA BRAVO"
+
+
+def test_words_said_while_the_guess_is_running_are_not_lost():
+    mic, stt, sink = GrowingMic(), HearingStt(block=True), RecordingSink()
+    executor = ThreadPoolExecutor(1)
+    lt = live(mic, stt, sink, executor=executor, poll_s=0.01, settle_s=0.3, show=False)
+
+    async def run():
+        lt.start()
+        mic.say(tone("alpha", 1), quiet(0.4))
+        while not stt.entered.is_set():
+            await asyncio.sleep(0.01)
+        mic.say(tone("echo", 0.6))  # softly, while the guess for "alpha" is still running
+        finish = asyncio.create_task(lt.finish(mic.stop()))
+        await asyncio.sleep(0.05)
+        stt.block = False
+        stt.release.set()
+        return await finish
+
+    assert asyncio.run(run()) == "ALPHA ECHO"
+    executor.shutdown()
+
+
+def test_an_empty_quick_pass_over_speech_is_done_again_at_full_accuracy():
+    mic, stt, sink = GrowingMic(), HearingStt(quick_keeps=0), RecordingSink()
+    lt = live(mic, stt, sink)
+
+    async def run():
+        lt.start()
+        mic.say(tone("alpha", 1))
+        return await lt.finish(mic.stop())
+
+    assert asyncio.run(run()) == "ALPHA"
+    assert stt.kinds()[-2:] == ["quick", "full"]
+
+
+def test_text_short_for_the_speech_gets_one_full_pass_over_the_whole_recording():
+    mic, stt, sink = GrowingMic(), HearingStt(quick_keeps=1), RecordingSink()
+    lt = live(mic, stt, sink, min_words_per_s=0.6)
+
+    async def run():
+        lt.start()
+        # One phrase with short pauses; the quick pass on release stops after its first word.
+        mic.say(tone("alpha", 1), quiet(0.4), tone("bravo", 1), quiet(0.4), tone("charlie", 1))
+        return await lt.finish(mic.stop())
+
+    assert asyncio.run(run()) == "ALPHA BRAVO CHARLIE"
+    assert stt.log[-1][:2] == ("full", len(mic.audio) / SR), "the safety net: everything, at full accuracy"
+
+
+def test_type_mode_types_soft_words_too():
+    mic, stt, sink = GrowingMic(), HearingStt(), RecordingSink()
+    phrases: list[str] = []
+    lt = live(mic, stt, sink, phrases.append)
+
+    async def run():
+        lt.start()
+        mic.say(tone("alpha", 1), quiet(1), tone("echo", 1), quiet(1), tone("bravo", 1), quiet(0.2), tone("echo", 0.5))
+        await settle()
+        return await lt.finish(mic.stop())
+
+    assert asyncio.run(run()) == "ALPHA ECHO BRAVO ECHO"
+    assert " ".join(phrases) == "ALPHA ECHO BRAVO ECHO"
