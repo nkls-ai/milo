@@ -10,7 +10,7 @@ from milo.core.types import Emotion
 
 log = logging.getLogger("milo.reply")
 
-TAGS = ("remember", "reminder", "task", "look", "steer", "stop", "routine")
+TAGS = ("remember", "reminder", "task", "look", "steer", "stop", "routine", "title")
 _SELF_CLOSING = ("<look/>", "<look />")
 _MARKERS = tuple(f"<{name}>" for name in TAGS) + tuple(f"</{name}>" for name in TAGS) + _SELF_CLOSING
 # Tags that may carry attributes: <task title="..." screen="yes">, <steer helper="2">, <stop helper="all"/>,
@@ -74,6 +74,8 @@ class ReplyParser:
         """Which helper each <stop> tag means: a number, "all", or "" for the only one."""
         self.routines: list[RoutineRequest] = []
         """Each <routine> tag: save, run, schedule or manage a routine (services/routines.py)."""
+        self.title = ""
+        """A <title> tag: Milo's name for the conversation, when he was asked for one."""
         self.look: str | None = None
         """Set when the model asked to see the screen: what it wants to look at, often ""."""
         self.spoken = ""
@@ -224,7 +226,9 @@ class ReplyParser:
             return
         if not content:
             return
-        if tag == "remember":
+        if tag == "title":
+            self.title = self.title or content[:80]
+        elif tag == "remember":
             self.remembers.append(content)
         elif tag == "task":
             self.tasks.append(TaskRequest(content, " ".join(attrs.get("title", "").split()),

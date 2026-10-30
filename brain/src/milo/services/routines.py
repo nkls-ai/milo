@@ -562,7 +562,8 @@ class Routines:
         log.info("running routine %s%s", routine.slug, " on its schedule" if scheduled else "")
         helper = self._tasks.submit(description, title=routine.name, screen=self._screen(routine), careful=careful,
                                     instructions=run_prompt(routine, values, note),
-                                    on_finish=lambda h: self._ran(routine, values, scheduled, h))
+                                    on_finish=lambda h: self._ran(routine, values, scheduled, h),
+                                    own="routine" if scheduled else "")
         self._running[routine.slug] = helper
 
     def _screen(self, routine: Routine) -> bool | None:

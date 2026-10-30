@@ -13,7 +13,7 @@ from milo.services.episode_stubs import EpisodeDictations, EpisodeEyes, EpisodeT
 from milo.services.memory import MEMORY_RULES
 from milo.services.memory_requests import MemoryRequests
 from milo.services.transcript import Transcript
-from tests.fakes import FakeEyes, FakeHarness, FakeLiveModel, MemoryRoutineBook, MemoryTranscript
+from tests.fakes import FakeEyes, FakeHarness, FakeLiveModel, MemoryConversations, MemoryRoutineBook, MemoryTranscript
 from tests.services.stack import Stack, settle
 
 ANNA = "Anna is the user's sister. Her birthday is March 3."
@@ -126,9 +126,9 @@ def test_a_routine_run_is_one_task_episode_named_after_the_routine():
     s = stack(routine_book=MemoryRoutineBook(report), harness=FakeHarness("Sent Anna the October total."))
     s.routines._state = {"approved": {report.slug: report.fingerprint()}}
     # Wired as compose.py does: the transcript's task stub leaves routine runs to RoutineEpisodes.
-    store = EpisodeTranscript(MemoryTranscript(), s.memory.record, now=s.clock.now, people=s.memory.people_in,
+    stubs = EpisodeTranscript(MemoryTranscript(), s.memory.record, now=s.clock.now, people=s.memory.people_in,
                               elsewhere=s.routines.is_run)
-    s.tasks._transcript = Transcript(s.ui, store, s.clock)
+    s.tasks._transcript = Transcript(s.ui, MemoryConversations(), s.clock, on_finished=stubs.append)
     s.routines.on_episode = RoutineEpisodes(s.memory.record, people=s.memory.people_in)
 
     async def go():

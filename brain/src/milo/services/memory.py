@@ -131,7 +131,8 @@ class Memory:
                   "since": f.since.isoformat(timespec="minutes")} for f in recall.facts]
         found += [{"id": e.id, "kind": e.kind, "when": e.at.isoformat(timespec="minutes"), "text": e.summary,
                    **({"people": list(e.people)} if e.people else {}), **({"apps": list(e.apps)} if e.apps else {}),
-                   **({"from_outside": True} if not e.trusted else {})} for e in recall.episodes]
+                   **({"from_outside": True} if not e.trusted else {}),
+                   **({"source": e.source} if e.source else {})} for e in recall.episodes]
         return found[:limit]
 
     def facts_event(self) -> Facts:

@@ -41,15 +41,16 @@ private func entries(_ key: String) throws -> [[String: Any]] {
                       character: .pip),
             .history([
                 TranscriptEntry(id: "5f2a9c1e04b7", date: try day("2026-10-30T09:12:03"), kind: .user,
-                                text: "rename the photos from Friday", via: .voice),
+                                text: "rename the photos from Friday", via: .voice, conversation: "c-5f2a9c1e04b7"),
                 TranscriptEntry(id: "8d41e0a7c2f3", date: try day("2026-10-30T09:12:05"), kind: .milo,
-                                text: "On it, I'll sort them by date.", emotion: .happy),
+                                text: "On it, I'll sort them by date.", emotion: .happy, conversation: "c-5f2a9c1e04b7"),
                 TranscriptEntry(id: "c07b3e9d1a26", date: try day("2026-10-30T09:12:06"), kind: .task,
                                 text: "Rename the photos from Friday in ~/Pictures by date taken", status: .done,
-                                result: "I renamed all 40 photos.", steps: [
+                                result: "I renamed all 40 photos. The list is in ~/Pictures/Friday/renamed.txt.", steps: [
                                     ActivityStep(id: "item_1", kind: "read", title: "Looking in your Pictures folder",
                                                  detail: "ls ~/Pictures", status: .done),
-                                ]),
+                                ], conversation: "c-5f2a9c1e04b7", title: "Rename Friday's photos",
+                                files: ["~/Pictures/Friday/renamed.txt"]),
             ]),
             .entry(TranscriptEntry(id: "e9a0f61b7d58", date: try day("2026-10-30T09:14:00"), kind: .milo, text: "",
                                    done: false)),
@@ -121,6 +122,44 @@ private func entries(_ key: String) throws -> [[String: Any]] {
                                  detail: "Message @milo_mac_bot from your phone to connect.")),
             .meetingRecord(id: "2026-10-30-1400-weekly-sync",
                            dir: "/Users/you/Milo/meetings/2026-10-30-1400-weekly-sync/audio", on: true),
+            .conversations([
+                ConversationInfo(id: "c-5f2a9c1e04b7", started: try day("2026-10-30T09:12:03"),
+                                 last: try day("2026-10-30T09:14:10"), title: "Photos from Friday", via: [.voice],
+                                 turns: 1, preview: "I renamed all 40 photos.", tasks: [
+                                     TaskSummary(id: "c07b3e9d1a26", title: "Rename Friday's photos", status: .done,
+                                                 date: try day("2026-10-30T09:12:06")),
+                                 ]),
+                ConversationInfo(id: "c-1b2c3d4e5f60", started: try day("2026-10-30T07:40:00"),
+                                 last: try day("2026-10-30T07:41:12"), title: "Train to Hamburg", titledBy: "words",
+                                 via: [.message], turns: 2, preview: "The 8:12 is on time."),
+                ConversationInfo(id: "c-a0b1c2d3e4f5", kind: .routine, started: try day("2026-10-27T09:00:00"),
+                                 last: try day("2026-10-27T09:03:40"), title: "Monday report", titledBy: "words",
+                                 preview: "The report is in Reports.", tasks: [
+                                     TaskSummary(id: "a0b1c2d3e4f5", title: "Monday report", status: .done,
+                                                 date: try day("2026-10-27T09:00:00")),
+                                 ], source: "routine:Monday report"),
+                ConversationInfo(id: "c-9e8d7c6b5a40", kind: .meeting, started: try day("2026-10-29T15:02:11"),
+                                 title: "Weekly sync", titledBy: "words",
+                                 preview: "Notes from “Weekly sync”: Launch moves to Friday.",
+                                 source: "meeting:2026-10-29-1400-weekly-sync"),
+            ], current: "c-5f2a9c1e04b7", more: false),
+            .conversation(ConversationInfo(id: "c-1b2c3d4e5f60", started: try day("2026-10-30T07:40:00"),
+                                           last: try day("2026-10-30T07:41:12"), title: "Train to Hamburg",
+                                           titledBy: "words", via: [.message], turns: 2,
+                                           preview: "The 8:12 is on time."), entries: [
+                TranscriptEntry(id: "1b2c3d4e5f60", date: try day("2026-10-30T07:40:00"), kind: .user,
+                                text: "is my train to Hamburg on time", via: .message, conversation: "c-1b2c3d4e5f60"),
+                TranscriptEntry(id: "2c3d4e5f6071", date: try day("2026-10-30T07:41:12"), kind: .milo,
+                                text: "The 8:12 is on time.", emotion: .happy, conversation: "c-1b2c3d4e5f60"),
+            ]),
+            .searchResults(query: "photos", results: [
+                SearchHit(conversation: "c-5f2a9c1e04b7", title: "Photos from Friday", date: try day("2026-10-30T09:12:03"),
+                          snippet: "rename the photos from Friday", via: [.voice]),
+            ]),
+            .reminders([
+                ReminderItem(due: try #require(RoutineInfo.parseTime("2026-10-30T15:30")), text: "Leave for the dentist"),
+                ReminderItem(due: try #require(RoutineInfo.parseTime("2026-10-31T09:00")), text: "Call Anna"),
+            ]),
         ])
     }
 
@@ -132,7 +171,11 @@ private func entries(_ key: String) throws -> [[String: Any]] {
         let commands: [BrainCommand] = [
             .listenStart(.dictate), .listenStart(.talk), .listenStart(.dictate, tentative: true), .listenConfirm,
             .listenStop, .listenCancel,
-            .text("hello Milo"), .text("what's on today", speak: false), .getHistory,
+            .text("hello Milo"), .text("what's on today", speak: false),
+            .text("and what about the other one?", speak: false, conversation: "c-1b2c3d4e5f60"), .getHistory,
+            .getConversations(before: ""), .getConversations(before: "2026-10-01T00:00:00"),
+            .openConversation(id: "c-1b2c3d4e5f60"), .searchConversations(query: "dentist"),
+            .renameConversation(id: "c-1b2c3d4e5f60", title: "Hamburg trip"), .newConversation,
             .context(app: "Xcode", idleSeconds: 3.5), .mute(true),
             .lookResult(id: "look-1", ScreenCapture(
                 app: "Microsoft Excel", window: "Budget.xlsx", focused: "cell C4: =SUM(C1:C3)", text: "Rent 900\nFood 320",

@@ -31,10 +31,16 @@ public struct TranscriptEntry: Equatable, Sendable, Identifiable {
     /// task: what Milo reported when it finished.
     public var result: String
     public var steps: [ActivityStep]
+    /// The conversation it belongs to; "" from an older brain.
+    public var conversation: String
+    /// task: its short title, "Rename Friday's photos".
+    public var title: String
+    /// task: files it named that exist, like "~/Reports/October.numbers".
+    public var files: [String]
 
     public init(id: String, date: Date, kind: Kind, text: String, via: Via = .voice, emotion: Emotion = .neutral,
                 done: Bool = true, status: ActivityStep.Status = .done, result: String = "",
-                steps: [ActivityStep] = []) {
+                steps: [ActivityStep] = [], conversation: String = "", title: String = "", files: [String] = []) {
         self.id = id
         self.date = date
         self.kind = kind
@@ -45,6 +51,16 @@ public struct TranscriptEntry: Equatable, Sendable, Identifiable {
         self.status = status
         self.result = result
         self.steps = steps
+        self.conversation = conversation
+        self.title = title
+        self.files = files
+    }
+
+    /// task: the title, or the first sentence of what it is.
+    public var headline: String {
+        if !title.isEmpty { return title }
+        let first = text.split(whereSeparator: { ".!?\n".contains($0) }).first.map(String.init) ?? text
+        return first.trimmingCharacters(in: .whitespaces)
     }
 }
 
@@ -74,7 +90,7 @@ public struct ActivityStep: Equatable, Sendable, Identifiable {
 
 extension TranscriptEntry: Decodable {
     private enum Key: String, CodingKey {
-        case id, ts, kind, text, via, emotion, done, status, result, steps
+        case id, ts, kind, text, via, emotion, done, status, result, steps, conversation, title, files
     }
 
     public init(from decoder: Decoder) throws {
@@ -89,6 +105,9 @@ extension TranscriptEntry: Decodable {
         status = ActivityStep.Status(rawValue: try c.decodeIfPresent(String.self, forKey: .status) ?? "") ?? .done
         result = try c.decodeIfPresent(String.self, forKey: .result) ?? ""
         steps = try c.decodeIfPresent([ActivityStep].self, forKey: .steps) ?? []
+        conversation = try c.decodeIfPresent(String.self, forKey: .conversation) ?? ""
+        title = try c.decodeIfPresent(String.self, forKey: .title) ?? ""
+        files = try c.decodeIfPresent([String].self, forKey: .files) ?? []
     }
 
     /// The brain sends local time without a zone, e.g. "2026-10-30T09:12:03".

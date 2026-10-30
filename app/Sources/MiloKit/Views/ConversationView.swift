@@ -4,88 +4,248 @@ import SwiftUI
 /// What the Milo window needs besides the transcript: the talk key's name for the empty state.
 public final class ConversationSettings: ObservableObject {
     @Published public var talkKey: String
-    /// The task entry to scroll to, set when the user clicks a helper.
+    /// The task to open, set when the user clicks a helper.
     @Published public var focus: String?
     /// Text to put in the field, ready to finish and send: "Change it" on a recipe draft.
     @Published public var prefill: String?
+    /// Bumped to put the cursor in the text field (⌘L).
+    @Published public var typeHere = 0
 
     public init(talkKey: String) {
         self.talkKey = talkKey
     }
 }
 
-/// The Milo window: the conversation as text, what Milo is doing, and a field to type to him.
+/// The Milo window: the conversations down the side, and Today, a conversation or a task beside them.
+/// See docs/design/conversations.md.
 public struct ConversationView: View {
     @Environment(\.miloTheme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var transcript: TranscriptModel
     @ObservedObject var model: MiloModel
     @ObservedObject var settings: ConversationSettings
-    let send: (_ text: String, _ speak: Bool) -> Void
-
+    @ObservedObject var route: WindowRoute
+    let actions: WindowActions
+    @FocusState private var searching: Bool
     @AppStorage("speakTypedReplies") private var speakReplies = false
-    @AppStorage("showRoutines") private var showRoutines = false
+    @State private var pendingSearch: Task<Void, Never>?
+    /// Below this width the sidebar folds away and ⌘0 brings it over the page.
+    static let narrow: CGFloat = 600
+    static let sidebarWidth: CGFloat = 236
 
-    public init(transcript: TranscriptModel, model: MiloModel, settings: ConversationSettings,
-                send: @escaping (_ text: String, _ speak: Bool) -> Void) {
+    public init(transcript: TranscriptModel, model: MiloModel, settings: ConversationSettings, route: WindowRoute,
+                actions: WindowActions) {
         self.transcript = transcript
         self.model = model
         self.settings = settings
-        self.send = send
+        self.route = route
+        self.actions = actions
+    }
+
+    /// Just the conversation going on, for the narrow window of old and for tests.
+    public init(transcript: TranscriptModel, model: MiloModel, settings: ConversationSettings,
+                send: @escaping (_ text: String, _ speak: Bool) -> Void) {
+        self.init(transcript: transcript, model: model, settings: settings, route: WindowRoute(page: .live),
+                  actions: WindowActions(send: { text, speak, _ in send(text, speak) }))
     }
 
     public var body: some View {
-        VStack(spacing: 0) {
-            if !model.routines.isEmpty {
-                RoutinesPanel(routines: model.routines, open: $showRoutines, act: model.routine)
+        GeometryReader { geometry in
+            let narrow = geometry.size.width < Self.narrow
+            HStack(spacing: 0) {
+                if !narrow {
+                    sidebar
+                    Rectangle().fill(theme.rule).frame(width: 1)
+                }
+                pages(narrow: narrow)
             }
-            if !model.helpers.isEmpty {
-                HelpersPanel(helpers: model.helpers, entries: transcript.entries, character: model.character,
-                             open: { settings.focus = $0 }, stop: model.stopHelper)
-            }
-            if transcript.entries.isEmpty && model.state == .idle {
-                EmptyConversation(talkKey: settings.talkKey)
-            } else {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        TranscriptList(entries: transcript.entries, state: model.state)
-                            .padding(.horizontal, 18)
-                            .padding(.top, 14)
-                            .padding(.bottom, 10)
-                        Color.clear.frame(height: 1).id(Self.bottom)
-                    }
-                    .onAppear { proxy.scrollTo(settings.focus ?? Self.bottom, anchor: settings.focus == nil ? .bottom : .top) }
-                    .onChange(of: scrollKey) { if settings.focus == nil { proxy.scrollTo(Self.bottom, anchor: .bottom) } }
-                    .onChange(of: settings.focus) {
-                        guard let focus = settings.focus else { return }
-                        withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(focus, anchor: .top) }
-                        // Following new lines again after a moment, so the next turn still scrolls into view.
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                            if settings.focus == focus { settings.focus = nil }
-                        }
+            .overlay(alignment: .leading) {
+                if narrow && route.sidebarShown {
+                    ZStack(alignment: .leading) {
+                        Color.black.opacity(0.18)
+                            .onTapGesture { route.sidebarShown = false }
+                            .transition(.opacity)
+                        sidebar
+                            .shadow(color: .black.opacity(0.18), radius: 16, x: 4)
+                            .transition(.move(edge: .leading))
                     }
                 }
             }
-            if let draft = model.drafts.last {
-                DraftCard(draft: draft, talkKey: settings.talkKey,
-                          save: { model.answerDraft(draft.id, save: true) },
-                          change: { settings.prefill = "Change \(draft.name): " },
-                          drop: { model.answerDraft(draft.id, save: false) })
-            }
-            if let question = model.question {
-                QuestionBar(question: question, talkKey: settings.talkKey, answer: model.answer)
-            }
-            InputBar(speakReplies: $speakReplies, prefill: $settings.prefill) { send($0, speakReplies) }
+            .animation(theme.motion.animation(reduced: reduceMotion), value: route.sidebarShown)
         }
         .background(theme.tint)
+        .background(shortcuts)
         .animation(theme.motion.gentle, value: theme)
+        .onChange(of: settings.focus) {
+            guard let id = settings.focus else { return }
+            settings.focus = nil
+            if transcript.task(id) == nil, let conversation = transcript.conversation(ofTask: id) {
+                actions.open(conversation.id)
+            }
+            route.go(.task(id))
+        }
+        .onChange(of: route.search) { searchChanged() }
+        .onChange(of: route.page) { route.sidebarShown = false }
     }
 
-    private static let bottom = "bottom"
+    private var sidebar: some View {
+        ConversationsSidebar(transcript: transcript, route: route, waiting: waiting, actions: actions,
+                             searchFocus: $searching)
+            .frame(width: Self.sidebarWidth)
+    }
 
-    /// Changes whenever something new appears at the end, so the list follows it.
-    private var scrollKey: String {
-        let last = transcript.entries.last
-        return "\(transcript.entries.count)-\(last?.text.count ?? 0)-\(last?.steps.count ?? 0)-\(model.state)"
+    /// The page, sliding in from the side it lies on: deeper pages from the right, back from the left.
+    private func pages(narrow: Bool) -> some View {
+        VStack(spacing: 0) {
+            if narrow { narrowBar }
+            ZStack {
+                page
+                    .id(route.page)
+                    .transition(transition)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
+            .animation(theme.motion.animation(reduced: reduceMotion), value: route.page)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var transition: AnyTransition {
+        if reduceMotion { return .opacity }
+        let x: CGFloat = route.forward ? 28 : -28
+        return .asymmetric(insertion: .offset(x: x).combined(with: .opacity),
+                           removal: .offset(x: -x / 2).combined(with: .opacity))
+    }
+
+    @ViewBuilder private var page: some View {
+        switch route.page {
+        case .today:
+            VStack(spacing: 0) {
+                TodayView(transcript: transcript, model: model, route: route, talkKey: settings.talkKey,
+                          actions: actions, changeDraft: { settings.prefill = "Change \($0.name): " })
+                InputBar(speakReplies: $speakReplies, prefill: $settings.prefill, placeholder: "Type to Milo",
+                         focusTick: settings.typeHere) { text in
+                    actions.send(text, speakReplies, "")
+                    route.go(.live)
+                }
+            }
+        case .live:
+            conversation(transcript.current)
+        case let .conversation(id):
+            conversation(id)
+        case let .task(id):
+            if let (entry, conversation) = transcript.task(id) {
+                TaskPage(entry: entry, conversation: conversation ?? transcript.conversation(ofTask: id),
+                         helper: model.helpers.first { $0.id == id },
+                         openConversation: { open($0) }, stop: model.stopHelper, reveal: actions.reveal)
+            } else {
+                TaskMissing(loading: transcript.conversation(ofTask: id) != nil, back: route.goBack)
+            }
+        }
+    }
+
+    private func conversation(_ id: String) -> some View {
+        ConversationPage(transcript: transcript, model: model, settings: settings, route: route, id: id,
+                         actions: actions)
+    }
+
+    /// In a narrow window: the sidebar button, the way back, and where you are.
+    private var narrowBar: some View {
+        HStack(spacing: 6) {
+            BarButton(icon: "sidebar.left", help: "Show the conversations (⌘0)") { route.sidebarShown.toggle() }
+            if route.page != .today && route.page != .live {
+                BarButton(icon: "chevron.left", help: "Back (⌘[)", action: route.goBack)
+            }
+            Spacer()
+            if route.page != .today {
+                BarButton(icon: "sun.max", help: "Today (⌘1)") { route.go(.today) }
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .overlay(alignment: .bottom) { Rectangle().fill(theme.rule).frame(height: 1) }
+    }
+
+    // ---- what the keys do
+
+    /// Buttons nobody sees, for the window's shortcuts.
+    private var shortcuts: some View {
+        ZStack {
+            Button("Today") { route.go(.today) }.keyboardShortcut("1", modifiers: .command)
+            Button("New conversation") { actions.newConversation(); route.go(.live) }
+                .keyboardShortcut("n", modifiers: .command)
+            Button("Search") { route.sidebarShown = true; searching = true }.keyboardShortcut("f", modifiers: .command)
+            Button("Back") { route.goBack() }.keyboardShortcut("[", modifiers: .command)
+            Button("Previous conversation") { step(-1) }.keyboardShortcut(.upArrow, modifiers: [.command, .option])
+            Button("Next conversation") { step(1) }.keyboardShortcut(.downArrow, modifiers: [.command, .option])
+            Button("Type") { settings.typeHere += 1 }.keyboardShortcut("l", modifiers: .command)
+            Button("Sidebar") { route.sidebarShown.toggle() }.keyboardShortcut("0", modifiers: .command)
+            Button("Escape") { escape() }.keyboardShortcut(.escape, modifiers: [])
+        }
+        .opacity(0)
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
+    }
+
+    private func escape() {
+        if !route.search.isEmpty { route.search = ""; searching = false }
+        else if route.sidebarShown { route.sidebarShown = false }
+        else if case .task = route.page { route.goBack() }
+    }
+
+    /// The conversation above or below the one shown, in the sidebar's order.
+    private func step(_ by: Int) {
+        let list = DayGroups.group(transcript.conversations, now: ConversationsSidebar.now()).flatMap(\.items)
+        guard !list.isEmpty else { return }
+        let shown = route.conversation(current: transcript.current)
+        let i = shown.flatMap { id in list.firstIndex { $0.id == id } }
+        let next = i.map { min(max($0 + by, 0), list.count - 1) } ?? (by > 0 ? 0 : list.count - 1)
+        open(list[next].id)
+    }
+
+    private func open(_ id: String) {
+        if id == transcript.current { route.go(.live) } else {
+            actions.open(id)
+            route.go(.conversation(id))
+        }
+    }
+
+    /// Ask a moment after the typing stops.
+    private func searchChanged() {
+        pendingSearch?.cancel()
+        let query = route.search.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { transcript.clearSearch(); return }
+        pendingSearch = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            actions.search(query)
+        }
+    }
+
+    private var waiting: Int {
+        (model.question == nil ? 0 : 1) + model.drafts.count
+    }
+
+}
+
+/// A small icon button in the narrow window's bar.
+private struct BarButton: View {
+    @Environment(\.miloTheme) private var theme
+    let icon: String
+    let help: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(theme.ink.opacity(0.6))
+                .frame(width: 26, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel(help)
     }
 }
 
@@ -93,6 +253,9 @@ public struct ConversationView: View {
 struct TranscriptList: View {
     let entries: [TranscriptEntry]
     let state: MiloState
+    var helpers: [HelperInfo] = []
+    /// Tasks show as cards that open their page; without it, as blocks with their steps.
+    var openTask: ((String) -> Void)?
 
     var body: some View {
         LazyVStack(alignment: .leading, spacing: 0) {
@@ -101,7 +264,8 @@ struct TranscriptList: View {
                 if let day = DayHeading.text(for: entry.date, after: previous?.date) {
                     DayHeading(text: day).padding(.top, i == 0 ? 0 : 14).padding(.bottom, 10)
                 }
-                EntryRow(entry: entry, showTime: Self.showsTime(entry, after: previous))
+                EntryRow(entry: entry, showTime: Self.showsTime(entry, after: previous), helper: helpers.first { $0.id == entry.id },
+                         openTask: openTask)
                     .padding(.top, Self.gap(entry, after: previous))
                     .id(entry.id)
             }
@@ -129,6 +293,8 @@ struct TranscriptList: View {
 struct EntryRow: View {
     let entry: TranscriptEntry
     let showTime: Bool
+    var helper: HelperInfo?
+    var openTask: ((String) -> Void)?
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -139,7 +305,12 @@ struct EntryRow: View {
             switch entry.kind {
             case .user: UserLine(entry: entry)
             case .milo: MiloLine(text: entry.text, emotion: entry.emotion, streaming: !entry.done)
-            case .task: TaskBlock(entry: entry)
+            case .task:
+                if let openTask {
+                    TaskCard(entry: entry, helper: helper, open: { openTask(entry.id) })
+                } else {
+                    TaskBlock(entry: entry)
+                }
             }
         }
     }
@@ -310,13 +481,16 @@ struct InputBar: View {
     @Environment(\.miloTheme) private var theme
     @Binding var speakReplies: Bool
     @Binding var prefill: String?
+    var placeholder = "Type to Milo"
+    /// Changes when ⌘L asks for the cursor.
+    var focusTick = 0
     let submit: (String) -> Void
     @State private var draft = ""
     @FocusState private var focused: Bool
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
-            TextField("Type to Milo", text: $draft)
+            TextField(placeholder, text: $draft)
                 .textFieldStyle(.plain)
                 .focusEffectDisabled()
                 .font(.system(size: 13.5))
@@ -350,6 +524,7 @@ struct InputBar: View {
         .background(theme.tint)
         .overlay(alignment: .top) { Rectangle().fill(theme.rule).frame(height: 1) }
         .onAppear { focused = true }
+        .onChange(of: focusTick) { focused = true }
         .onChange(of: prefill) {
             guard let text = prefill else { return }
             draft = text

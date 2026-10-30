@@ -14,6 +14,7 @@ from typing import Protocol, runtime_checkable
 
 import numpy as np
 
+from .conversations import ConversationInfo
 from .events import Event
 from .meetings import Chunk, MeetingInfo, MeetingNotes, TimedWord, Track, TranscriptLine, Turn
 from .memory import ConsolidationReport, Document, Episode, Fact, Hit, IndexItem, Recall, TurnContext
@@ -413,6 +414,40 @@ class TranscriptStore(Protocol):
 
     def tail(self, n: int) -> list[dict]:
         """The last `n` entries, oldest first. Reads only the end of the file."""
+        ...
+
+
+@runtime_checkable
+class ConversationStore(Protocol):
+    """The Milo window's conversations, one file each, with a header per conversation for the list.
+    See docs/design/conversations.md. Entries are JSON objects as the window shows them."""
+
+    def append(self, conversation: ConversationInfo, entry: dict) -> ConversationInfo:
+        """A finished entry of `conversation` (new or known). Returns the header updated with it."""
+        ...
+
+    def save(self, conversation: ConversationInfo) -> None:
+        """A header that changed without a new entry, e.g. a running task's status."""
+        ...
+
+    def title(self, id: str, title: str, by: str) -> ConversationInfo | None:
+        """Name conversation `id`; `by` is words, milo or you. None if there is no such conversation."""
+        ...
+
+    def all(self) -> list[ConversationInfo]:
+        """Every conversation, the latest first. Costs no file read."""
+        ...
+
+    def get(self, id: str) -> ConversationInfo | None: ...
+
+    def entries(self, id: str, limit: int | None = None) -> list[dict]:
+        """The conversation's entries, oldest first: the last `limit` of them. Reads only its own file."""
+        ...
+
+    def search_text(self, words: Sequence[str], *, limit: int = 20,
+                    budget_bytes: int = 8_000_000) -> list[tuple[str, dict]]:
+        """(conversation id, entry) for entries whose text holds every word, latest conversations first,
+        reading at most `budget_bytes` of files."""
         ...
 
 

@@ -209,10 +209,11 @@ class EntryKind(StrEnum):
 
 @dataclass
 class TranscriptEntry:
-    """One line of the conversation as the Milo window shows it.
+    """One line of a conversation as the Milo window shows it.
 
-    user: what the user said, `via` "voice" or "typed". milo: a reply, `done` False while it streams.
-    task: work handed to the worker agent, with its steps, `status` and the `result` Milo reported.
+    user: what the user said, `via` "voice", "typed" or "message". milo: a reply, `done` False while it streams.
+    task: work handed to the worker agent, with its short `title`, its steps, `status`, the `result` Milo reported
+    and the `files` it named that exist. `conversation` is the id of the conversation it belongs to.
     """
 
     id: str
@@ -225,6 +226,9 @@ class TranscriptEntry:
     status: StepStatus = StepStatus.DONE
     result: str = ""
     steps: list[Step] = field(default_factory=list)
+    conversation: str = ""
+    title: str = ""
+    files: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         d: dict = {"id": self.id, "ts": self.ts, "kind": self.kind.value, "text": self.text}
@@ -234,6 +238,12 @@ class TranscriptEntry:
             d |= {"emotion": self.emotion.value, "done": self.done}
         else:
             d |= {"status": self.status.value, "result": self.result, "steps": [s.to_dict() for s in self.steps]}
+            if self.title:
+                d["title"] = self.title
+            if self.files:
+                d["files"] = list(self.files)
+        if self.conversation:
+            d["conversation"] = self.conversation
         return d
 
     @staticmethod
@@ -242,7 +252,8 @@ class TranscriptEntry:
             id=str(d["id"]), ts=str(d["ts"]), kind=EntryKind(d["kind"]), text=str(d.get("text", "")),
             via=str(d.get("via", "")), emotion=Emotion.parse(d.get("emotion")), done=bool(d.get("done", True)),
             status=StepStatus(d.get("status", "done")), result=str(d.get("result", "")),
-            steps=[Step.from_dict(s) for s in d.get("steps", [])],
+            steps=[Step.from_dict(s) for s in d.get("steps", [])], conversation=str(d.get("conversation", "")),
+            title=str(d.get("title", "")), files=[str(f) for f in d.get("files", [])],
         )
 
 
