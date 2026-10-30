@@ -257,3 +257,27 @@ def test_peer_uid_is_our_own_uid():
         a.close()
         b.close()
     assert peer_uid(None) is None
+
+
+def test_the_last_client_hanging_up_is_reported_once_the_others_are_gone(sock_path):
+    gone: list[int] = []
+
+    async def run():
+        server = UnixSocketServer(sock_path, lambda c: asyncio.sleep(0), lambda: list(GREETING),
+                                  on_disconnect=lambda: gone.append(1))
+        await server.start()
+        try:
+            first, second = await Client.connect(sock_path), await Client.connect(sock_path)
+            await first.read_greeting()
+            await second.read_greeting()
+            await first.close()
+            await asyncio.sleep(0.05)
+            assert gone == [], "another app is still connected"
+            await second.close()
+            await asyncio.sleep(0.05)
+            assert gone == [1]
+        finally:
+            await server.close()
+        assert gone == [1], "closing the server isn't an app going away"
+
+    asyncio.run(run())
