@@ -28,12 +28,18 @@ public enum BrainEvent: Equatable, Sendable {
     case replyDelta(id: String, text: String)
     /// A step of the running task `taskID` started or ended; replaces the step with the same id.
     case activity(taskID: String, step: ActivityStep)
+    /// Milo asks a yes-or-no question before an action; shown with Yes and No until `confirmDone`.
+    case confirm(id: String, question: String)
+    /// The question `id` is over: "yes", "no" or "timeout".
+    case confirmDone(id: String, answer: String)
+    /// Work only the app may do (EventKit). Answered with `BrainCommand.appResponse` and the same id.
+    case appRequest(id: String, op: String, args: JSONValue)
     case unknown(String)
 }
 
 extension BrainEvent: Decodable {
     private enum Key: String, CodingKey {
-        case type, state, emotion, text, value, entries, entry, id, step
+        case type, state, emotion, text, value, entries, entry, id, step, question, answer, op, args
         case taskID = "task_id"
         case dictateKey = "dictate_key"
         case talkKey = "talk_key"
@@ -63,6 +69,13 @@ extension BrainEvent: Decodable {
         case "activity":
             self = .activity(taskID: try c.decode(String.self, forKey: .taskID),
                              step: try c.decode(ActivityStep.self, forKey: .step))
+        case "confirm": self = .confirm(id: try c.decode(String.self, forKey: .id),
+                                        question: try c.decode(String.self, forKey: .question))
+        case "confirm_done": self = .confirmDone(id: try c.decode(String.self, forKey: .id),
+                                                 answer: try c.decode(String.self, forKey: .answer))
+        case "app_request":
+            self = .appRequest(id: try c.decode(String.self, forKey: .id), op: try c.decode(String.self, forKey: .op),
+                               args: try c.decodeIfPresent(JSONValue.self, forKey: .args) ?? .object([:]))
         default: self = .unknown(type)
         }
     }

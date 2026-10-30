@@ -119,3 +119,12 @@ final class ManualScheduler: Scheduler {
         return task
     }
 }
+
+final class FakeConnections: AppConnections {
+    var outcome: AppOutcome = .success(.array([]))
+    private(set) var handled: [(op: String, args: JSONValue)] = []
+    func handle(op: String, args: JSONValue, reply: @escaping (AppOutcome) -> Void) {
+        handled.append((op, args))
+        reply(outcome)
+    }
+}

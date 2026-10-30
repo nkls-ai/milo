@@ -24,6 +24,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSMicrophoneUsageDescription</key><string>Milo listens only while you hold the fn or right Option key.</string>
+  <key>NSCalendarsFullAccessUsageDescription</key><string>Milo looks at your calendar and puts appointments in it when you ask him to.</string>
+  <key>NSRemindersFullAccessUsageDescription</key><string>Milo reads and adds reminders when you ask him to.</string>
+  <key>NSAppleEventsUsageDescription</key><string>Milo reads your mail and notes, writes mail drafts and notes when you ask. He never sends mail.</string>
   <key>MiloBrainDir</key><string>$ROOT/brain</string>
 </dict>
 </plist>

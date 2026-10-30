@@ -56,6 +56,11 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .activity(taskID: "c07b3e9d1a26", step: ActivityStep(
                 id: "item_2", kind: "edit", title: "Editing notes.md", detail: "update /Users/you/Milo/notes.md",
                 status: .failed)),
+            .confirm(id: "3b9e7a01c4d2", question: "I'm about to run your shortcut “Text Anna I'm late”. Go ahead?"),
+            .confirmDone(id: "3b9e7a01c4d2", answer: "yes"),
+            .appRequest(id: "a41f", op: "calendar.add_event", args: .object([
+                "title": .string("Doctor"), "start": .string("2026-11-05T15:00:00"), "end": .string("2026-11-05T16:00:00"),
+            ])),
         ])
     }
 
@@ -69,6 +74,13 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .listenStop, .listenCancel,
             .text("hello Milo"), .text("what's on today", speak: false), .getHistory,
             .context(app: "Xcode", idleSeconds: 3.5), .mute(true),
+            .confirmAnswer(id: "3b9e7a01c4d2", yes: true),
+            .appResponse(id: "a41f", outcome: .success(.object([
+                "id": .string("E1F2-77"), "title": .string("Doctor"), "start": .string("2026-11-05T15:00:00"),
+                "end": .string("2026-11-05T16:00:00"), "calendar": .string("Home"),
+            ]))),
+            .appResponse(id: "a42f", outcome: .failure(
+                "Milo isn't allowed to use your calendar. Turn it on in System Settings › Privacy & Security › Calendars.")),
         ]
         let encoder = JSONEncoder()
         let encoded = try commands.map { command in

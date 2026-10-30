@@ -22,7 +22,8 @@ let controller = MiloController(
     keys: NSEventKeySource(),
     context: WorkspaceContextProvider(),
     accessibility: SystemAccessibilityPermission(),
-    scheduler: scheduler)
+    scheduler: scheduler,
+    connections: EventKitConnections())
 
 // Windows and the status item are created once the app has finished launching.
 var panel: OverlayPanel?

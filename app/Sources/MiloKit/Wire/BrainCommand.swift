@@ -15,11 +15,21 @@ public enum BrainCommand: Equatable, Sendable {
     case context(app: String, idleSeconds: Double)
     /// Mute or unmute proactive nudges.
     case mute(Bool)
+    /// The user clicked Yes or No on the question `id`.
+    case confirmAnswer(id: String, yes: Bool)
+    /// The answer to `app_request` `id`.
+    case appResponse(id: String, outcome: AppOutcome)
+}
+
+/// What the app did with an `app_request`: a JSON result, or a plain-language error for the user.
+public enum AppOutcome: Equatable, Sendable {
+    case success(JSONValue)
+    case failure(String)
 }
 
 extension BrainCommand: Encodable {
     private enum Key: String, CodingKey {
-        case type, mode, text, app, on, tentative, speak
+        case type, mode, text, app, on, tentative, speak, id, yes, ok, result, error
         case idleSeconds = "idle_s"
     }
 
@@ -49,6 +59,21 @@ extension BrainCommand: Encodable {
         case let .mute(on):
             try c.encode("mute", forKey: .type)
             try c.encode(on, forKey: .on)
+        case let .confirmAnswer(id, yes):
+            try c.encode("confirm_answer", forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(yes, forKey: .yes)
+        case let .appResponse(id, outcome):
+            try c.encode("app_response", forKey: .type)
+            try c.encode(id, forKey: .id)
+            switch outcome {
+            case let .success(result):
+                try c.encode(true, forKey: .ok)
+                try c.encode(result, forKey: .result)
+            case let .failure(message):
+                try c.encode(false, forKey: .ok)
+                try c.encode(message, forKey: .error)
+            }
         }
     }
 }

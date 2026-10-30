@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct BubbleView: View {
@@ -26,6 +27,9 @@ struct BubbleView: View {
     }
 
     private var content: AnyView? {
+        if let question = model.question, model.state != .listening, model.state != .dictating {
+            return AnyView(QuestionView(question: question, answer: model.answer))
+        }
         switch model.state {
         case .listening, .dictating:
             let color = model.state == .dictating ? Palette.dictate : Palette.talk
@@ -50,6 +54,64 @@ struct BubbleView: View {
             .frame(maxHeight: 170)
             .fixedSize(horizontal: false, vertical: text.count < 260))
         }
+    }
+}
+
+/// Milo's yes-or-no question with big, plain buttons. A spoken "yes" or "no" on the talk key works too.
+struct QuestionView: View {
+    let question: PendingQuestion
+    let answer: (Bool) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(question.text)
+                .font(.system(size: 13.5, weight: .medium))
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+            AnswerButtons(answer: answer)
+        }
+    }
+}
+
+struct AnswerButtons: View {
+    let answer: (Bool) -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button("Yes") { answer(true) }
+                .buttonStyle(AnswerButtonStyle(prominent: true))
+                .accessibilityHint("Milo goes ahead")
+            Button("No") { answer(false) }
+                .buttonStyle(AnswerButtonStyle(prominent: false))
+                .accessibilityHint("Milo leaves it")
+        }
+    }
+}
+
+/// Drawn by hand: the system's prominent style turns grey in a window without focus, and Milo's
+/// floating panel never takes focus.
+struct AnswerButtonStyle: ButtonStyle {
+    let prominent: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13.5, weight: .semibold, design: .rounded))
+            .foregroundStyle(prominent ? Color.white : Color.primary)
+            .frame(minWidth: 64)
+            .padding(.vertical, 7)
+            .padding(.horizontal, 10)
+            .background(RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(prominent ? Palette.dictate.blended(dark: 0.25) : Color.primary.opacity(0.08)))
+            .opacity(configuration.isPressed ? 0.7 : 1)
+            .contentShape(Rectangle())
+    }
+}
+
+private extension Color {
+    /// A shade darker, so white text on Milo's green stays readable.
+    func blended(dark fraction: CGFloat) -> Color {
+        Color(nsColor: NSColor(self).blended(withFraction: fraction, of: .black) ?? NSColor(self))
     }
 }
 

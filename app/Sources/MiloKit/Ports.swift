@@ -55,6 +55,13 @@ public protocol ContextProvider: AnyObject {
     func current() -> AppContext
 }
 
+/// Work only Milo.app has permission for, asked by the brain (`app_request`): Calendar and Reminders.
+/// Ops and their arguments are listed in docs/ARCHITECTURE.md.
+public protocol AppConnections: AnyObject {
+    /// `reply` must be called exactly once, on the main queue.
+    func handle(op: String, args: JSONValue, reply: @escaping (AppOutcome) -> Void)
+}
+
 /// The Accessibility permission needed to see global keys and to paste.
 public protocol AccessibilityPermission {
     /// With `prompt`, macOS shows its permission dialog if not yet trusted.
