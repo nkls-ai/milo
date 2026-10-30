@@ -31,6 +31,14 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
-codesign --force --sign - "$APP"
+# A stable identity keeps macOS permissions (Accessibility, Screen Recording) across rebuilds; an ad-hoc
+# signature changes every build, so macOS forgets them. Make one with scripts/make-signing-identity.sh.
+IDENTITY="${MILO_SIGN_IDENTITY:-Milo Dev}"
+if security find-identity -p codesigning | grep -q "\"$IDENTITY\""; then
+  codesign --force --sign "$IDENTITY" "$APP"
+else
+  echo "no \"$IDENTITY\" signing identity, signing ad-hoc: permissions reset on every rebuild"
+  codesign --force --sign - "$APP"
+fi
 echo "built $APP"
 if [ "${1:-}" = "--open" ]; then open "$APP"; fi
