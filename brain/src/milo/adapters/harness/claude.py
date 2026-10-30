@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from milo.core.control import Protected
+from milo.core.control import STEERING, STEERING_FOLDERS, Protected, clear_steering
 from milo.core.hands import mac_server
 from milo.core.ports import PlanCallback, SessionCallback, StepCallback
 from milo.core.registry import HARNESSES, AdapterContext, options_from
@@ -33,15 +33,16 @@ BUILTIN_TOOLS = ("Bash", "Read", "Edit", "Write", "Glob", "Grep", "WebSearch", "
 
 
 
-def settings(deny: Sequence[str], no_writes: Sequence[str] = ()) -> str:
+def settings(deny: Sequence[str], no_writes: Sequence[str] = (), no_reads: Sequence[str] = ()) -> str:
     """The worker's only settings (--restricted ignores every settings file): no auto-memory; `deny`, the rules
     that keep its file tools off Milo's control files; and Bash in Claude Code's sandbox, which may write only
-    the worker's folder and the temp folder, never `no_writes`, and runs nothing outside it (ADR 0020). No
+    the worker's folder and the temp folder, never `no_writes`, can't read `no_reads` (the keys), and runs
+    nothing outside it (ADR 0020). No
     sandbox on this Mac means no task: --restricted keeps Bash, so it must not run unsandboxed."""
     return json.dumps({"autoMemoryEnabled": False, "permissions": {"deny": list(deny)},
                        "sandbox": {"enabled": True, "failIfUnavailable": True, "allowUnsandboxedCommands": False,
                                    "autoAllowBashIfSandboxed": True,
-                                   "filesystem": {"denyWrite": list(no_writes)}}})
+                                   "filesystem": {"denyWrite": list(no_writes), "denyRead": list(no_reads)}}})
 
 
 @dataclass(frozen=True)
@@ -75,10 +76,14 @@ class ClaudeHarness:
         self.tool_servers = tool_servers
         self.mcp_config = mcp_config
         self.disallowed_tools = disallowed_tools
-        # Its own folder's .claude too: without --restricted, project settings there would steer the next task.
-        own = f"/{workdir.resolve()}/.claude/**"
-        self.deny = [*(protected.deny_rules() if protected is not None else []), f"Edit({own})", f"Write({own})"]
-        self.no_writes = [*(protected.resolved() if protected is not None else []), str(workdir.resolve() / ".claude")]
+        # And what in its own folder would steer the next task (instructions, settings, MCP servers). They are
+        # removed before each run too, which also covers Codex.
+        own = [f"/{workdir.resolve()}/{name}" + ("/**" if name in STEERING_FOLDERS else "") for name in STEERING]
+        self.deny = [*(protected.deny_rules() if protected is not None else []),
+                     *(f"{tool}({path})" for path in own for tool in ("Edit", "Write"))]
+        self.no_writes = [*(protected.resolved() if protected is not None else []),
+                          *(str(workdir.resolve() / name) for name in STEERING)]
+        self.no_reads = [str((protected.home / "secrets").resolve())] if protected is not None else []
         self.restricted = restricted
         self.servers = (*mac_server(self.mac_tools), *tool_servers)
         if self.servers and mcp_config is not None:
@@ -89,7 +94,7 @@ class ClaudeHarness:
         cmd = [self.binary, "-p", "--output-format", "stream-json", "--verbose",
                "--json-schema", json.dumps(REPLY_SCHEMA), "--permission-mode", self.permission_mode,
                *(["--restricted"] if self.restricted else ["--setting-sources", "project,local"]),
-               "--settings", settings(self.deny, self.no_writes), "--disable-slash-commands",
+               "--settings", settings(self.deny, self.no_writes, self.no_reads), "--disable-slash-commands",
                "--tools", ",".join(t for t in BUILTIN_TOOLS if t not in self.disallowed_tools)]
         if session_id:
             cmd += ["--resume", session_id]
@@ -110,7 +115,11 @@ class ClaudeHarness:
                     on_session: SessionCallback | None = None, on_plan: PlanCallback | None = None) -> Reply:
         on_line = lines(ClaudeActivity(on_step, self.workdir).line if on_step is not None else None,
                         RunWatch(on_session, on_plan).line if on_session or on_plan else None)
-        self.workdir.mkdir(parents=True, exist_ok=True)
+        try:
+            self.workdir.mkdir(parents=True, exist_ok=True)
+            clear_steering(self.workdir)  # nothing a helper left there steers this one (ADR 0020)
+        except OSError as e:
+            raise HarnessError(f"the worker's folder isn't safe to work in: {e}", transient=False) from None
         code, out, err = await run(self.command(prompt, session_id), cwd=self.workdir, timeout_s=self.timeout_s,
                                    on_line=on_line, done=is_result)
         return parse_result(result_line(out), code, err, session_id)

@@ -385,7 +385,7 @@ class Routines:
         waiting = self._draft_named(name)
         if waiting is not None:
             draft_id, draft = waiting
-            recipe, base, schedule = self._book.read_draft(draft_id) or "", draft["base"], draft.get("schedule")
+            recipe, base, schedule = draft.get("text") or "", draft["base"], draft.get("schedule")
             title = draft["name"]
             self._drop(draft_id)
         else:
@@ -444,8 +444,8 @@ class Routines:
             self._tell(f"I couldn't write {draft['name']} down properly: {e}. Ask me again?", Emotion.CONFUSED)
             return
         text = render(routine)
-        self._book.write_draft(draft_id, text)
-        draft["ready"], draft["text"] = True, text  # Save keeps exactly what the window showed
+        # Kept in Milo's state, not written back to the helper's folder (ADR 0020). Save keeps exactly this.
+        draft["ready"], draft["text"] = True, text
         self._save_state()
         log.info("draft %s of %s is ready", draft_id, private(routine.name))
         self.refresh()

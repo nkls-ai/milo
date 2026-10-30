@@ -20,6 +20,7 @@ from typing import Any
 
 from milo.core.hands import mac_server
 from milo.core.ports import PlanCallback, SessionCallback, StepCallback
+from milo.core.control import clear_steering
 from milo.core.registry import HARNESSES, AdapterContext, ConfigError, options_from
 from milo.core.types import REPLY_SCHEMA, HarnessError, Reply, ToolServer, Usage
 
@@ -172,7 +173,11 @@ class CodexHarness:
             prepare_home(self.home, self.login_from, self.instructions)
             env = {**os.environ, "CODEX_HOME": str(self.home)}
         # codex takes another 4-6 s to exit after turn.completed; the answer is complete by then.
-        self.workdir.mkdir(parents=True, exist_ok=True)
+        try:
+            self.workdir.mkdir(parents=True, exist_ok=True)
+            clear_steering(self.workdir)  # nothing a helper left there steers this one (ADR 0020)
+        except OSError as e:
+            raise HarnessError(f"the worker's folder isn't safe to work in: {e}", transient=False) from None
         code, out, err = await run(self.command(prompt, session_id), cwd=self.workdir, timeout_s=self.timeout_s,
                                    on_line=on_line, done=turn_over, env=env)
         thread_id, text, usage, error = parse_events(out.splitlines())

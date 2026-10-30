@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import email
 import email.policy
+import fcntl
 import os
 import re
 import subprocess
@@ -117,14 +118,47 @@ def move(paths: list[str], into: str, scope: Path, protected: Protected | None =
         raise ToolError("Two of those files have the same name, so I moved nothing.")
     dest.mkdir(parents=True, exist_ok=True)
     moved = []
-    for f in files:
-        target = dest / f.name
-        if target.resolve() != f:
-            if target.exists():
-                raise ToolError(f"There is already a file called {f.name} in that folder.")
-            os.rename(f, target)
-        moved.append(describe(target, scope))
+    into_fd = _pinned(dest, scope, protected)
+    try:
+        for f in files:
+            target = dest / f.name
+            if target.resolve() != f:
+                from_fd = _pinned(f.parent, scope, protected)
+                try:
+                    try:
+                        os.stat(f.name, dir_fd=into_fd, follow_symlinks=False)
+                        raise ToolError(f"There is already a file called {f.name} in that folder.")
+                    except FileNotFoundError:
+                        pass
+                    os.rename(f.name, f.name, src_dir_fd=from_fd, dst_dir_fd=into_fd)
+                finally:
+                    os.close(from_fd)
+            moved.append(describe(target, scope))
+    finally:
+        os.close(into_fd)
     return {"moved": moved, "folder": describe_folder(dest)}
+
+
+def _pinned(folder: Path, scope: Path, protected: Protected | None) -> int:
+    """A handle on `folder`, checked again through the handle itself. The folders were checked by path, and
+    a helper can make links in its own folder: one swapped in since then can't redirect the move now."""
+    fd = os.open(folder, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        real = Path(_path_of(fd))
+        if real != folder.resolve() or (protected is not None and protected.covers(real)) or \
+                not allowed(real, scope, protected=protected):
+            raise ToolError(MILOS if protected is not None and protected.covers(real) else OUTSIDE)
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def _path_of(fd: int) -> str:
+    """The real path of an open folder."""
+    if hasattr(fcntl, "F_GETPATH"):  # macOS
+        return os.fsdecode(fcntl.fcntl(fd, fcntl.F_GETPATH, bytes(1024)).split(b"\0", 1)[0])
+    return os.readlink(f"/proc/self/fd/{fd}")
 
 
 def shared(path: Path, home: Path | None = None) -> bool:

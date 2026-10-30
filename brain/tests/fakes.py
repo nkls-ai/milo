@@ -745,9 +745,6 @@ class MemoryRoutineBook:
     def read_draft(self, draft):
         return self.drafts.get(draft)
 
-    def write_draft(self, draft, text):
-        self.drafts[draft] = text
-
     def drop_draft(self, draft):
         self.drafts.pop(draft, None)
 

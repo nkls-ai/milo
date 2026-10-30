@@ -16,10 +16,12 @@ Helpers can't write Milo's control files. This is enforced where the writes happ
   - **Claude Code:**
     - It runs with `--restricted`. The file tools stay in the working directory, no settings file counts, and only a person may approve a write to a settings file.
     - The `--settings` it gets adds `Edit`/`Write` deny rules for every control path, and a `Read` deny for `secrets/`.
-    - Its Bash runs in Claude Code's sandbox. `failIfUnavailable` and `allowUnsandboxedCommands = false` are set, so no command runs outside it, and `denyWrite` lists the control paths.
+    - Its Bash runs in Claude Code's sandbox. `failIfUnavailable` and `allowUnsandboxedCommands = false` are set, so no command runs outside it. `denyWrite` lists the control paths and `denyRead` the keys.
     - It finds its instructions in `~/Milo/CLAUDE.md`, one folder up.
+- **The worker's own folder steers nothing.** `work/` is the helper's to write, so a helper could leave instructions there for the next one: `AGENTS.md`, `CLAUDE.md`, `.codex/`, `.claude/`, `.mcp.json`. They are removed before every run (`clear_steering`), and Claude Code's deny rules keep it from writing them at all. If one can't be removed, no helper runs.
+- **The brain reads from `work/` without following links and never writes there.** A routine draft is read through a handle on the drafts folder opened without following a link, as a plain file of at most 64 KB. The checked text stays in Milo's state; Save keeps that text.
 - **Tools that run outside the sandbox check `Protected` themselves.**
-  - The files tools (`files_find`, `files_search`, `files_read`, `files_list`, `files_move`) never list, read or move a control path, and never move anything into one. A link counts as the file it points to.
+  - The files tools (`files_find`, `files_search`, `files_read`, `files_list`, `files_move`) never list, read or move a control path, and never move anything into one. A link counts as the file it points to. A move renames through handles on both folders, checked again through the handles, so a link swapped in after the check can't redirect it.
   - A `run_applescript` script that names a control path, by full path or by `~/` path, is refused without a question. A script that builds the path some other way still waits for the user's yes, like every script.
 - **The ways to change them**:
   - The Settings window.
@@ -30,7 +32,8 @@ Helpers can't write Milo's control files. This is enforced where the writes happ
 
 ## Consequences
 
-- A helper can still read the control files (not `secrets/` in Claude Code). Reading tells it nothing it can use against the user, and routines and memory are meant to be read.
+- A helper can still read the control files. Routines and memory are meant to be read. The keys in `secrets/` are hidden from Claude Code (file tools and Bash), but Codex's `workspace-write` sandbox can't hide a folder from reads. A Codex helper can read the keys. Its commands have no network, but it could still quote a key in its reply or in a mail draft. Keeping them from Codex needs the keys outside the readable disk (the Keychain), which is a separate change.
+- Helpers that run at the same time share `work/`. One could leave an `AGENTS.md` there just after another run's cleanup, in the moment before that run's CLI reads it. The window is short, the file is gone before the next run, and Claude Code can't write it at all.
 - The worker can't keep notes in `memory/profile.md` or the journal any more. Without the memory tools it says it can't remember this time. The journal is written only by the night's consolidation.
 - Routine drafts moved from `state/routine-drafts/` to `work/routine-drafts/`. A draft that was open during the update is gone. It was never saved, so nothing that ran is lost.
 - Bash in a Claude Code helper now runs in the sandbox: no network, and writes only in `work/` and the temp folder. This matches what Codex's `workspace-write` always did. A Mac where Claude Code's sandbox can't start runs no Claude Code helper, and says why.

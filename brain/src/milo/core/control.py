@@ -8,7 +8,10 @@ the user's yes, or the user's own editor.
 
 from __future__ import annotations
 
+import logging
+import os
 import re
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,6 +23,15 @@ approved and the worker's own settings; run/ the sockets; .codex and .claude the
 
 WORK_FOLDER = "work"
 """The one folder in the workspace the worker may write: its scratch space and routine drafts."""
+
+STEERING = ("AGENTS.md", "AGENTS.override.md", "CLAUDE.md", "CLAUDE.local.md", ".codex", ".claude", ".mcp.json",
+            ".agents")
+"""What Codex or Claude Code would read from their working folder as instructions, settings or tools. The
+worker's folder is its own to write, so a helper could leave these for the next one: they are removed before
+every run (`clear_steering`)."""
+STEERING_FOLDERS = (".codex", ".claude", ".agents")
+
+log = logging.getLogger("milo.control")
 
 
 @dataclass(frozen=True)
@@ -84,3 +96,23 @@ def _resolved(path: Path) -> Path:
 def _fold(path: Path) -> str:
     return str(path).casefold().rstrip("/")
 
+
+def clear_steering(workdir: Path) -> None:
+    """Remove what a helper could have left in its folder to steer the next one (STEERING). A link is removed
+    itself, never what it points at. Raises OSError if one is still there."""
+    for name in STEERING:
+        path = workdir / name
+        try:
+            if path.is_symlink() or not path.is_dir():
+                path.unlink()
+            else:
+                shutil.rmtree(path)
+        except FileNotFoundError:
+            continue
+        except OSError as e:
+            log.warning("could not remove %s from the worker's folder: %s", path, e)
+            continue
+        log.warning("removed %s a helper left in its folder", name)
+    left = [name for name in STEERING if os.path.lexists(workdir / name)]
+    if left:
+        raise OSError(f"{', '.join(left)} in {workdir} can't be removed")

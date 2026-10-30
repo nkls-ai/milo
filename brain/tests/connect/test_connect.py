@@ -477,3 +477,38 @@ def test_the_files_tools_never_list_read_or_move_milos_control_files(home):
     assert files.move([str(milo / "work" / "report.txt")], str(user / "Documents"))["moved"]
     assert (milo / "config.toml").read_text().startswith("[approvals.levels]")
     assert (milo / "routines" / "weekly.md").exists()
+
+
+def test_a_folder_swapped_for_a_link_after_the_check_doesnt_redirect_a_move(home, monkeypatch):
+    # A helper can make links in its own folder and race a files_move: the folders are checked again through
+    # the handles the move uses, so a swap after the path check moves nothing into or out of Milo's files.
+    from milo.adapters.connect.fake import FakeFiles, World
+    from milo.core.control import Protected
+
+    user = home / "fake" / "home"
+    milo = user / "Milo"
+    (milo / "routines").mkdir(parents=True)
+    (milo / "routines" / "plan.md").write_text("# the user's routine")
+    out, inbox = milo / "work" / "out", milo / "work" / "inbox"
+    out.mkdir(parents=True)
+    inbox.mkdir()
+    (inbox / "plan.md").write_text("planted")
+    (inbox / "new.md").write_text("planted routine")
+    files = FakeFiles(World(home / "fake"), Protected(milo))
+
+    def swap(folder, link_to):
+        def shared(*_):
+            folder.rename(folder.with_name(folder.name + "-old"))
+            folder.symlink_to(link_to, target_is_directory=True)
+            return False
+        monkeypatch.setattr(_files, "shared", shared)
+
+    swap(out, milo / "routines")
+    with pytest.raises(ToolError, match="Milo's own files"):
+        files.move([str(inbox / "new.md")], str(out))
+    assert not (milo / "routines" / "new.md").exists()
+    (user / "Documents" / "Sorted").mkdir()
+    swap(inbox, milo / "routines")
+    with pytest.raises(ToolError, match="Milo's own files"):
+        files.move([str(inbox / "plan.md")], str(user / "Documents" / "Sorted"))
+    assert (milo / "routines" / "plan.md").exists() and not (user / "Documents" / "Sorted" / "plan.md").exists()

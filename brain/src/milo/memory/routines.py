@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import stat
 from dataclasses import replace
 from pathlib import Path
 
@@ -12,6 +13,8 @@ from milo.core.routines import RecipeError, Routine, field_line, parse, render, 
 
 log = logging.getLogger(__name__)
 
+MAX_DRAFT = 64 * 1024
+"""A recipe is a page of steps; a draft longer than this isn't read."""
 DELETED = "deleted"
 """Deleted routines go to routines/deleted/, so a mistake can be put back by hand."""
 
@@ -118,19 +121,48 @@ class MarkdownRoutineBook:
         return out[::-1]
 
     def draft_path(self, draft: str) -> Path:
+        try:
+            self.drafts.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            log.warning("could not make %s: %s", self.drafts, e)
         return self.drafts / f"{slugify(draft)}.md"
 
     def read_draft(self, draft: str) -> str | None:
+        """The draft a helper wrote, or None. The drafts folder is the helper's to write (ADR 0020), so the
+        folder and the file are opened without following a link: one could point at Milo's own files."""
         try:
-            return self.draft_path(draft).read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
+            folder = os.open(self.drafts, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        except OSError:
+            return None
+        try:
+            fd = os.open(f"{slugify(draft)}.md", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=folder)
+        except OSError:
+            return None
+        finally:
+            os.close(folder)
+        with os.fdopen(fd, "rb") as f:
+            if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
+                return None
+            raw = f.read(MAX_DRAFT + 1)
+        if len(raw) > MAX_DRAFT:
+            log.warning("draft %s is longer than %d bytes; not read", draft, MAX_DRAFT)
+            return None
+        try:
+            return raw.decode("utf-8")
+        except UnicodeDecodeError:
             return None
 
-    def write_draft(self, draft: str, text: str) -> None:
-        _write(self.draft_path(draft), text)
-
     def drop_draft(self, draft: str) -> None:
-        self.draft_path(draft).unlink(missing_ok=True)
+        try:
+            folder = os.open(self.drafts, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        except OSError:
+            return
+        try:
+            os.unlink(f"{slugify(draft)}.md", dir_fd=folder)  # removes a link itself, never what it points at
+        except OSError:
+            pass
+        finally:
+            os.close(folder)
 
     def _path(self, slug: str) -> Path:
         return self.folder / f"{slug}.md"
