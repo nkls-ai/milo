@@ -102,6 +102,8 @@ Both keys listen the same way (`services/listening.py`, `services/live_transcrip
 
 All passes run one at a time on the STT thread. A quick pass encodes the audio plus 1 s of silence, but at least 10 s, instead of a padded 30 s window, so it costs roughly its own length (0.3 s for a short phrase on an idle M3 against 1.1 s). With less than 10 s the decoder loses track of where speech ends and repeats itself; a quick decode that loops, runs past 8 tokens a second or that Whisper itself doubts goes through the full window instead. Quick passes miss a few more words (on 48 test phrases 2.7% against 1.7%), which is why only the last phrase of a recording normally gets one. `stream = "off"` runs no live passes and transcribes the whole recording on release with full windows.
 
+Measured on recorded test speech, replayed in real time while other models shared the GPU (about 2.5x slower than idle): from release to pasted text, a 2 s dictation took 0.76 s (2.5 s with one pass over the whole recording), 15 s took 0.93 s (2.9 s), 60 s took 0.98 s (11.5 s). Talk, from release to the text reaching LiveTalk: 0.69 s, 1.8 s and 0.44 s (3.2 s, 4.2 s, 11.9 s). Word errors were equal or lower (60 s: 1.6% against 2.7%).
+
 The menu bar item's "Dictation style" sends `set_dictation_stream`; the brain uses it from the next recording, writes `[dictation] stream` into `config.toml` in place (`config_edit.py`, comments kept) and answers `dictation_stream`, which it also sends on connect.
 
 ## A user turn
