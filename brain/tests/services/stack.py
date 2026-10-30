@@ -77,7 +77,7 @@ class Stack:
         self.hands = HandsService(self.hands_port, self.approvals, self.ui)
         self.tasks = TaskRunner(self.conversation, self.speaker, self.context,
                                 quiet=lambda: self.live_talk.busy or self.mic.active, wait_s=self.wait_s,
-                                poll_s=0.005, hands=self.hands)
+                                poll_s=0.005, hands=self.hands, approvals=self.approvals)
         self.live_talk = LiveTalk(self.model, self.speaker, self.ui, self.context, self.clock, self.profile,
                                   self.reminders, self.ledger, lambda: self.persona, self.idle_reset_s, self.tasks,
                                   eyes=self.eyes, approvals=self.approvals)

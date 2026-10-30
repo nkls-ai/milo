@@ -158,6 +158,34 @@ def test_files_stay_inside_the_scope_and_skip_hidden_folders(home):
         assert call(server, "files_read", {"path": path}) == (False, _files.OUTSIDE)
 
 
+def test_the_newest_pdf_in_a_folder_is_filed_into_a_new_folder_without_replacing_anything(home):
+    downloads = home / "fake" / "home" / "Downloads"
+    downloads.mkdir()
+    for i, name in enumerate(["old.pdf", "notes.txt", "Rechnung Oktober.pdf"]):
+        (downloads / name).write_text(name)
+        os.utime(downloads / name, (1_700_000_000 + i, 1_700_000_000 + i))
+    brain = FakeBrain()
+    server = mcp_server(toolbox(home, brain))
+    ok, found = call(server, "files_list", {"folder": str(downloads), "name": ".PDF"})
+    assert ok and [f["name"] for f in found] == ["Rechnung Oktober.pdf", "old.pdf"]
+    ok, done = call(server, "files_move", {"paths": [found[0]["path"]], "folder": "Documents/Invoices"})
+    invoices = home / "fake" / "home" / "Documents" / "Invoices"
+    assert ok and (invoices / "Rechnung Oktober.pdf").read_text() == "Rechnung Oktober.pdf"
+    assert done["moved"][0]["name"] == "Rechnung Oktober.pdf"
+    assert brain.asked[-1] == ("change", "Move “Rechnung Oktober.pdf” into the folder “Invoices”?")
+    (downloads / "Rechnung Oktober.pdf").write_text("a second one")
+    ok, error = call(server, "files_move", {"paths": [str(downloads / "Rechnung Oktober.pdf")],
+                                            "folder": str(invoices)})
+    assert not ok and "already a file called Rechnung Oktober.pdf" in error
+    assert (invoices / "Rechnung Oktober.pdf").read_text() == "Rechnung Oktober.pdf", "never replaced"
+    for folder in ("/tmp", ".hidden", "Library/Mail"):
+        assert call(server, "files_move", {"paths": [str(downloads / "old.pdf")], "folder": folder}) == (
+            False, _files.OUTSIDE)
+    assert call(server, "files_list", {"folder": "/etc"}) == (False, _files.OUTSIDE)
+    assert wording.title("files_move", {"paths": ["/a/x.pdf"], "folder": "~/Downloads"}) == (
+        "Putting “x.pdf” into your Downloads folder")
+
+
 def test_switched_off_connections_have_no_tools(home):
     import dataclasses
     connections = dataclasses.replace(_fake({}, AdapterContext(home, home, FakeClock())), mail=None)

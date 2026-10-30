@@ -8,8 +8,8 @@ import sys
 from milo.core.hands import BY_NAME, INSTRUCTIONS, TOOLS
 from milo.mcp_server import handle, serve, tool_result
 
-ORDER = ["list_apps", "open_app", "window_text", "ax_tree", "ax_press", "ax_set_value", "run_applescript",
-         "screenshot", "click", "type", "key", "scroll"]
+ORDER = ["list_apps", "open_app", "sheet_write", "sheet_read", "window_text", "ax_tree", "ax_find", "ax_press",
+         "ax_set_value", "run_applescript", "screenshot", "click", "type", "key", "scroll"]
 
 
 class FakeClient:

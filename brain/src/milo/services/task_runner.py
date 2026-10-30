@@ -8,6 +8,7 @@ from collections.abc import Callable
 from milo.core.logtext import private
 from milo.core.types import Emotion, HarnessError
 
+from .approvals import Approvals
 from .context import UserContext
 from .conversation import Conversation
 from .hands import HandsService
@@ -28,13 +29,16 @@ class TaskRunner:
     keeps context across them and works in its sandbox. When one finishes Milo says the result. If the
     user is mid-turn (`quiet()`), the result waits for the turn to end, and is shown silently if that
     takes longer than `wait_s`. Each task and the steps the agent takes show in `transcript`. The Mac
-    tools in `hands` work only while a task runs.
+    tools in `hands` work only while a task runs. A careful task (one from a conversation that read the
+    screen) makes `approvals` and `hands` ask before changes they would otherwise just make.
     """
 
     def __init__(self, conversation: Conversation, speaker: Speaker, context: UserContext,
                  quiet: Callable[[], bool] = lambda: False, *, wait_s: float = WAIT_FOR_QUIET_S,
-                 poll_s: float = POLL_S, transcript: Transcript | None = None, hands: HandsService | None = None):
+                 poll_s: float = POLL_S, transcript: Transcript | None = None, hands: HandsService | None = None,
+                 approvals: Approvals | None = None):
         self._conversation = conversation
+        self._approvals = approvals
         self._hands = hands
         self._transcript = transcript or unrecorded()
         self._speaker = speaker
@@ -42,7 +46,7 @@ class TaskRunner:
         self._quiet = quiet
         self._wait_s = wait_s
         self._poll_s = poll_s
-        self._queue: deque[str] = deque()
+        self._queue: deque[tuple[str, bool]] = deque()
         self._worker: asyncio.Task | None = None
         self.on_result: Callable[[str, str], None] | None = None
         """Called with (description, what Milo said) after each finished task, e.g. LiveTalk.note."""
@@ -51,8 +55,8 @@ class TaskRunner:
     def busy(self) -> bool:
         return self._worker is not None and not self._worker.done()
 
-    def submit(self, description: str) -> None:
-        self._queue.append(description)
+    def submit(self, description: str, *, careful: bool = False) -> None:
+        self._queue.append((description, careful))
         if not self.busy:
             self._worker = asyncio.create_task(self._work())
 
@@ -63,13 +67,13 @@ class TaskRunner:
 
     async def _work(self) -> None:
         while self._queue:
-            await self._run(self._queue.popleft())
+            await self._run(*self._queue.popleft())
 
-    async def _run(self, description: str) -> None:
-        log.info("task started, %s", private(description))
+    async def _run(self, description: str, careful: bool = False) -> None:
+        log.info("task started%s, %s", " (careful)" if careful else "", private(description))
         task_id = self._transcript.task_started(description)
         try:
-            reply = await self._chat(description, task_id)
+            reply = await self._chat(description, task_id, careful)
         except HarnessError as e:
             log.error("task failed: %s", e)
             self._transcript.task_finished(task_id, False, TASK_FAILED)
@@ -87,13 +91,17 @@ class TaskRunner:
         if reply.say.strip():
             await self._report(reply.say, reply.emotion)
 
-    async def _chat(self, description: str, task_id: str):
+    async def _chat(self, description: str, task_id: str, careful: bool):
         if self._hands is not None:
-            self._hands.begin(task_id)
+            self._hands.begin(task_id, careful=careful)
+        if self._approvals is not None:
+            self._approvals.careful = careful
         try:
             return await self._conversation.chat(description, self._context.app, source="task",
                                                  on_step=lambda step: self._transcript.task_step(task_id, step))
         finally:
+            if self._approvals is not None:
+                self._approvals.careful = False
             if self._hands is not None:
                 self._hands.end(task_id)
 

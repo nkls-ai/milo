@@ -2,11 +2,11 @@ import asyncio
 
 import pytest
 
-from milo.core.events import AppRequest, AppResponse, Bubble, Confirm, ConfirmDone
+from milo.core.events import AppRequest, AppResponse, Bubble, Confirm, ConfirmDone, EntryChanged
 from milo.core.registry import ConfigError
 from milo.core.types import ActionLevel, Decision
 from milo.services.app_bridge import NOT_RUNNING, AppBridge
-from milo.services.approvals import NO_ANSWER, ActionPolicy, yes_or_no
+from milo.services.approvals import NO_ANSWER, ActionPolicy, Approvals, yes_or_no
 from milo.services.tool_requests import ToolRequests
 from milo.services.transcript import Transcript
 from tests.fakes import FakeHands, MemoryTranscript
@@ -61,6 +61,24 @@ def test_read_and_change_happen_without_a_question():
     assert ask(s, lambda: s.approvals.approve("read", "Look?")) == Decision(True, ActionLevel.READ, "auto")
     assert ask(s, lambda: s.approvals.approve("change", "Add?")) == Decision(True, ActionLevel.CHANGE, "auto")
     assert not s.sink.of(Confirm)
+
+
+def test_a_careful_task_asks_before_changes_too_but_not_before_reading():
+    s = Stack()
+    s.approvals.careful = True
+    assert ask(s, lambda: s.approvals.approve("read", "Look?")) == Decision(True, ActionLevel.READ, "auto")
+    assert ask(s, lambda: s.approvals.approve("draft", "Draft?")).answer == "auto"
+    assert ask(s, lambda: s.approvals.approve("change", "Add a note?")).level is ActionLevel.CHANGE
+    assert [c.question for c in s.sink.of(Confirm)] == ["Add a note?"]
+
+
+def test_the_window_shows_the_detail_under_the_question_and_the_bubble_only_the_question():
+    s = Stack()
+    approvals = Approvals(s.ui, s.speaker, timeout_s=0.05, transcript=Transcript(s.sink, MemoryTranscript(), s.clock))
+    assert ask(s, lambda: approvals.confirm("Fill column C?", detail="Fill column C. Use row 9.")) is False
+    assert [c.question for c in s.sink.of(Confirm)] == ["Fill column C?"]
+    shown = [e.entry["text"] for e in s.sink.of(EntryChanged) if e.entry.get("kind") == "milo"]
+    assert shown[0] == "Fill column C?\n\nFill column C. Use row 9."
 
 
 def test_never_is_refused_without_a_question():

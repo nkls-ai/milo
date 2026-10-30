@@ -1,6 +1,6 @@
 import pytest
 
-from milo.services.risk import Risk, classify, normalize_combo
+from milo.services.risk import Risk, Verdict, classify, normalize_combo
 
 
 @pytest.mark.parametrize("tool, args, target, risk, reason", [
@@ -43,7 +43,24 @@ from milo.services.risk import Risk, classify, normalize_combo
     ("run_applescript", {"script": 'tell application "Mail" to send theMessage'}, {}, Risk.ASK, "send"),
     ("run_applescript", {"script": 'tell application "Finder" to delete file "a.txt"'}, {}, Risk.ASK, "delete"),
     ("run_applescript", {"script": 'tell application "Finder" to empty trash'}, {}, Risk.ASK, "empty trash"),
-    ("run_applescript", {"script": 'tell application "Numbers" to activate'}, {}, Risk.ASK, "run a script"),
+    ("run_applescript", {"script": 'tell application "Numbers" to activate'}, {}, Risk.OK, ""),
+    ("run_applescript", {"script": 'tell application "Numbers" to set value of cell "A1" of table 1 of sheet 1 '
+                                   'of document 1 to 5'}, {}, Risk.ASK, "run a script"),
+    ("run_applescript", {"script": 'tell application "TextEdit"\nmake new document with properties {text:"Hi"}\n'
+                                   'end tell'}, {}, Risk.OK, ""),
+    ("run_applescript", {"script": 'tell application "TextEdit"\nmake new document\nsave document 1\nend tell'},
+     {}, Risk.ASK, "run a script"),
+    ("run_applescript", {"script": 'tell application "Finder" to make new folder at desktop'}, {}, Risk.ASK,
+     "run a script"),
+    ("run_applescript", {"script": 'tell application "Pages" to make new document\ntell application "Mail" to '
+                                   'activate'}, {}, Risk.ASK, "run a script"),
+    ("sheet_write", {"app": "Numbers", "rows": [[1]], "new_document": True}, {"new": True}, Risk.OK, ""),
+    ("sheet_write", {"app": "Numbers", "rows": [[1]]}, {"document": "Budget", "filled": 0}, Risk.OK, ""),
+    ("sheet_write", {"app": "Numbers", "rows": [[1]]}, {"document": "Budget", "filled": 3}, Risk.ASK, "overwrite"),
+    ("sheet_write", {"app": "Numbers", "rows": [[1]]}, {"document": "Book1", "filled": 3, "made": True}, Risk.OK,
+     ""),
+    ("sheet_read", {"app": "Numbers"}, {}, Risk.OK, ""),
+    ("ax_find", {"text": "Send"}, {}, Risk.OK, ""),
     ("run_applescript", {"script": 'tell application ("System " & "Events") to keystroke "x"'}, {}, Risk.ASK,
      "run other programs or type for you"),
     ("run_applescript", {"script": 'set x to "Ev"\ntell application ("System " & x) to beep'}, {}, Risk.ASK,
@@ -67,3 +84,14 @@ def test_combos_normalize():
 def test_app_names_ignore_paths_case_and_the_app_suffix():
     from milo.services.risk import app_names
     assert app_names("/Applications/Terminal.app/", "com.apple.Terminal", "", None) == {"terminal", "com.apple.terminal"}
+
+
+def test_a_careful_task_asks_before_scripts_and_changes_to_documents_it_did_not_make():
+    new_doc = 'tell application "TextEdit" to make new document'
+    assert classify("run_applescript", {"script": new_doc}, {}, careful=True) == Verdict(Risk.ASK, "run a script")
+    write = {"app": "Numbers", "rows": [[1]]}
+    assert classify("sheet_write", write, {"document": "Budget", "filled": 0}, careful=True) == Verdict(
+        Risk.ASK, "change")
+    assert classify("sheet_write", write, {"new": True}, careful=True).risk is Risk.OK
+    assert classify("sheet_write", write, {"made": True, "filled": 9}, careful=True).risk is Risk.OK
+    assert classify("open_app", {"name": "Microsoft Excel"}, {}, careful=True).risk is Risk.OK

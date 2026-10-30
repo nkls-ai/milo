@@ -1,9 +1,10 @@
 """Codex CLI adapter: one `codex exec` (or `codex exec resume`) process per turn.
 
-The worker runs in a Codex home of its own (`state/codex-home`), not the user's `~/.codex`: there it gets
+The worker runs in a Codex home of its own (`<workspace>/.codex`), not the user's `~/.codex`: there it gets
 Milo's tools and instructions only, none of the user's plugins, skills, MCP servers, global AGENTS.md or
 settings. Only the login is shared, through a symlink to the user's `auth.json`. Codex writes a refreshed
-login through the link (checked with codex 0.164), so the user's own Codex stays logged in.
+login through the link (checked with codex 0.164), so the user's own Codex stays logged in. Codex's sandbox
+keeps `.codex` read-only for the worker's commands, so a task can't change the home the next task runs in.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -64,13 +66,31 @@ def user_codex_home() -> Path:
     return Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex").expanduser()
 
 
-def prepare_home(home: Path, login_from: Path) -> None:
-    """Milo's Codex home: a fresh config.toml and a link to the user's login.
+# What Codex would read from its home as instructions, hooks, rules or extra config. Milo never puts any there.
+_FOREIGN = ("AGENTS.md", "AGENTS.override.md", "hooks.json", "hooks", "rules", "skills", "plugins", "agents")
 
-    A link that is already there is kept, and so is a real auth.json (a login made for Milo alone).
+
+def prepare_home(home: Path, login_from: Path) -> None:
+    """Milo's Codex home: a fresh config.toml, a link to the user's login, nothing else that steers Codex.
+
+    A link that is already there is kept, and so is a real auth.json (a login made for Milo alone). Nothing
+    here follows a symlink except the login: config.toml is replaced, not written through.
     """
+    if home.is_symlink():
+        raise HarnessError(f"{home} is a symlink; Milo's Codex home must be a real folder", transient=False)
     home.mkdir(parents=True, exist_ok=True)
-    (home / "config.toml").write_text(HOME_CONFIG)
+    for name in _FOREIGN:
+        path = home / name
+        if path.is_symlink() or path.is_file():
+            path.unlink()
+        elif path.is_dir():
+            shutil.rmtree(path)
+    for profile in home.glob("*.config.toml"):
+        profile.unlink()
+    staged = home / "config.toml.milo"
+    staged.unlink(missing_ok=True)
+    staged.write_text(HOME_CONFIG)
+    os.replace(staged, home / "config.toml")
     auth, source = home / "auth.json", login_from / "auth.json"
     if auth.is_symlink() and not auth.exists():
         auth.unlink()  # the user's login moved or went away
@@ -198,5 +218,5 @@ def _codex(options: Mapping[str, Any], ctx: AdapterContext) -> CodexHarness:
         timeout_s=o.timeout_s,
         mac_tools=ctx.mac_tools,
         tool_servers=ctx.tool_servers,
-        home=ctx.state_dir / "codex-home",
+        home=ctx.home / ".codex",
     )

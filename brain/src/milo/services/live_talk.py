@@ -122,6 +122,8 @@ class LiveTalk:
         self._model = model
         self._eyes = eyes
         self._approvals = approvals
+        self._saw_screen = False
+        """The running conversation has read screen data. Until it restarts, its tasks run careful."""
         self._look_started: asyncio.Task[ScreenCapture] | None = None
         self._ui_looking = False
         self._transcript = transcript or unrecorded()
@@ -243,6 +245,7 @@ class LiveTalk:
         try:
             await self._ensure_conversation()
             self._tainted = self._tainted or bool(notes)
+            self._saw_screen = self._saw_screen or screen
             self._streaming = True
             async for delta in self._model.turn(self._prompt(text, notes), images):
                 if first_at is None:
@@ -344,6 +347,7 @@ class LiveTalk:
             if self._system is None or idle or unused_but_stale:
                 await self._model.start(system)
                 self._system, self._last_turn_at = system, None
+                self._saw_screen = False
                 self._tainted = False
 
     def _system_prompt(self) -> str:
@@ -367,10 +371,11 @@ class LiveTalk:
 
         Some tags wait for the user's yes, because text from outside could have talked the model into them:
         every tag once task results are in the conversation (until a fresh conversation starts), and a task
-        in the reply to screen data. A task the user asks for in a later turn just starts: the worker's own
-        tools ask before anything that sends, deletes, buys or overwrites. Without a way to ask, tags that
-        need a yes are dropped. A reply to screen data never remembers facts: those come from the user, never
-        from the screen.
+        in the reply to screen data. A task the user asks for in a later turn of a conversation that has seen
+        the screen starts without a question but runs careful: its tools ask before changes too, not only
+        before anything that sends, deletes, buys or overwrites. Opening an app or making a new document
+        never asks. Without a way to ask, tags that need a yes are dropped. A reply to screen data never
+        remembers facts: those come from the user, never from the screen.
         """
         if screen and parser.remembers:
             log.info("not remembering %d fact(s) from a turn with screen data", len(parser.remembers))
@@ -380,20 +385,24 @@ class LiveTalk:
             self._ui.thinking = True
             self._look_started = asyncio.create_task(self._eyes.look("window"))
         ask_tasks = self._tainted or screen
-        effects: list[tuple[str, Callable[[], None], bool]] = []
+        careful = self._saw_screen or self._tainted
+        effects: list[tuple[str, str, Callable[[], None], bool]] = []
         for fact in () if screen else parser.remembers:
-            effects.append((f"Should I remember this: {fact}?", lambda fact=fact: self._remember(fact),
+            effects.append((f"Should I remember this: {fact}?", "", lambda fact=fact: self._remember(fact),
                             self._tainted))
         for due, what in parser.reminders:
-            effects.append((f"Should I remind you on {due:%A %-d %B at %H:%M}: {what}?",
+            effects.append((f"Should I remind you on {due:%A %-d %B at %H:%M}: {what}?", "",
                             lambda due=due, what=what: self._remind(due, what), self._tainted))
         for description in parser.tasks:
-            effects.append((task_question(description),
-                            lambda description=description: self._tasks.submit(description), ask_tasks))
-        for _, apply, ask in effects:
+            question = task_question(description)
+            # The whole task shows under the short question in the window: the user approves all of it.
+            detail = "" if question.rstrip("?") == description.rstrip(".?") else description
+            effects.append((question, detail, lambda description=description: self._tasks.submit(
+                description, careful=careful), ask_tasks))
+        for _, _, apply, ask in effects:
             if not ask:
                 apply()
-        asks = [(question, apply) for question, apply, ask in effects if ask]
+        asks = [(question, detail, apply) for question, detail, apply, ask in effects if ask]
         if asks and self._approvals is None:
             log.warning("dropped %d tag(s) from a reply to outside text: nobody to ask", len(asks))
         elif asks:
@@ -401,11 +410,12 @@ class LiveTalk:
             self._asking.add(asking)
             asking.add_done_callback(self._asking.discard)
 
-    async def _ask_then_apply(self, turn: asyncio.Task | None, effects: list[tuple[str, Callable[[], None]]]) -> None:
+    async def _ask_then_apply(self, turn: asyncio.Task | None,
+                              effects: list[tuple[str, str, Callable[[], None]]]) -> None:
         if turn is not None:
             await asyncio.wait({turn})  # ask once the reply is over, so the question is what the bubble shows
-        for question, apply in effects:
-            if await self._approvals.confirm(question):
+        for question, detail, apply in effects:
+            if await self._approvals.confirm(question, detail=detail):
                 apply()
 
     def _remember(self, fact: str) -> None:

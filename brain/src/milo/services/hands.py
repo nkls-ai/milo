@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import itertools
+import json
 import logging
 import re
 from dataclasses import dataclass
@@ -11,6 +12,7 @@ from milo.core.hands import validate
 from milo.core.ports import AppHands, Confirmer, EventSink
 from milo.core.types import HandsError, Step, StepStatus
 
+from . import sheets
 from .risk import Risk, classify, normalize_combo
 from .screen import NOTE, screen_data
 from .transcript import Transcript, unrecorded
@@ -22,8 +24,13 @@ STOPPED = ("The user stopped you: they took over the mouse or keyboard. Don't us
            "this task. Tell the user in one sentence how far you got.")
 TURNED_OFF = "AppleScript is turned off in Milo's settings ([hands] applescript)."
 STOPPED_SAY = "Okay, I stopped. It's all yours."
+NOT_ALLOWED = ("macOS doesn't let Milo control {app} yet. Tell the user to switch on {app} under Milo in System "
+               "Settings › Privacy & Security › Automation, then try again.")
 
 _TELL = re.compile(r'tell application "([^"]+)"', re.IGNORECASE)
+_NOT_AUTHORIZED = re.compile(r"Not authori[sz]ed to send Apple events to (.+?)\.|\(-1743\)", re.IGNORECASE)
+# Tools the brain runs as a few app actions of its own (scripts it writes, a filtered ax_tree).
+_COMPOSED = ("sheet_write", "sheet_read", "ax_find")
 
 
 @dataclass(frozen=True)
@@ -54,6 +61,9 @@ class HandsService:
         self._transcript = transcript or unrecorded()
         self._applescript = applescript
         self._task_id: str | None = None
+        self._careful = False
+        self._made: set[tuple[str, str]] = set()
+        """Documents this task made with sheet_write: writing into them never asks."""
         self._active = False
         self._stopped = False
         self._lock = asyncio.Lock()
@@ -63,9 +73,12 @@ class HandsService:
     def active(self) -> bool:
         return self._active
 
-    def begin(self, task_id: str) -> None:
+    def begin(self, task_id: str, *, careful: bool = False) -> None:
+        """Tools work for `task_id` from now on. `careful`: the task came from a conversation that read outside
+        text, so changes to existing documents and every script ask first."""
         self._end_session()
-        self._task_id, self._stopped = task_id, False
+        self._task_id, self._stopped, self._careful = task_id, False, careful
+        self._made = set()
 
     def end(self, task_id: str) -> None:
         if self._task_id == task_id:
@@ -94,11 +107,11 @@ class HandsService:
         async with self._lock:
             self._check()
             task_id = self._task_id
-            target = await self._act("describe", {"tool": tool, **args}) if spec.acts else {}
+            target = await self._describe(tool, args) if spec.acts else {}
             self._check()
             step = Step(f"hands_{next(self._ids)}", "app" if spec.acts else "read", title(tool, args, target),
                         _detail(tool, args), StepStatus.RUNNING)
-            verdict = classify(tool, args, target)
+            verdict = classify(tool, args, target, careful=self._careful)
             if verdict.risk is Risk.NEVER:
                 self._step(task_id, step, StepStatus.FAILED)
                 raise HandsError(f"Not allowed: Milo never touches {verdict.reason}. Ask the user to do this part.")
@@ -114,19 +127,63 @@ class HandsService:
             if spec.acts:
                 self._start_session(target)
             try:
-                result = await self._act(tool, args)
+                result = await self._perform(tool, args)
             except HandsError:
                 self._step(task_id, step, StepStatus.FAILED)
                 raise
             self._step(task_id, step, StepStatus.DONE)
             return output(tool, result)
 
+    async def _describe(self, tool: str, args: dict) -> dict:
+        """What an action would touch: the app describes clicks and typing; sheet_write reads its target."""
+        if tool != "sheet_write":
+            return await self._act("describe", {"tool": tool, **args})
+        app = args["app"]
+        if args.get("new_document"):
+            return {"app": app, "new": True}
+        found = sheets.parse((await self._script(sheets.describe_script(app, args["rows"],
+                                                                          args.get("start", "A1"))))["text"])
+        document = found.get("document", "")
+        return {"app": app, "document": document, "made": (app, document) in self._made,
+                "filled": int(found.get("filled") or 0)}
+
+    async def _perform(self, tool: str, args: dict) -> dict:
+        if tool not in _COMPOSED:
+            return await self._act(tool, args)
+        if tool == "ax_find":
+            tree = await self._act("ax_tree", {k: v for k, v in args.items() if k == "app"})
+            return {**tree, "text": find_controls(str(tree.get("text") or ""), args.get("role", ""),
+                                                  args.get("text", ""))}
+        app = args["app"]
+        if tool == "sheet_read":
+            found = sheets.parse((await self._script(sheets.read_script(app, args.get("range", ""))))["text"])
+            return {"summary": f"{app}, “{found.get('document', '')}”, sheet “{found.get('sheet', '')}”",
+                    "text": sheets.table_text(found)}
+        start = args.get("start", "A1")
+        script = sheets.write_script(app, args["rows"], start, new_document=bool(args.get("new_document")),
+                                     header=bool(args.get("header")), money=args.get("money", ""))
+        found = sheets.parse((await self._script(script))["text"])
+        document = found.get("document", "")
+        if args.get("new_document"):
+            self._made.add((app, document))
+        where = sheets.block(args["rows"], start).range
+        made = "Made a new document and filled" if args.get("new_document") else "Filled"
+        return {"text": f"{made} {where} in “{document}”, sheet “{found.get('sheet', '')}”, in {app}."}
+
+    async def _script(self, script: str) -> dict:
+        """Run a script the brain wrote itself, through the app."""
+        return await self._act("run_applescript", {"script": script})
+
     async def _act(self, tool: str, args: dict) -> dict:
         try:
             return await self._hands.act(tool, args)
-        except HandsError:
+        except HandsError as e:
             if self._stopped:
                 raise HandsError(STOPPED) from None
+            denied = _NOT_AUTHORIZED.search(str(e))
+            if denied:
+                app = (denied.group(1) or "that app").strip().strip("“”\"")
+                raise HandsError(NOT_ALLOWED.format(app=app)) from None
             raise
 
     def _check(self) -> None:
@@ -163,6 +220,16 @@ def title(tool: str, args: dict, target: dict) -> str:
             return "Checking which apps are open"
         case "open_app":
             return f"Opening {_clip(str(args['name']), 40)}"
+        case "sheet_write":
+            if args.get("new_document"):
+                return f"Making a new table in {args['app']}"
+            doc = _clip(str(target.get("document") or ""), 30)
+            return f"Filling in cells in “{doc}”" if doc else f"Filling in cells in {args['app']}"
+        case "sheet_read":
+            return f"Reading the table in {args['app']}"
+        case "ax_find":
+            looking = _clip(str(args.get("text") or args.get("role") or "controls"), 30)
+            return f"Looking for “{looking}”{in_app or (' in ' + str(args['app']) if args.get('app') else '')}"
         case "window_text":
             return f"Reading the {app} window" if app else "Reading the front window"
         case "ax_tree":
@@ -198,16 +265,18 @@ def confirm_question(tool: str, args: dict, target: dict, reason: str) -> str:
     if tool == "key":
         return f"I'm about to press {_pretty_combo(str(args['combo']))}{in_app}, which may {reason}. Go ahead?"
     if tool == "run_applescript":
-        lines = [" ".join(line.split()) for line in str(args["script"]).splitlines() if line.strip()]
-        apps = list(dict.fromkeys(_TELL.findall("\n".join(lines))))
-        where = f" that mentions {', '.join(apps)}" if apps else ""
-        can = "" if reason == "run a script" else f" and can {reason}" if apps else f" that can {reason}"
-        # Each line is marked as the script's, so its text can't pass for Milo's own question.
-        if len(lines) <= 6 and sum(map(len, lines)) <= 300:
-            shown = ":\n" + "\n".join(f"› {line}" for line in lines) + "\n"
-        else:
-            shown = ". The whole script is in my window. "
-        return f"I'm about to run a script{where}{can}{shown}Go ahead?"
+        # Short enough to answer at a glance. The step above the question in the Milo window already shows
+        # the whole script, so the user can read what they approve.
+        apps = list(dict.fromkeys(_TELL.findall(str(args["script"]))))
+        where = f" in {_clip(', '.join(apps), 30)}" if apps else ""
+        can = "" if reason == "run a script" else f" that can {reason}"
+        return f"Run a script{where}{can}? It's in my window."
+    if tool == "sheet_write":
+        doc = _clip(str(target.get("document") or "the front document"), 30)
+        if reason == "overwrite":
+            n = int(target.get("filled") or 0)
+            return f"Replace {n} filled cell{'s' if n != 1 else ''} in “{doc}”?"
+        return f"Change “{doc}” in {args['app']}?"
     return f"I'm about to {reason}{in_app}. Go ahead?"
 
 
@@ -215,7 +284,7 @@ def output(tool: str, result: dict) -> ToolOutput:
     """What the worker sees. Screen text goes between screen_data markers."""
     text = str(result.get("text") or "")
     image = str(result.get("image") or "")
-    if tool in ("window_text", "ax_tree") or (tool == "run_applescript" and text):
+    if tool in ("window_text", "ax_tree", "ax_find", "sheet_read") or (tool == "run_applescript" and text):
         head = str(result.get("summary") or "")
         text = "\n".join(p for p in (head, NOTE, screen_data(text, limit=16000)) if p)
     elif tool == "screenshot":
@@ -227,9 +296,30 @@ def output(tool: str, result: dict) -> ToolOutput:
     return ToolOutput(text, image)
 
 
+def find_controls(tree: str, role: str = "", text: str = "") -> str:
+    """The ax_tree lines whose kind contains `role` and whose label contains `text`, any case."""
+    role, text = role.strip().lower(), text.strip().lower()
+    hits = []
+    for line in tree.splitlines():
+        id_, _, rest = line.strip().partition(" ")
+        if not id_.startswith("e") or not id_[1:].isdigit():
+            continue
+        kind, _, label = rest.partition("“")
+        if role and role not in kind.lower():
+            continue
+        if text and text not in label.lower() and text not in rest.lower():
+            continue
+        hits.append(line.strip())
+    if hits:
+        return "\n".join(hits[:60])
+    return "Nothing like that in this window. Try other words, or ax_tree for everything."
+
+
 def _detail(tool: str, args: dict) -> str:
     if tool == "run_applescript":
         return str(args["script"])
+    if tool == "sheet_write":
+        return "sheet_write " + json.dumps(args, ensure_ascii=False)[:2000]
     if tool == "type":
         return f"type {str(args['text'])[:500]}"
     return f"{tool} {' '.join(f'{k}={v}' for k, v in args.items())}".strip()

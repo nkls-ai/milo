@@ -1,9 +1,12 @@
 """Which computer-use actions may run on their own, which wait for the user's yes, and which never run.
 
 Pure: it reads the tool, its arguments and what the app said the action would touch (`target`, from the
-describe step: app, title, role, secure). It errs towards asking. A button that mentions sending,
-deleting, paying and the like asks first, and so does anything that could run code: every AppleScript,
-typing into a terminal, and any change in System Settings.
+describe step: app, title, role, secure). It errs towards asking where it matters and stays quiet for what
+can be undone: opening an app, reading, making a new document and filling it never ask. A button that
+mentions sending, deleting, paying and the like asks first, and so does anything that could run code: a
+script that isn't plainly about a new document, typing into a terminal, and any change in System Settings.
+Replacing filled cells asks. A careful task (from a conversation that read the screen) asks before every
+script and every change to a document it didn't make.
 Password fields, the keychain and security settings are off limits. A word list can be talked around by a
 determined agent; it is a brake, not a sandbox, so everything the worker does also shows in the Milo
 window and stops when the user touches the mouse.
@@ -35,12 +38,24 @@ _RISKY_WORDS = (
     "send", "send now", "delete", "remove", "erase", "buy", "buy now", "purchase", "pay", "checkout", "check out",
     "order", "place order", "submit", "transfer", "withdraw", "empty trash", "empty bin", "discard", "overwrite",
     "replace", "uninstall", "unsubscribe", "publish", "post", "confirm", "sell", "cancel subscription",
-    "close account", "delete account",
+    "close account", "delete account", "share", "trash",
     # German, since Milo's users speak it too.
     "senden", "absenden", "abschicken", "löschen", "entfernen", "kaufen", "jetzt kaufen", "bezahlen", "zahlen",
     "bestellen", "kostenpflichtig bestellen", "überweisen", "papierkorb leeren", "verwerfen", "ersetzen",
-    "kündigen", "veröffentlichen", "bestätigen",
+    "kündigen", "veröffentlichen", "bestätigen", "teilen",
 )
+# Words in a script that change or close what is already there. A script with none of these that only talks
+# to document apps and makes a new document is safe to run without asking.
+_SCRIPT_CHANGES = re.compile(r"(?<!\w)(save|close|quit|clear|move|duplicate|print|set\s+name|open\s+(?:file|POSIX|alias)"
+                             r"|export|activate\s+window)(?!\w)", re.IGNORECASE)
+_SCRIPT_NEW = re.compile(r"\bmake\s+new\s+(document|workbook|presentation|slide|table|sheet|paragraph|word"
+                         r"|text|row|column)\b", re.IGNORECASE)
+_SCRIPT_WRITES = re.compile(r"(?<!\w)(set|make|delete|remove|insert|paste|copy|duplicate)(?!\w)", re.IGNORECASE)
+_TELL_APP = re.compile(r'\btell\s+(?:application|app)\s+(?:id\s+)?"([^"]+)"', re.IGNORECASE)
+# Apps whose documents a script may make and fill without asking.
+DOCUMENT_APPS = ("textedit", "pages", "keynote", "numbers", "microsoft excel", "microsoft word",
+                 "microsoft powerpoint", "com.apple.textedit", "com.apple.iwork.pages", "com.apple.iwork.keynote",
+                 "com.apple.iwork.numbers", "com.microsoft.excel", "com.microsoft.word", "com.microsoft.powerpoint")
 _RISKY = re.compile(r"(?<!\w)(" + "|".join(re.escape(w) for w in sorted(_RISKY_WORDS, key=len, reverse=True))
                     + r")(?!\w)", re.IGNORECASE)
 _SECRET = re.compile(r"(?<!\w)(password|passwort|kennwort|passcode|keychain|schlüsselbund)(?!\w)", re.IGNORECASE)
@@ -94,7 +109,7 @@ def app_names(*names: object) -> set[str]:
     return out
 
 
-def classify(tool: str, args: dict, target: dict) -> Verdict:
+def classify(tool: str, args: dict, target: dict, *, careful: bool = False) -> Verdict:
     apps = app_names(target.get("app"), target.get("bundle"))
     title = " ".join(str(target.get(k) or "") for k in ("title", "description")).strip()
     if tool in ("type", "ax_set_value") and target.get("secure"):
@@ -123,17 +138,40 @@ def classify(tool: str, args: dict, target: dict) -> Verdict:
         if combo in _PRESS_KEYS:
             return _words(title)  # return on a focused "Send" button sends
         return OK
+    if tool == "sheet_write":
+        if target.get("new") or target.get("made"):
+            return OK  # a document Milo made in this task
+        if int(target.get("filled") or 0) > 0:
+            return Verdict(Risk.ASK, "overwrite")
+        return Verdict(Risk.ASK, "change") if careful else OK
     if tool == "run_applescript":
-        # A word list can't tell what a script does (strings can be built, apps named in variables), so
-        # every script waits for a yes. Scripts about passwords never run.
+        # A word list can't tell what a script does (strings can be built, apps named in variables), so only
+        # a script that plainly makes a new document in a document app runs on its own. Scripts about
+        # passwords never run.
         script = str(args.get("script", ""))
         if _SECRET.search(script):
             return Verdict(Risk.NEVER, "passwords")
         if _CODE.search(script):
             return Verdict(Risk.ASK, "run other programs or type for you")
         risky = _words(script)
-        return risky if risky.risk is Risk.ASK else Verdict(Risk.ASK, "run a script")
+        if risky.risk is Risk.ASK:
+            return risky
+        return OK if not careful and new_document_script(script) else Verdict(Risk.ASK, "run a script")
     return OK
+
+
+def new_document_script(script: str) -> bool:
+    """The script talks only to document apps, makes a new document, and changes nothing that was there.
+
+    Writing (`set`, `make`) is fine after `make new document`; saving, closing, moving and the like are not.
+    A script that writes without making a new document could be changing one of the user's own.
+    """
+    told = app_names(*_TELL_APP.findall(script))
+    if not told or not told <= set(DOCUMENT_APPS) or "«" in script:
+        return False
+    if _SCRIPT_CHANGES.search(script):
+        return False
+    return bool(_SCRIPT_NEW.search(script)) or not _SCRIPT_WRITES.search(script)
 
 
 def _words(text: str) -> Verdict:

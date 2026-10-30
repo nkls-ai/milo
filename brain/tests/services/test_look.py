@@ -170,5 +170,31 @@ def test_a_task_the_user_asks_for_after_a_look_just_starts():
     s = Stack(eyes=FakeEyes(EXCEL), model=FakeLiveModel(
         ["[thinking] <look/>"], ["[neutral] It's a budget."],
         ["[happy] On it. <task>Open Excel and make a budget table. One row per weekday.</task>"]))
+    careful = []
+    s.harness.reply = _recording(s.harness.reply, lambda: careful.append(s.approvals.careful))
     assert answering(s, False, "look at this", "open Excel and make a table for the week") == []
     assert len(s.harness.calls) == 1
+    assert careful == [True], "it runs careful: changes ask, opening apps and new documents don't"
+    assert not s.approvals.careful
+
+
+def _recording(reply, note):
+    async def wrapped(*args, **kwargs):
+        note()
+        return await reply(*args, **kwargs)
+    return wrapped
+
+
+def test_a_task_question_shows_the_whole_task_under_it_in_the_window():
+    s = Stack(eyes=FakeEyes(EXCEL), model=FakeLiveModel(
+        ["[thinking] <look/>"], ["[happy] On it. <task>Fill column C. Use the totals from row 9.</task>"]))
+    details = []
+    confirm = s.approvals.confirm
+
+    async def recording(question, *, detail=""):
+        details.append(detail)
+        return await confirm(question, detail=detail)
+
+    s.approvals.confirm = recording
+    assert answering(s, True, "fill this in") == ["Fill column C?"]
+    assert details == ["Fill column C. Use the totals from row 9."]

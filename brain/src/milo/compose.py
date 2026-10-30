@@ -114,7 +114,7 @@ def build(home: Path) -> Runtime:
     enabled = [name for name in ("calendar", "reminders") if switches.enabled and getattr(switches, name)]
     tool_server = ToolSocketServer(workspace.tools_socket_path, ToolRequests(approvals, bridge, enabled).handle)
     tasks = TaskRunner(conversation, speaker, context, quiet=lambda: live_talk.busy or mic.active,
-                       transcript=transcript, hands=hands)
+                       transcript=transcript, hands=hands, approvals=approvals)
     live_talk = LiveTalk(live_model, speaker, ui, context, clock, profile, reminders, ledger,
                          _persona(workspace.persona_path), idle_reset_s, tasks, transcript, eyes=AppEyes(bridge),
                          approvals=approvals)

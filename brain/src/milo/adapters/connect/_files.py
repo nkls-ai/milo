@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import email
 import email.policy
+import os
 import re
 import subprocess
 import zipfile
@@ -64,6 +65,55 @@ def checked(path: str, scope: Path) -> Path:
     if not p.is_file():
         raise ToolError("I couldn't find that file.")
     return p.resolve()
+
+
+def folder(path: str, scope: Path, *, must_exist: bool = True) -> Path:
+    """A folder inside `scope`, like "~/Downloads" or "Invoices" (inside the scope)."""
+    p = Path(path).expanduser()
+    if not p.is_absolute():
+        p = scope / p
+    if not allowed(p, scope):
+        raise ToolError(OUTSIDE)
+    if must_exist and not p.is_dir():
+        raise ToolError("I couldn't find that folder.")
+    if p.exists() and not p.is_dir():
+        raise ToolError("That is a file, not a folder.")
+    return p.resolve()
+
+
+def listing(path: str, scope: Path, name: str = "", limit: int = 20) -> list[dict]:
+    """The files right inside one folder whose name contains `name`, newest first. No Spotlight needed."""
+    where = folder(path, scope)
+    return newest([p for p in where.iterdir() if name.lower() in p.name.lower()], scope, limit)
+
+
+def move(paths: list[str], into: str, scope: Path) -> dict:
+    """Move files into a folder inside `scope`, making the folder if needed. Nothing is ever replaced: if a
+    file of the same name is there, nothing moves."""
+    if not paths:
+        raise ToolError("Say which files to move.")
+    files = [checked(p, scope) for p in paths]
+    dest = folder(into, scope, must_exist=False)
+    clashes = [f.name for f in files if (dest / f.name).exists() and (dest / f.name).resolve() != f]
+    if clashes:
+        raise ToolError(f"There is already a file called {clashes[0]} in that folder, so I moved nothing.")
+    if len({f.name for f in files}) < len(files):
+        raise ToolError("Two of those files have the same name, so I moved nothing.")
+    dest.mkdir(parents=True, exist_ok=True)
+    moved = []
+    for f in files:
+        target = dest / f.name
+        if target.resolve() != f:
+            if target.exists():
+                raise ToolError(f"There is already a file called {f.name} in that folder.")
+            os.rename(f, target)
+        moved.append(describe(target, scope))
+    return {"moved": moved, "folder": describe_folder(dest)}
+
+
+def describe_folder(path: Path) -> str:
+    home = Path.home()
+    return f"~/{path.relative_to(home)}" if path.is_relative_to(home) else str(path)
 
 
 def describe(path: Path, scope: Path) -> dict:

@@ -329,6 +329,12 @@ class SpotlightFiles:
     def read(self, path: str, max_chars: int = 20000) -> dict:
         return _files.read(_files.checked(path, self.scope), max_chars)
 
+    def list(self, folder: str, name: str = "", limit: int = 20) -> list[dict]:
+        return _files.listing(folder, self.scope, name, limit)
+
+    def move(self, paths: list[str], folder: str) -> dict:
+        return _files.move(paths, folder, self.scope)
+
     def _mdfind(self, query: list[str]) -> list[Path]:
         try:
             done = subprocess.run(["mdfind", "-onlyin", str(self.scope), *query], capture_output=True, text=True,
