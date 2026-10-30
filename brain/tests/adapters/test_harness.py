@@ -319,6 +319,34 @@ def test_cancelling_a_turn_ends_the_cli_and_what_it_started(tmp_path, ctx):
         os.kill(child, 0)
 
 
+def test_stopping_reads_the_process_tree_off_the_loop_and_kills_only_the_same_processes(monkeypatch):
+    # L1: ps runs in a thread, and after the grace a pid is only killed if it is still the process it was.
+    import subprocess as sp
+    import threading
+
+    sleeper = sp.Popen(["sleep", "30"])
+    try:
+        [(pid, started)] = [(p, s) for p, s in _process.descendants(os.getpid()) if p == sleeper.pid]
+        assert _process.still_running([(pid, started)]) == [pid]
+        assert _process.still_running([(pid, "Mon Jan  1 00:00:00 2001")]) == [], "a reused pid isn't the same"
+    finally:
+        sleeper.kill()
+        sleeper.wait()
+    assert _process.still_running([(pid, started)]) == []
+
+    threads = []
+    real = _process._processes
+    monkeypatch.setattr(_process, "_processes", lambda: threads.append(threading.current_thread()) or real())
+
+    async def go():
+        proc = await asyncio.create_subprocess_exec("sleep", "30")
+        await _process.stop(proc, grace_s=0.1)
+        return proc.returncode
+
+    assert asyncio.run(go()) is not None
+    assert threads and threading.main_thread() not in threads
+
+
 # ---- the worker gets Milo's tools only
 
 
