@@ -103,3 +103,27 @@ def test_a_folder_the_helper_locked_doesnt_hide_whats_still_in_it(tmp_path):
             if p.exists() or p.is_symlink():
                 p.chmod(0o700)
     assert list((work / "ro").iterdir()) == []
+
+
+def test_a_folder_swapped_for_a_link_during_the_sweep_isnt_followed(tmp_path, monkeypatch):
+    # Another helper works in the same folder: if it swaps work/a for a link to ~/Milo while the sweep runs,
+    # removing a/CLAUDE.md must not remove Milo's own CLAUDE.md.
+    from milo.core import control
+
+    home = tmp_path / "Milo"
+    work = home / "work"
+    (work / "a").mkdir(parents=True)
+    (work / "a" / "CLAUDE.md").write_text("planted")
+    (home / "CLAUDE.md").write_text("@AGENTS.md")
+    real = control._open_folder
+
+    def racing(parent, name):
+        if name == "a" and not (work / "a").is_symlink():
+            (work / "a").rename(work / "a-old")
+            (work / "a").symlink_to(home, target_is_directory=True)
+        return real(parent, name)
+
+    monkeypatch.setattr(control, "_open_folder", racing)
+    control.clear_steering(work)
+    assert (home / "CLAUDE.md").read_text() == "@AGENTS.md"
+    assert (work / "a").is_symlink(), "the link is left alone: it isn't a steering name"

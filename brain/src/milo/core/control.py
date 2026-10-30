@@ -11,8 +11,6 @@ from __future__ import annotations
 import logging
 import os
 import re
-import shutil
-import stat
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -100,85 +98,82 @@ def _fold(path: Path) -> str:
 
 
 def clear_steering(workdir: Path) -> None:
-    """Remove what a helper could have left in its folder to steer the next one (STEERING). A link is removed
-    itself, never what it points at. Folders on the way get their owner's permissions back first, since the
-    helper may have locked them. Raises OSError if one is still there."""
-    found = _steering_in(workdir)
-    for path in found:
-        _unlock(path.parent, workdir)
-        try:
-            if stat.S_ISDIR(os.lstat(path).st_mode):
-                shutil.rmtree(path, onexc=_unlock_and_retry)
-            else:
-                os.unlink(path)
-        except FileNotFoundError:
-            continue
-        except OSError as e:
-            log.warning("could not remove %s from the worker's folder: %s", path, e)
-            continue
-        log.warning("removed %s a helper left in its folder", path.relative_to(workdir))
-    left = [str(path.relative_to(workdir)) for path in found if _still_there(path)]
+    """Remove what a helper could have left in its folder to steer the next one (STEERING), at any depth and
+    in any case (APFS opens claude.md as CLAUDE.md). Raises OSError if one is still there.
+
+    Another helper may be working in the folder meanwhile, so nothing here goes by path: every folder is
+    opened relative to the one above it without following a link, and changed and emptied through that
+    handle. A folder swapped for a link halfway is never entered, so nothing outside `workdir` is touched.
+    A folder the helper locked gets its owner's permissions back."""
+    left: list[str] = []
+    root = os.open(workdir, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        _sweep(root, "", left)
+    finally:
+        os.close(root)
     if left:
         raise OSError(f"{', '.join(left)} in {workdir} can't be removed")
 
 
-def _unlock(folder: Path, workdir: Path) -> None:
-    """Owner permissions on each folder from `workdir` down to `folder`, without following links. Top down:
-    a folder can only be changed once the one above it can be searched."""
-    for each in reversed([f for f in (folder, *folder.parents) if f.is_relative_to(workdir)]):
-        try:
-            os.chmod(each, 0o700, follow_symlinks=False)
-        except OSError:
-            pass
-
-
-def _unlock_and_retry(function, path: str, error: BaseException) -> None:
-    """rmtree's error handler: a locked folder inside a STEERING folder is unlocked and tried again once."""
-    if isinstance(error, FileNotFoundError):
-        return
-    parent = os.path.dirname(path)
-    for each in (parent, path):
-        try:
-            os.chmod(each, 0o700, follow_symlinks=False)
-        except OSError:
-            pass
-    if function is os.rmdir or function is os.unlink:
-        function(path)
-    elif function in (os.open, os.scandir, os.lstat):
-        shutil.rmtree(path, onexc=_last_try)
-    else:
-        raise error
-
-
-def _last_try(function, path: str, error: BaseException) -> None:
-    raise error
-
-
-def _still_there(path: Path) -> bool:
-    """Only "not found" counts as gone: a path that can't be looked at may well still be there."""
-    try:
-        os.lstat(path)
-    except FileNotFoundError:
-        return False
-    except OSError:
-        return True
-    return True
-
-
 _STEERING_FOLDED = frozenset(name.casefold() for name in STEERING)
+_FOLDER = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 
 
-def _steering_in(workdir: Path) -> list[Path]:
-    """Every STEERING name below `workdir`, in any case (APFS opens claude.md as CLAUDE.md). A folder that
-    can't be listed is the helper's: it gets its owner's permissions back, and if it still can't be listed,
-    this raises rather than miss what's inside."""
-    for _ in range(3):
-        unreadable: list[str] = []
-        found = [Path(top) / name for top, dirs, files in os.walk(workdir, onerror=lambda e: unreadable.append(
-                     e.filename))  # never follows a link
-                 for name in (*dirs, *files) if name.casefold() in _STEERING_FOLDED]
-        if not unreadable:
-            return found
-        for folder in unreadable:
-            _unlock(Path(folder), workdir)
-    raise OSError(f"can't look through {', '.join(unreadable)}")
+def _sweep(folder: int, where: str, left: list[str]) -> None:
+    """Remove the STEERING entries in the open `folder` (`where` below the work folder) and below it."""
+    try:
+        entries = [(e.name, e.is_dir(follow_symlinks=False)) for e in os.scandir(folder)]
+    except OSError:
+        left.append(where or ".")
+        return
+    for name, is_folder in entries:
+        rel = f"{where}{name}"
+        if name.casefold() in _STEERING_FOLDED:
+            try:
+                if is_folder:
+                    _delete(folder, name)
+                else:
+                    os.unlink(name, dir_fd=folder)  # a link is removed itself
+                log.warning("removed %s a helper left in its folder", rel)
+            except FileNotFoundError:
+                pass
+            except OSError as e:
+                log.warning("could not remove %s from the worker's folder: %s", rel, e)
+                left.append(rel)
+        elif is_folder:
+            child = _open_folder(folder, name)
+            if child is None:
+                continue  # gone, or a link by now: links aren't followed
+            try:
+                _sweep(child, rel + "/", left)
+            finally:
+                os.close(child)
+
+
+def _open_folder(parent: int, name: str) -> int | None:
+    """`name` in `parent`, opened without following a link, after giving it its owner's permissions."""
+    try:
+        os.chmod(name, 0o700, dir_fd=parent, follow_symlinks=False)
+    except OSError:
+        pass
+    try:
+        return os.open(name, _FOLDER, dir_fd=parent)
+    except OSError:
+        return None
+
+
+def _delete(parent: int, name: str) -> None:
+    """Delete the folder `name` in `parent` and everything in it, through handles only."""
+    child = _open_folder(parent, name)
+    if child is None:
+        os.unlink(name, dir_fd=parent)  # a link swapped in for the folder; raises if it's something else
+        return
+    try:
+        for entry in list(os.scandir(child)):
+            if entry.is_dir(follow_symlinks=False):
+                _delete(child, entry.name)
+            else:
+                os.unlink(entry.name, dir_fd=child)
+    finally:
+        os.close(child)
+    os.rmdir(name, dir_fd=parent)
