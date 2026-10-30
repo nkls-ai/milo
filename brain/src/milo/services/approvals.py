@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import unicodedata
 import uuid
 from collections.abc import Callable, Mapping
 
@@ -93,8 +94,13 @@ SEE_WINDOW = " (all of it is in the Milo window)"
 
 
 def bubble_lines(text: str) -> int:
-    """About how many lines `text` takes in the bubble: each line break starts one, long lines wrap."""
-    return sum(max(1, -(-len(line) // LINE_CHARS)) for line in text.split("\n"))
+    """About how many lines `text` takes in the bubble, erring high: every kind of line break starts one
+    (splitlines knows \r, \u2028 and the rest), long lines wrap, and wide characters (CJK, emoji) count twice."""
+    return sum(max(1, -(-_width(line) // LINE_CHARS)) for line in text.splitlines() or [""])
+
+
+def _width(line: str) -> int:
+    return sum(2 if unicodedata.east_asian_width(c) in "WF" or ord(c) > 0xFFFF else 1 for c in line)
 
 
 def fit_bubble(question: str, detail: str) -> tuple[str, str]:

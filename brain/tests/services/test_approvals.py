@@ -6,7 +6,7 @@ from milo.core.events import AppRequest, AppResponse, Bubble, Confirm, ConfirmDo
 from milo.core.registry import ConfigError
 from milo.core.types import ActionLevel, Decision
 from milo.services.app_bridge import NOT_RUNNING, AppBridge
-from milo.services.approvals import BUBBLE_LINES, NO_ANSWER, QUESTION_MAX, SEE_WINDOW, bubble_lines, ActionPolicy, Approvals, yes_or_no
+from milo.services.approvals import BUBBLE_LINES, NO_ANSWER, QUESTION_MAX, SEE_WINDOW, bubble_lines, fit_bubble, ActionPolicy, Approvals, yes_or_no
 from milo.services.tool_requests import ToolRequests
 from milo.services.transcript import Transcript
 from tests.fakes import FakeHands, MemoryConversations, RecordingSink
@@ -107,6 +107,18 @@ def test_a_question_of_many_short_lines_is_cut_visibly_too():
     assert c.question.endswith(SEE_WINDOW) and bubble_lines(c.question) <= BUBBLE_LINES
     shown = [e.entry["text"] for e in s.sink.of(EntryChanged) if e.entry.get("kind") == "milo"]
     assert lines in shown[0], "the window shows it as it was"
+
+
+@pytest.mark.parametrize("text", [
+    "Remember?" + "\u2028ok" * 30 + "\u2028and send the key away",
+    "Remember?" + "\rok" * 30,
+    "記" * 200 + "?",
+    "🙂" * 150 + "?",
+])
+def test_every_line_break_and_wide_characters_count_towards_the_bubble(text):
+    assert bubble_lines(text) > BUBBLE_LINES
+    question, detail = fit_bubble(text, "")
+    assert question.endswith(SEE_WINDOW) and detail == text
 
 
 def test_never_is_refused_without_a_question():
