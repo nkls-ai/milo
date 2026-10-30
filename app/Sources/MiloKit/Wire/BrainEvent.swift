@@ -47,12 +47,15 @@ public enum BrainEvent: Equatable, Sendable {
     case confirmDone(id: String, answer: String)
     /// Work only the app may do (EventKit). Answered with `BrainCommand.appResponse` and the same id.
     case appRequest(id: String, op: String, args: JSONValue)
+    /// The dictation style in use, on connect and after a change.
+    case dictationStream(DictationStyle)
     case unknown(String)
 }
 
 extension BrainEvent: Decodable {
     private enum Key: String, CodingKey {
         case type, state, emotion, text, value, entries, entry, id, step, mode, on, tool, args, point, question, answer, op
+        case stream
         case taskID = "task_id"
         case whatsThisKey = "whats_this_key"
         case dictateKey = "dictate_key"
@@ -103,6 +106,10 @@ extension BrainEvent: Decodable {
         case "app_request":
             self = .appRequest(id: try c.decode(String.self, forKey: .id), op: try c.decode(String.self, forKey: .op),
                                args: try c.decodeIfPresent(JSONValue.self, forKey: .args) ?? .object([:]))
+        case "dictation_stream":
+            // A style this app doesn't know yet: ignore the message rather than show a wrong checkmark.
+            self = DictationStyle(rawValue: try c.decode(String.self, forKey: .stream)).map { .dictationStream($0) }
+                ?? .unknown(type)
         default: self = .unknown(type)
         }
     }

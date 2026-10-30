@@ -8,9 +8,10 @@ import pytest
 
 from milo.brain import Brain
 from milo.config import UiSettings
-from milo.core.events import (Bubble, Dictation, EmotionChanged, HandsSession, Heard, Level, ListenStart, ListenStop,
-                              Looking, Mute, StateChanged, Status, TextInput, UiConfig, parse_command)
-from milo.core.types import Emotion, HandsError, ListenMode, MiloState, Nudge, ScreenCapture
+from milo.core.events import (Bubble, Dictation, DictationStream, EmotionChanged, HandsSession, Heard, Level,
+                              ListenStart, ListenStop, Looking, Mute, Partial, SetDictationStream, StateChanged, Status,
+                              TextInput, UiConfig, parse_command)
+from milo.core.types import Emotion, HandsError, ListenMode, LiveMode, MiloState, Nudge, ScreenCapture
 from milo.services.app_bridge import AppEyes, AppHands
 from tests.fakes import FakeEyes, FakeHands, FakeLiveModel, FakeTranscriber
 from tests.services.stack import Stack, settle
@@ -39,7 +40,8 @@ def test_greeting_draws_the_current_state_and_sends_the_configured_keys():
     brain = Brain(s.ui, s.listening, s.live_talk, s.context, s.heartbeat,
                   UiSettings("right_command", "right_control"))
     assert brain.greeting() == [StateChanged(MiloState.IDLE), EmotionChanged(Emotion.NEUTRAL),
-                                UiConfig("right_command", "right_control", whats_this_key="ctrl+option+m")]
+                                UiConfig("right_command", "right_control", whats_this_key="ctrl+option+m"),
+                                DictationStream("off")]
     s.ui.set_state(MiloState.THINKING)
     s.ui.set_emotion(Emotion.SAD)
     assert brain.greeting()[:2] == [StateChanged(MiloState.THINKING), EmotionChanged(Emotion.SAD)]
@@ -164,7 +166,16 @@ def check_app_response(s: Stack, msg: dict) -> None:
     assert asyncio.run(go()) == (msg["result"] if msg["ok"] else msg["error"])
 
 
+def check_set_dictation_stream(s: Stack, msg: dict) -> None:
+    saved: list[str] = []
+    brain = Brain(s.ui, s.listening, s.live_talk, s.context, None, UiSettings(), save_stream=saved.append)
+    run(s, parse_command(msg), brain=brain)
+    assert s.listening.live_mode is LiveMode(msg["stream"]) and saved == [msg["stream"]]
+    assert s.sink.events == [DictationStream(msg["stream"])]
+
+
 CHECKS = {
+    "set_dictation_stream": check_set_dictation_stream,
     "look_result": check_look_result,
     "whats_this": check_whats_this,
     "hands_result": check_hands_result,
@@ -243,3 +254,23 @@ def test_mute_stops_nudges_but_reminders_still_show_silently():
     asyncio.run(go())
     assert s.bubbles()[-1] == "Time to stretch."
     assert s.voice.spoken == ["Time to stretch."]
+
+
+def test_a_dictation_style_picked_in_the_menu_applies_to_the_next_recording():
+    s = Stack(transcriber=FakeTranscriber("one", "two"))
+    run(s, ListenStart(ListenMode.DICTATE), ListenStop())
+    assert s.sink.of(Partial) == []
+    run(s, SetDictationStream(LiveMode.PREVIEW))
+    assert s.brain.greeting()[3] == DictationStream("preview")
+
+
+def test_a_style_that_cant_be_saved_still_applies_and_says_so():
+    s = Stack()
+
+    def broken(stream: str) -> None:
+        raise OSError("read-only")
+
+    brain = Brain(s.ui, s.listening, s.live_talk, s.context, None, UiSettings(), save_stream=broken)
+    run(s, SetDictationStream(LiveMode.TYPE), brain=brain)
+    assert s.listening.live_mode is LiveMode.TYPE
+    assert s.sink.of(Status) and s.sink.of(DictationStream) == [DictationStream("type")]

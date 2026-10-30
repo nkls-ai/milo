@@ -35,6 +35,8 @@ public final class MiloController {
     /// Looking at the screen and the worker's actions on it; nil without those ports.
     public let screen: ScreenController?
     public private(set) var muted = false
+    /// The dictation style the brain uses; nil until it says.
+    public private(set) var dictationStyle: DictationStyle?
     public var bindings: HotkeyBindings { pushToTalk.bindings }
     /// Called when `ui_config` changes the bindings.
     public var onBindingsChange: ((HotkeyBindings) -> Void)?
@@ -107,6 +109,11 @@ public final class MiloController {
         launcher.restart()
     }
 
+    /// The menu's "Dictation style". The brain confirms with `dictation_stream`.
+    public func setDictationStyle(_ style: DictationStyle) {
+        brain.send(.setDictationStream(style))
+    }
+
     static let noConnections = "This version of Milo can't reach your calendar or reminders."
 
     static let pasteBlocked = "I can't paste: macOS turned off my Accessibility permission. Your text is on the clipboard, press ⌘V. To fix it, remove Milo in System Settings › Privacy & Security › Accessibility and add him again."
@@ -134,6 +141,8 @@ public final class MiloController {
             onBindingsChange?(next)
         case .history, .entry, .replyDelta, .activity:
             transcript.apply(event)
+        case let .dictationStream(style):
+            dictationStyle = style
         case let .appRequest(id, op, args):
             guard let connections else {
                 brain.send(.appResponse(id: id, outcome: .failure(Self.noConnections)))

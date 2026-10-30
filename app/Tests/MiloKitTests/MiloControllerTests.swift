@@ -114,6 +114,21 @@ private final class Harness {
         #expect(h.brain.sent == [.mute(false)])
     }
 
+    @Test func theDictationStyleComesFromTheBrainAndTheMenuAsksToChangeIt() {
+        let h = Harness()
+        h.brain.connect()
+        #expect(h.controller.dictationStyle == nil)
+        h.brain.emit(.dictationStream(.preview))
+        #expect(h.controller.dictationStyle == .preview)
+
+        h.brain.clearSent()
+        h.controller.setDictationStyle(.type)
+        #expect(h.brain.sent == [.setDictationStream(.type)])
+        #expect(h.controller.dictationStyle == .preview, "the checkmark moves once the brain confirms")
+        h.brain.emit(.dictationStream(.type))
+        #expect(h.controller.dictationStyle == .type)
+    }
+
     @Test func losingTheBrainMidAnswerReturnsMiloToIdle() {
         let h = Harness()
         h.brain.connect()

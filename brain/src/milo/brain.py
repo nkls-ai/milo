@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
 from .config import UiSettings
-from .core.events import (AppResponse, Command, ConfirmAnswer, ContextUpdate, EmotionChanged, Event, GetHistory,
-                          HandsResult, HandsStop, ListenCancel, ListenConfirm, ListenStart, ListenStop, LookResult,
-                          Mute, StateChanged, TextInput, UiConfig, WhatsThis)
+from .core.types import LiveMode
+from .core.events import (AppResponse, Command, ConfirmAnswer, ContextUpdate, DictationStream, EmotionChanged, Event,
+                          GetHistory, HandsResult, HandsStop, ListenCancel, ListenConfirm, ListenStart, ListenStop,
+                          LookResult, Mute, SetDictationStream, StateChanged, Status, TextInput, UiConfig, WhatsThis)
 from .services.app_bridge import AppBridge
 from .services.approvals import Approvals
 from .services.context import UserContext
@@ -27,12 +29,15 @@ WHATS_THIS = "What's this?"
 
 class Brain:
     """`bridge` resolves the app's answers to looks, Mac actions and app work; `approvals` takes the answers
-    to Milo's questions. `screens` is state/screens: an image path from the app counts only if it points in there."""
+    to Milo's questions. `screens` is state/screens: an image path from the app counts only if it points in there.
+    `save_stream` writes a dictation style picked in the menu to config.toml."""
 
     def __init__(self, ui: UiState, listening: Listening, live_talk: LiveTalk, context: UserContext,
                  heartbeat: HeartbeatRunner | None, ui_settings: UiSettings, transcript: Transcript | None = None,
                  *, approvals: Approvals | None = None, bridge: AppBridge | None = None,
-                 hands: HandsService | None = None, screens: Path | None = None):
+                 hands: HandsService | None = None, screens: Path | None = None,
+                 save_stream: Callable[[str], None] | None = None):
+        self._save_stream = save_stream
         self._hands = hands
         self._screens = screens
         self._ui = ui
@@ -51,6 +56,7 @@ class Brain:
                 UiConfig(self._ui_settings.dictate_key, self._ui_settings.talk_key,
                          self._ui_settings.hands_free_max_s, self._ui_settings.whats_this_key,
                          self._ui_settings.character),
+                DictationStream(self._listening.live_mode.value),
                 *self._history()]
 
     def _history(self) -> list[Event]:
@@ -94,8 +100,21 @@ class Brain:
             case AppResponse():
                 if self._bridge is not None:
                     self._bridge.resolve(command)
+            case SetDictationStream(stream):
+                self._set_stream(stream.value)
             case _:
                 log.warning("no handler for %s", command.type)
+
+    def _set_stream(self, stream: str) -> None:
+        self._listening.live_mode = LiveMode(stream)
+        log.info("dictation stream %s", stream)
+        if self._save_stream is not None:
+            try:
+                self._save_stream(stream)
+            except (OSError, ValueError):
+                log.exception("could not save the dictation style")
+                self._ui.emit(Status("I'll use that until I restart, but I couldn't save it in config.toml."))
+        self._ui.emit(DictationStream(stream))
 
     def _answer(self, id: str, value: object) -> None:
         if self._bridge is not None:

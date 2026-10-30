@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from milo.core import events as ev
-from milo.core.types import Emotion, ListenMode, MiloState
+from milo.core.types import Emotion, ListenMode, LiveMode, MiloState
 from tests import fakes
 from milo.core import ports
 
@@ -35,6 +35,7 @@ OUTBOUND = {
     "confirm": lambda m: ev.Confirm(m["id"], m["question"]),
     "confirm_done": lambda m: ev.ConfirmDone(m["id"], m["answer"]),
     "app_request": lambda m: ev.AppRequest(m["id"], m["op"], m["args"]),
+    "dictation_stream": lambda m: ev.DictationStream(m["stream"]),
 }
 
 
@@ -76,6 +77,7 @@ def test_parsed_values():
     assert ev.parse_command({"type": "app_response", "id": "a1", "ok": True, "result": [1]}) == \
         ev.AppResponse("a1", True, [1])
     assert ev.parse_command({"type": "app_response", "id": "a1", "ok": "yes"}).ok is False
+    assert ev.parse_command({"type": "set_dictation_stream", "stream": "off"}) == ev.SetDictationStream(LiveMode.OFF)
 
 
 @pytest.mark.parametrize("raw", [
@@ -85,6 +87,7 @@ def test_parsed_values():
     {"type": "hands_result", "id": "h", "ok": True, "result": []},
     {"type": "confirm_answer", "id": "q1", "yes": "no"}, {"type": "confirm_answer", "yes": True},
     {"type": "app_response", "ok": True},
+    {"type": "set_dictation_stream", "stream": "instant"}, {"type": "set_dictation_stream"},
 ])
 def test_bad_commands_raise_protocol_error(raw):
     with pytest.raises(ev.ProtocolError):

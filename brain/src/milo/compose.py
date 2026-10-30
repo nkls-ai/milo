@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .brain import Brain
 from .config import Config
+from .config_edit import set_value
 from .core.clock import SystemClock
 from .core.ports import Harness, LiveModel, Transcriber, Voice
 from .core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, HARNESSES, LIVE_MODELS, TEXT_CLEANERS, TRANSCRIBERS,
@@ -131,7 +132,8 @@ def build(home: Path) -> Runtime:
                                     busy=lambda: live_talk.busy)
 
     brain = Brain(ui, listening, live_talk, context, heartbeat, config.ui, transcript, approvals=approvals,
-                  bridge=bridge, hands=hands, screens=workspace.screens_dir)
+                  bridge=bridge, hands=hands, screens=workspace.screens_dir,
+                  save_stream=lambda stream: set_value(workspace.config_path, "dictation", "stream", stream))
     return Runtime(brain, server, heartbeat, transcriber, voice, stt_executor, tts_executor, harness,
                    live_model, live_talk, tool_server, hands_server)
 

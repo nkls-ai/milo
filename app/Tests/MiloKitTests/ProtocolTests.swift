@@ -68,6 +68,7 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .appRequest(id: "a41f", op: "calendar.add_event", args: .object([
                 "title": .string("Doctor"), "start": .string("2026-11-05T15:00:00"), "end": .string("2026-11-05T16:00:00"),
             ])),
+            .dictationStream(.preview),
         ])
     }
 
@@ -98,6 +99,7 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             ]))),
             .appResponse(id: "a42f", outcome: .failure(
                 "Milo isn't allowed to use your calendar. Turn it on in System Settings › Privacy & Security › Calendars.")),
+            .setDictationStream(.type),
         ]
         let encoder = JSONEncoder()
         let encoded = try commands.map { command in
@@ -110,6 +112,11 @@ private func entries(_ key: String) throws -> [[String: Any]] {
         for (command, object) in zip(commands, encoded) where !expected.contains(object) {
             Issue.record("\(command) encodes to \(object), which protocol/messages.json doesn't list")
         }
+    }
+
+    @Test func anUnknownDictationStyleIsIgnored() throws {
+        let data = Data(#"{"type": "dictation_stream", "stream": "telepathy"}"#.utf8)
+        #expect(try JSONDecoder().decode(BrainEvent.self, from: data) == .unknown("dictation_stream"))
     }
 
     @Test func unknownTypeDecodesToUnknown() throws {

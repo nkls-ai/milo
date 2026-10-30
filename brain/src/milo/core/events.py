@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any, ClassVar
 
-from .types import Emotion, ListenMode, MiloState, ScreenCapture
+from .types import Emotion, ListenMode, LiveMode, MiloState, ScreenCapture
 
 
 class ProtocolError(ValueError):
@@ -216,6 +216,14 @@ class AppRequest(Event):
     args: dict
 
 
+@dataclass(frozen=True)
+class DictationStream(Event):
+    """The current [dictation] stream ("off", "preview" or "type"), on connect and after a change."""
+
+    type: ClassVar[str] = "dictation_stream"
+    stream: str
+
+
 # ---- app -> brain
 
 
@@ -340,6 +348,14 @@ class AppResponse(Command):
     error: str = ""
 
 
+@dataclass(frozen=True)
+class SetDictationStream(Command):
+    """The user picked a dictation style in the menu. The brain uses it from the next recording and saves it."""
+
+    type: ClassVar[str] = "set_dictation_stream"
+    stream: LiveMode
+
+
 def parse_command(raw: object) -> Command:
     if not isinstance(raw, dict):
         raise ProtocolError("message must be a JSON object")
@@ -384,6 +400,8 @@ def parse_command(raw: object) -> Command:
                 return ConfirmAnswer(str(raw["id"]), raw["yes"])
             case "app_response":
                 return AppResponse(str(raw["id"]), raw["ok"] is True, raw.get("result"), str(raw.get("error") or ""))
+            case "set_dictation_stream":
+                return SetDictationStream(LiveMode(raw["stream"]))
     except (KeyError, TypeError, ValueError) as e:
         raise ProtocolError(f"bad {kind} message: {e}") from None
     raise ProtocolError(f"unknown message type {kind!r}")
