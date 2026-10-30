@@ -35,7 +35,8 @@
     {"type": "confirm_done", "id": "3b9e7a01c4d2", "answer": "yes"},
     {"type": "app_request", "id": "a41f", "op": "calendar.add_event", "args": {"title": "Doctor", "start": "2026-11-05T15:00:00", "end": "2026-11-05T16:00:00"}},
     {"type": "helpers", "helpers": [{"id": "c0ffee12ab34", "title": "Budget table in Excel", "status": "working", "step": "Typing “Monday” in Excel", "progress": 0.4}, {"id": "d00d12ab3456", "title": "Flights to Lisbon", "status": "queued", "step": "Waiting for a free helper"}, {"id": "e1e1e1e1e1e1", "title": "Sort downloads", "status": "needs_you", "step": "Waiting for your answer"}, {"id": "f2f2f2f2f2f2", "title": "Dentist email", "status": "done", "step": ""}]},
-    {"type": "hands_borrow", "on": true, "what": "mouse"}
+    {"type": "hands_borrow", "on": true, "what": "mouse"},
+    {"type": "routines", "routines": [{"id": "monday-report", "name": "Monday report", "description": "Sums last week's sales into a one-page report.", "schedule": "every Monday at 09:00", "paused": false, "last_run": "2026-10-26 09:00, done", "next_run": "2026-11-02T09:00", "inputs": ["month"]}, {"id": "tidy-downloads", "name": "Tidy downloads", "description": "", "schedule": "", "paused": true, "last_run": "", "inputs": []}, {"id": "broken", "name": "broken", "problem": "it must start with a line of three dashes (---)"}], "drafts": [{"id": "d4e5f6a7", "name": "Invoice folder", "recipe": "---\nname: Invoice folder\nschedule:\npaused: no\nversion: 1\n---\n\n## Steps\n\n1. Move this month's invoices from Downloads into Invoices.\n   Check: Downloads has no invoice left.\n", "schedule": ""}]}
   ],
   "app_to_brain": [
     {"type": "listen_start", "mode": "dictate"},
@@ -59,6 +60,9 @@
     {"type": "app_response", "id": "a41f", "ok": true, "result": {"id": "E1F2-77", "title": "Doctor", "start": "2026-11-05T15:00:00", "end": "2026-11-05T16:00:00", "calendar": "Home"}},
     {"type": "app_response", "id": "a42f", "ok": false, "error": "Milo isn't allowed to use your calendar. Turn it on in System Settings › Privacy & Security › Calendars."},
     {"type": "stop_helper", "id": "c0ffee12ab34"},
-    {"type": "hands_result", "id": "hands-7", "ok": false, "result": {"borrow": "mouse"}, "error": "Excel doesn't take clicks in the background."}
+    {"type": "hands_result", "id": "hands-7", "ok": false, "result": {"borrow": "mouse"}, "error": "Excel doesn't take clicks in the background."},
+    {"type": "routine", "id": "monday-report", "action": "run"},
+    {"type": "routine", "id": "tidy-downloads", "action": "resume"},
+    {"type": "routine_draft_answer", "id": "d4e5f6a7", "save": true}
   ]
 }

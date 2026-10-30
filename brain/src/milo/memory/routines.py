@@ -8,7 +8,7 @@ import os
 from dataclasses import replace
 from pathlib import Path
 
-from milo.core.routines import RecipeError, Routine, parse, render, slugify
+from milo.core.routines import RecipeError, Routine, field_line, parse, render, slugify, split
 
 log = logging.getLogger(__name__)
 
@@ -20,9 +20,10 @@ class MarkdownRoutineBook:
     """RoutineBook over a folder of `<slug>.md` files. A file is parsed again only when its mtime or size
     changes, so listing the routines before every chat message costs a few stat() calls."""
 
-    def __init__(self, folder: Path, runs_path: Path):
+    def __init__(self, folder: Path, runs_path: Path, drafts: Path):
         self.folder = folder
         self.runs_path = runs_path
+        self.drafts = drafts
         self._cache: dict[Path, tuple[tuple[int, int], Routine | RecipeError]] = {}
 
     def all(self) -> list[Routine]:
@@ -43,18 +44,41 @@ class MarkdownRoutineBook:
         return routine
 
     def rename(self, slug: str, name: str) -> Routine:
-        old = self.get(slug)
-        if old is None:
-            raise ValueError("there is no such routine")
         name = " ".join(name.split())
         new_slug = slugify(name)
         if new_slug != slug and self._path(new_slug).exists():
             raise ValueError(f"there is a routine called {name} already")
-        renamed = replace(old, slug=new_slug, name=name)
-        self.save(renamed)
+        renamed = self.update(slug, {"name": name})
         if new_slug != slug:
-            self._path(slug).unlink(missing_ok=True)
-        return renamed
+            os.replace(self._path(slug), self._path(new_slug))
+            self._cache.pop(self._path(slug), None)
+        return replace(renamed, slug=new_slug)
+
+    def update(self, slug: str, fields: dict[str, str]) -> Routine:
+        path = self._path(slug)
+        try:
+            text = path.read_text(encoding="utf-8") if _safe(slug) else ""
+        except FileNotFoundError:
+            text = ""
+        parts = split(text)
+        if parts is None:
+            raise ValueError("there is no such routine")
+        head, body = parts
+        for key, value in fields.items():
+            line = field_line(key, value)
+            at = next((i for i, h in enumerate(head) if h.split(":", 1)[0].strip() == key and not h[:1].isspace()),
+                      None)
+            if at is None:
+                head.append(line)
+            else:
+                head[at] = line
+        updated = "\n".join(["---", *head, "---", body]) + ("" if body.endswith("\n") else "\n")
+        try:
+            routine = parse(updated, slug)
+        except RecipeError as e:
+            raise ValueError(str(e)) from None
+        _write(path, updated)
+        return routine
 
     def delete(self, slug: str) -> bool:
         path = self._path(slug)
@@ -92,6 +116,21 @@ class MarkdownRoutineBook:
                 if len(out) >= n:
                     break
         return out[::-1]
+
+    def draft_path(self, draft: str) -> Path:
+        return self.drafts / f"{slugify(draft)}.md"
+
+    def read_draft(self, draft: str) -> str | None:
+        try:
+            return self.draft_path(draft).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return None
+
+    def write_draft(self, draft: str, text: str) -> None:
+        _write(self.draft_path(draft), text)
+
+    def drop_draft(self, draft: str) -> None:
+        self.draft_path(draft).unlink(missing_ok=True)
 
     def _path(self, slug: str) -> Path:
         return self.folder / f"{slug}.md"

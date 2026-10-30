@@ -19,7 +19,7 @@ log = logging.getLogger("milo.config")
 KEY_NAMES = ("fn", "right_option", "right_command", "right_control")
 CHARACTERS = ("pip", "classic")
 PLUGGABLE = ("chat", "harness", "stt", "tts", "audio", "dictation", "connections")
-SECTIONS = (*PLUGGABLE, "ui", "heartbeat", "hands", "approvals", "logging")
+SECTIONS = (*PLUGGABLE, "ui", "heartbeat", "hands", "approvals", "logging", "routines")
 _COMBO = re.compile(r"^((ctrl|control|option|alt|shift|cmd|command)\+)+[a-z0-9]+$|^f([1-9]|1[0-9])$")
 
 # `use` when a section leaves it out. Lets configs written before a section existed keep working.
@@ -133,6 +133,28 @@ class ApprovalSettings:
     """Say the question aloud, besides showing it."""
 
 
+MAX_ROUTINE_RUNS = 50
+
+
+@dataclass(frozen=True)
+class RoutineSettings:
+    enabled: bool = True
+    """Routines: recipes Milo keeps in ~/Milo/routines and runs again on request or on a schedule."""
+    max_runs_per_day: int = 6
+    """Scheduled runs a day, all routines together. Asking for one yourself is never capped."""
+    grace_hours: float = 4.0
+    """A scheduled run the Mac slept through runs at wake if it is at most this late; after that Milo says he
+    missed it."""
+
+    def __post_init__(self):
+        if isinstance(self.max_runs_per_day, bool) or not isinstance(self.max_runs_per_day, int) \
+                or not 0 <= self.max_runs_per_day <= MAX_ROUTINE_RUNS:
+            raise ConfigError(f"[routines] max_runs_per_day must be a whole number from 0 to {MAX_ROUTINE_RUNS}")
+        if isinstance(self.grace_hours, bool) or not isinstance(self.grace_hours, (int, float)) \
+                or not 0 <= self.grace_hours <= 48:
+            raise ConfigError("[routines] grace_hours must be from 0 to 48")
+
+
 @dataclass(frozen=True)
 class LoggingSettings:
     content: bool = False
@@ -184,6 +206,7 @@ class Config:
         heartbeat = {k: v for k, v in raw.get("heartbeat", {}).items() if k == "enabled"}
         self.heartbeat = _typed(HeartbeatSettings(**heartbeat), "heartbeat")
         self.hands = _typed(options_from(HandsSettings, _current(raw.get("hands", {}), "hands"), "hands"), "hands")
+        self.routines = _typed(options_from(RoutineSettings, raw.get("routines", {}), "routines"), "routines")
 
     @classmethod
     def load(cls, path: Path) -> Config:

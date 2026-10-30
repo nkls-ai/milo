@@ -15,7 +15,8 @@ REPORT = Routine("monday-report", "Monday report", "The weekly report.", (Routin
 
 @pytest.fixture
 def book(tmp_path):
-    return MarkdownRoutineBook(tmp_path / "routines", tmp_path / "state" / "routine-runs.jsonl")
+    return MarkdownRoutineBook(tmp_path / "routines", tmp_path / "state" / "routine-runs.jsonl",
+                               tmp_path / "state" / "routine-drafts")
 
 
 def test_save_and_read_back(book):
@@ -55,6 +56,31 @@ def test_delete_moves_it_aside(book):
     assert book.delete("monday-report")
     assert sorted(p.name for p in (book.folder / "deleted").iterdir()) == ["monday-report-2.md", "monday-report.md"]
     assert not book.delete("monday-report") and not book.delete("../x")
+
+
+def test_update_keeps_what_the_user_wrote(book):
+    book.save(REPORT)
+    path = book.folder / "monday-report.md"
+    path.write_text(path.read_text().replace("schedule:", "# my own note\nschedule:"))
+    updated = book.update("monday-report", {"paused": "yes", "last_run": "2026-10-30 09:00, done", "schedule": ""})
+    text = path.read_text()
+    assert "# my own note\n" in text and "paused: yes" in text and "last_run: 2026-10-30 09:00, done" in text
+    assert updated.paused and updated.schedule == "" and updated.body == REPORT.body
+    assert updated.fingerprint() == REPORT.fingerprint()
+    with pytest.raises(ValueError, match="yes or no"):
+        book.update("monday-report", {"paused": "maybe"})
+    assert book.get("monday-report").paused  # left as it was
+    with pytest.raises(ValueError, match="no such"):
+        book.update("nothing", {"paused": "no"})
+
+
+def test_drafts(book):
+    assert book.read_draft("d1") is None
+    book.write_draft("d1", "---\nname: X\n---\n")
+    assert book.draft_path("d1").parent == book.drafts and book.read_draft("d1").startswith("---")
+    book.drop_draft("d1")
+    book.drop_draft("d1")
+    assert book.read_draft("d1") is None
 
 
 def test_run_log(book):

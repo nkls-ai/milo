@@ -37,6 +37,7 @@ OUTBOUND = {
     "app_request": lambda m: ev.AppRequest(m["id"], m["op"], m["args"]),
     "helpers": lambda m: ev.Helpers(m["helpers"]),
     "hands_borrow": lambda m: ev.HandsBorrow(m["on"], m["what"]),
+    "routines": lambda m: ev.Routines(m["routines"], m["drafts"]),
 }
 
 
@@ -109,3 +110,14 @@ def test_bad_commands_raise_protocol_error(raw):
 ])
 def test_fakes_satisfy_their_ports(fake, port):
     assert isinstance(fake, port)
+
+
+def test_routine_commands():
+    assert ev.parse_command({"type": "routine", "id": "monday-report", "action": "run"}) == \
+        ev.RoutineAction("monday-report", "run")
+    assert ev.parse_command({"type": "routine_draft_answer", "id": "d1", "save": False}) == \
+        ev.RoutineDraftAnswer("d1", False)
+    with pytest.raises(ev.ProtocolError):
+        ev.parse_command({"type": "routine", "id": "x", "action": "explode"})
+    with pytest.raises(ev.ProtocolError):
+        ev.parse_command({"type": "routine_draft_answer", "id": "d1", "save": "yes"})

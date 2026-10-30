@@ -27,6 +27,7 @@ from .services.heartbeat_runner import HeartbeatRunner
 from .services.listening import Listening
 from .services.live_talk import LiveTalk, untrusted
 from .services.orchestrator import HelperQuestions, Orchestrator
+from .services.routines import Routines
 from .services.speaker import Speaker
 from .services.task_runner import TaskRunner
 from .services.tool_requests import ToolRequests
@@ -66,6 +67,7 @@ def build(home: Path) -> Runtime:
     from .memory.ledger import JsonlUsageLedger
     from .memory.profile import MarkdownProfile
     from .memory.reminders import MarkdownReminders
+    from .memory.routines import JsonStateFile, MarkdownRoutineBook
     from .memory.transcript import JsonlTranscript
     from .memory.workspace import Workspace
 
@@ -134,9 +136,17 @@ def build(home: Path) -> Runtime:
     helpers = Orchestrator(runner, speaker, ui, clock, transcript=transcript, max_helpers=settings.max_helpers,
                            quiet=lambda: live_talk.busy or mic.active, updates=updates, milestones=Milestones(),
                            inert=untrusted)
+    routines = None
+    if config.routines.enabled:
+        book = MarkdownRoutineBook(workspace.routines_dir, workspace.routine_runs_path, workspace.routine_drafts_dir)
+        routines = Routines(book, JsonStateFile(workspace.routine_state_path), helpers, speaker, ui, clock,
+                            transcript=transcript, approvals=approvals, quiet=lambda: live_talk.busy or mic.active,
+                            max_runs_per_day=lambda: config.routines.max_runs_per_day,
+                            grace_s=config.routines.grace_hours * 3600, inert=untrusted)
+        # Memory (episodes): routines.on_episode = <the episode log>.append
     live_talk = LiveTalk(live_model, speaker, ui, context, clock, profile, reminders, ledger,
                          _persona(workspace.persona_path), idle_reset_s, helpers, transcript, eyes=AppEyes(bridge),
-                         approvals=approvals)
+                         approvals=approvals, routines=routines)
     helpers.on_result = live_talk.note
     updates.speak = live_talk.speak_update
     listening = Listening(mic, transcriber, stt_executor, ui, DictationService(cleaner, history, ui),
@@ -149,9 +159,11 @@ def build(home: Path) -> Runtime:
         engine = build_engine(config.section("heartbeat"), ctx, reminders)
         heartbeat = HeartbeatRunner(engine, context, conversation, speaker, ui, mic, clock,
                                     busy=lambda: live_talk.busy)
+        if routines is not None:
+            heartbeat.on_tick.append(routines.tick)
 
     brain = Brain(ui, listening, live_talk, context, heartbeat, config.ui, transcript, approvals=approvals,
-                  bridge=bridge, hands=hands, screens=workspace.screens_dir, helpers=helpers)
+                  bridge=bridge, hands=hands, screens=workspace.screens_dir, helpers=helpers, routines=routines)
     return Runtime(brain, server, heartbeat, transcriber, voice, stt_executor, tts_executor, harness,
                    live_model, live_talk, tool_server, hands_server, helpers)
 

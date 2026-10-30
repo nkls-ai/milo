@@ -230,6 +230,22 @@ def _flow_list(value: str, line: int) -> list[str]:
     return [i.strip() for i in items if i and i.strip()]
 
 
+def field_line(key: str, value: str) -> str:
+    """One front matter line, as render() writes it."""
+    return f"{key}: {_value(value)}" if value.strip() else f"{key}:"
+
+
+def split(text: str) -> tuple[list[str], str] | None:
+    """The front matter lines and the rest of a routine file, or None if it has no front matter."""
+    lines = text.lstrip("\ufeff").splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None
+    end = next((i for i in range(1, len(lines)) if lines[i].strip() == "---"), None)
+    if end is None:
+        return None
+    return lines[1:end], "\n".join(lines[end + 1:])
+
+
 def _value(text: str) -> str:
     """A front matter value, quoted only when it has to be."""
     text = " ".join(text.split())

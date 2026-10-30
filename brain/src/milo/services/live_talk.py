@@ -24,6 +24,7 @@ from .ui_state import UiState
 
 if TYPE_CHECKING:
     from .orchestrator import Orchestrator
+    from .routines import Routines
 
 log = logging.getLogger("milo.live")
 
@@ -147,8 +148,9 @@ class LiveTalk:
                  profile: ProfileMemory, reminders: ReminderBook, ledger: UsageLedger,
                  persona: Callable[[], str], idle_reset_s: float, tasks: Orchestrator,
                  transcript: Transcript | None = None, eyes: ScreenEyes | None = None,
-                 approvals: Approvals | None = None):
+                 approvals: Approvals | None = None, routines: Routines | None = None):
         self._model = model
+        self._routines = routines
         self._eyes = eyes
         self._approvals = approvals
         self._saw_screen = False
@@ -403,6 +405,8 @@ class LiveTalk:
         if self._eyes is not None:
             parts.append(LOOK_RULES.strip())
         parts.append(HELPER_RULES.strip())
+        if self._routines is not None:
+            parts.append(self._routines.rules())
         profile = self._profile.read().strip()
         if profile:
             parts.append(f"## What you know about the user\n\n{profile}")
@@ -414,7 +418,9 @@ class LiveTalk:
 
     def _prompt(self, text: str, notes: list[str]) -> str:
         helpers = self._tasks.board()
-        return stamp("\n".join([*notes, *([helpers] if helpers else []), text]), self._clock.now(), self._context.app)
+        routines = self._routines.note(self._system or "") if self._routines is not None else ""
+        blocks = [*notes, *([helpers] if helpers else []), *([routines] if routines else [])]
+        return stamp("\n".join([*blocks, text]), self._clock.now(), self._context.app)
 
     def _apply(self, parser: ReplyParser, *, screen: bool = False) -> None:
         """Save facts and reminders, start tasks the reply asked for, and start a look.
@@ -454,6 +460,9 @@ class LiveTalk:
             detail = change if question.endswith("…?") else ""
             effects.append((question, detail, lambda ref=ref, change=change: self._tasks.steer(
                 ref, change, careful=careful), ask_tasks))
+        if self._routines is not None:  # a routine run is a task: same rule, unless the routine says otherwise
+            for question, detail, apply, ask in self._routines.effects(parser.routines, careful=careful):
+                effects.append((question, detail, apply, ask_tasks if ask is None else ask))
         for ref in parser.stops:  # stopping is always safe
             self._tasks.stop(ref)
         for _, _, apply, ask in effects:

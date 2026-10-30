@@ -264,12 +264,27 @@ class RoutineBook(Protocol):
         """Give it a new name and the file a matching slug. Raises ValueError if that name is taken."""
         ...
 
+    def update(self, slug: str, fields: dict[str, str]) -> Routine:
+        """Set front matter fields (`paused`, `schedule`, `last_run`) in place, keeping the rest of the file as
+        the user wrote it. Raises ValueError if there is no such routine or the result wouldn't read."""
+        ...
+
     def delete(self, slug: str) -> bool:
         """Move the file aside (not gone: it can be put back by hand). False if there was none."""
         ...
 
+    def draft_path(self, draft: str) -> Path:
+        """Where a worker writes the recipe draft `draft` for the user to look at."""
+        ...
+
+    def read_draft(self, draft: str) -> str | None: ...
+
+    def write_draft(self, draft: str, text: str) -> None: ...
+
+    def drop_draft(self, draft: str) -> None: ...
+
     def record_run(self, slug: str, run: dict) -> None:
-        """Append one run ({"slug", "at", "outcome", "inputs", "result"}) to the run log."""
+        """Append one run ({"at", "outcome", "inputs", "result", ...}) to the run log."""
         ...
 
     def runs(self, slug: str, n: int = 5) -> list[dict]:

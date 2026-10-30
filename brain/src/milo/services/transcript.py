@@ -89,6 +89,10 @@ class Transcript:
                        for s in entry.steps]
         self._finish(entry)
 
+    def entry(self, id: str) -> TranscriptEntry | None:
+        """A recent entry by id, e.g. a finished task with its steps."""
+        return self._find(id)
+
     def _add(self, kind: EntryKind, text: str, *, finished: bool = False, **fields) -> TranscriptEntry:
         entry = TranscriptEntry(uuid.uuid4().hex[:12], self._clock.now().isoformat(timespec="seconds"), kind, text,
                                 **fields)

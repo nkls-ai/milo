@@ -242,6 +242,21 @@ class HandsBorrow(Event):
     what: str = ""
 
 
+@dataclass(frozen=True)
+class Routines(Event):
+    """The user's routines for the Milo window, by name, and the recipe drafts waiting for a look.
+
+    Each routine: {id, name, description, schedule, paused, last_run, next_run?, inputs, problem?}. `id` is the
+    file name without .md; `next_run` is a local time like "2026-11-02T09:00" while a schedule is on; a file
+    that doesn't read has only id, name and `problem`. Each draft: {id, name, recipe, schedule}, where `recipe`
+    is the whole file the user can save or ask to change. Sent on connect, on get_history and on every change.
+    """
+
+    type: ClassVar[str] = "routines"
+    routines: list[dict]
+    drafts: list[dict]
+
+
 # ---- app -> brain
 
 
@@ -374,6 +389,27 @@ class StopHelper(Command):
     id: str
 
 
+ROUTINE_ACTIONS = ("run", "pause", "resume", "delete")
+
+
+@dataclass(frozen=True)
+class RoutineAction(Command):
+    """A button in the Routines section of the Milo window: run, pause, resume or delete the routine `id`."""
+
+    type: ClassVar[str] = "routine"
+    id: str
+    action: str
+
+
+@dataclass(frozen=True)
+class RoutineDraftAnswer(Command):
+    """Save on a recipe draft (`save` true), or throw it away (false)."""
+
+    type: ClassVar[str] = "routine_draft_answer"
+    id: str
+    save: bool
+
+
 def parse_command(raw: object) -> Command:
     if not isinstance(raw, dict):
         raise ProtocolError("message must be a JSON object")
@@ -423,6 +459,15 @@ def parse_command(raw: object) -> Command:
                 if not id:
                     raise ProtocolError("id must not be empty")
                 return StopHelper(id)
+            case "routine":
+                action = str(raw["action"])
+                if action not in ROUTINE_ACTIONS:
+                    raise ProtocolError(f"action must be one of {', '.join(ROUTINE_ACTIONS)}")
+                return RoutineAction(str(raw["id"]), action)
+            case "routine_draft_answer":
+                if not isinstance(raw["save"], bool):
+                    raise ProtocolError("save must be true or false")
+                return RoutineDraftAnswer(str(raw["id"]), raw["save"])
     except (KeyError, TypeError, ValueError) as e:
         raise ProtocolError(f"bad {kind} message: {e}") from None
     raise ProtocolError(f"unknown message type {kind!r}")

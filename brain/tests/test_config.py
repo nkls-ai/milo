@@ -178,3 +178,15 @@ def test_hands_and_the_whats_this_key_have_defaults_and_can_be_changed():
     changed = Config.parse(MINIMAL + "[ui]\nwhats_this_key = \"cmd+shift+F12\"\n[hands]\napplescript = false\n")
     assert changed.ui.whats_this_key == "cmd+shift+F12" and not changed.hands.applescript
     assert Config.parse(MINIMAL + "[ui]\nwhats_this_key = \"\"\n").ui.whats_this_key == ""
+
+
+def test_routines_settings():
+    config = Config.parse(TEMPLATE.read_text())
+    assert config.routines.enabled and config.routines.max_runs_per_day == 6 and config.routines.grace_hours == 4
+    assert Config.parse(MINIMAL).routines.enabled
+    assert Config.parse("[routines]\nmax_runs_per_day = 0\ngrace_hours = 0.5").routines.grace_hours == 0.5
+    for bad, words in (("max_runs_per_day = 51", "max_runs_per_day"), ("max_runs_per_day = 2.5", "max_runs_per_day"),
+                       ("grace_hours = 49", "grace_hours"), ("grace_hours = -1", "grace_hours"),
+                       ("enabled = \"yes\"", "enabled"), ("colour = 1", "colour")):
+        with pytest.raises(ConfigError, match=words):
+            Config.parse(f"[routines]\n{bad}")

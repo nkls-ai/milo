@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable
+from datetime import datetime
 
 from milo.core.logtext import private
 from milo.core.ports import AudioInput, Clock, ProactiveEngine
@@ -43,6 +44,8 @@ class HeartbeatRunner:
         self._wait_s = wait_s
         self._poll_s = poll_s
         self.muted = False
+        self.on_tick: list[Callable[[datetime], None]] = []
+        """Other zero-token checks that run on every tick with the time, e.g. routine schedules."""
 
     async def run(self) -> None:
         while True:
@@ -53,7 +56,13 @@ class HeartbeatRunner:
                 log.exception("heartbeat tick failed")
 
     async def tick(self) -> None:
-        for nudge in self._engine.tick(self.signals()):
+        signals = self.signals()
+        for check in self.on_tick:
+            try:
+                check(signals.now)
+            except Exception:
+                log.exception("heartbeat check failed")
+        for nudge in self._engine.tick(signals):
             await self.deliver(nudge)
 
     def signals(self) -> Signals:
