@@ -250,3 +250,4 @@ def test_codex_gets_milo_mac_through_config_overrides(tmp_path):
     for cmd in (h.command("hi", None), h.command("again", "abc")):
         assert 'mcp_servers.milo-mac.command="/py"' in cmd
         assert 'mcp_servers.milo-mac.args=["-m", "milo.mcp_server"]' in cmd
+        assert 'mcp_servers.milo-mac.default_tools_approval_mode="approve"' in cmd

@@ -62,9 +62,11 @@ class CodexHarness:
         if self.model:
             cmd += ["-m", self.model]
         if self.mac_tools:
-            # JSON strings and arrays are valid TOML values.
+            # JSON strings and arrays are valid TOML values. exec can't ask for approval, so it would refuse
+            # every MCP call; the brain checks and asks about each one instead (checked with codex 0.164).
             cmd += ["-c", f"mcp_servers.{SERVER_NAME}.command={json.dumps(self.mac_tools[0])}",
-                    "-c", f"mcp_servers.{SERVER_NAME}.args={json.dumps(list(self.mac_tools[1:]))}"]
+                    "-c", f"mcp_servers.{SERVER_NAME}.args={json.dumps(list(self.mac_tools[1:]))}",
+                    "-c", f'mcp_servers.{SERVER_NAME}.default_tools_approval_mode="approve"']
         return cmd + ["--", prompt]
 
     async def reply(self, prompt: str, session_id: str | None, *, on_step: StepCallback | None = None) -> Reply:
