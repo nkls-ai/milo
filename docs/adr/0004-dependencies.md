@@ -14,3 +14,5 @@ The standard library handles everything else: transport (asyncio Unix sockets), 
 All were released within the last year. OmniVoice is an optional extra, so Milo also runs with macOS `say`. `[tts] fallback = "say"` takes over automatically if OmniVoice fails to load.
 
 Dev only: pytest.
+
+2026-10-30, app connections ([ADR 6](0006-app-connections-as-an-mcp-server.md)): no new package. The MCP server is JSON-RPC from the standard library instead of the `mcp` SDK, which would bring pydantic, anyio and an HTTP stack. Text comes out of documents through macOS itself: PDFKit via `osascript -l JavaScript`, `textutil` for Word, RTF and HTML, and `zipfile` plus `xml.etree` for xlsx. Calendar and Reminders use EventKit, which ships with macOS.
