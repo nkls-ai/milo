@@ -134,10 +134,14 @@ on run argv
 	set subj to item 2 of argv
 	set body to item 3 of argv
 	set mid to item 4 of argv
+	set fid to item 5 of argv
 	tell application "Mail"
 		if mid is not "" then
 			set m to reply (my findMessage(mid)) with opening window
 			set content of m to body
+		else if fid is not "" then
+			-- the body is left alone so the original and its attachments stay as Mail made them
+			set m to forward (my findMessage(fid)) with opening window
 		else
 			set m to make new outgoing message with properties {subject:subj, content:body, visible:true}
 		end if
@@ -173,10 +177,13 @@ class AppleMail:
             raise ToolError("I couldn't read that email.")
         return {"id": id, "from": r[0], "to": r[1].rstrip(", "), "subject": r[2], "date": r[3][:16], "text": r[4]}
 
-    def draft(self, to: list[str], subject: str, body: str, reply_to: str = "") -> dict:
-        saved = _osascript.run(_MAIL_DRAFT, "\n".join(to), subject, body, reply_to, app="Mail")
-        return {"draft": True, "sent": False, "subject": saved or subject, "to": to,
+    def draft(self, to: list[str], subject: str, body: str, reply_to: str = "", forward: str = "") -> dict:
+        saved = _osascript.run(_MAIL_DRAFT, "\n".join(to), subject, body, reply_to, forward, app="Mail")
+        done = {"draft": True, "sent": False, "subject": saved or subject, "to": to,
                 "where": "Open in Mail for the user to check and send."}
+        if forward and body:
+            done["note"] = "Your words weren't added, so the original stays whole. The user can add a line in Mail."
+        return done
 
 
 _NOTES_SEARCH = """

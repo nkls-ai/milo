@@ -277,8 +277,8 @@ class Mail(Protocol):
 
     def read(self, id: str) -> dict: ...
 
-    def draft(self, to: list[str], subject: str, body: str, reply_to: str = "") -> dict:
-        """Save a draft and open it in Mail for the user to check. `reply_to` is a message id."""
+    def draft(self, to: list[str], subject: str, body: str, reply_to: str = "", forward: str = "") -> dict:
+        """Save a draft and open it in Mail for the user to check. `reply_to` and `forward` are message ids."""
         ...
 
 

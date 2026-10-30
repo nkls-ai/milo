@@ -54,6 +54,8 @@ def title(tool: str, args: dict) -> str | None:
             to = _to(args)
             if args.get("reply_to"):
                 return f"Writing a reply to {to}" if to else "Writing a reply"
+            if args.get("forward"):
+                return f"Passing on an email to {to}" if to else "Passing on an email"
             return f"Writing a draft to {to}" if to else "Writing a draft"
         case "notes_search":
             q = args.get("query")

@@ -78,6 +78,12 @@ private final class Rig {
         #expect(EventKitConnections.date(nil) == nil)
     }
 
+    @Test func anUnknownListNamesTheOnesThereAre() {
+        #expect(EventKitConnections.noSuch("Shopping list", .reminder, among: ["Reminders", "Family"])
+            == "There's no Reminders list called “Shopping list”. There are: Reminders, Family.")
+        #expect(EventKitConnections.noSuch("Work", .event, among: []) == "There's no calendar called “Work”.")
+    }
+
     @Test func jsonValuesRoundTrip() throws {
         let value: JSONValue = .object(["a": .array([.number(1), .bool(true), .null, .string("x")])])
         let back = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(value))

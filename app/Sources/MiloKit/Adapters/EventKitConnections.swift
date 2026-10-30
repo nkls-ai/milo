@@ -75,8 +75,10 @@ public final class EventKitConnections: AppConnections {
         }
         let end = Self.date(args["end"]) ?? start.addingTimeInterval(3600)
         guard end > start else { return .failure("The end must be after the start.") }
-        guard let calendar = calendar(named: args["calendar"]?.string, for: .event) else {
-            return .failure("I couldn't find a calendar I may write to.")
+        let calendar: EKCalendar
+        switch self.calendar(named: args["calendar"]?.string, for: .event) {
+        case .success(let found): calendar = found
+        case .failure(let problem): return .failure(problem.text)
         }
         let event = EKEvent(eventStore: store)
         event.title = title
@@ -93,14 +95,30 @@ public final class EventKitConnections: AppConnections {
         return .success(Self.json(event))
     }
 
-    private func calendar(named name: String?, for type: EKEntityType) -> EKCalendar? {
+    struct Problem: Error { let text: String }
+
+    /// The named calendar or list, or the usual one when no name is given. A name that matches none is a
+    /// failure naming the ones there are, so "the shopping list" never lands quietly in the usual list.
+    private func calendar(named name: String?, for type: EKEntityType) -> Result<EKCalendar, Problem> {
         let writable = store.calendars(for: type).filter(\.allowsContentModifications)
-        if let name, !name.isEmpty,
-           let match = writable.first(where: { $0.title.localizedCaseInsensitiveCompare(name) == .orderedSame }) {
-            return match
+        if let name = name?.trimmingCharacters(in: .whitespaces), !name.isEmpty {
+            if let match = writable.first(where: { $0.title.localizedCaseInsensitiveCompare(name) == .orderedSame }) {
+                return .success(match)
+            }
+            return .failure(Problem(text: Self.noSuch(name, type, among: writable.map(\.title))))
         }
         let fallback = type == .event ? store.defaultCalendarForNewEvents : store.defaultCalendarForNewReminders()
-        return fallback ?? writable.first
+        guard let found = fallback ?? writable.first else {
+            return .failure(Problem(text: type == .event
+                ? "I couldn't find a calendar I may write to." : "I couldn't find a reminders list I may write to."))
+        }
+        return .success(found)
+    }
+
+    static func noSuch(_ name: String, _ type: EKEntityType, among names: [String]) -> String {
+        let what = type == .event ? "calendar" : "Reminders list"
+        let there = names.isEmpty ? "" : " There are: \(names.joined(separator: ", "))."
+        return "There's no \(what) called “\(name)”.\(there)"
     }
 
     // MARK: Reminders
@@ -122,8 +140,10 @@ public final class EventKitConnections: AppConnections {
 
     private func addReminder(_ args: JSONValue) -> AppOutcome {
         guard let title = Self.text(args["title"]) else { return .failure("A reminder needs a title.") }
-        guard let list = calendar(named: args["list"]?.string, for: .reminder) else {
-            return .failure("I couldn't find a reminders list I may write to.")
+        let list: EKCalendar
+        switch calendar(named: args["list"]?.string, for: .reminder) {
+        case .success(let found): list = found
+        case .failure(let problem): return .failure(problem.text)
         }
         let reminder = EKReminder(eventStore: store)
         reminder.title = title

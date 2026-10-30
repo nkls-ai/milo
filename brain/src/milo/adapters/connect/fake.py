@@ -93,6 +93,9 @@ class FakeReminders:
 
     def add(self, title: str, due: datetime | None = None, notes: str = "", list_name: str = "") -> dict:
         world = self._world.load()
+        lists = list(dict.fromkeys(["Reminders"] + [r["list"] for r in world["reminders"]]))
+        if list_name and list_name.casefold() not in {name.casefold() for name in lists}:
+            raise ToolError(f"There's no Reminders list called “{list_name}”. There are: {', '.join(lists)}.")
         reminder = {"id": _new_id(), "title": title, "due": _iso(due), "notes": notes,
                     "list": list_name or "Reminders", "done": False}
         world["reminders"].append(reminder)
@@ -124,15 +127,22 @@ class FakeMail:
                 return {k: m.get(k, "") for k in ("id", "from", "to", "subject", "date", "text")}
         raise ToolError("I couldn't find that in Mail any more.")
 
-    def draft(self, to: list[str], subject: str, body: str, reply_to: str = "") -> dict:
+    def draft(self, to: list[str], subject: str, body: str, reply_to: str = "", forward: str = "") -> dict:
         world = self._world.load()
-        if reply_to:
-            original = next((m for m in world["mail"] if m["id"] == reply_to), None)
+        if reply_to or forward:
+            original = next((m for m in world["mail"] if m["id"] in (reply_to, forward)), None)
             if original is None:
                 raise ToolError("I couldn't find that in Mail any more.")
-            to = to or [original["from"]]
-            subject = subject or "Re: " + original["subject"]
-        draft = {"id": _new_id(), "to": to, "subject": subject, "body": body, "reply_to": reply_to}
+            if forward:
+                if not to:
+                    raise ToolError("say who to pass it on to (to)")
+                subject = subject or "Fwd: " + original["subject"]
+                body = (body + "\n\n" if body else "") + original["text"]
+            else:
+                to = to or [original["from"]]
+                subject = subject or "Re: " + original["subject"]
+        draft = {"id": _new_id(), "to": to, "subject": subject, "body": body, "reply_to": reply_to,
+                 "forward": forward}
         world["drafts"].append(draft)
         self._world.save(world)
         return {"draft": True, "sent": False, "subject": subject, "to": to,

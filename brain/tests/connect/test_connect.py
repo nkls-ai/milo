@@ -113,6 +113,23 @@ def test_a_no_stops_the_tool_and_says_so(home):
     assert World(home / "fake").load()["shortcut_runs"] == []
 
 
+def test_forwarding_drafts_the_whole_email_to_someone(home):
+    server = mcp_server(toolbox(home))
+    ok, draft = call(server, "mail_draft", {"forward": "m1", "to": ["lisa@example.com"]})
+    assert ok and draft["sent"] is False and draft["subject"] == "Fwd: Sunday"
+    assert World(home / "fake").load()["drafts"][0]["body"] == "Are we still on for Sunday?"
+    assert call(server, "mail_draft", {"forward": "m1"}) == (False, "say who to pass it on to (to)")
+    assert call(server, "mail_draft", {"forward": "m1", "reply_to": "m1", "to": ["a@b.c"]})[0] is False
+
+
+def test_a_list_that_isnt_there_is_an_error_naming_the_ones_that_are(home):
+    server = mcp_server(toolbox(home))
+    assert call(server, "reminders_add", {"title": "Eggs", "list": "Shopping list"}) == \
+        (False, "There's no Reminders list called “Shopping list”. There are: Reminders.")
+    ok, added = call(server, "reminders_add", {"title": "Eggs", "list": "reminders"})
+    assert ok and added["title"] == "Eggs"
+
+
 def test_bad_arguments_come_back_as_plain_errors(home):
     server = mcp_server(toolbox(home))
     assert call(server, "calendar_add_event", {"title": "X", "start": "next thursday"}) == \
@@ -167,7 +184,7 @@ def test_mail_scripts_take_inputs_as_arguments_and_never_send(monkeypatch):
     evil = 'x" & (do shell script "rm -rf ~") & "'
     mac.AppleMail().draft(["anna@example.com"], evil, "Running late.", "")
     [(cmd, script)] = runs
-    assert cmd == ["osascript", "-", "anna@example.com", evil, "Running late.", ""]
+    assert cmd == ["osascript", "-", "anna@example.com", evil, "Running late.", "", ""]
     assert evil not in script
     for source in (mac._MAIL_SEARCH, mac._MAIL_READ, mac._MAIL_DRAFT):
         assert "send " not in source.lower().replace("sender", "")
@@ -186,6 +203,7 @@ def test_automation_refusal_is_explained(monkeypatch):
     ("mail_draft", {"to": ["anna.schmidt@example.com"], "body": "x"}, "Writing a draft to Anna"),
     ("mail_draft", {"to": ["Tom Berg <t@example.com>", "lisa@example.com"]}, "Writing a draft to Tom and Lisa"),
     ("mail_draft", {"reply_to": "m1"}, "Writing a reply"),
+    ("mail_draft", {"forward": "m4", "to": ["lisa@example.com"]}, "Passing on an email to Lisa"),
     ("shortcuts_run", {"name": "Lights off"}, "Running your shortcut “Lights off”"),
     ("files_read", {"path": "/Users/x/Documents/Bill.pdf"}, "Reading Bill.pdf"),
 ])
