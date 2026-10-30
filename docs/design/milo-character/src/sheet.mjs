@@ -18,16 +18,21 @@ export async function load(name) {
   return import(`./${name}.mjs?${Date.now()}`);
 }
 
+export const TIGHT = '22 40 156 150';
 export function fig(c, p, size, opts = {}) {
   return svg(c.draw(p, uid(c.name.toLowerCase().slice(0, 2))), size, opts);
 }
+/// At helper size: the box is cropped to the character, so `size` is roughly his height.
+export function tiny(c, p, size = 36) {
+  return svg(c.draw({ ...p, small: true }, uid('t')), size, { viewBox: TIGHT });
+}
 
 /// The figure as one flat dark shape, to judge the silhouette.
-export function silhouette(c, p, size, color = '#26222F') {
+export function silhouette(c, p, size, color = '#26222F', viewBox = '0 0 200 200') {
   const id = uid('sil');
   const { defs, body } = c.draw({ ...p, extras: [], cursorAt: null }, id);
   const filt = `<filter id="${id}-f"><feFlood flood-color="${color}"/><feComposite in2="SourceAlpha" operator="in"/></filter>`;
-  return `<svg viewBox="0 0 200 200" width="${size}" height="${size}">${defs.replace('</defs>', filt + '</defs>')}<g filter="url(#${id}-f)">${body}</g></svg>`;
+  return `<svg viewBox="${viewBox}" width="${size}" height="${size}">${defs.replace('</defs>', filt + '</defs>')}<g filter="url(#${id}-f)">${body}</g></svg>`;
 }
 
 export function sheetHTML(c, version, note = '') {
@@ -35,21 +40,21 @@ export function sheetHTML(c, version, note = '') {
   const cell = (label, inner, bg = LIGHT, fg = '#3A3550') =>
     `<div class="cell" style="background:${bg};color:${fg}">${inner}<div class="lab">${label}</div></div>`;
   const hero = [
-    cell('front', fig(c, { turn: 0 }, 300)),
-    cell('three-quarter', fig(c, {}, 300)),
-    cell('other side', fig(c, { turn: -0.5, gx: -0.4 }, 300)),
-    cell('silhouette', silhouette(c, {}, 300)),
+    cell('front', fig(c, { turn: 0 }, 268)),
+    cell('three-quarter', fig(c, {}, 268)),
+    cell('other side', fig(c, { turn: 0.45, gx: 0.4 }, 268)),
+    cell('silhouette', silhouette(c, {}, 268)),
   ].join('');
   const grid = states.map(([n, p]) => cell(n, fig(c, p, 132))).join('');
   const darkGrid = states.slice(0, 6).map(([n, p]) => cell(n, fig(c, p, 132), DARK, '#CFCAE6')).join('');
   const smallStates = ['idle', 'working', 'flying', 'happy', 'sleepy', 'confused'];
   const small = (bg) =>
     smallStates
-      .map((n) => fig(c, { ...Object.fromEntries(states)[n], small: true, extras: [], cursorAt: null }, 36))
+      .map((n) => tiny(c, { ...Object.fromEntries(states)[n], extras: [], cursorAt: null }, 36))
       .join('');
   const ladder = `
-    <div class="ladder" style="background:${LIGHT}">${fig(c, {}, 300)}${fig(c, {}, 132)}${fig(c, { small: true }, 36)}<div class="smalls">${small(LIGHT)}</div><div class="smalls">${smallStates.map((n) => silhouette(c, { ...Object.fromEntries(states)[n], small: true }, 36)).join('')}</div></div>
-    <div class="ladder" style="background:${DARK}">${fig(c, {}, 300)}${fig(c, {}, 132)}${fig(c, { small: true }, 36)}<div class="smalls">${small(DARK)}</div></div>`;
+    <div class="ladder" style="background:${LIGHT}">${fig(c, {}, 300)}${svg(c.draw({}, uid('l')), 132, { viewBox: TIGHT })}<div class="smalls">${small(LIGHT)}</div><div class="smalls">${smallStates.map((n) => silhouette(c, { ...Object.fromEntries(states)[n], small: true }, 36, '#26222F', TIGHT)).join('')}</div></div>
+    <div class="ladder" style="background:${DARK}">${fig(c, {}, 300)}${svg(c.draw({}, uid('l')), 132, { viewBox: TIGHT })}<div class="smalls">${small(DARK)}</div></div>`;
   return `<!doctype html><html><head><meta charset="utf-8"><style>
   body{margin:0;background:#E9E6F0;font:13px -apple-system,system-ui;color:#2B2740;width:1200px}
   h1{font:600 22px -apple-system,system-ui;margin:18px 22px 4px} .note{margin:0 22px 12px;color:#5B5570}
@@ -84,7 +89,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   for (const n of names) {
     const c = await load(n);
     const png = join(outDir, `${n}-${version}.png`);
-    render(sheetHTML(c, version, c.note ?? ''), png, 1200, 1520);
+    render(sheetHTML(c, version, c.note ?? ''), png, 1200, 1900);
     console.log(png);
   }
 }
