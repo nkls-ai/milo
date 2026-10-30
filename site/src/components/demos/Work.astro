@@ -90,7 +90,14 @@ const rows = [
   .fx-sign { color: var(--ink-3); font-style: italic; font-family: var(--font-display); }
   .fx-val { font-variant-numeric: tabular-nums; color: var(--ink); min-height: 1em; }
   .grid-wrap { position: relative; overflow-x: auto; }
-  .grid { width: 100%; border-collapse: collapse; font-size: 0.92rem; font-variant-numeric: tabular-nums; table-layout: fixed; min-width: 25rem; }
+  .grid { width: 100%; border-collapse: collapse; font-size: 0.92rem; font-variant-numeric: tabular-nums; table-layout: fixed; }
+  @media (max-width: 30rem) {
+    .grid { font-size: 0.8rem; }
+    .grid th, .grid td { padding: 0 0.35rem; height: 1.95rem; }
+    .grid tbody th, .grid thead th.corner { width: 1.7rem; }
+    .grid td:nth-child(2) { width: 28%; }
+    .work-perch { right: -0.3rem; top: -2.6rem; }
+  }
   .grid th, .grid td { border: 1px solid var(--rule); padding: 0 0.6rem; height: 2.15rem; text-align: left; white-space: nowrap; overflow: hidden; }
   .grid thead th { background: var(--card-2); color: var(--ink-3); font-weight: 600; text-align: center; font-size: 0.78rem; height: 1.6rem; }
   .grid tbody th { background: var(--card-2); color: var(--ink-3); font-weight: 600; text-align: center; font-size: 0.78rem; width: 2.4rem; }

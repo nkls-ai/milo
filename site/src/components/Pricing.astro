@@ -57,7 +57,7 @@ const cell = (v: string) => (v === 'yes' ? '<span class="yes" role="img" aria-la
   .cmp th, .cmp td { padding: 0.95rem 1rem; text-align: left; vertical-align: middle; border-bottom: 1px solid var(--rule); }
   .cmp tbody th { font-weight: 600; width: 34%; }
   .cmp td { color: var(--ink-2); width: 33%; }
-  .cmp thead th, .cmp thead td { border-bottom: 1.5px solid var(--rule-strong); vertical-align: bottom; padding-top: 1.6rem; }
+  .cmp thead th, .cmp thead td { border-bottom: 1.5px solid var(--rule-strong); vertical-align: top; padding-top: 1.6rem; }
   .cmp tfoot td { border-bottom: 0; padding-top: 1.4rem; }
   .plan { position: relative; font-weight: 400; }
   .plan span { display: block; }
@@ -89,5 +89,6 @@ const cell = (v: string) => (v === 'yes' ? '<span class="yes" role="img" aria-la
     .plan-name { font-size: 1.3rem; }
     .plan-price small { display: block; }
     .cmp tfoot { display: none; }
+    .cmp tbody tr:last-child .plus { border-radius: 0 0 1rem 1rem; border-bottom: 0; }
   }
 </style>

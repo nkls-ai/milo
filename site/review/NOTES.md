@@ -53,3 +53,37 @@ What not to take: dark "developer" heroes (Raycast, Linear) read as technical an
 2. Milo behaves the way CHARACTER.md says: he watches, keeps quiet, and never talks just to look alive.
 3. Trust shows in the page itself: no cookies, no tracking, no third-party requests, honest about what goes to the internet and what isn't built yet.
 4. One warm accent (marigold) and only on Milo's things: his scarf, the Plus plan, the record dot is red.
+
+## Review passes
+
+Every section at 390, 1440 and 2560 px, light and dark, with reduced motion so demos show their finished state (`bun run shots <pass>`), plus things that only exist in motion (`bun run moments <pass>`: Milo flying, in the corner, the pricing remark, asleep, waving, demos halfway, focus rings).
+
+- `p1-before/`: the first full build.
+- `p2/`: after the first round of fixes.
+- `p3-after/`: after the second round. The best shots are listed in `site/README.md`.
+
+### Pass 1, against the details list
+
+- Scoped CSS didn't reach anything a script creates (chat bubbles, transcript lines, step lists) or the `<milo-character>` root of a child component, so the phone chat was unstyled and several Milos were the wrong size. Fixed with `:global()` on those selectors.
+- The pricing check marks were invisible for the same reason.
+- The question bubble in "asks first" covered the email it asked about. It now sits beside Milo, under the window.
+- The hero bubble kept a stale line when Milo flew back to the hero, and with reduced motion his hero line followed him into the corner. He now hushes when he leaves the hero and says his line again when he's back.
+- The end slot was empty without scripts. It now has a server-drawn Milo that the flying one replaces.
+- Sections were too far apart (up to 18 rem between them). Cut to about 14 at most.
+- Edit and Forget in the memory window were at 25% opacity, too faint to read. They're now always readable and turn lavender on hover.
+- The words pill in the talk demo was greyed out when idle, failing contrast. It's now a light card when idle.
+- Two sets of "z"s when asleep (the rig's and the CSS ones). The rig's are only used for the footer's static Milo now.
+- Chrome can't capture more than 16k px in one go, so the overview shots are now taken at 1x.
+
+### Pass 2
+
+- On phones the spreadsheet's minimum width pushed the whole section past the screen, where `overflow-x: clip` hid it. Grid items can shrink now and the sheet tightens below 30 rem. Checked for overflow at 360, 390, 768, 1024, 1280, 1920 and 2560.
+- The corner Milo covered text on phones. He's 64 px there now and steps out of the way while you scroll, coming back a second after you stop.
+- He landed in the end section only when it was half off the screen. He lands earlier now.
+- The spreadsheet's step list spread its lines over the whole box. Fixed.
+- The hero calendar was cramped on phones. Six rows instead of eight, a smaller face on phones.
+- Lighthouse accessibility was 90: `aria-label` on plain spans, Milo's cursor tag at 4.3:1 contrast, and list items under a `tabpanel` list. All fixed (100).
+- Every server-drawn Milo redrew itself once on load for nothing, which showed up as main-thread time. The first redraw is skipped now unless something moves, and helpers keep their small drawing when they blink.
+- "Ask us. A person answers." had nowhere to write to. It's a link now.
+- Plus's corners on phones, plan headers aligned to the top, a bigger hero headline on large screens.
+- Copy: removed mid-sentence colons and the one pair of brackets (unslop pass).

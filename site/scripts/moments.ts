@@ -4,7 +4,7 @@ import { chromium, type Page } from 'playwright-core';
 import { mkdirSync } from 'node:fs';
 
 const pass = process.argv[2] ?? 'scratch';
-const url = process.argv[3] ?? 'http://localhost:4391/';
+const url = process.argv[3] ?? 'http://localhost:4321/';
 const out = `review/${pass}/moments`;
 mkdirSync(out, { recursive: true });
 const browser = await chromium.launch({ channel: 'chrome' });

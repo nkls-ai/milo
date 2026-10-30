@@ -7,7 +7,7 @@ import sharp from 'sharp';
 
 const args = process.argv.slice(2);
 const pass = args.find((a) => !a.startsWith('-') ) ?? 'scratch';
-const url = args.filter((a) => !a.startsWith('-'))[1] ?? 'http://localhost:4391/';
+const url = args.filter((a) => !a.startsWith('-'))[1] ?? 'http://localhost:4321/';
 const only = args.find((a) => a.startsWith('--only='))?.slice(7).split(',');
 const widths = args.find((a) => a.startsWith('--widths='))?.slice(9).split(',').map(Number) ?? [390, 1440, 2560];
 const themes = (args.find((a) => a.startsWith('--themes='))?.slice(9).split(',') ?? ['light', 'dark']) as ('light' | 'dark')[];
@@ -34,6 +34,8 @@ for (const width of widths) {
       if (only && !only.includes(id)) continue;
       const sel = id === 'nav' ? 'header.nav' : id === 'footer' ? 'footer' : `#${id}`;
       const el = page.locator(sel).first();
+      // the sticky nav would otherwise be printed over the top of every section
+      await page.evaluate((isNav) => { document.querySelector<HTMLElement>('header.nav')!.style.visibility = isNav ? '' : 'hidden'; }, id === 'nav');
       await el.scrollIntoViewIfNeeded();
       await page.waitForTimeout(motion ? 2500 : 500);
       const file = `${out}/${id}-${width}-${theme}.png`;
@@ -41,7 +43,7 @@ for (const width of widths) {
       shots.push(file);
     }
     if (!only) {
-      await page.evaluate(() => scrollTo(0, 0));
+      await page.evaluate(() => { document.querySelector<HTMLElement>('header.nav')!.style.visibility = ''; scrollTo(0, 0); });
       await page.waitForTimeout(600);
       // Chrome can't capture more than 16k px in one go, so the overview is taken at 1x.
       const full = await browser.newPage({ viewport: page.viewportSize()!, deviceScaleFactor: 1, colorScheme: theme, reducedMotion: 'reduce' });
