@@ -55,6 +55,13 @@ cd brain && uv run pytest -q
 cd app && swift test
 ```
 
+The dictation test plays recorded speech into a real brain on a throwaway workspace, presses the key the way the app does, and checks every pasted word against the script and against `stream = "off"`, plus how fast the paste, the live words and the listening state came. Cases: English and German, 2 s to 60 s, pauses mid-sentence, soft trailing words, a quiet microphone, a release right after a pause, and pressing again 200 ms after letting go. It fails on lost words or slow pastes. `--fake` uses tones instead of voices and Whisper (half a minute, no models; `pytest` runs part of it on every gate):
+
+```sh
+scripts/e2e-dictation.sh            # Whisper on macOS `say` voices, rendered to files; nothing plays
+scripts/e2e-dictation.sh --fake
+```
+
 The 30-task eval runs Milo on a made-up calendar, inbox, notes and files with a real chat model and worker, and prints a score. It never touches your own data. See [docs/eval/tasks.md](docs/eval/tasks.md):
 
 ```sh
@@ -66,6 +73,10 @@ The on-screen eval runs real tasks on your real Mac with a second Milo.app: a bu
 ```sh
 cd brain && uv run python -m milo.eval.screen --only excel,numbers,file
 ```
+
+## Homepage
+
+`site/` is the homepage, a static page built with Astro on Bun: `cd site && bun install && bun run dev`, or `bun run build` for the files. Milo's drawing there comes from the wren rig behind one component, so a new design changes one place. See [site/README.md](site/README.md).
 
 ## Docs
 

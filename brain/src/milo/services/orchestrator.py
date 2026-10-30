@@ -140,13 +140,15 @@ class Orchestrator:
 
     def submit(self, description: str, *, title: str = "", screen: bool | None = None,
                careful: bool = False, instructions: str = "",
-               on_finish: Callable[[Helper], None] | None = None) -> Helper:
+               on_finish: Callable[[Helper], None] | None = None, own: str = "") -> Helper:
         """Hand off a task. Returns at once with the new helper, queued or already working. `careful`: the
         conversation that asked for it read the screen, so its tools ask before changes too. `instructions`
-        replace the description for the worker (a routine's recipe); `on_finish` hears how it ended."""
+        replace the description for the worker (a routine's recipe); `on_finish` hears how it ended. `own`
+        = "routine": the window shows it as a conversation of its own (a routine run on its schedule)."""
         screen = (needs_screen(description) if screen is None else screen) and self._runner.has_screen
         self._numbers += 1
-        helper = Helper(self._transcript.task_started(description), self._numbers, short_title(description, title),
+        name = short_title(description, title)
+        helper = Helper(self._transcript.task_started(description, title=name, own=own), self._numbers, name,
                         description, screen, self._clock.monotonic(), careful=careful, instructions=instructions,
                         on_finish=on_finish)
         log.info("helper %d %s%s, %s", helper.number, "on the screen" if screen else "in the background",
@@ -180,7 +182,8 @@ class Orchestrator:
                 attempt.cancel()  # the supervisor continues the session with the change
             self._changed(now=True)
             return helper
-        follow = Helper(self._transcript.task_started(f"{helper.description}\n\nChange: {change}"),
+        follow = Helper(self._transcript.task_started(f"{helper.description}\n\nChange: {change}",
+                                                      title=helper.title),
                         self._next_number(), helper.title, helper.description, helper.screen, self._clock.monotonic(),
                         session_id=helper.session_id, amendments=[*helper.amendments, change], follow_up=change,
                         careful=careful, instructions=helper.instructions)

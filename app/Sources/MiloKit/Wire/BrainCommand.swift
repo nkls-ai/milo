@@ -7,10 +7,19 @@ public enum BrainCommand: Equatable, Sendable {
     case listenConfirm
     case listenStop
     case listenCancel
-    /// Typed chat. `speak` false: Milo answers in text only, without audio.
-    case text(String, speak: Bool = true)
+    /// Typed chat. `speak` false: Milo answers in text only, without audio. `conversation`: typed into this
+    /// earlier conversation, which picks it up again; "" goes on with the current one.
+    case text(String, speak: Bool = true, conversation: String = "")
     /// The Milo window opened: send the recent conversation again.
     case getHistory
+    /// The window's list of conversations: the latest page, or the one older than `before` (brain local time).
+    case getConversations(before: String = "")
+    /// The user opened a conversation: send it whole.
+    case openConversation(id: String)
+    case searchConversations(query: String)
+    case renameConversation(id: String, title: String)
+    /// ⌘N: the next turn starts a new conversation.
+    case newConversation
     /// Frontmost app name and seconds since the last keyboard or mouse input.
     case context(app: String, idleSeconds: Double)
     /// Mute or unmute proactive nudges.
@@ -90,6 +99,7 @@ extension BrainCommand: Encodable {
         case type, mode, text, app, on, tentative, speak, id, capture, ok, result, error, reason, yes, action, save
         case section, key, value
         case bundle, title, track, index, path, start, seconds, tracks
+        case conversation, before, query
         case idleSeconds = "idle_s"
     }
 
@@ -106,10 +116,26 @@ extension BrainCommand: Encodable {
             try c.encode("listen_stop", forKey: .type)
         case .listenCancel:
             try c.encode("listen_cancel", forKey: .type)
-        case let .text(text, speak):
+        case let .text(text, speak, conversation):
             try c.encode("text", forKey: .type)
             try c.encode(text, forKey: .text)
             if !speak { try c.encode(false, forKey: .speak) }
+            if !conversation.isEmpty { try c.encode(conversation, forKey: .conversation) }
+        case let .getConversations(before):
+            try c.encode("get_conversations", forKey: .type)
+            if !before.isEmpty { try c.encode(before, forKey: .before) }
+        case let .openConversation(id):
+            try c.encode("open_conversation", forKey: .type)
+            try c.encode(id, forKey: .id)
+        case let .searchConversations(query):
+            try c.encode("search_conversations", forKey: .type)
+            try c.encode(query, forKey: .query)
+        case let .renameConversation(id, title):
+            try c.encode("rename_conversation", forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(title, forKey: .title)
+        case .newConversation:
+            try c.encode("new_conversation", forKey: .type)
         case .getHistory:
             try c.encode("get_history", forKey: .type)
         case let .context(app, idleSeconds):

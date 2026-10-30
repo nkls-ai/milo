@@ -34,7 +34,8 @@ brain/src/milo/
   connect/        the MCP tool server the worker loads (python -m milo.connect)
   eval/           the 30-task eval (python -m milo.eval) and the on-screen eval (python -m milo.eval.screen)
   memory/         Workspace paths and bootstrap, profile.md, reminders.md, usage ledger, dictation history,
-                  transcript (the Milo window's conversation), routines (the recipe folder and its state),
+                  transcript (the old single-file log), conversations (one file per conversation and the
+                  index, the migration from transcript.jsonl), routines (the recipe folder and its state),
                   remote (state/messages.json: the paired phone), and
                   long-term memory: episodes and facts (append-only JSONL), fact_profile (profile.md as a view of
                   the facts), index (FTS5 and vectors in state/memory.sqlite), recall, when (time phrases),
@@ -47,7 +48,8 @@ brain/src/milo/
                   chunker + speaker + speech_audio (streaming TTS), echo + barge_in (talking over Milo),
                   backchannel ("Hm." when a reply is late), orchestrator + helpers + task_runner (helpers doing
                   delegated work on the harness, see ADR 11), updates (milestones and `[chat] updates`),
-                  conversation (one resumed harness session, for the heartbeat), transcript (what the Milo window shows), heartbeat_runner, approvals
+                  conversation (one resumed harness session, for the heartbeat), transcript (the conversation going on and where it splits), conversations (the
+                  list, opening, renaming and search for the Milo window), heartbeat_runner, approvals
                   (action levels and yes-or-no questions), app_bridge (requests to the app and their answers:
                   AppEyes, AppHands, Calendar and Reminders work), tool_requests (what the tool socket may do),
                   screen (screen data for the chat model), hands + risk (checking and logging the worker's Mac
@@ -95,7 +97,9 @@ Beyond `milo.core.ports`, these entry points are fixed:
 | `milo.services.memory.Memory` / `TurnMemory` | services | The brain's memory: recall on the memory thread with a 300 ms limit, search, forget, edit, the `facts` event. `TurnMemory.before_turn()` is the live chat's hook. |
 | `milo.memory.ledger.JsonlUsageLedger(path, clock)` | memory | `UsageLedger`. Appends one JSON line per harness call. |
 | `milo.memory.history.JsonlDictationHistory(path, clock)` | memory | `DictationHistory`. |
-| `milo.memory.transcript.JsonlTranscript(path)` | memory | `TranscriptStore` over `state/transcript.jsonl`. `tail(n)` reads the file backwards block by block, so its cost doesn't grow with the file. |
+| `milo.memory.transcript.JsonlTranscript(path)` | memory | `TranscriptStore` over `state/transcript.jsonl`. `tail(n)` reads the file backwards block by block, so its cost doesn't grow with the file. Only the migration reads it now. |
+| `milo.memory.conversations.JsonlConversationStore(root)` | memory | `ConversationStore` over `state/conversations/YYYY-MM/<id>.jsonl`, one file per conversation, and `index.jsonl`, a cache of their headers that it rebuilds when files and index disagree. `migrate(transcript, kept, store, rules)` splits an old `transcript.jsonl` into conversations once, keeping every line, then renames it to `transcript.before-conversations.jsonl`. |
+| `milo.services.conversations.ConversationBrowser(transcript, store, sink, clock, memory=, reminders=)` | services | What the window asks about conversations: `list_event(before)`, `open(id)`, `rename(id, title)`, `search(query)` (titles, then memory hits mapped to their conversation, then the files' words), `reminders_event()`. `changed()` sends the list again, coalesced to one per 0.3 s. |
 | `milo.services.approvals.Approvals` | services | `approve(kind, summary) -> Decision` applies the action level and asks if needed. `confirm(summary) -> bool` always asks (the `Confirmer` port). |
 | `milo.transport.tool_client.BrainClient(path)` | transport | `request(body) -> dict` on `run/tools.sock`; `approve(kind, summary) -> Decision`. Used by the MCP server, and by any helper process that needs a yes. |
 | `milo.services.messages.MessageService` | services | Milo by message. `run()` polls the `Channel` until cancelled, `tick()` runs on the heartbeat. A `QuestionRelay` for `Approvals` (`asked`, `closed`), an `Orchestrator` watcher (`helper_changed`), and the `Phone` behind the tool socket's `send_to_phone` (`check`, `question`, `send_file`). `pause(on)`, `forget()`, `status() -> Remote`. |
@@ -105,17 +109,21 @@ Beyond `milo.core.ports`, these entry points are fixed:
 
 Both keys listen the same way (`services/listening.py`, `services/live_transcript.py`). Only what happens to the text differs: dictation pastes it, talk hands it to `LiveTalk`.
 
-1. **Phrases.** While the key is held, `LiveTranscript` reads the new audio every 0.1 s and `PauseSegmenter` cuts it into phrases at pauses: 0.7 s of quiet, or 0.3 s once a phrase has run 6 s, or the quietest frame once it reaches 12 s.
-2. **Commits.** Each closed phrase is transcribed by the full model (large-v3-turbo, full 30 s window) while the user goes on talking. That text is final. `stream = "type"` pastes it at once. The text before a phrase only keeps its language (a short "okay" can't be detected reliably); it is not put in Whisper's prompt, which made more errors on test dictations because Whisper copies the prompt's style.
-3. **Guess.** When the open phrase has been quiet for 0.25 s, the full model transcribes it as it stands, in a quick pass (below). If the user speaks again, the guess is dropped. If they let go first, the guess is the last phrase and the release costs no pass at all. A pause that closes the phrase still gets its full commit.
+1. **Phrases.** While the key is held, `LiveTranscript` reads the new audio every 0.1 s and `PauseSegmenter` cuts it into phrases at pauses: 0.7 s of quiet, or 0.3 s once a phrase has run 6 s, or the quietest frame once it reaches 12 s. Speech is anything 2.5 times above the room's floor, but at least 0.004 RMS, so a microphone far away still makes phrases and live words.
+2. **Commits.** Each closed phrase that no guess holds (step 3) is transcribed by the full model (large-v3-turbo, full 30 s window) while the user goes on talking. That text is final. `stream = "type"` pastes it at once. The text before a phrase only keeps its language (a short "okay" can't be detected reliably); it is not put in Whisper's prompt, which made more errors on test dictations because Whisper copies the prompt's style.
+3. **Guess.** When the open phrase has been quiet for 0.25 s, the full model transcribes it as it stands, in a quick pass (below). If the user speaks again, the guess is dropped. If they let go first, the guess is the end and the release costs no pass at all. If the pause goes on and closes the phrase, the guess is its commit too, as long as nothing voiced lies outside it: the same model has heard the same audio, and a second pass with the full window would keep the STT thread busy for 3 s per phrase on a loaded Mac, holding up live words and the release.
 4. **Preview.** Otherwise the small model (whisper-base) re-reads the open phrase for the live words above Milo (`partial`). Commits and guesses always go first, so at most one preview pass (about 0.05 s) runs ahead of the full model.
-5. **Release.** `finish()` interrupts a commit or preview in flight (`Transcriber.interrupt()`: the Whisper encoder runs four layers at a time and checks between them), lets a guess finish, then does whatever is left in quick passes: phrases still waiting and the open phrase unless a guess covers it.
+5. **Release.** `finish()` interrupts a commit or preview in flight (`Transcriber.interrupt()`: the Whisper encoder runs four layers at a time and checks between them). A guess in flight is let finish if nothing was said after it. Then everything not yet committed, closed phrases and the open one, goes in one quick pass, unless a guess holds all of it.
+
+**No word is lost.** The speech threshold is made for finding pauses, and a soft voice can stay under it: trailing off, a quiet microphone. Until 30 October such words were dropped: after a guess (its end never moved), in a tail after a commit, and in a soft phrase between pauses. `PauseSegmenter.voiced()` is a lenient second check, a little above the room's floor, and it decides what holds words: each phrase runs from the end of the one before, trimmed only up to the first voiced frame; a guess only stands if nothing voiced lies outside it; a pause is only cut where it is truly quiet, never through soft words; a quick pass that hears nothing in voiced audio is done again at full accuracy. Last, a safety net: text with fewer than 1.5 words per second of speech (test dictations had 3.5 to 7) gets one full pass over the whole recording, and that text wins if it has more words.
+
+**The next key press doesn't wait.** The brain reads the app's commands one at a time. `release()` stops the mic, hands the recording to a task and returns, so a key pressed right after a release opens the mic at once and approval clicks aren't held up. Each recording's results (typed phrases, the paste, the talk turn) go out only after those of the recording before it (`_InOrder`), and only the newest release puts Milo back to rest. The app shows the recording 80 ms after key-down (`PushToTalk.showAfter`); a press shorter than 250 ms is still a tap, so a double tap locks hands-free.
 
 The key going down first queues `Transcriber.wake()`: a short pass over a second of silence on each loaded model. On a 16 GB Mac with a browser and a few agents open, macOS pages an idle brain's 5 GB of model memory out, and the first pass after that took 3.8 s for 2 s of speech. Waking at key-down pages the models back in while the user is still talking. A wake that takes over half a second is logged.
 
-All passes run one at a time on the STT thread. A quick pass encodes the audio plus 1 s of silence, but at least 10 s, instead of a padded 30 s window, so it costs roughly its own length (0.3 s for a short phrase on an idle M3 against 1.1 s). With less than 10 s the decoder loses track of where speech ends and repeats itself; a quick decode that loops, runs past 8 tokens a second or that Whisper itself doubts goes through the full window instead. Quick passes miss a few more words (on 48 test phrases 2.7% against 1.7%), which is why only the last phrase of a recording normally gets one. `stream = "off"` runs no live passes and transcribes the whole recording on release with full windows.
+All passes run one at a time on the STT thread. A quick pass encodes the audio plus 1 s of silence, but at least 10 s, instead of a padded 30 s window, so it costs roughly its own length (0.3 s for a short phrase on an idle M3 against 1.1 s). With less than 10 s the decoder loses track of where speech ends and repeats itself; a quick decode that loops, runs past 8 tokens a second or that Whisper itself doubts goes through the full window instead. Quick passes on single phrases missed a few more words than full windows (on 48 test phrases 2.7% against 1.7%), but on whole test dictations, phrase by phrase, they made fewer errors than one full pass over the recording (0.4% against 1.6%). `stream = "off"` runs no live passes and transcribes the whole recording on release with full windows.
 
-Measured on recorded test speech, replayed in real time while other models shared the GPU (about 2.5x slower than idle): from release to pasted text, a 2 s dictation took 0.76 s (2.5 s with one pass over the whole recording), 15 s took 0.93 s (2.9 s), 60 s took 0.98 s (11.5 s). Talk, from release to the text reaching LiveTalk: 0.69 s, 1.8 s and 0.44 s (3.2 s, 4.2 s, 11.9 s). Word errors were equal or lower (60 s: 1.6% against 2.7%).
+**Measured** with `scripts/e2e-dictation.sh` (macOS voices replayed in real time into a real brain, on an M3 with 16 GB while a browser and several agents ran: load average 20 to 25, the models paged out between dictations). Release to paste, `preview` against `off`: 2 s dictations 0.41 to 1.41 s (2.8 to 4.7 s), 15 s 0.25 to 0.75 s (3.1 to 4.7 s), 60 s 0.86 and 1.29 s (14.5 to 15.9 s). The first live words came 0.4 to 1.6 s after speech began, the listening state 80 ms after key-down. Not one word of 488 was lost (word error 0.4%); `off` lost 6 (1.6%). What is left of the release is one quick pass, 0.4 s for a short phrase on a quiet Mac and up to 1.4 s on this loaded one. Before these changes (main at 5a5b284) the same run pasted after 0.80 to 2.31 s.
 
 The menu bar item's "Dictation style" changes `[dictation] stream` the way the Settings window does (`set_setting`, see Settings below): the brain saves it and uses it from the next recording. The menu ticks the value from the brain's last `settings`, which the brain also sends on connect.
 
@@ -151,7 +159,7 @@ The chat model, the talker, has no tools and never waits for work. Work that nee
 - **Careful helpers.** A task the user asks for in a conversation that has seen the screen starts at once, but its helper runs careful (`Helper.careful`): Approvals asks before its `change` actions too, and HandsService asks once per app before the first change there. The flag is per helper: `TaskRunner` passes it to `hands.begin`, and `HelperQuestions` passes it to `Approvals.approve` for the connection tools (any careful helper at work counts when the tool socket can't tell which one asks). A task or steer the chat model starts on its own in reply to screen data or after reading untrusted text asks first, in one sentence of at most 80 characters (`live_talk.task_question`); the whole task shows under it in the Milo window. See [ADR 14](adr/0014-scripts-milo-writes-and-short-questions.md).
 - **Updates.** `services/updates.py` finds milestones with rules over step kinds and titles and tells the user as `[chat] updates` says: `quiet`, `bubble` (a short note) or `chatty` (the talker says it, at most every 45 s). `LiveSettings` re-reads `config.toml` when it changed, at most every 2 s, so `updates` and `max_helpers` apply without a restart.
 - **Results.** When a helper finishes, Milo speaks its `say` and the next chat message carries the result. A result that finishes during a live turn waits up to 30 s for the turn to end, then shows silently. Heartbeat nudges wait the same way, and a silent bubble never cuts off speech.
-- **The app.** The `helpers` event lists every active helper and, for 8 s, the ones that just ended (step changes coalesced to every 0.25 s). The overlay shows a small bird per helper next to Milo, the Milo window a list with steps and Stop.
+- **The app.** The `helpers` event lists every active helper and, for 8 s, the ones that just ended (step changes coalesced to every 0.25 s). The overlay shows a small bird per helper next to Milo; a click opens its task page in the Milo window. Today lists the helpers at work with Stop, and each task is a card in its conversation.
 
 Task results reach the chat model as `<task_result>` blocks with `<` and `>` escaped, and the reply rules say they are data. Once a result is in the conversation, LiveTalk asks before it acts on any later tag in it, until the conversation resets. See [ADR 10](adr/0010-untrusted-results-and-a-private-log.md).
 
@@ -227,13 +235,18 @@ phone ──Telegram──▶ api.telegram.org ◀──HTTPS long poll── br
 
 ## The Milo window
 
-The window shows the conversation as text and lets the user type to Milo. Clicking the character or "Open conversation" in the menu bar item opens it; a second click or the close button hides it. macOS keeps its frame.
+The window has the conversations down its left side and a page beside them: Today, a conversation, or a task. Clicking the character or "Open conversation" in the menu bar item opens it; a second click or the close button hides it. macOS keeps its frame. The design is in [design/conversations.md](design/conversations.md) and [ADR 19](adr/0019-conversations-that-split-on-their-own.md).
 
-- **Transcript.** `services/transcript.py` keeps the last 50 entries in memory: user turns (`via` voice or typed), Milo's replies and tasks with their steps. LiveTalk adds the user turn and streams the reply into it (`entry`, then `reply_delta` events, then the finished `entry`). The orchestrator adds an entry per helper and its steps (`activity` events). Finished entries are appended to `state/transcript.jsonl`. At the first need after a start the brain reads the last 50 lines from the end of that file, never the whole file.
-- **History.** The brain sends `history` with those entries when the app connects and when the window opens (`get_history`). Both read memory only and call no model.
+- **Conversations.** `services/transcript.py` holds the conversation going on and asks `core.conversations.split()` at every user turn whether it starts a new one: after `[chat] conversation_idle_reset_s` of quiet, when the user asks for one (⌘N), after a 2-minute pause with no word in common with the last two turns, or when a turn comes from another channel. It never splits on an answer or while Milo waits for one. Each conversation is a JSONL file under `state/conversations/`; its id is `c-` and its first entry's id. Routine runs and meeting notes get conversations of their own.
+- **Titles.** The first user turn gives a title from its words at once (`title_from`). On the reply to the first turn LiveTalk appends `[name this conversation]`, and Milo's `<title>` tag, taken out of the reply stream, replaces it. A name the user gives (double-click the title) wins over both.
+- **Picking up.** Typing in an older conversation sends `text` with its `conversation`. The brain makes it the current one again and gives the chat model an `<earlier_conversation>` recap of its last lines within `[chat] recap_tokens` (600). The recap is untrusted when that conversation saw outside text or a task's result (LiveTalk's `carries_outside`, memory on or off), and always for meeting notes and routine runs.
+- **Events.** On connect and when the window opens the brain sends `conversations` (the headers, the current id, whether older ones exist), `history` (the current conversation's entries) and `reminders` (open ones due before the end of tomorrow). `entry`, `reply_delta` and `activity` stream as before, each entry with its `conversation`. `open_conversation` answers with `conversation` (the header and its entries), `search_conversations` with `search_results`. None of them call a model.
 - **Activity.** `Harness.reply` takes an optional `on_step` callback. The worker adapters read the CLI's stdout line by line while it runs: `codex exec --json` reports `item.started`/`item.completed` for `command_execution`, `file_change`, `mcp_tool_call` and `web_search` (reasoning, messages and todo lists are skipped), and `claude -p --output-format stream-json --verbose` reports `tool_use` blocks with their `tool_result`. `adapters/harness/_activity.py` turns each into a `Step` with a plain title ("Reading your Downloads folder", "Opening Microsoft Excel", "Searching the web for ...") and keeps the raw command or tool payload as `detail`, shown only when the row is expanded. Callers without a callback get the same `Reply` as before.
-- **Questions.** While Milo waits for a yes or no, the bubble shows the question with Yes and No buttons and stays up, and a bar above the text field shows it too.
+- **Tasks.** In a conversation a task is one card: its title, its state and its current step. The card opens the task's page with the result, the files it names that exist (`files`, checked when it finishes) and every step.
+- **Today.** What waits for the user (Milo's question, a recipe draft), what Milo is working on, today's reminders, what got done today and the last conversation to pick up.
+- **Questions.** While Milo waits for a yes or no, the bubble shows the question with Yes and No buttons and stays up, and a bar above the text field and the Today page show it too.
 - **Typing.** The text field sends `text`. The window's "speak replies" toggle (off by default, kept in UserDefaults) adds `"speak": false`, and Milo then answers in the bubble and the window without audio.
+- **Keys.** ⌘1 Today, ⌘N a new conversation, ⌘F search, ⌘[ back, ⌥⌘↑ and ⌥⌘↓ the conversation above or below, ⌘L the text field, ⌘0 the sidebar in a window narrower than 600 pt, Esc clears the search or leaves a task.
 
 ## Settings
 
@@ -256,7 +269,7 @@ The Settings window changes a few keys of `~/Milo/config.toml` through the brain
 
 ## The overlay, moment to moment
 
-The overlay reacts to the keys before the brain does. `MiloController` shows each push-to-talk output on the model in the same call that sends it (`MiloModel.press`, `hold`, `release`, `cancelPress`), so the view commits within about 2 ms of the key (`ResponseLatencyTests`), a round trip and a 250 ms hold ahead of the brain's own state. One capsule over Milo (`Views/VoiceCapsule`, its look picked by `VoicePhase.of`) changes shape from step to step: a small light at key down (only a light, since it may still be a tap or a right-Option shortcut), the level meter and the words so far once the hold is real, "Got it" for 0.6 s at key up, dots while the words are worked out and while he thinks ("Still on it" after 6 s), and "Pasted" for 1.4 s after dictation lands. It springs in with the theme's motion and leaves in 0.12 s.
+The overlay reacts to the keys before the brain does. `MiloController` shows each push-to-talk output on the model in the same call that sends it (`MiloModel.press`, `hold`, `release`, `cancelPress`), so the view commits within about 2 ms of the key (`ResponseLatencyTests`), a round trip and the 80 ms `showAfter` ahead of the brain's own state. One capsule over Milo (`Views/VoiceCapsule`, its look picked by `VoicePhase.of`) changes shape from step to step: a small light at key down (only a light, since it may still be a tap or a right-Option shortcut), the level meter and the words so far once the key has been down 80 ms, "Got it" for 0.6 s at key up, dots while the words are worked out and while he thinks ("Still on it" after 6 s), and "Pasted" for 1.4 s after dictation lands. It springs in with the theme's motion and leaves in 0.12 s.
 
 The bubble (`Views/BubbleView`) holds his answer, a question with Yes and No, or a note with a button that fixes what it is about (`BubbleAction`, "Fix it" opens the permissions window). It hugs short text. While he speaks, `SpeechReveal` lays out each piece the brain sends, hidden, and shows its words at the speed he talks, learned from how long each piece took, so lines never reflow. The mic and voice level live in their own `MiloModel.live`, which only the figure and the meter watch.
 
@@ -304,8 +317,11 @@ A chat turn costs one message to the running chat model: about 600 tokens, with 
 app/
   Sources/MiloKit/   protocols, wire types (Wire/RemoteStatus: Milo by message for the menu), controller, hotkey
                      state machine, views (all testable).
-                     The Milo window: TranscriptModel, Views/ConversationView + ActivityView,
-                     Views/HelperViews (the birds next to Milo and the helpers list, Wire/Helper),
+                     The Milo window: TranscriptModel (the conversations, the current one's entries, opened
+                     ones, search results, reminders), Wire/Conversation, Views/WindowRoute (the page and the
+                     way back), Views/ConversationView (sidebar + page, the keys), ConversationsSidebar,
+                     TodayView, ConversationPage, TaskPage (the task card and page), ActivityView,
+                     Views/HelperViews (the birds next to Milo and a helper's row on Today, Wire/Helper),
                      Views/RoutineViews (the Routines section and the recipe draft card, Wire/Routine),
                      AppKit/ConversationWindow. Screen/: ScreenController and TakeoverDetector.
                      Hotkeys/KeyCombo. Adapters/: Accessibility, SystemScreenReader, ScreenShots,
@@ -331,11 +347,13 @@ app/
   Sources/Milo/      main.swift: builds concrete adapters, hands them to MiloController
   Tests/MiloKitTests Swift Testing; decodes protocol/messages.json, drives the controller with fakes.
                      MILO_RENDER_DIR=/tmp/milo-render swift test --filter ConversationRender renders the
-                     window offscreen into PNGs. MILO_RENDER_DIR=... --filter WrenState renders Milo in every
-                     state (and the icons), --filter WrenFilm records his scenes as GIFs and strips,
-                     --filter OverlayRender the bubble and the voice capsule in every moment,
-                     --filter SettingsRender the Settings and setup windows, --filter HelperRender the
-                     birds and the helpers list; MILO_COMPARE_DIR=... --filter CompareRender a few states
-                     for design comparisons; MILO_PROBE_DIR=... --filter OverlayProbe puts the overlay on
-                     screen, measures its CPU and what a pose change costs, and flies him to a point and back
+                     narrow window offscreen into PNGs, --filter WindowRender the whole window: Today, a
+                     conversation, an older one, task pages, search, empty states, light and dark.
+                     MILO_RENDER_DIR=... --filter WrenState renders Milo in every state (and the icons),
+                     --filter WrenFilm records his scenes as GIFs and strips, --filter OverlayRender the
+                     bubble and the voice capsule in every moment, --filter SettingsRender the Settings and
+                     setup windows, --filter HelperRender the birds and their task cards;
+                     MILO_COMPARE_DIR=... --filter CompareRender a few states for design comparisons;
+                     MILO_PROBE_DIR=... --filter OverlayProbe puts the overlay on screen, measures its CPU
+                     and what a pose change costs, and flies him to a point and back
 ```

@@ -310,6 +310,45 @@ class MeetingRecord(Event):
     on: bool
 
 
+@dataclass(frozen=True)
+class Conversations(Event):
+    """The Milo window's list: conversation headers, the latest first (core.conversations.ConversationInfo),
+    `current` the one going on ("" for none) and `more` whether older ones exist. Sent on connect, on
+    get_conversations and after changes."""
+
+    type: ClassVar[str] = "conversations"
+    conversations: list[dict]
+    current: str = ""
+    more: bool = False
+
+
+@dataclass(frozen=True)
+class ConversationOpened(Event):
+    """One conversation for the window, on open_conversation: its header and its entries, oldest first."""
+
+    type: ClassVar[str] = "conversation"
+    id: str
+    info: dict
+    entries: list[dict]
+
+
+@dataclass(frozen=True)
+class SearchResults(Event):
+    """What search_conversations found: each {conversation, title, kind, at, snippet, via}, best first."""
+
+    type: ClassVar[str] = "search_results"
+    query: str
+    results: list[dict]
+
+
+@dataclass(frozen=True)
+class RemindersList(Event):
+    """Open reminders of today and tomorrow for the window's Today view: each {due, text}, soonest first."""
+
+    type: ClassVar[str] = "reminders"
+    reminders: list[dict]
+
+
 # ---- app -> brain
 
 
@@ -352,6 +391,8 @@ class TextInput(Command):
     text: str
     speak: bool = True
     """False: answer in the bubble and the window only, without audio."""
+    conversation: str = ""
+    """Typed into this earlier conversation: pick it up again. "" goes on with the current one."""
 
 
 @dataclass(frozen=True)
@@ -359,6 +400,42 @@ class GetHistory(Command):
     """The Milo window opened: send the recent conversation again."""
 
     type: ClassVar[str] = "get_history"
+
+
+@dataclass(frozen=True)
+class GetConversations(Command):
+    """The window wants its list: the latest page, or the page of conversations older than `before`."""
+
+    type: ClassVar[str] = "get_conversations"
+    before: str = ""
+
+
+@dataclass(frozen=True)
+class OpenConversation(Command):
+    """The user opened conversation `id`: send `conversation`."""
+
+    type: ClassVar[str] = "open_conversation"
+    id: str
+
+
+@dataclass(frozen=True)
+class SearchConversations(Command):
+    type: ClassVar[str] = "search_conversations"
+    query: str
+
+
+@dataclass(frozen=True)
+class RenameConversation(Command):
+    type: ClassVar[str] = "rename_conversation"
+    id: str
+    title: str
+
+
+@dataclass(frozen=True)
+class NewConversation(Command):
+    """⌘N: the next turn starts a new conversation, with a fresh chat model."""
+
+    type: ClassVar[str] = "new_conversation"
 
 
 @dataclass(frozen=True)
@@ -588,9 +665,19 @@ def parse_command(raw: object) -> Command:
                 text = str(raw["text"]).strip()
                 if not text:
                     raise ProtocolError("text must not be empty")
-                return TextInput(text, bool(raw.get("speak", True)))
+                return TextInput(text, bool(raw.get("speak", True)), str(raw.get("conversation") or ""))
             case "get_history":
                 return GetHistory()
+            case "get_conversations":
+                return GetConversations(str(raw.get("before") or ""))
+            case "open_conversation":
+                return OpenConversation(_required(raw, "id"))
+            case "search_conversations":
+                return SearchConversations(" ".join(str(raw["query"]).split()))
+            case "rename_conversation":
+                return RenameConversation(_required(raw, "id"), _required(raw, "title"))
+            case "new_conversation":
+                return NewConversation()
             case "context":
                 app = raw.get("app") or None
                 return ContextUpdate(str(app) if app else None, max(0.0, float(raw.get("idle_s", 0))))

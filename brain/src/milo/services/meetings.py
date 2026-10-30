@@ -661,7 +661,7 @@ class MeetingService:
             except Exception:
                 log.exception("the memory episode for meeting %s failed", m.id)
         summary = notes.summary or "I couldn't write a summary this time, but the transcript is there."
-        self._transcript.say(f"Notes from “{m.info.title}”: {summary}\n\n{path}", Emotion.HAPPY)
+        self._transcript.meeting(m.id, m.info.title, f"Notes from “{m.info.title}”: {summary}\n\n{path}")
         if self._speaker is not None:
             await self._speaker.say(f"Your notes from “{m.info.title}” are ready.", Emotion.HAPPY,
                                     speak=not self._quiet() and self._call is None)

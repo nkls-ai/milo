@@ -134,7 +134,17 @@ The menu bar shows his silhouette with the tuft and the cocked tail; the app ico
 
 He is drawn as a stack of Core Animation layers, one per part (`Views/Wren/WrenView.swift`). A part redraws only when its shape changes (a blink redraws the eyes, nothing else); moving, turning and squashing are layer transforms the window server composites. The springs run on a display link capped at 60 fps that stops as soon as he is still, and breathing is a Core Animation loop that costs the app nothing. The mic and voice levels reach him through `MiloModel.live`, outside SwiftUI, so they don't redraw the windows around him.
 
-CPU_NUMBERS
+Measured with `OverlayProbeTests` on a release build (2026-10-30, the overlay on screen, nobody touching the Mac, with another busy process on the machine), as a share of one core:
+
+| | CPU |
+|---|---|
+| idle, awake | about 0.9 to 1% (0.4% on a quieter run) |
+| asleep | 0.02% |
+| speaking, the whole overlay | 4.3 to 5.8% (2.5% quieter) |
+| listening, the whole overlay | 5.7 to 6.5%; the voice capsule's meter is a large part |
+| pointing at a window | 1 to 2% |
+
+One frame costs 0.07 ms while he speaks (one beak image in ten frames), 0.09 ms for a blink and 0.26 ms while he turns. Most of the speaking cost is the 60 fps display link and Core Animation's commits, not drawing. The probe's panel reported itself not visible, so the idle numbers include the life driver polling once a second.
 
 ## When nothing is happening
 

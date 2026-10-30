@@ -11,7 +11,7 @@
 - Thumbs up/down on unprompted nudges, stored in memory, so rules learn what you care about.
 - Context-aware dictation formatting by frontmost app (casual in Slack, formal in Mail), via a local model `TextCleaner`.
 
-- Idle CPU awake is still above 1%: about 1.8 to 3% for a release build with nobody touching the Mac (2026-10-30, on a busy machine; asleep 0.04%, before the skin system 7.2%). Repeating motion is in Core Animation now; what's left is each pose change (blinks, glances, the eyes following the cursor) redrawing the whole figure and every looping part's own hosting view, plus the springs' frames. Next: draw the eyes in their own small layer so a blink or a glance redraws only them.
+- Milo's CPU while he talks or listens is 4 to 6% of a core on a busy machine (2026-10-30, release; idle about 1%, asleep 0.02%). Drawing is under 0.1 ms a frame; the rest is the 60 fps display link and Core Animation commits. Next: drive speaking at 30 fps, and let the voice capsule's meter share his display link.
 - Setup window: Automation is checked against Mail only, and macOS can only say while Mail is open. Check Notes too.
 - Milo pointing near the left screen edge: the bubble hangs to his left and can be cut off. Move the bubble to his right when he perches there.
 
@@ -51,5 +51,5 @@
 - Wake word ("hey Milo") with a small local model.
 - Rive or sprite animations instead of SwiftUI shapes.
 - Usage readout in the menu (`JsonlUsageLedger.today_totals()` exists).
-- Mic pre-roll buffer. Skipped for now: a ring buffer needs the input stream running all the time, which keeps the macOS orange mic indicator on permanently. Recording already starts at key-down (before the 250 ms hold check shows anything), and a double tap records from the first tap.
+- Mic pre-roll buffer. Skipped for now: a ring buffer needs the input stream running all the time, which keeps the macOS orange mic indicator on permanently. Recording already starts at key-down (the app shows it 80 ms later), and a double tap records from the first tap.
 - Dev: a rebuilt app joins whatever brain holds the lock, even one running older code. build-app.sh now stops this checkout's brain; better would be the brain reporting its build and the app restarting a brain from another build.

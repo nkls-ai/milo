@@ -12,6 +12,8 @@ public final class MiloController {
         public var bindings: HotkeyBindings
         /// Presses shorter than this are taps: one alone does nothing, two lock hands-free.
         public var minHold: TimeInterval
+        /// A press shows the listening state after this long (a tap shorter than that shows nothing).
+        public var showAfter: TimeInterval
         /// The second tap must start within this long of the first.
         public var doubleTap: TimeInterval
         /// A hands-free recording stops by itself after this long, until `ui_config` says otherwise.
@@ -20,13 +22,14 @@ public final class MiloController {
         public var promptForAccessibility: Bool
 
         public init(contextInterval: TimeInterval = 15, drowsyAfter: TimeInterval = 600,
-                    bindings: HotkeyBindings = .default, minHold: TimeInterval = 0.25,
+                    bindings: HotkeyBindings = .default, minHold: TimeInterval = 0.25, showAfter: TimeInterval = 0.08,
                     doubleTap: TimeInterval = 0.35, handsFreeMax: TimeInterval = 300,
                     promptForAccessibility: Bool = true) {
             self.contextInterval = contextInterval
             self.drowsyAfter = drowsyAfter
             self.bindings = bindings
             self.minHold = minHold
+            self.showAfter = showAfter
             self.doubleTap = doubleTap
             self.handsFreeMax = handsFreeMax
             self.promptForAccessibility = promptForAccessibility
@@ -84,7 +87,8 @@ public final class MiloController {
         self.scheduler = scheduler
         self.settings = settings
         self.pushToTalk = PushToTalk(bindings: settings.bindings, minHold: settings.minHold,
-                                     doubleTap: settings.doubleTap, maxLocked: settings.handsFreeMax)
+                                     showAfter: settings.showAfter, doubleTap: settings.doubleTap,
+                                     maxLocked: settings.handsFreeMax)
     }
 
     public func start() {
@@ -175,7 +179,7 @@ public final class MiloController {
             guard next != bindings else { return }
             pushToTalkChanged(pushToTalk.rebind(next), at: nil)
             onBindingsChange?(next)
-        case .history, .entry, .replyDelta, .activity:
+        case .history, .entry, .replyDelta, .activity, .conversations, .conversation, .searchResults, .reminders:
             transcript.apply(event)
         case .facts:
             knowledge.apply(event)
@@ -194,17 +198,29 @@ public final class MiloController {
         }
     }
 
-    /// A turn typed in the Milo window. `speak` false: the answer is text only.
-    public func send(text: String, speak: Bool) {
+    /// A turn typed in the Milo window. `speak` false: the answer is text only. `conversation`: typed into
+    /// that earlier conversation, which picks it up again.
+    public func send(text: String, speak: Bool, conversation: String = "") {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        brain.send(.text(text, speak: speak))
+        brain.send(.text(text, speak: speak, conversation: conversation))
     }
 
-    /// The Milo window opened. Reads the brain's in-memory tail; no model call.
+    /// The Milo window opened. Reads the brain's in-memory tail and its list; no model call.
     public func requestHistory() {
         brain.send(.getHistory)
     }
+
+    /// What the Milo window asks of the brain besides typing: open, search, rename, start fresh.
+    public lazy var windowActions = WindowActions(
+        open: { [weak self] in self?.brain.send(.openConversation(id: $0)) },
+        search: { [weak self] in self?.brain.send(.searchConversations(query: $0)) },
+        rename: { [weak self] id, title in self?.brain.send(.renameConversation(id: id, title: title)) },
+        newConversation: { [weak self] in self?.brain.send(.newConversation) },
+        older: { [weak self] in self?.brain.send(.getConversations(before: $0)) },
+        send: { [weak self] text, speak, conversation in
+            self?.send(text: text, speak: speak, conversation: conversation)
+        })
 
     /// The "What Milo knows" window opened. Reads the brain's fact list; no model call.
     public func requestFacts() {

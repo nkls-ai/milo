@@ -310,13 +310,15 @@ private final class Harness {
 
     // MARK: Push-to-talk
 
-    @Test func holdStartsTentativelyConfirmsAfterMinHoldThenStops() {
+    @Test func holdStartsTentativelyShowsWithin100msThenStops() {
         let h = Harness()
         h.keys.press(.rightOption, at: 0)
         #expect(h.brain.sent == [.listenStart(.talk, tentative: true)])
-        h.scheduler.advance(by: 0.2)
+        h.scheduler.advance(by: 0.05)
         #expect(h.brain.sent.count == 1)
-        h.scheduler.advance(by: 0.8)
+        h.scheduler.advance(by: 0.03)
+        #expect(h.brain.sent == [.listenStart(.talk, tentative: true), .listenConfirm], "shown 80 ms after key-down")
+        h.scheduler.advance(by: 0.92)
         h.keys.release(.rightOption, at: 1)
         #expect(h.brain.sent == [.listenStart(.talk, tentative: true), .listenConfirm, .listenStop])
         #expect(h.model.handsFree == nil)
@@ -325,13 +327,23 @@ private final class Harness {
     @Test func singleTapCancelsQuietlyOnceTheDoubleTapWindowCloses() {
         let h = Harness()
         h.keys.press(.fn, at: 0)
-        h.advance(to: 0.1)
-        h.keys.release(.fn, at: 0.1)
+        h.advance(to: 0.06)
+        h.keys.release(.fn, at: 0.06)
         h.advance(to: 0.34)
-        #expect(h.brain.sent == [.listenStart(.dictate, tentative: true)])
+        #expect(h.brain.sent == [.listenStart(.dictate, tentative: true)], "too quick to show")
         h.advance(to: 0.36)
         #expect(h.brain.sent == [.listenStart(.dictate, tentative: true), .listenCancel])
         #expect(h.scheduler.pendingCount == 1, "only the context timer is left")
+    }
+
+    @Test func aLongerSingleTapShowsAndGoesAwayAgain() {
+        let h = Harness()
+        h.keys.press(.fn, at: 0)
+        h.advance(to: 0.15)
+        h.keys.release(.fn, at: 0.15)
+        h.advance(to: 0.36)
+        #expect(h.brain.sent == [.listenStart(.dictate, tentative: true), .listenConfirm, .listenCancel],
+                "still a tap: no paste, just a short look")
     }
 
     @Test func shortcutDuringAHoldCancels() {

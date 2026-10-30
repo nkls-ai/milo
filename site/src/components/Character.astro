@@ -1,0 +1,34 @@
+---
+// Milo, drawn on the server in one pose and brought to life in the browser by <milo-character>.
+// Every Milo on the page goes through here, so a new design only touches src/character/index.js.
+import { rig } from '../character/index.js';
+
+interface Props {
+  pose?: string;
+  /** Pose numbers on top of the named pose. */
+  extra?: Record<string, unknown>;
+  /** Unique, used for gradient ids. */
+  id: string;
+  /** Alt text. Leave out for a decorative copy (it is then hidden from screen readers). */
+  label?: string | true;
+  /** "off" for a Milo who shouldn't blink (asleep). */
+  blink?: 'off';
+  class?: string;
+  /** Drawn with fewer details, for helpers and icons. */
+  small?: boolean;
+}
+const { pose = 'idle', extra = {}, id, label, blink, class: cls, small = false } = Astro.props;
+const { defs, body } = rig.draw({ ...rig.poses[pose], ...extra, small }, id);
+const alt = label === true ? rig.describe(pose) : label;
+---
+<milo-character
+  class:list={['milo', cls]}
+  data-pose={pose}
+  data-uid={id}
+  data-extra={Object.keys(extra).length || small ? JSON.stringify({ ...extra, small }) : undefined}
+  data-blink={blink}
+  data-describe={typeof label === 'string' ? 'off' : undefined}
+  role={alt ? 'img' : undefined}
+  aria-label={alt || undefined}
+  aria-hidden={alt ? undefined : 'true'}
+><svg viewBox={rig.viewBox} overflow="visible" aria-hidden="true" focusable="false" set:html={defs + body} /></milo-character>

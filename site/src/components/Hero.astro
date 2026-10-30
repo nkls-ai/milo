@@ -1,0 +1,262 @@
+---
+import Character from './Character.astro';
+---
+<section class="hero" id="top" aria-labelledby="hero-title">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <h1 id="hero-title">Just tell Milo.</h1>
+      <p class="lede">
+        He's a small coworker who lives in the corner of your Mac. Tell him what you need, the way you'd tell a colleague.
+        He does it where you can see, and asks before anything you can't undo.
+      </p>
+      <div class="cta">
+        <a class="btn" href="#waitlist">Join the waitlist</a>
+        <a class="link-quiet" href="#talk">See him work</a>
+      </div>
+      <p class="note">For Macs with Apple silicon and macOS 14 or later. Free to start.</p>
+    </div>
+
+    <div class="stage" data-hero-stage>
+      <div class="screen" aria-hidden="true">
+        <div class="menubar">
+          <span class="mb-left"><b>Calendar</b><span>File</span><span>Edit</span><span>View</span></span>
+          <span class="mb-right"><span class="mb-milo"></span><span>Thu 9:41</span></span>
+        </div>
+        <div class="cal">
+          <div class="cal-head"><span>Mon</span><span>Tue</span><span>Wed</span><span class="today">Thu</span><span>Fri</span></div>
+          <div class="cal-body">
+            <i class="ev" style="--c:1;--r:2;--h:2">Team call</i>
+            <i class="ev ev-alt" style="--c:2;--r:4;--h:3">Lunch with Anna</i>
+            <i class="ev" style="--c:3;--r:1;--h:2">Invoices</i>
+            <i class="ev ev-new" data-hero-event style="--c:4;--r:1;--h:2">Dentist, 9:00</i>
+            <i class="ev ev-alt" style="--c:5;--r:3;--h:2">Book club</i>
+          </div>
+        </div>
+      </div>
+      <p class="words said" data-hero-said aria-hidden="true"><span class="wave"><i></i><i></i><i></i><i></i><i></i></span><span data-text></span></p>
+
+      <div class="milo-slot" data-milo-slot="hero">
+        <div class="milo-free" id="milo" data-milo>
+          <button class="milo-hit" type="button" aria-label="Say hello to Milo">
+            <Character id="milo" pose="idle" label />
+          </button>
+          <p class="bubble milo-bubble" data-milo-bubble aria-live="polite"></p>
+          <span class="zzz" aria-hidden="true"><i>z</i><i>z</i><i>z</i></span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="sr-only">
+    In the picture, someone asks Milo to put the dentist in their calendar for Thursday at nine. Milo answers: "Done.
+    Dentist, Thursday at nine."
+  </p>
+</section>
+
+<style>
+  .hero { padding-block: clamp(2rem, 5vw, 5rem) clamp(4rem, 8vw, 8rem); }
+  .hero-grid { display: grid; gap: clamp(2.5rem, 5vw, 4rem); align-items: center; }
+  @media (min-width: 60rem) {
+    .hero-grid { grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); }
+  }
+  h1 {
+    font-size: var(--step-4);
+    font-weight: 540;
+    letter-spacing: -0.035em;
+    line-height: 0.96;
+  }
+  .lede { margin-top: 1.6rem; font-size: var(--step-1); line-height: 1.5; color: var(--ink-2); max-width: 30rem; }
+  .cta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.8rem 1.6rem; margin-top: 2.2rem; }
+  .cta .btn { min-height: 3.4rem; padding-inline: 1.7rem; font-size: 1.1rem; }
+  .note { margin-top: 1.1rem; }
+
+  /* ---- the corner of a Mac screen, where Milo lives ---- */
+  .stage { position: relative; aspect-ratio: 1 / 0.92; container-type: inline-size; }
+  @media (max-width: 40rem) { .stage { aspect-ratio: 1 / 1.1; } .cal { width: 84%; top: 11%; font-size: 0.6rem; } .milo-slot { width: 50%; } .said { top: 50%; max-width: 84%; } }
+  .screen {
+    position: absolute; inset: 0;
+    border-radius: 1.6rem;
+    border: 0.55rem solid light-dark(#2b2454, #0b0916);
+    background:
+      radial-gradient(70% 60% at 88% 92%, light-dark(#ffe7bd, #5b3f63) 0%, transparent 70%),
+      radial-gradient(90% 80% at 10% 0%, light-dark(#d5ccf6, #3a3270) 0%, transparent 70%),
+      linear-gradient(160deg, light-dark(#e4defa, #241f45), light-dark(#efe6f4, #1c1735));
+    box-shadow: 0 30px 60px -30px rgb(var(--shadow-color) / 0.45), inset 0 0 0 1px rgb(255 255 255 / 0.06);
+    overflow: hidden;
+  }
+  .menubar {
+    display: flex; justify-content: space-between; align-items: center;
+    height: 1.55rem; padding: 0 0.8rem;
+    font-size: 0.72rem; color: light-dark(#2b2454, #e8e5ff);
+    background: light-dark(rgb(255 255 255 / 0.5), rgb(10 8 24 / 0.45));
+    backdrop-filter: blur(10px);
+  }
+  .mb-left, .mb-right { display: flex; gap: 0.9rem; align-items: center; }
+  .mb-left b { font-weight: 700; }
+  .mb-milo { width: 0.62rem; height: 0.62rem; border-radius: 50%; background: #9688d6; box-shadow: inset -1px -1px 0 #5e4fa4, 0 0.18rem 0 -0.08rem var(--scarf); }
+
+  .cal {
+    position: absolute; left: 6%; top: 13%; width: 70%;
+    background: var(--card);
+    border-radius: 0.6rem;
+    box-shadow: var(--shadow-window);
+    font-size: 0.68rem;
+    overflow: hidden;
+  }
+  .cal-head { display: grid; grid-template-columns: repeat(5, 1fr); padding: 0.5rem 0.4rem 0.4rem; border-bottom: 1px solid var(--rule); color: var(--ink-3); font-weight: 600; }
+  .cal-head span { text-align: center; }
+  .cal-head .today { color: var(--lavender-deep); }
+  .cal-body {
+    display: grid; grid-template-columns: repeat(5, 1fr); grid-template-rows: repeat(6, 1.05rem);
+    gap: 0.2rem; padding: 0.4rem;
+    background-image: repeating-linear-gradient(to bottom, transparent 0 calc(1.25rem - 1px), var(--rule) calc(1.25rem - 1px) 1.25rem);
+    background-position: 0 0.3rem;
+  }
+  .ev {
+    grid-column: var(--c); grid-row: var(--r) / span var(--h);
+    font-style: normal; font-weight: 650; line-height: 1.15;
+    padding: 0.2rem 0.3rem;
+    border-radius: 0.3rem;
+    background: var(--lavender-wash); color: var(--lavender-deep);
+    border-left: 2px solid var(--lavender);
+    overflow: hidden;
+  }
+  .ev-alt { background: light-dark(#fdf0dc, #3d2f22); color: light-dark(#8a5512, #fac98a); border-left-color: var(--marigold); }
+  .ev-new { opacity: 0; transform: scale(0.6); transform-origin: top left; transition: opacity 240ms, transform 420ms var(--ease-spring); }
+  .ev-new.is-on { opacity: 1; transform: none; }
+
+  .said {
+    position: absolute; left: 6%; top: 60%;
+    max-width: 62%;
+    opacity: 0; transform: translateY(0.4rem) scale(0.98);
+    transition: opacity 220ms, transform 300ms var(--ease-out);
+    font-size: clamp(0.82rem, 2.4cqi, 1rem);
+  }
+  .said.is-on { opacity: 1; transform: none; }
+
+  /* Milo's spot in the corner of the drawn screen. The script lifts him out and lets him fly. */
+  .milo-slot {
+    position: absolute; right: 4%; bottom: 3%;
+    width: 44%; aspect-ratio: 1;
+  }
+</style>
+
+<style is:global>
+  /* Milo and his bubble, on the page or in the corner of the window. Global because the script
+     moves this element to the end of <body> so it can stay fixed while you scroll. */
+  .milo-free { position: absolute; inset: 0; z-index: 40; }
+  .milo-free.is-free { position: fixed; inset: auto; left: 0; top: 0; will-change: transform; }
+  .milo-hit {
+    display: block; width: 100%; height: 100%;
+    padding: 0; border: 0; background: none; border-radius: 40%;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .milo-hit milo-character { width: 100%; height: 100%; transform-origin: 50% 91%; }
+  .milo-hit { transition: opacity 260ms, transform 420ms var(--ease-spring); transform-origin: 50% 100%; }
+  .milo-free.is-ducked .milo-hit { opacity: 0; transform: translateY(35%) scale(0.7); pointer-events: none; visibility: hidden; transition: opacity 200ms, transform 260ms var(--ease-out), visibility 0s 260ms; }
+  .milo-free.is-ducked .milo-bubble { opacity: 0; }
+  .milo-free.is-aside .milo-hit { opacity: 0; transform: translateY(60%) scale(0.8); transition: opacity 160ms, transform 220ms var(--ease-out); }
+  .milo-free.is-aside .milo-bubble { opacity: 0; }
+  :root:not([data-milo='hero']) .said { opacity: 0 !important; }
+  @media (prefers-reduced-motion: no-preference) {
+    .milo-hit milo-character { animation: breathe 4.2s ease-in-out infinite; }
+    .milo-free[data-state='sleeping'] .milo-hit milo-character { animation-duration: 6.4s; }
+  }
+  @keyframes breathe { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(1.012, 0.99); } }
+
+  .milo-bubble {
+    position: absolute; right: 52%; bottom: 84%;
+    width: max-content; max-width: min(19rem, 72vw);
+    transform-origin: 92% 100%;
+    opacity: 0; transform: translateY(0.3rem) scale(0.92);
+    transition: opacity 180ms, transform 320ms var(--ease-spring);
+    pointer-events: none;
+  }
+  .milo-bubble.is-on { opacity: 1; transform: none; }
+  .milo-free.is-small .milo-bubble { right: 66%; bottom: 78%; font-size: 0.95rem; }
+
+  .zzz { position: absolute; right: 8%; top: 4%; pointer-events: none; font-family: var(--font-display); font-weight: 700; color: var(--lavender); }
+  .zzz i { position: absolute; font-style: normal; opacity: 0; font-size: 1rem; }
+  .milo-free[data-state='sleeping'] .zzz i { animation: zzz 3.6s ease-in-out infinite; }
+  .zzz i:nth-child(2) { animation-delay: 1.2s !important; }
+  .zzz i:nth-child(3) { animation-delay: 2.4s !important; }
+  @keyframes zzz {
+    0% { opacity: 0; transform: translate(0, 0) scale(0.6); }
+    25% { opacity: 0.9; }
+    100% { opacity: 0; transform: translate(0.9rem, -1.8rem) scale(1.1); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .milo-free[data-state='sleeping'] .zzz i:first-child { animation: none; opacity: 0.8; }
+  }
+</style>
+
+<script>
+  // The hero loop: someone says something, Milo listens, thinks for a beat, answers.
+  import { milo } from '../scripts/milo';
+
+  const stage = document.querySelector<HTMLElement>('[data-hero-stage]')!;
+  const said = stage.querySelector<HTMLElement>('[data-hero-said]')!;
+  const saidText = said.querySelector<HTMLElement>('[data-text]')!;
+  const event = stage.querySelector<HTMLElement>('[data-hero-event]')!;
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const talks = [
+    { you: 'Put the dentist in my calendar, Thursday at nine.', milo: 'Done. Dentist, Thursday at nine.', calendar: true },
+    { you: 'Is this email from my bank real?', milo: "That one looks like a scam. Don't click it.", pose: 'concerned' },
+    { you: 'What was the plumber called?', milo: 'Becker. You called him in March about the kitchen tap.' },
+    { you: 'Send Anna the photos from Sunday.', milo: "Found 14. I'm about to send them to Anna. Send them?", pose: 'waiting' },
+  ];
+
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  let visible = true;
+  new IntersectionObserver(([e]) => { visible = e.isIntersecting; }, { threshold: 0.3 }).observe(stage);
+  const ready = () => visible && milo.place === 'hero' && !milo.sleeping && document.visibilityState === 'visible';
+  const until = async (ms: number) => {
+    await wait(ms);
+    while (!ready()) await wait(400);
+  };
+
+  async function run() {
+    if (reduce) {
+      // no loop: one exchange, shown whenever he's back in the hero
+      saidText.textContent = talks[0].you;
+      said.classList.add('is-on');
+      event.classList.add('is-on');
+      const show = () => { if (milo.place === 'hero') milo.say(talks[0].milo, 0); };
+      addEventListener('milo:place', show);
+      show();
+      return;
+    }
+    let i = 0;
+    await until(900);
+    for (;;) {
+      const t = talks[i % talks.length];
+      // you speak: words arrive phrase by phrase, he leans in and nods
+      saidText.textContent = '';
+      said.classList.add('is-on', 'is-live');
+      milo.el.pose = 'listening';
+      const words = t.you.split(' ');
+      for (let w = 0; w < words.length; w++) {
+        saidText.textContent = words.slice(0, w + 1).join(' ');
+        if (w % 3 === 2) milo.el.play('nod');
+        await wait(150 + Math.random() * 90);
+      }
+      said.classList.remove('is-live');
+      await wait(260);
+      milo.el.pose = 'thinking';
+      await wait(700);
+      milo.el.pose = t.pose ?? 'speaking';
+      milo.say(t.milo, 0);
+      if (t.calendar) setTimeout(() => event.classList.add('is-on'), 450);
+      await wait(1400);
+      if (!t.pose) milo.el.pose = 'idle';
+      await until(2300);
+      said.classList.remove('is-on');
+      milo.hush();
+      milo.el.pose = 'idle';
+      await until(900);
+      if (t.calendar) event.classList.remove('is-on');
+      i++;
+    }
+  }
+  run();
+</script>

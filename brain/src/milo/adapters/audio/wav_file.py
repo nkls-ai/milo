@@ -3,7 +3,10 @@
 The output plays at the speed a sound card would: audio fed late leaves silence, drain() waits until the
 last sample "played", and interrupt() cuts at that moment. So the file is what the user would have heard,
 gaps included, and timing tests and voice comparisons run without a sound ever reaching the room. The
-input plays a WAV file as the microphone, from its start each time recording starts (silence when unset).
+input plays a WAV file as the microphone, from its start each time recording starts (silence when unset);
+a test that writes a new file there before a recording gets it heard. If the test also writes when the key
+went down (`<mic>.json`, {"pressed_at": epoch seconds}), the file plays from that moment: a mic that opens
+late misses the first words, as a real one would.
 """
 
 from __future__ import annotations
@@ -151,17 +154,28 @@ class WavPlayer:
 
 
 class WavMicrophone:
-    """An AudioInput that hears a WAV file, in real time from the moment recording starts."""
+    """An AudioInput that hears a WAV file, in real time from the moment recording starts. The file is read
+    again when it changed since the last recording."""
 
     def __init__(self, path: Path | None, clock=time.monotonic):
         self._clock = clock
+        self._path = path
+        self._stamp: tuple[int, int] | None = None
         self._audio = np.zeros(0, dtype=np.float32)
-        if path is not None:
-            audio, rate = read_wav(path)
-            if rate != STT_SAMPLE_RATE:
-                raise ValueError(f"{path}: the microphone needs {STT_SAMPLE_RATE} Hz, not {rate}")
-            self._audio = audio
+        self._load()
         self._started: float | None = None
+        self._skip = 0  # samples of the file said before the mic opened
+
+    def _load(self) -> None:
+        if self._path is None or not self._path.exists():
+            return
+        stat = self._path.stat()
+        if (stat.st_mtime_ns, stat.st_size) == self._stamp:
+            return
+        audio, rate = read_wav(self._path)
+        if rate != STT_SAMPLE_RATE:
+            raise ValueError(f"{self._path}: the microphone needs {STT_SAMPLE_RATE} Hz, not {rate}")
+        self._audio, self._stamp = audio, (stat.st_mtime_ns, stat.st_size)
 
     @property
     def active(self) -> bool:
@@ -173,7 +187,20 @@ class WavMicrophone:
 
     def start(self, on_level: LevelCallback) -> None:
         if self._started is None:
+            self._load()
+            self._skip = int(self._late() * STT_SAMPLE_RATE)
             self._started = self._clock()
+
+    def _late(self) -> float:
+        """How long ago the key went down, if the test said so: that much of the file was said already."""
+        marker = self._path.with_suffix(".json") if self._path is not None else None
+        if marker is None or not marker.exists():
+            return 0.0
+        try:
+            late = time.time() - float(json.loads(marker.read_text())["pressed_at"])
+        except (ValueError, KeyError, TypeError):
+            return 0.0
+        return late if 0 < late < 60 else 0.0
 
     def stop(self) -> Audio:
         audio = self.peek()
@@ -184,7 +211,7 @@ class WavMicrophone:
         if self._started is None:
             return np.zeros(0, dtype=np.float32)
         heard = int((self._clock() - self._started) * STT_SAMPLE_RATE)
-        audio = self._audio[:heard]
+        audio = self._audio[self._skip:self._skip + heard]
         if heard > len(audio):
             audio = np.concatenate([audio, np.zeros(heard - len(audio), dtype=np.float32)])
         return audio[start:].copy()

@@ -234,51 +234,6 @@ struct ProgressLine: View {
     }
 }
 
-/// The helpers at the top of the Milo window: each one's figure, title, what it does now, its last steps,
-/// and a Stop button. A click on a helper shows its task further down.
-struct HelpersPanel: View {
-    @Environment(\.miloTheme) private var theme
-    let helpers: [HelperInfo]
-    let entries: [TranscriptEntry]
-    let open: (String) -> Void
-    let stop: (String) -> Void
-    /// Rows shown before "and 2 more": the conversation keeps most of the window.
-    static let rows = 4
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(helpers.count == 1 ? "1 helper" : "\(helpers.count) helpers")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                if helpers.filter(\.status.active).count > 1 {
-                    Button("Stop all") { helpers.filter(\.status.active).forEach { stop($0.id) } }
-                        .buttonStyle(.plain)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(WindowColors.failed)
-                }
-            }
-            ForEach(helpers.prefix(Self.rows)) { helper in
-                HelperRow(helper: helper, steps: steps(of: helper), open: { open(helper.id) }, stop: { stop(helper.id) })
-            }
-            if helpers.count > Self.rows {
-                Text("and \(helpers.count - Self.rows) more in the conversation below")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(theme.ink.opacity(0.05))
-        .overlay(alignment: .bottom) { Rectangle().fill(theme.rule).frame(height: 1) }
-    }
-
-    private func steps(of helper: HelperInfo) -> [ActivityStep] {
-        Array((entries.last(where: { $0.id == helper.id })?.steps ?? []).suffix(2))
-    }
-}
-
 struct HelperRow: View {
     let helper: HelperInfo
     let steps: [ActivityStep]

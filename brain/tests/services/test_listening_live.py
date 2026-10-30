@@ -2,11 +2,19 @@
 
 import asyncio
 
+import pytest
+
 from milo.core.events import Dictation, Level, Partial
 from milo.core.types import ListenMode, LiveMode, MiloState
 from milo.services.listening import Listening
 from tests.services.stack import InlineExecutor, Stack, settle
 from tests.services.test_live_transcript import GrowingMic, hear, quiet, tone
+
+
+@pytest.fixture(autouse=True)
+def slow_words(monkeypatch):
+    """A test word is a second-long tone, far slower than speech: keep the safety net for real dictations."""
+    monkeypatch.setattr("milo.services.live_transcript.MIN_WORDS_PER_S", 0.3)
 
 
 class HearingStt:

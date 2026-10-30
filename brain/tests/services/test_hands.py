@@ -8,7 +8,7 @@ from milo.core.events import Activity, FlyTo, HandsBorrow, HandsSession, Status
 from milo.core.types import BorrowNeeded, HandsError
 from milo.services.hands import NO_TASK, STOPPED, TURNED_OFF, HandsService, title
 from milo.services.transcript import Transcript
-from tests.fakes import FakeClock, FakeConfirm, FakeHands, MemoryTranscript, RecordingSink
+from tests.fakes import FakeClock, FakeConfirm, FakeHands, MemoryConversations, RecordingSink
 
 SAVE = {"app": "Microsoft Excel", "title": "Save", "role": "button", "point": {"x": 812, "y": 430.5}}
 SEND = {"app": "Mail", "title": "Send", "role": "button", "point": {"x": 40, "y": 60}}
@@ -19,7 +19,7 @@ class Setup:
         self.sink = RecordingSink()
         self.port = hands or FakeHands()
         self.confirm = confirm or FakeConfirm()
-        self.transcript = Transcript(self.sink, MemoryTranscript(), FakeClock())
+        self.transcript = Transcript(self.sink, MemoryConversations(), FakeClock())
         self.task = self.transcript.task_started("tidy the budget")
         self.service = HandsService(self.port, self.confirm, self.sink, transcript=self.transcript, **kwargs)
         self.service.begin(self.task)

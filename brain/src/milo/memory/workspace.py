@@ -86,7 +86,18 @@ class Workspace:
 
     @property
     def transcript_path(self) -> Path:
+        """The old one-scroll transcript. Migrated into conversations_dir once, then no longer written."""
         return self.state_dir / "transcript.jsonl"
+
+    @property
+    def transcript_kept_path(self) -> Path:
+        """transcript.jsonl as it was before the migration, kept."""
+        return self.state_dir / "transcript.before-conversations.jsonl"
+
+    @property
+    def conversations_dir(self) -> Path:
+        """One JSONL file per conversation in month folders, plus index.jsonl. See memory/conversations.py."""
+        return self.state_dir / "conversations"
 
     @property
     def routines_dir(self) -> Path:

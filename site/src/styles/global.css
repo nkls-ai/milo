@@ -1,0 +1,294 @@
+/* Milo's homepage. Colours come from the app's Pip theme (app/Sources/MiloKit/Theme.swift) and the
+   wren's scarf. `light-dark()` picks a side from color-scheme, which the theme switch sets. */
+
+:root {
+  color-scheme: light dark;
+  --paper: light-dark(#f5f3fd, #16132a);
+  --paper-2: light-dark(#ece8fa, #1c1834);
+  --card: light-dark(#ffffff, #221e3b);
+  --card-2: light-dark(#f8f7fd, #1b1832);
+  --ink: light-dark(#2b2454, #edebff);
+  --ink-2: light-dark(#59527f, #b4aed8);
+  --ink-3: light-dark(#7a74a0, #8f88b8);
+  --lavender: light-dark(#6b5cbf, #b8adf2);
+  --lavender-deep: light-dark(#5a4bad, #cbc3f7);
+  --lavender-soft: light-dark(#dcd6f7, #3a3366);
+  --lavender-wash: light-dark(#ebe7fb, #262046);
+  --on-lavender: light-dark(#ffffff, #16132a);
+  --marigold: light-dark(#e8912e, #fab861);
+  --scarf: #f0b649;
+  --scarf-lo: #c98526;
+  --scarf-rib: #fad58a;
+  --rule: light-dark(rgb(107 92 191 / 0.16), rgb(255 255 255 / 0.1));
+  --rule-strong: light-dark(rgb(43 36 84 / 0.22), rgb(255 255 255 / 0.18));
+  --rec: #e5484d;
+  --ok: light-dark(#2f8a5b, #6fd39f);
+  --shadow-color: light-dark(43 36 84, 4 2 14);
+  --shadow-window:
+    0 0 0 0.5px rgb(var(--shadow-color) / 0.22),
+    0 1px 1px rgb(var(--shadow-color) / 0.05),
+    0 4px 10px -2px rgb(var(--shadow-color) / 0.07),
+    0 24px 48px -16px rgb(var(--shadow-color) / 0.22);
+  --shadow-pop:
+    0 0 0 0.5px rgb(var(--shadow-color) / 0.18),
+    0 2px 4px rgb(var(--shadow-color) / 0.06),
+    0 10px 24px -6px rgb(var(--shadow-color) / 0.2);
+
+  --radius-window: 0.8rem;
+  --radius-pill: 999px;
+  --ease-spring: cubic-bezier(0.34, 1.36, 0.64, 1);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --measure: 34rem;
+  --page: 78rem;
+  --gutter: clamp(1.25rem, 4vw, 3rem);
+
+  --step--1: 0.875rem;
+  --step-0: 1.1875rem;
+  --step-1: 1.375rem;
+  --step-2: clamp(1.6rem, 1.2rem + 1.4vw, 2.1rem);
+  --step-3: clamp(2.1rem, 1.4rem + 2.6vw, 3.4rem);
+  --step-4: clamp(3.5rem, 1.6rem + 5.4vw, 7.2rem);
+}
+
+:root[data-theme='light'] { color-scheme: light; }
+:root[data-theme='dark'] { color-scheme: dark; }
+
+/* Everything is sized in rem, and the rem grows a little on big screens, so a 2560 px window gets
+   the same page, larger, instead of a narrow strip in the middle. */
+html {
+  font-size: clamp(16px, 0.36vw + 10.8px, 21px);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  scroll-padding-top: 5rem;
+}
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-text);
+  font-size: var(--step-0);
+  line-height: 1.55;
+  font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  overflow-x: clip;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-display);
+  font-variation-settings: 'SOFT' 100, 'WONK' 0;
+  font-weight: 560;
+  line-height: 1.04;
+  letter-spacing: -0.022em;
+  margin: 0;
+  text-wrap: balance;
+  font-kerning: normal;
+}
+h3 { font-size: var(--step-1); letter-spacing: -0.01em; line-height: 1.2; font-weight: 600; }
+
+p { margin: 0; text-wrap: pretty; }
+a { color: var(--lavender-deep); text-decoration-thickness: 0.08em; text-underline-offset: 0.18em; }
+a:hover { text-decoration-thickness: 0.14em; }
+strong { font-weight: 700; }
+img, svg { display: block; max-width: 100%; }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+::selection { background: color-mix(in srgb, var(--scarf) 55%, transparent); color: var(--ink); }
+
+:focus-visible {
+  outline: 3px solid var(--lavender);
+  outline-offset: 3px;
+}
+
+.sr-only {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0);
+  white-space: nowrap; border: 0;
+}
+
+.skip {
+  position: absolute; left: 1rem; top: -4rem; z-index: 100;
+  background: var(--ink); color: var(--paper);
+  padding: 0.6rem 1rem; border-radius: 0.5rem; text-decoration: none;
+}
+.skip:focus { top: 1rem; }
+
+.wrap {
+  width: min(100% - 2 * var(--gutter), var(--page));
+  margin-inline: auto;
+}
+
+/* ---------- buttons: a little like a key cap, so they look pressable ---------- */
+.btn {
+  --b: var(--lavender);
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.55em;
+  min-height: 3rem;
+  padding: 0.7rem 1.4rem;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--b);
+  color: var(--on-lavender);
+  font-weight: 650;
+  font-size: 1.0625rem;
+  line-height: 1.1;
+  text-decoration: none;
+  white-space: nowrap;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.28),
+    inset 0 -2px 0 rgb(0 0 0 / 0.14),
+    0 1px 2px rgb(var(--shadow-color) / 0.2),
+    0 6px 16px -6px color-mix(in srgb, var(--b) 70%, transparent);
+  transition: transform 160ms var(--ease-spring), box-shadow 160ms, background-color 160ms;
+}
+.btn:hover { background: var(--lavender-deep); text-decoration: none; }
+.btn:active { transform: translateY(1px) scale(0.985); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.2), inset 0 -1px 0 rgb(0 0 0 / 0.12); }
+.btn-quiet {
+  background: transparent; color: var(--ink);
+  box-shadow: inset 0 0 0 1.5px var(--rule-strong);
+}
+.btn-quiet:hover { background: var(--lavender-wash); }
+.btn-small { min-height: 2.5rem; padding: 0.5rem 1rem; font-size: 0.95rem; }
+
+.link-quiet {
+  color: var(--ink); font-weight: 600; text-decoration: underline;
+  text-decoration-color: var(--rule-strong); text-decoration-thickness: 1.5px;
+}
+.link-quiet:hover { text-decoration-color: var(--lavender); }
+
+/* ---------- key caps (fn, ⌥, esc) ---------- */
+kbd, .key {
+  font-family: var(--font-text);
+  display: inline-grid; place-items: center;
+  min-width: 1.9em; height: 1.7em;
+  padding: 0 0.4em;
+  border-radius: 0.38em;
+  background: var(--card);
+  color: var(--ink);
+  font-size: 0.82em; font-weight: 650;
+  line-height: 1;
+  box-shadow: 0 0 0 0.5px var(--rule-strong), 0 1.5px 0 var(--rule-strong);
+  vertical-align: 0.08em;
+}
+
+/* ---------- sections ---------- */
+.section {
+  padding-block: clamp(4rem, 7vw, 7rem);
+  position: relative;
+}
+.section-head { max-width: var(--measure); }
+.section-head h2 { font-size: var(--step-3); }
+.section-head p { margin-top: 1.1rem; color: var(--ink-2); font-size: var(--step-0); max-width: 31rem; }
+.section-head p + p { margin-top: 0.8rem; }
+
+/* text beside a demo on wide screens, stacked on narrow ones */
+.feature {
+  display: grid;
+  gap: clamp(2rem, 4vw, 4.5rem);
+  align-items: center;
+}
+.feature > * { min-width: 0; }
+@media (min-width: 60rem) {
+  .feature { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); }
+  .feature.flip > :first-child { order: 2; }
+}
+
+.note {
+  color: var(--ink-3);
+  font-size: var(--step--1);
+  line-height: 1.45;
+}
+
+/* ---------- the Mac window every demo lives in ---------- */
+.window {
+  position: relative;
+  background: var(--card);
+  border-radius: var(--radius-window);
+  box-shadow: var(--shadow-window);
+  overflow: clip;
+  isolation: isolate;
+}
+.window-bar {
+  display: flex; align-items: center; gap: 0.75rem;
+  height: 2.4rem;
+  padding: 0 0.9rem;
+  border-bottom: 1px solid var(--rule);
+  background: var(--card-2);
+  font-size: 0.82rem; font-weight: 600; color: var(--ink-2);
+}
+.lights { display: flex; gap: 0.42rem; flex: none; }
+.lights i { width: 0.72rem; height: 0.72rem; border-radius: 50%; background: #ff5f57; box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.14); }
+.lights i:nth-child(2) { background: #febc2e; }
+.lights i:nth-child(3) { background: #28c840; }
+.window-title { flex: 1; text-align: center; margin-right: 3.2rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- Milo's speech bubble ---------- */
+.bubble {
+  position: relative;
+  background: var(--card);
+  color: var(--ink);
+  border-radius: 1.1rem;
+  padding: 0.7rem 1rem;
+  box-shadow: var(--shadow-pop);
+  font-size: 1.02rem;
+  line-height: 1.35;
+  max-width: 19rem;
+}
+.bubble::after {
+  content: '';
+  position: absolute;
+  width: 0.9rem; height: 0.9rem;
+  background: inherit;
+  bottom: -0.32rem; right: 1.6rem;
+  transform: rotate(45deg);
+  border-radius: 0 0 0.2rem 0;
+  box-shadow: 0.5px 0.5px 0 0 rgb(var(--shadow-color) / 0.12);
+}
+
+/* ---------- the pill where your words show up while you speak ---------- */
+.words {
+  display: inline-flex; align-items: center; gap: 0.6rem;
+  background: color-mix(in srgb, var(--ink) 92%, transparent);
+  color: var(--paper);
+  border-radius: var(--radius-pill);
+  padding: 0.5rem 1rem 0.5rem 0.75rem;
+  font-size: 0.98rem;
+  line-height: 1.3;
+  box-shadow: var(--shadow-pop);
+}
+.wave { display: inline-flex; align-items: center; gap: 2px; height: 1rem; flex: none; }
+.wave i { width: 3px; border-radius: 2px; background: var(--scarf); height: 30%; }
+.is-live .wave i { animation: wave 0.9s ease-in-out infinite; }
+.wave i:nth-child(2) { animation-delay: -0.15s; }
+.wave i:nth-child(3) { animation-delay: -0.45s; }
+.wave i:nth-child(4) { animation-delay: -0.3s; }
+.wave i:nth-child(5) { animation-delay: -0.6s; }
+@keyframes wave { 0%, 100% { height: 25%; } 50% { height: 100%; } }
+
+/* ---------- Milo himself ---------- */
+milo-character { display: block; aspect-ratio: 1; }
+milo-character svg { width: 100%; height: 100%; overflow: visible; }
+
+/* replay buttons under demos */
+.replay {
+  display: inline-flex; align-items: center; gap: 0.45rem;
+  margin-top: 1rem;
+  background: none; border: 0; padding: 0.35rem 0.1rem;
+  color: var(--ink-2); font-size: 0.92rem; font-weight: 600;
+  border-radius: 0.4rem;
+}
+.replay:hover { color: var(--ink); }
+.replay svg { width: 1em; height: 1em; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}

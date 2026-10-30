@@ -9,7 +9,7 @@ struct WorkingOutlineView: View {
     static let stop = String(localized: "Stop", comment: "Button to stop Milo working")
 
     var onStop: () -> Void
-    /// The skin he wears; the outline passes a new one when `[ui] character` changes.
+    /// His theme; the outline passes a new one when `[ui] character` changes.
     var theme = Theme.for(.milo)
 
     var body: some View {

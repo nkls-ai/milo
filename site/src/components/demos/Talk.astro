@@ -1,0 +1,220 @@
+---
+import Character from '../Character.astro';
+---
+<section class="section" id="talk" aria-labelledby="talk-title">
+  <div class="wrap feature">
+    <div class="section-head">
+      <h2 id="talk-title">Hold a key and say it.</h2>
+      <p>Hold the right <kbd>⌥</kbd> key and talk to him the way you'd talk to anyone. He starts answering in about two seconds, out loud, in a voice that sounds like a person.</p>
+      <p class="note">On this page he only pretends to listen. Your microphone stays off.</p>
+    </div>
+
+    <div class="talk" data-talk data-has-milo>
+      <div class="talk-desk">
+        <div class="talk-milo">
+          <Character id="talk" pose="idle" label="Milo, ready to listen" />
+          <p class="bubble talk-bubble" data-reply aria-live="polite"></p>
+        </div>
+        <p class="words talk-words" data-words aria-hidden="true"><span class="wave"><i></i><i></i><i></i><i></i><i></i></span><span data-text>Hold the key and ask something</span></p>
+        <p class="talk-time" data-time aria-live="off"></p>
+      </div>
+      <div class="talk-controls">
+        <button class="hold" type="button" data-hold aria-describedby="hold-hint">
+          <span class="hold-cap" aria-hidden="true">⌥</span>
+          <span class="hold-label">Hold to talk</span>
+        </button>
+        <p id="hold-hint" class="note hold-hint">Press and hold, or hold <kbd>space</kbd> while it's selected. On a Mac keyboard the real right <kbd>⌥</kbd> works too.</p>
+        <div class="chips" role="group" aria-label="Or pick something to ask">
+          <button type="button" class="chip" data-ask="0">A reminder</button>
+          <button type="button" class="chip" data-ask="1">What "cc" means</button>
+          <button type="button" class="chip" data-ask="2">Bigger text</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .talk {
+    display: grid; gap: 1.25rem;
+    background: var(--paper-2);
+    border-radius: 1.6rem;
+    padding: clamp(1.25rem, 3vw, 2.25rem);
+    box-shadow: inset 0 0 0 1px var(--rule);
+  }
+  .talk-desk { position: relative; display: grid; justify-items: center; gap: 1rem; padding-top: 5rem; }
+  .talk-milo { position: relative; width: clamp(10rem, 30vw, 14rem); }
+  .talk-bubble {
+    position: absolute; bottom: 92%; left: 50%;
+    width: max-content; max-width: min(20rem, 80vw);
+    transform: translateX(-50%) translateY(0.3rem) scale(0.94); opacity: 0;
+    transition: opacity 180ms, transform 320ms var(--ease-spring);
+  }
+  .talk-bubble::after { right: auto; left: calc(50% - 0.45rem); }
+  .talk-bubble.is-on { opacity: 1; transform: translateX(-50%); }
+  .talk-words { min-height: 2.5rem; max-width: 100%; transition: background-color 200ms, color 200ms; }
+  .talk-words:not(.is-on) { background: var(--card); color: var(--ink-2); box-shadow: 0 0 0 1px var(--rule); }
+  .talk-words:not(.is-on) .wave { display: none; }
+  .talk-time { font-size: var(--step--1); color: var(--ink-3); min-height: 1.3em; font-variant-numeric: tabular-nums; }
+
+  .talk-controls { display: grid; justify-items: center; gap: 0.9rem; text-align: center; }
+  .hold {
+    display: inline-flex; align-items: center; gap: 0.9rem;
+    border: 0; border-radius: 1.1rem;
+    padding: 0.7rem 1.4rem 0.7rem 0.7rem;
+    background: var(--card);
+    color: var(--ink);
+    font-weight: 650; font-size: 1.05rem;
+    box-shadow: 0 0 0 0.5px var(--rule-strong), 0 3px 0 var(--rule-strong), 0 8px 18px -8px rgb(var(--shadow-color) / 0.3);
+    transition: transform 90ms, box-shadow 90ms;
+    touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  }
+  .hold-cap {
+    display: grid; place-items: center;
+    width: 3rem; height: 3rem; border-radius: 0.7rem;
+    background: var(--paper-2);
+    font-size: 1.5rem; font-weight: 500;
+    box-shadow: inset 0 -2px 0 var(--rule-strong);
+  }
+  .hold.is-down { transform: translateY(3px); box-shadow: 0 0 0 0.5px var(--rule-strong), 0 0 0 var(--rule-strong), 0 2px 6px -3px rgb(var(--shadow-color) / 0.3); }
+  .hold.is-down .hold-cap { background: var(--lavender); color: var(--on-lavender); box-shadow: none; }
+  .hold-hint { max-width: 26rem; }
+  .chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem; }
+  .chip {
+    border: 0; border-radius: var(--radius-pill);
+    padding: 0.45rem 0.9rem;
+    background: transparent; color: var(--ink-2);
+    font-size: 0.92rem; font-weight: 600;
+    box-shadow: inset 0 0 0 1.5px var(--rule-strong);
+  }
+  .chip:hover { color: var(--ink); background: var(--card); }
+</style>
+
+<script>
+  import { reduce, chatter, $, $$, type MiloEl } from '../../scripts/demo';
+  import { watch } from '../../scripts/milo';
+
+  const root = $(document, '[data-talk]');
+  const m = $<MiloEl>(root, 'milo-character');
+  const words = $(root, '[data-words]');
+  const text = $(words, '[data-text]');
+  const reply = $(root, '[data-reply]');
+  const time = $(root, '[data-time]');
+  const hold = $<HTMLButtonElement>(root, '[data-hold]');
+
+  const asks = [
+    { you: 'Remind me to call the dentist tomorrow at nine.', milo: "Done. I'll remind you tomorrow at nine.", t: 1.7 },
+    { you: 'What does cc mean on an email?', milo: 'It sends a copy to someone else, so they see it too.', t: 1.9 },
+    { you: 'Can you make the text on my screen bigger?', milo: 'Done. Say "smaller" if it\'s too much.', t: 2.1, pose: 'proud' },
+  ];
+  let next = 0;
+  let state: 'idle' | 'listening' | 'answering' = 'idle';
+  let current = asks[0];
+  let shown = 0;
+  let timer = 0;
+  let token = 0;
+  const wait = (ms: number, me: number) => new Promise<void>((ok, no) => setTimeout(() => (me === token ? ok() : no()), reduce ? 0 : ms));
+
+  function start(i?: number) {
+    if (state === 'listening') return;
+    token++;
+    current = asks[i ?? next];
+    next = ((i ?? next) + 1) % asks.length;
+    state = 'listening';
+    shown = 0;
+    reply.classList.remove('is-on');
+    time.textContent = '';
+    hold.classList.add('is-down');
+    words.classList.add('is-on', 'is-live');
+    text.textContent = '…';
+    m.pose = 'listening';
+    watch(root);
+    const all = current.you.split(' ');
+    const me = token;
+    const step = () => {
+      if (me !== token || state !== 'listening') return;
+      shown++;
+      text.textContent = all.slice(0, shown).join(' ');
+      if (shown % 3 === 0) m.play('nod');
+      if (shown < all.length) timer = window.setTimeout(step, reduce ? 0 : 170 + Math.random() * 80);
+    };
+    timer = window.setTimeout(step, reduce ? 0 : 250);
+  }
+
+  async function release() {
+    if (state !== 'listening') return;
+    clearTimeout(timer);
+    hold.classList.remove('is-down');
+    words.classList.remove('is-live');
+    const me = ++token;
+    state = 'answering';
+    try {
+      if (shown < 2) {
+        // let go before saying anything
+        text.textContent = 'Hold the key while you talk';
+        words.classList.remove('is-on');
+        m.pose = 'confused';
+        reply.textContent = "I didn't catch that. Hold the key while you talk.";
+        reply.classList.add('is-on');
+        chatter(m, 1200);
+        await wait(2600, me);
+        m.pose = 'idle';
+        reply.classList.remove('is-on');
+        return;
+      }
+      text.textContent = current.you;
+      await wait(250, me);
+      m.pose = 'thinking';
+      await wait(current.t * 1000 - 600, me);
+      m.pose = 'speaking';
+      reply.textContent = current.milo;
+      reply.classList.add('is-on');
+      time.textContent = `He started answering ${current.t.toFixed(1)} seconds after you let go.`;
+      chatter(m, 1500);
+      await wait(1500, me);
+      m.pose = current.pose ?? 'idle';
+      await wait(1800, me);
+      if (current.pose) m.pose = 'idle';
+    } catch {
+      /* restarted */
+    } finally {
+      if (me === token) { state = 'idle'; words.classList.remove('is-on'); watch(null); }
+    }
+  }
+
+  hold.addEventListener('pointerdown', (e) => { e.preventDefault(); hold.setPointerCapture(e.pointerId); start(); });
+  hold.addEventListener('pointerup', release);
+  hold.addEventListener('pointercancel', release);
+  hold.addEventListener('lostpointercapture', release);
+  hold.addEventListener('contextmenu', (e) => e.preventDefault());
+  hold.addEventListener('keydown', (e) => {
+    if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) { e.preventDefault(); start(); }
+  });
+  hold.addEventListener('keyup', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); release(); } });
+  hold.addEventListener('click', (e) => e.preventDefault());
+
+  // The real right Option key, while this demo is on screen.
+  let onScreen = false;
+  new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; }, { threshold: 0.5 }).observe(root);
+  addEventListener('keydown', (e) => {
+    if (e.code === 'AltRight' && onScreen && !e.repeat) { e.preventDefault(); start(); }
+  });
+  addEventListener('keyup', (e) => { if (e.code === 'AltRight') release(); });
+
+  // The chips play a whole question for you.
+  for (const chip of $$(root, '[data-ask]')) {
+    chip.addEventListener('click', async () => {
+      const i = Number(chip.dataset.ask);
+      start(i);
+      const me = token;
+      await new Promise((r) => setTimeout(r, reduce ? 0 : 300 + asks[i].you.split(' ').length * 220));
+      if (me === token) release();
+    });
+  }
+
+  if (reduce) {
+    text.textContent = asks[0].you;
+    reply.textContent = asks[0].milo;
+    reply.classList.add('is-on');
+  }
+</script>

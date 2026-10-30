@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from .brain import Brain
 from .config import Config, brief_time
 from .core.clock import SystemClock
+from .core.conversations import SplitRules
 from .core.ports import Harness, LiveModel, PlaybackTap, TimedTranscriber, Transcriber, Voice
 from .core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, CHANNELS, DIARIZERS, EMBEDDERS, HARNESSES, LIVE_MODELS,
                             STREAMING_TRANSCRIBERS, TEXT_CLEANERS, TRANSCRIBERS, VOICES, AdapterContext, ConfigError,
@@ -26,6 +27,7 @@ from .services.barge_in import BargeIn
 from .services.cloud_hearing import NOTICE as HEARING_NOTICE
 from .services.cloud_hearing import CloudHearing
 from .services.context import UserContext
+from .services.conversations import ConversationBrowser
 from .services.conversation import Conversation
 from .services.dictation import DictationService
 from .services.fallback_voice import NOTICE as VOICE_NOTICE
@@ -46,7 +48,7 @@ from .services.settings_guard import SettingsGuard
 from .services.speaker import Speaker
 from .services.task_runner import TaskRunner
 from .services.tool_requests import ToolRequests
-from .services.transcript import Transcript
+from .services.transcript import NO_TRANSCRIPT, Transcript
 from .services.ui_state import UiState
 from .services.updates import LiveSettings, Milestones, Updates
 from .settings import Settings
@@ -109,7 +111,7 @@ def build(home: Path) -> Runtime:
     from .memory.reminders import MarkdownReminders
     from .memory.routines import JsonStateFile, MarkdownRoutineBook
     from .memory.remote import JsonRemoteState
-    from .memory.transcript import JsonlTranscript
+    from .memory.conversations import JsonlConversationStore, migrate
     from .memory.workspace import Workspace
 
     workspace = Workspace(home)
@@ -168,14 +170,25 @@ def build(home: Path) -> Runtime:
     voice.on_switch = notices[0]
     hearing = _cloud_hearing(config, ctx, notices[1])
     backchannel = Backchannel(speaker, enabled=config.chat.backchannels)
-    transcript_store = JsonlTranscript(workspace.transcript_path)
+    rules = SplitRules(idle_s=idle_reset_s)
+    conversation_store = JsonlConversationStore(workspace.conversations_dir)
+    try:
+        migrate(workspace.transcript_path, workspace.transcript_kept_path, conversation_store, rules)
+    except Exception:
+        log.exception("could not move the old transcript into conversations; it stays where it is")
     routines: Routines | None = None  # built below, once the helpers are
+    episode_stubs = None
     if mem is not None:
-        transcript_store = EpisodeTranscript(transcript_store, mem.memory.record, now=clock.now,
-                                             app=lambda: context.app, people=mem.memory.people_in,
-                                             outside=lambda: mem.turns.outside,
-                                             elsewhere=lambda id: routines is not None and routines.is_run(id))
-    transcript = Transcript(ui, transcript_store, clock)
+        episode_stubs = EpisodeTranscript(NO_TRANSCRIPT, mem.memory.record, now=clock.now,
+                                          app=lambda: context.app, people=mem.memory.people_in,
+                                          outside=lambda: mem.turns.outside,
+                                          elsewhere=lambda id: routines is not None and routines.is_run(id))
+    transcript = Transcript(ui, conversation_store, clock, rules=rules, recap_tokens=config.chat.recap_tokens,
+                            outside=lambda: live_talk.carries_outside or (mem is not None and mem.turns.outside),
+                            asking=lambda: approvals.pending, exists=lambda p: Path(p).expanduser().is_file(),
+                            on_finished=episode_stubs.append if episode_stubs is not None else None)
+    conversations = ConversationBrowser(transcript, conversation_store, ui, clock,
+                                        memory=mem.memory.search if mem is not None else None, reminders=reminders)
     approvals = Approvals(ui, speaker, ActionPolicy(config.approval_levels), timeout_s=config.approvals.timeout_s,
                           speak=config.approvals.speak, quiet=lambda: live_talk.busy or mic.active,
                           transcript=transcript)
@@ -318,7 +331,7 @@ def build(home: Path) -> Runtime:
     brain = Brain(ui, listening, live_talk, context, heartbeat, config.ui, transcript, approvals=approvals,
                   bridge=bridge, hands=hands, screens=workspace.screens_dir, helpers=helpers,
                   memory=mem.memory if mem is not None else None, routines=routines, settings=settings,
-                  messages=messages, meetings=meetings)
+                  messages=messages, meetings=meetings, conversations=conversations)
     return Runtime(brain, server, heartbeat, transcriber, voice, stt_executor, tts_executor, harness,
                    live_model, live_talk, tool_server, hands_server, helpers, mem, barge_in, backchannel, messages,
                    notices, meetings=meetings, diarize_executor=diarize_executor)

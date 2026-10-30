@@ -324,7 +324,60 @@ def check_meeting(s: Stack, msg: dict) -> None:
     assert meetings.commands == [parse_command(msg)]
 
 
+def conversation_brain(s: Stack):
+    """The stack with conversations: one from the phone this morning, as in the fixture."""
+    from milo.core.events import ConversationOpened, Conversations, RemindersList, SearchResults  # noqa: F401
+    from milo.services.conversations import ConversationBrowser
+    from milo.services.transcript import Transcript
+    from tests.fakes import MemoryConversations
+
+    store = MemoryConversations(
+        {"id": "1b2c3d4e5f60", "ts": "2026-10-29T07:40:00", "kind": "user", "text": "is my train to Hamburg on time",
+         "via": "message"},
+        {"id": "2c3d4e5f6071", "ts": "2026-10-29T07:41:12", "kind": "milo", "text": "The 8:12 is on time.",
+         "emotion": "happy", "done": True})
+    transcript = Transcript(s.ui, store, s.clock)
+    browser = ConversationBrowser(transcript, store, s.ui, s.clock, reminders=s.reminders, coalesce_s=0)
+    s.live_talk._transcript = transcript
+    brain = Brain(s.ui, s.listening, s.live_talk, s.context, s.heartbeat, UiSettings(), transcript,
+                  conversations=browser)
+    return brain, transcript, store
+
+
+def check_conversations(s: Stack, msg: dict) -> None:
+    from milo.core.events import ConversationOpened, Conversations, RemindersList, SearchResults
+
+    brain, transcript, store = conversation_brain(s)
+    run(s, parse_command(msg), brain=brain)
+    match msg["type"]:
+        case "get_conversations":
+            listing = s.sink.of(Conversations)[-1]
+            if msg.get("before"):
+                assert listing.conversations == [], "nothing is older than October"
+            else:
+                assert [c["title"] for c in listing.conversations] == ["Is my train to Hamburg on time"]
+                assert s.sink.of(RemindersList)
+        case "open_conversation":
+            (opened,) = s.sink.of(ConversationOpened)
+            assert [e["id"] for e in opened.entries] == ["1b2c3d4e5f60", "2c3d4e5f6071"]
+        case "search_conversations":
+            (found,) = s.sink.of(SearchResults)
+            assert found.query == "dentist" and found.results == []
+            run(s, parse_command({"type": "search_conversations", "query": "hamburg"}), brain=brain)
+            assert [r["conversation"] for r in s.sink.of(SearchResults)[-1].results] == ["c-1b2c3d4e5f60"]
+        case "rename_conversation":
+            assert store.get(msg["id"]).title == msg["title"] and store.get(msg["id"]).titled_by == "you"
+        case "new_conversation":
+            assert transcript.current is None and s.live_talk._system is None
+    assert s.model.turns == [] and s.harness.calls == [], "the list costs no model call"
+
+
 CHECKS = {
+    "get_conversations": check_conversations,
+    "open_conversation": check_conversations,
+    "search_conversations": check_conversations,
+    "rename_conversation": check_conversations,
+    "new_conversation": check_conversations,
     "get_settings": check_get_settings,
     "set_setting": check_set_setting,
     "routine": check_routine,

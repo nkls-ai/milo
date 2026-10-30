@@ -29,16 +29,30 @@ private func doubleTap(_ key: ModifierKey, at time: TimeInterval, into ptt: inou
 @Suite struct PushToTalkTests {
     // MARK: Holding
 
-    @Test func holdStartsTentativelyConfirmsAtMinHoldAndStopsOnRelease() {
-        var ptt = PushToTalk(minHold: 0.25)
+    @Test func holdStartsTentativelyShowsWithin100msAndStopsOnRelease() {
+        var ptt = PushToTalk(minHold: 0.25, showAfter: 0.08)
         #expect(ptt.handle(down(.rightOption, at: 10)) == [.start(.talk)])
         #expect(ptt.active == .talk)
-        #expect(ptt.deadline == 10.25)
-        #expect(ptt.expire(at: 10.2) == [], "too early")
-        #expect(ptt.expire(at: 10.25) == [.confirm(.talk)])
+        #expect(ptt.deadline == 10.08)
+        #expect(ptt.expire(at: 10.05) == [], "too early")
+        #expect(ptt.expire(at: 10.08) == [.confirm(.talk)])
         #expect(ptt.deadline == nil)
         #expect(ptt.handle(up(.rightOption, at: 11)) == [.stop(.talk)])
         #expect(ptt.active == nil)
+    }
+
+    @Test func aShownPressShorterThanMinHoldIsStillATap() {
+        var ptt = PushToTalk(minHold: 0.25, showAfter: 0.08, doubleTap: 0.35)
+        _ = ptt.handle(down(.fn, at: 5))
+        #expect(ptt.expire(at: 5.08) == [.confirm(.dictate)])
+        #expect(ptt.handle(up(.fn, at: 5.15)) == [], "a tap: it may be the first of two")
+        #expect(ptt.handle(down(.fn, at: 5.25)) == [])
+        #expect(ptt.handle(up(.fn, at: 5.33)) == [.lock(.dictate)], "two taps lock hands-free as before")
+        var single = PushToTalk(minHold: 0.25, showAfter: 0.08, doubleTap: 0.35)
+        _ = single.handle(down(.fn, at: 7))
+        _ = single.expire(at: 7.08)
+        _ = single.handle(up(.fn, at: 7.15))
+        #expect(single.expire(at: 7.35) == [.cancel(.dictate)], "one tap alone goes away again")
     }
 
     @Test func releaseAfterMinHoldStopsEvenIfTheTimerWasLate() {
