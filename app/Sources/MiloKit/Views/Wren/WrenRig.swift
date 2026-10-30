@@ -3,15 +3,15 @@ import Foundation
 
 /// Milo's colours, from the design page.
 enum WrenColors {
-    static let bodyHi = rgb(0xC6BCF0), bodyMid = rgb(0x9688D6), bodyLo = rgb(0x5E4FA4)
+    static let bodyHi = rgb(0xCBC2F4), bodyMid = rgb(0x9D90DD), bodyLo = rgb(0x6A5BB4)
     static let lidLine = rgb(0x3F3373)
-    static let bellyHi = rgb(0xFBF3E8), bellyLo = rgb(0xE9D5C0)
+    static let bellyHi = rgb(0xFEF5EA), bellyLo = rgb(0xF1D6BC)
     static let brow = rgb(0xF6F2FE)
     static let wingHi = rgb(0x8A7CCB), wingLo = rgb(0x54468F), wingBar = rgb(0xB9AEEA)
     static let tail = rgb(0x6C5DB2), tailLo = rgb(0x4C3F8A), tailBar = rgb(0x43377D)
     static let eye = rgb(0x1E1730), eyeHi = rgb(0x4F4276)
     static let beakHi = rgb(0xE6B274), beakLo = rgb(0xB27744), mouth = rgb(0x6E2F3C)
-    static let scarfHi = rgb(0xF0B649), scarfLo = rgb(0xC98526), scarfRib = rgb(0xFAD58A), scarfEdge = rgb(0xFFE2A6)
+    static let scarfHi = rgb(0xF4C262), scarfLo = rgb(0xD69A3C), scarfRib = rgb(0xFBDB98), scarfEdge = rgb(0xFFE6B0)
     static let feet = rgb(0xB17C50), blush = rgb(0xEE9AA6)
     static let shade = rgb(0x2E2463), ground = rgb(0x2A2050), rim = rgb(0xF1ECFF)
     static let ink = rgb(0x1B1430)
@@ -87,6 +87,10 @@ enum WrenRig {
     static let viewBox = CGRect(x: 100 - 60 / scale, y: ground - 107 / scale, width: 120 / scale, height: 120 / scale)
     /// Points per figure unit in a 120 pt box.
     static let scale = 0.62
+    /// Where the scarf's band sits on him, figure y.
+    static let scarfY = 131.0
+    /// Eyes: how far round his face from the middle (degrees) and how high, figure y.
+    static let eyeAngle = 30.0, eyeHeight = 111.0
 
     static func frame(_ p: WrenPose, small: Bool = false) -> WrenFrame {
         let t = p.turn
@@ -120,13 +124,13 @@ enum WrenRig {
 
         // Tail: one barred feather fan cocked up behind his back, on the side he faces away from.
         let back = t > 0.02 ? -1.0 : 1.0
-        let tailL = 74 * (1 - p.fly * 0.3)
+        let tailL = 64 * (1 - p.fly * 0.3)
         let tailW = ((7.5 + max(p.tailFan, p.fly) * 3.5) * 4).rounded() / 4
         let tailAngle = back * (27 + p.tail * 0.8 + abs(t) * 10 + p.fly * 42)
         parts.append(WrenPart(id: .tail, box: CGRect(x: -16, y: -tailL - 8, width: 32, height: tailL + 12),
                               key: keys(tailL, tailW, small ? 1 : 0), draw: { ctx in
             drawTail(ctx, length: tailL, width: tailW, small: small)
-        }, transform: CGAffineTransform(translationX: 100 + back * (26 + abs(t) * 34), y: 146).rotated(by: rad(tailAngle)), z: 1))
+        }, transform: CGAffineTransform(translationX: 100 + back * (30 + abs(t) * 34), y: 152).rotated(by: rad(tailAngle)), z: 1))
 
         // Wings: each a folded wing and an open one, cross-faded as it opens so the shape never swaps.
         // Turned far enough, the far wing slips behind him; open, it shows behind the body instead.
@@ -139,68 +143,69 @@ enum WrenRig {
             // the open wing is solid before the folded one fades, so the swap never shows through him
             let shown = smooth(0.2, 0.5, open)
             let folded = 1 - smooth(0.45, 0.75, open)
-            let x = (side == "L" ? 50 : 150) + t * 20
+            let x = (side == "L" ? 46 : 154) + t * 20
             let isFar = far == side
             parts.append(WrenPart(id: side == "L" ? .wingFoldL : .wingFoldR, box: CGRect(x: -18, y: -8, width: 36, height: 56),
                                   key: keys(s, small ? 1 : 0), draw: { ctx in
-                drawFoldedWing(ctx, side: s, length: 46, small: small)
-            }, transform: CGAffineTransform(translationX: x, y: 112).rotated(by: rad(-s * (angle + open * 80))),
+                drawFoldedWing(ctx, side: s, length: 42, small: small)
+            }, transform: CGAffineTransform(translationX: x, y: 122).rotated(by: rad(-s * (angle + open * 80))),
                opacity: folded * (isFar ? 1 - farHidden : 1), z: 4))
             let flap = -s * (angle - (1 - open) * 80)
             parts.append(WrenPart(id: side == "L" ? .wingOpenL : .wingOpenR, box: CGRect(x: -60, y: -24, width: 120, height: 36),
                                   key: keys(s, small ? 1 : 0), draw: { ctx in
                 drawOpenWing(ctx, side: s, k: 0.8, small: small)
-            }, transform: CGAffineTransform(translationX: x, y: 108).rotated(by: rad(flap)), opacity: shown, z: isFar ? 2 : 4))
+            }, transform: CGAffineTransform(translationX: x, y: 118).rotated(by: rad(flap)), opacity: shown, z: isFar ? 2 : 4))
         }
 
         // Body, belly, shading and the scarf band
-        parts.append(WrenPart(id: .body, box: CGRect(x: 36, y: 50, width: 128, height: 136),
+        parts.append(WrenPart(id: .body, box: CGRect(x: 32, y: 60, width: 136, height: 126),
                               key: keys(t, p.scarfUp, small ? 1 : 0), draw: { ctx in
             drawBody(ctx, turn: t, scarfUp: p.scarfUp, small: small)
         }, z: 3))
 
         // The scarf's loose end, swinging from the knot, and the knot over it
-        let sy = 121 - p.scarfUp * 8
+        let sy = Self.scarfY - p.scarfUp * 10
         let knotX = fx(th + 32)
-        let knotY = sy + 10 + (1 - pow((knotX - 100) / 56, 2)) * 2
-        let endLen = 38 * (1 + p.scarfToss * 0.2)
+        let knotY = sy + 6 + (1 - pow((knotX - 100) / 60, 2)) * 2
+        let endLen = 25 * (1 + p.scarfToss * 0.25)
         let endAngle = -12 + p.scarf + p.scarfToss * -118 + p.fly * -70
         parts.append(WrenPart(id: .scarfEnd, box: CGRect(x: -12, y: -4, width: 24, height: endLen + 12),
                               key: keys(endLen, small ? 1 : 0), draw: { ctx in
             drawScarfEnd(ctx, length: endLen, small: small)
         }, transform: CGAffineTransform(translationX: knotX, y: knotY).rotated(by: rad(endAngle)), z: 5))
         parts.append(WrenPart(id: .knot, box: CGRect(x: -10, y: -8, width: 20, height: 16), key: [], draw: { ctx in
-            let knot = CGPath(ellipseIn: CGRect(x: -8, y: -6.5, width: 16, height: 13), transform: nil)
-            fillLinear(ctx, knot, [WrenColors.scarfHi, WrenColors.scarfLo], top: -6.5, bottom: 6.5)
+            let knot = CGPath(ellipseIn: CGRect(x: -6.5, y: -5.5, width: 13, height: 11), transform: nil)
+            fillLinear(ctx, knot, [WrenColors.scarfHi, WrenColors.scarfLo], top: -5.5, bottom: 5.5)
             let crease = CGMutablePath()
-            crease.move(to: CGPoint(x: -5, y: -1)); crease.addQuadCurve(to: CGPoint(x: 5, y: -1), control: CGPoint(x: 0, y: 2))
+            crease.move(to: CGPoint(x: -4, y: -0.8)); crease.addQuadCurve(to: CGPoint(x: 4, y: -0.8), control: CGPoint(x: 0, y: 1.6))
             stroke(ctx, crease, WrenColors.scarfLo, width: 1.2, alpha: 0.7)
         }, transform: CGAffineTransform(translationX: knotX, y: knotY), z: 6))
 
         // Face
         var face: [WrenPart] = []
         let gx = p.gazeX * 4.5, gy = p.gazeY * 3.5
-        let eyeY = 99 + gy - p.scarfUp * 4
-        let eyes: [(Character, Double)] = [("L", th - 23), ("R", th + 23)]
-        let bodyCenter = CGPoint(x: 84 + t * 12, y: 90)
+        let eyeY = Self.eyeHeight + gy - p.scarfUp * 4
+        let eyes: [(Character, Double)] = [("L", th - Self.eyeAngle), ("R", th + Self.eyeAngle)]
+        let bodyCenter = CGPoint(x: 84 + t * 12, y: 98)
         if p.blush > 0.01 {
             let spots = eyes.map { side, a in
-                (CGPoint(x: fx(a + (side == "L" ? -9 : 9)) + gx, y: eyeY + 13), 7 * cos(rad(a)))
+                (CGPoint(x: fx(a + (side == "L" ? -10 : 10)) + gx, y: eyeY + 12), 6 * cos(rad(a)))
             }
             face.append(WrenPart(id: .blush, box: CGRect(x: 40, y: 90, width: 120, height: 40), key: keys(t, gx, gy), draw: { ctx in
-                for (c, rx) in spots { softEllipse(ctx, center: c, rx: rx + 3, ry: 6, color: WrenColors.blush, alpha: 0.6) }
+                for (c, rx) in spots { softEllipse(ctx, center: c, rx: rx + 3, ry: 5, color: WrenColors.blush, alpha: 0.7) }
             }, opacity: min(1, p.blush), z: 0))
         }
         for (side, a) in eyes {
             let s = side == "L" ? -1.0 : 1.0
             let x = fx(a) + gx
             let fore = max(0.35, cos(rad(a)))
-            let lid = side == "L" ? p.lidL : p.lidR
+            // the lid only starts covering the eye past its rest value (0.2), so at rest his eyes are wide open
+            let lid = max(0, ((side == "L" ? p.lidL : p.lidR) - 0.2) / 0.8)
             let lower = side == "L" ? p.lowerL : p.lowerR
             let es = (side == "L" ? p.eyeL : p.eyeR) * (small ? 1.12 : 1)
             let center = CGPoint(x: x, y: eyeY)
             let catchlight = CGPoint(x: (p.gazeX * 10).rounded() / 10, y: (p.gazeY * 10).rounded() / 10)
-            face.append(WrenPart(id: side == "L" ? .eyeL : .eyeR, box: CGRect(x: -14, y: -15, width: 28, height: 30),
+            face.append(WrenPart(id: side == "L" ? .eyeL : .eyeR, box: CGRect(x: -16, y: -17, width: 32, height: 34),
                                  key: keys(lid, lower, es, fore, catchlight.x, catchlight.y, t),
                                  draw: { ctx in
                 drawEye(ctx, lid: lid, lower: lower, sx: fore * es, sy: es, look: catchlight,
@@ -212,22 +217,22 @@ enum WrenRig {
             let tilt = (side == "L" ? p.browTiltL : p.browTiltR) * 16 * s
             face.append(WrenPart(id: side == "L" ? .browL : .browR, box: CGRect(x: -24, y: -10, width: 48, height: 20),
                                  key: keys(s, fore), draw: { ctx in
-                let path = taper(CGPoint(x: -s * 8 * fore, y: 2.5), CGPoint(x: s * 3 * fore, y: -4.5),
-                                 CGPoint(x: s * 18 * fore, y: 6), width: small ? 6.5 : 5.4, end: 1.4)
+                let path = taper(CGPoint(x: -s * 5 * fore, y: 1.2), CGPoint(x: s * 2 * fore, y: -3.6),
+                                 CGPoint(x: s * 9 * fore, y: 1.4), width: small ? 4.4 : 3, end: 1)
                 ctx.addPath(path)
-                ctx.setFillColor(WrenColors.brow.copy(alpha: 0.96)!)
+                ctx.setFillColor(WrenColors.brow.copy(alpha: 0.88)!)
                 ctx.fillPath()
-            }, transform: CGAffineTransform(translationX: x, y: eyeY - 13.5 - raise).rotated(by: rad(tilt)), z: side == "L" ? 3 : 4))
+            }, transform: CGAffineTransform(translationX: x, y: eyeY - 18.5 - raise).rotated(by: rad(tilt)), z: side == "L" ? 3 : 4))
         }
         // Beak: thin and a touch long; the tip swings toward the turn.
-        let bx = fx(th) + gx * 1.1, by = 109 + gy - p.scarfUp * 6
+        let bx = fx(th) + gx * 1.1, by = Self.eyeHeight + 8.5 + gy - p.scarfUp * 6
         let tip = t * 9 + p.gazeX * 2
         // in twentieths: finer steps don't show, and each step redraws the beak
         let open = (min(1, max(0, p.beak)) * 20).rounded() / 20
         face.append(WrenPart(id: .beak, box: CGRect(x: -12, y: -8, width: 24, height: 30),
                              key: keys(open, tip, t), draw: { ctx in
             drawBeak(ctx, open: open, tip: tip, turn: t)
-        }, transform: CGAffineTransform(translationX: bx, y: by), z: 5))
+        }, transform: CGAffineTransform(translationX: bx, y: by).scaledBy(x: 1.1, y: 0.8), z: 5))
 
         let lean = rad(p.lean)
         let body = CGAffineTransform(translationX: 0, y: -lift)
@@ -239,7 +244,7 @@ enum WrenRig {
             .translatedBy(x: -pivot.x, y: -pivot.y)
         let tilt = CGAffineTransform(translationX: pivot.x, y: pivot.y).rotated(by: lean).translatedBy(x: -pivot.x, y: -pivot.y)
         let bodyTransform = squash.concatenating(tilt).concatenating(body)
-        let facePivot = CGPoint(x: fx(th), y: 104)
+        let facePivot = CGPoint(x: fx(th), y: Self.eyeHeight + 4)
         let faceTransform = CGAffineTransform(translationX: facePivot.x + p.headX, y: facePivot.y + p.headY)
             .rotated(by: rad(p.headTilt))
             .translatedBy(x: -facePivot.x, y: -facePivot.y)
@@ -316,15 +321,18 @@ enum WrenRig {
         stroke(ctx, edge, CGColor(gray: 1, alpha: 1), width: 1.2, alpha: 0.3)
     }
 
+    /// The top of his head, figure y. He is a little wider than tall, like a sparrow fluffed up in the cold.
+    static let bodyTop = 68.0
+
     static func bodyPath(turn t: Double, scarfUp: Double) -> CGPath {
-        let top = 58 + scarfUp * 2
-        let xr = 157 + max(t, 0) * 5, xl = 43 + min(t, 0) * 5
+        let top = bodyTop + scarfUp * 2
+        let xr = 160 + max(t, 0) * 5, xl = 40 + min(t, 0) * 5
         let path = CGMutablePath()
         path.move(to: CGPoint(x: 100 + t * 9, y: top))
-        path.addCurve(to: CGPoint(x: xr, y: 126), control1: CGPoint(x: 134 + t * 6, y: top), control2: CGPoint(x: xr, y: top + 34))
-        path.addCurve(to: CGPoint(x: 100, y: 180), control1: CGPoint(x: xr, y: 160), control2: CGPoint(x: 133, y: 180))
-        path.addCurve(to: CGPoint(x: xl, y: 126), control1: CGPoint(x: 67, y: 180), control2: CGPoint(x: xl, y: 160))
-        path.addCurve(to: CGPoint(x: 100 + t * 9, y: top), control1: CGPoint(x: xl, y: top + 34), control2: CGPoint(x: 66 + t * 8, y: top))
+        path.addCurve(to: CGPoint(x: xr, y: 130), control1: CGPoint(x: 137 + t * 6, y: top), control2: CGPoint(x: xr, y: top + 30))
+        path.addCurve(to: CGPoint(x: 100, y: 180), control1: CGPoint(x: xr, y: 162), control2: CGPoint(x: 136, y: 180))
+        path.addCurve(to: CGPoint(x: xl, y: 130), control1: CGPoint(x: 64, y: 180), control2: CGPoint(x: xl, y: 162))
+        path.addCurve(to: CGPoint(x: 100 + t * 9, y: top), control1: CGPoint(x: xl, y: top + 30), control2: CGPoint(x: 63 + t * 8, y: top))
         path.closeSubpath()
         return path
     }
@@ -332,50 +340,50 @@ enum WrenRig {
     /// The body's gradient, in figure space, so lids can paint with the same colours and vanish into him.
     static func bodyGradient(_ ctx: CGContext, center: CGPoint) {
         ctx.drawRadialGradient(gradient([WrenColors.bodyHi, WrenColors.bodyMid, WrenColors.bodyLo], [0, 0.5, 1]),
-                               startCenter: center, startRadius: 0, endCenter: center, endRadius: 100,
+                               startCenter: center, startRadius: 0, endCenter: center, endRadius: 108,
                                options: [.drawsAfterEndLocation])
     }
 
     private static func drawBody(_ ctx: CGContext, turn t: Double, scarfUp: Double, small: Bool) {
         let th = t * 50
         let body = bodyPath(turn: t, scarfUp: scarfUp)
-        let top = 58 + scarfUp * 2
+        let top = bodyTop + scarfUp * 2
         ctx.saveGState()
         ctx.addPath(body); ctx.clip()
-        bodyGradient(ctx, center: CGPoint(x: 84 + t * 12, y: 90))
+        bodyGradient(ctx, center: CGPoint(x: 84 + t * 12, y: 98))
         // belly
         let bellyX = 100 + 52 * sin(rad(th * 0.75))
-        let brx = 36 - abs(t) * 4
-        let belly = CGPath(ellipseIn: CGRect(x: bellyX - brx, y: 115, width: brx * 2, height: 70), transform: nil)
-        fillLinear(ctx, belly, [WrenColors.bellyHi, WrenColors.bellyLo], top: 115, bottom: 185)
+        let brx = 37 - abs(t) * 4
+        let belly = CGPath(ellipseIn: CGRect(x: bellyX - brx, y: 124, width: brx * 2, height: 62), transform: nil)
+        fillLinear(ctx, belly, [WrenColors.bellyHi, WrenColors.bellyLo], top: 124, bottom: 186)
         // ambient occlusion where he meets the ground, and the key light on his crown
-        softEllipse(ctx, center: CGPoint(x: 100, y: 188), rx: 76, ry: 32, color: WrenColors.shade, alpha: 0.36)
-        softEllipse(ctx, center: CGPoint(x: 78 + t * 8, y: top + 17), rx: 25, ry: 13, color: CGColor(gray: 1, alpha: 1),
-                    alpha: 0.32, rotation: -24)
+        softEllipse(ctx, center: CGPoint(x: 100, y: 190), rx: 78, ry: 30, color: WrenColors.shade, alpha: 0.26)
+        softEllipse(ctx, center: CGPoint(x: 76 + t * 8, y: top + 16), rx: 24, ry: 12, color: CGColor(gray: 1, alpha: 1),
+                    alpha: 0.36, rotation: -24)
         // scarf band, with the soft shadow it casts on him
-        let sy = 121 - scarfUp * 8
+        let sy = scarfY - scarfUp * 10
         let band = CGMutablePath()
-        band.move(to: CGPoint(x: 44, y: sy - 5))
-        band.addQuadCurve(to: CGPoint(x: 156, y: sy - 5), control: CGPoint(x: 100, y: sy + 12))
-        band.addLine(to: CGPoint(x: 157, y: sy + 8))
-        band.addQuadCurve(to: CGPoint(x: 43, y: sy + 8), control: CGPoint(x: 100, y: sy + 26))
+        band.move(to: CGPoint(x: 34, y: sy - 6))
+        band.addQuadCurve(to: CGPoint(x: 166, y: sy - 6), control: CGPoint(x: 100, y: sy + 8))
+        band.addLine(to: CGPoint(x: 166, y: sy + 3))
+        band.addQuadCurve(to: CGPoint(x: 34, y: sy + 3), control: CGPoint(x: 100, y: sy + 18))
         band.closeSubpath()
         ctx.saveGState()
-        ctx.setShadow(offset: CGSize(width: 0, height: -device(ctx, 4)), blur: device(ctx, 5), color: WrenColors.shade.copy(alpha: 0.42))
-        fillLinear(ctx, band, [WrenColors.scarfHi, WrenColors.scarfLo], top: sy - 5, bottom: sy + 17)
+        ctx.setShadow(offset: CGSize(width: 0, height: -device(ctx, 2.5)), blur: device(ctx, 4), color: WrenColors.shade.copy(alpha: 0.3))
+        fillLinear(ctx, band, [WrenColors.scarfHi, WrenColors.scarfLo], top: sy - 4, bottom: sy + 12)
         ctx.restoreGState()
-        fillLinear(ctx, band, [WrenColors.scarfHi, WrenColors.scarfLo], top: sy - 5, bottom: sy + 17)
+        fillLinear(ctx, band, [WrenColors.scarfHi, WrenColors.scarfLo], top: sy - 4, bottom: sy + 12)
         if !small {
             let ribs = CGMutablePath()
-            for i in 0...14 {
-                let x = 50 + Double(i) * 7.2
-                let y = sy - 5 + (1 - pow((x - 100) / 56, 2)) * 8.5
-                ribs.move(to: CGPoint(x: x, y: y + 2)); ribs.addLine(to: CGPoint(x: x + 0.6, y: y + 12.5))
+            for i in 0...16 {
+                let x = 44 + Double(i) * 7
+                let y = sy - 6 + (1 - pow((x - 100) / 66, 2)) * 7
+                ribs.move(to: CGPoint(x: x, y: y + 2)); ribs.addLine(to: CGPoint(x: x + 0.5, y: y + 8.5))
             }
-            stroke(ctx, ribs, WrenColors.scarfRib, width: 1.1, alpha: 0.55)
+            stroke(ctx, ribs, WrenColors.scarfRib, width: 1, alpha: 0.4)
         }
         let edge = CGMutablePath()
-        edge.move(to: CGPoint(x: 44, y: sy - 5)); edge.addQuadCurve(to: CGPoint(x: 156, y: sy - 5), control: CGPoint(x: 100, y: sy + 12))
+        edge.move(to: CGPoint(x: 34, y: sy - 6)); edge.addQuadCurve(to: CGPoint(x: 166, y: sy - 6), control: CGPoint(x: 100, y: sy + 8))
         stroke(ctx, edge, WrenColors.scarfEdge, width: 1.4, alpha: 0.7)
         // rim light: a soft crescent on the side away from the key light
         ctx.beginTransparencyLayer(auxiliaryInfo: nil)
@@ -391,10 +399,10 @@ enum WrenRig {
 
     private static func drawScarfEnd(_ ctx: CGContext, length E: Double, small: Bool) {
         let path = CGMutablePath()
-        path.move(to: CGPoint(x: -6, y: 0))
-        path.addCurve(to: CGPoint(x: -9, y: E), control1: CGPoint(x: -7, y: E * 0.4), control2: CGPoint(x: -8.5, y: E * 0.8))
-        path.addLine(to: CGPoint(x: 9, y: E + 2))
-        path.addCurve(to: CGPoint(x: 6, y: 0), control1: CGPoint(x: 7.5, y: E * 0.7), control2: CGPoint(x: 6.5, y: E * 0.35))
+        path.move(to: CGPoint(x: -5, y: 0))
+        path.addCurve(to: CGPoint(x: -7, y: E), control1: CGPoint(x: -5.8, y: E * 0.4), control2: CGPoint(x: -6.8, y: E * 0.8))
+        path.addQuadCurve(to: CGPoint(x: 7, y: E + 1.5), control: CGPoint(x: 0, y: E + 3))
+        path.addCurve(to: CGPoint(x: 5, y: 0), control1: CGPoint(x: 6, y: E * 0.7), control2: CGPoint(x: 5.4, y: E * 0.35))
         path.closeSubpath()
         fillLinear(ctx, path, [WrenColors.scarfHi, WrenColors.scarfLo], top: 0, bottom: E + 2)
         let crease = CGMutablePath()
@@ -402,19 +410,19 @@ enum WrenRig {
         stroke(ctx, crease, WrenColors.shade, width: 2, alpha: 0.18, cap: .butt)
         guard !small else { return }
         let ribs = CGMutablePath()
-        ribs.move(to: CGPoint(x: -2, y: 5)); ribs.addLine(to: CGPoint(x: -3, y: E - 2))
-        ribs.move(to: CGPoint(x: 2.5, y: 5)); ribs.addLine(to: CGPoint(x: 3, y: E - 1))
+        ribs.move(to: CGPoint(x: -1.8, y: 4)); ribs.addLine(to: CGPoint(x: -2.4, y: E - 1))
+        ribs.move(to: CGPoint(x: 2, y: 4)); ribs.addLine(to: CGPoint(x: 2.4, y: E))
         stroke(ctx, ribs, WrenColors.scarfRib, width: 1, alpha: 0.5)
         let fringe = CGMutablePath()
-        for x in [-7.0, -3.5, 0, 3.5, 7] {
-            fringe.move(to: CGPoint(x: x, y: E + 1 + x * 0.1)); fringe.addLine(to: CGPoint(x: x * 1.08, y: E + 6 + x * 0.1))
+        for x in [-5.0, -1.7, 1.7, 5] {
+            fringe.move(to: CGPoint(x: x, y: E + 1.5)); fringe.addLine(to: CGPoint(x: x * 1.08, y: E + 5))
         }
-        stroke(ctx, fringe, WrenColors.scarfLo, width: 1.7)
+        stroke(ctx, fringe, WrenColors.scarfLo, width: 1.5)
     }
 
     private static func drawEye(_ ctx: CGContext, lid: Double, lower: Double, sx: Double, sy: Double, look: CGPoint,
                                 bodyCenter: CGPoint) {
-        let rx = 7.4, ry = 8.8
+        let rx = 8.6, ry = 9.8
         let yl = -ry + lid * ry * 2.1
         let sag = -1.6 + 5 * lid * lid
         let yb = ry - lower * ry * 1.25
@@ -432,9 +440,11 @@ enum WrenRig {
                 ctx.drawRadialGradient(gradient([WrenColors.eyeHi, WrenColors.eye], [0, 1]),
                                        startCenter: CGPoint(x: 0, y: ry * 0.7), startRadius: 0,
                                        endCenter: CGPoint(x: 0, y: ry * 0.7), endRadius: ry * 1.5, options: [.drawsAfterEndLocation])
-                fill(ctx, CGPath(ellipseIn: CGRect(x: 2.4 + look.x * 0.7 - 2.6, y: -2.6 + look.y * 0.6 - 2.6, width: 5.2, height: 5.2), transform: nil),
+                // a soft sheen across the lower half, then the key catchlight and a small second one
+                softEllipse(ctx, center: CGPoint(x: -1, y: 5), rx: 6.5, ry: 3.6, color: WrenColors.rgb(0x8C7CC8), alpha: 0.35)
+                fill(ctx, CGPath(ellipseIn: CGRect(x: 2.6 + look.x * 0.7 - 3.3, y: -3.2 + look.y * 0.6 - 3.3, width: 6.6, height: 6.6), transform: nil),
                      CGColor(gray: 1, alpha: 1))
-                fill(ctx, CGPath(ellipseIn: CGRect(x: -3.7, y: 2.2, width: 2.2, height: 2.2), transform: nil), CGColor(gray: 1, alpha: 0.75))
+                fill(ctx, CGPath(ellipseIn: CGRect(x: -4.6, y: 2.4, width: 2.8, height: 2.8), transform: nil), CGColor(gray: 1, alpha: 0.8))
                 // the shadow the upper lid casts on the eye
                 fill(ctx, lidPath(yl: yl + 1.6, sag: sag), WrenColors.ink.copy(alpha: 0.3)!)
                 ctx.restoreGState()
@@ -445,9 +455,9 @@ enum WrenRig {
             let lids = CGMutablePath()
             lids.addPath(lidPath(yl: yl, sag: sag))
             if lower > 0.001 {
-                lids.move(to: CGPoint(x: -11, y: 12)); lids.addLine(to: CGPoint(x: -11, y: yb + 3))
-                lids.addQuadCurve(to: CGPoint(x: 11, y: yb + 3), control: CGPoint(x: 0, y: yb - 6))
-                lids.addLine(to: CGPoint(x: 11, y: 12)); lids.closeSubpath()
+                lids.move(to: CGPoint(x: -12, y: 13)); lids.addLine(to: CGPoint(x: -12, y: yb + 3))
+                lids.addQuadCurve(to: CGPoint(x: 12, y: yb + 3), control: CGPoint(x: 0, y: yb - 6))
+                lids.addLine(to: CGPoint(x: 12, y: 13)); lids.closeSubpath()
             }
             ctx.addPath(lids); ctx.clip()
             ctx.scaleBy(x: 1 / sx, y: 1 / sy)
@@ -471,7 +481,7 @@ enum WrenRig {
         if smile > 0 {
             // smiling: a clean arch
             let arch = CGMutablePath()
-            arch.move(to: CGPoint(x: -6.8, y: 4.6)); arch.addQuadCurve(to: CGPoint(x: 6.8, y: 4.6), control: CGPoint(x: 0, y: -5.4))
+            arch.move(to: CGPoint(x: -7.6, y: 4.8)); arch.addQuadCurve(to: CGPoint(x: 7.6, y: 4.8), control: CGPoint(x: 0, y: -6))
             stroke(ctx, arch, WrenColors.eye, width: 3, alpha: smile)
         }
         ctx.restoreGState()
@@ -479,8 +489,8 @@ enum WrenRig {
 
     private static func lidPath(yl: Double, sag: Double) -> CGPath {
         let path = CGMutablePath()
-        path.move(to: CGPoint(x: -11, y: -12)); path.addLine(to: CGPoint(x: 11, y: -12)); path.addLine(to: CGPoint(x: 11, y: yl))
-        path.addQuadCurve(to: CGPoint(x: -11, y: yl), control: CGPoint(x: 0, y: yl + sag))
+        path.move(to: CGPoint(x: -12, y: -13)); path.addLine(to: CGPoint(x: 12, y: -13)); path.addLine(to: CGPoint(x: 12, y: yl))
+        path.addQuadCurve(to: CGPoint(x: -12, y: yl), control: CGPoint(x: 0, y: yl + sag))
         path.closeSubpath()
         return path
     }

@@ -31,7 +31,8 @@ struct WrenPose: Equatable {
     var browTiltL = 0.0, browTiltR = 0.0
     /// 0 shut ... 1 wide open.
     var beak = 0.0
-    var blush = 0.0
+    /// Pink in his cheeks: always a little, more when he is pleased.
+    var blush = 0.3
     /// Degrees, positive raises the wing away from the body.
     var wingL = 0.0, wingR = 0.0
     /// 0 folded ... 1 spread like a hand.

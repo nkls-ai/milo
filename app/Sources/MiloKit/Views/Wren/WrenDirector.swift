@@ -137,7 +137,7 @@ struct WrenDirector {
         case .happy:
             p.lowerL = 1; p.lowerR = 1
             p.lidL = 0.2; p.lidR = 0.2
-            p.blush = 0.55
+            p.blush = 0.8
             p.tail += 12
             p.browL = 0.35; p.browR = 0.35
             p.squash += 0.02
@@ -145,7 +145,7 @@ struct WrenDirector {
             p.lidL = 0; p.lidR = 0
             p.eyeL = 1.12; p.eyeR = 1.12
             p.beak = max(p.beak, 0.3)
-            p.blush = 0.5
+            p.blush = 0.75
             p.tail += 20
             p.tailFan = max(p.tailFan, 0.7)
             p.browL = 0.6; p.browR = 0.6

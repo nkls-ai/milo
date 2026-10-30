@@ -59,6 +59,16 @@ struct WrenStateTests {
             let image = try #require(WrenIcon.appIcon(pixels: pixels))
             try write(image, "wren-icon-\(pixels)")
         }
+        // the silhouette large, to judge its shape
+        let big = try #require(CGContext(data: nil, width: 288, height: 288, bitsPerComponent: 8, bytesPerRow: 0,
+                                         space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                         bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        big.setFillColor(CGColor(gray: 0.93, alpha: 1))
+        big.fill(CGRect(x: 0, y: 0, width: 288, height: 288))
+        big.translateBy(x: 0, y: 288)
+        big.scaleBy(x: 1, y: -1)
+        WrenIcon.silhouette(big, in: CGRect(x: 16, y: 16, width: 256, height: 256))
+        try write(try #require(big.makeImage()), "wren-menubar-large")
         let bar = WrenIcon.menuBar
         for (name, color) in [("light", NSColor.black), ("dark", NSColor.white)] {
             let image = NSImage(size: NSSize(width: 18 * 4, height: 18 * 4), flipped: false) { rect in
