@@ -85,7 +85,8 @@ class BargeIn:
         self.false_alarms = 0
 
     def _should_watch(self) -> bool:
-        return self._speaker.active and not self._speaker.held and not self._mic_busy()
+        # [ui] voice off: there is nothing to talk over, so the mic stays closed.
+        return self._speaker.active and not self._speaker.held and not self._speaker.silent and not self._mic_busy()
 
     async def run(self) -> None:
         while True:

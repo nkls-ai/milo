@@ -13,8 +13,10 @@ BUILTIN = (
     "harness.claude",
     "harness.claude_live",
     "stt.mlx_whisper",
+    "stt.elevenlabs_scribe",
     "tts.say",
     "tts.omnivoice",
+    "tts.elevenlabs",
     "audio.sounddevice_io",
     "audio.wav_file",
     "text.fillers",
@@ -24,6 +26,9 @@ BUILTIN = (
     "headless.none",
     "embed.mlx_e5",
     "embed.hashing",
+    "channel.telegram",
+    "channel.imessage",
+    "diarize.sherpa",
 )
 
 

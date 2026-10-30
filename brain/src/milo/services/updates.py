@@ -159,6 +159,11 @@ class LiveSettings:
         self._refresh()
         return self._max_helpers
 
+    def use(self, updates: str, max_helpers: int) -> None:
+        """The Settings window just saved config.toml: use its values now, without waiting for the next check."""
+        self._updates, self._max_helpers = UpdateMode(updates), max_helpers
+        self._mtime = self._stat()
+
     def _stat(self) -> float | None:
         try:
             return self._path.stat().st_mtime

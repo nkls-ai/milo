@@ -13,9 +13,13 @@ class HearingStt:
     def __init__(self):
         self.calls: list[int] = []
         self.previews: list[int] = []
+        self.wakes = 0
 
     def warm(self) -> None:
         pass
+
+    def wake(self) -> None:
+        self.wakes += 1
 
     def transcribe(self, audio, before: str = "", *, quick: bool = False) -> str:
         """Each phrase as Whisper writes it: a capital first letter."""
@@ -36,6 +40,19 @@ def wired(live: LiveMode) -> tuple[Stack, Listening, GrowingMic, HearingStt]:
     listening = Listening(mic, stt, InlineExecutor(), s.ui, s.dictation, s.live_talk, s.context, live)
     s.context.update("Notes", 0)
     return s, listening, mic, stt
+
+
+def test_the_key_going_down_wakes_the_model_before_any_speech():
+    """macOS pages an idle brain's models out; waking them at key-down hides that behind the user's words."""
+    _, listening, _, stt = wired(LiveMode.OFF)
+
+    async def run():
+        listening.start(ListenMode.DICTATE, tentative=True)
+        await settle()
+        assert stt.wakes == 1 and stt.calls == []
+        listening.cancel()
+
+    asyncio.run(run())
 
 
 def test_a_tentative_start_shows_nothing_and_a_cancel_leaves_no_trace():

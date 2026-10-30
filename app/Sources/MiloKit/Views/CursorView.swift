@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Milo's own pointer, in his lavender. Drawn in an overlay, never the system cursor, so the user's own
+/// Milo's own pointer, in his skin's colours. Drawn in an overlay, never the system cursor, so the user's own
 /// pointer is untouched. A ring ripples out on a click; a caret and a little "Milo" tag show while he types.
 struct MiloCursorView: View {
     enum Gesture: Equatable {
@@ -12,6 +12,8 @@ struct MiloCursorView: View {
     var presence: Double
     /// Rises each time a click lands, to retrigger the ripple.
     var clickTick: Int
+    /// The skin he wears; the overlay passes a new one when `[ui] character` changes.
+    var theme = Theme.for(.pip)
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -23,26 +25,29 @@ struct MiloCursorView: View {
         .opacity(presence)
         .animation(.easeOut(duration: 0.25), value: presence)
         .animation(.easeInOut(duration: 0.2), value: gesture)
+        .environment(\.miloTheme, theme)
     }
 
-    /// An arrow pointer, lavender with a soft white edge and a little shadow so it reads on any background.
+    /// An arrow pointer in the skin's colour, with a soft white edge and a little shadow so it reads on any
+    /// background.
     private struct Pointer: View {
+        @Environment(\.miloTheme) private var theme
         var body: some View {
             CursorArrow()
-                .fill(LinearGradient(colors: [Palette.bodyTop, Palette.bodyBottom],
-                                     startPoint: .top, endPoint: .bottom))
+                .fill(LinearGradient(colors: [theme.glow, theme.primary], startPoint: .top, endPoint: .bottom))
                 .overlay(CursorArrow().stroke(.white.opacity(0.95), lineWidth: 1.5))
                 .frame(width: 22, height: 30)
-                .shadow(color: Palette.bodyBottom.opacity(0.5), radius: 4, y: 1)
+                .shadow(color: theme.primary.opacity(0.5), radius: 4, y: 1)
         }
     }
 
     private struct Ripple: View {
+        @Environment(\.miloTheme) private var theme
         let tick: Int
         @State private var out = false
         var body: some View {
             Circle()
-                .stroke(Palette.speak, lineWidth: 2.5)
+                .stroke(theme.accent, lineWidth: 2.5)
                 .frame(width: 34, height: 34)
                 .scaleEffect(out ? 1.6 : 0.4)
                 .opacity(out ? 0 : 0.9)
@@ -53,15 +58,16 @@ struct MiloCursorView: View {
     }
 
     private struct Caret: View {
+        @Environment(\.miloTheme) private var theme
         @State private var on = true
         var body: some View {
             HStack(spacing: 4) {
-                RoundedRectangle(cornerRadius: 1).fill(Palette.bodyTop).frame(width: 2.5, height: 20).opacity(on ? 1 : 0.2)
+                RoundedRectangle(cornerRadius: 1).fill(theme.primary).frame(width: 2.5, height: 20).opacity(on ? 1 : 0.2)
                 Text("Milo")
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(theme.onPrimary)
                     .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(Capsule().fill(Palette.bodyBottom.opacity(0.92)))
+                    .background(Capsule().fill(theme.primary.opacity(0.92)))
             }
             .offset(x: 20, y: 30)
             .onAppear { withAnimation(.easeInOut(duration: 0.5).repeatForever()) { on.toggle() } }

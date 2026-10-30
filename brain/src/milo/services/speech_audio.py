@@ -91,3 +91,40 @@ def shape(audio: Audio, sample_rate: int) -> Audio:
 
 def silence(seconds: float, sample_rate: int) -> Audio:
     return np.zeros(max(0, int(round(seconds * sample_rate))), dtype=np.float32)
+
+
+MAX_PAUSE_S = 0.5
+"""The longest pause a streamed voice may keep. It sometimes leaves a second or more between sentences."""
+
+
+class PauseLimiter:
+    """Shortens silences in audio that arrives in pieces: a streamed voice's own pauses stay as they are up to
+    MAX_PAUSE_S, the silence before the first sound to KEEP_LEAD_S. Works in 10 ms frames, so it holds back at
+    most one frame; flush() returns it."""
+
+    def __init__(self, sample_rate: int, max_pause_s: float = MAX_PAUSE_S):
+        self._frame = max(1, sample_rate // 100)
+        self._max = int(max_pause_s * 100)
+        self._lead = int(KEEP_LEAD_S * 100)
+        self._quiet = 0  # silent frames in a row so far
+        self._heard = False
+        self._carry = np.zeros(0, dtype=np.float32)
+
+    def __call__(self, audio: Audio) -> Audio:
+        audio = np.concatenate([self._carry, np.asarray(audio, dtype=np.float32).reshape(-1)])
+        n = len(audio) // self._frame
+        self._carry = audio[n * self._frame:]
+        if n == 0:
+            return audio[:0]
+        keep = np.ones(n, dtype=bool)
+        for i, db in enumerate(_frame_db(audio[:n * self._frame], self._frame)):
+            if db > SILENCE_DB:
+                self._quiet, self._heard = 0, True
+                continue
+            self._quiet += 1
+            keep[i] = self._quiet <= (self._max if self._heard else self._lead)
+        return audio[:n * self._frame].reshape(n, self._frame)[keep].reshape(-1)
+
+    def flush(self) -> Audio:
+        rest, self._carry = self._carry, np.zeros(0, dtype=np.float32)
+        return rest

@@ -214,6 +214,9 @@ class HearingStt:
     def warm(self) -> None:
         pass
 
+    def wake(self) -> None:
+        pass
+
     def transcribe(self, audio: Audio, before: str = "", *, quick: bool = False) -> str:
         with self._lock:
             self.running += 1

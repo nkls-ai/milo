@@ -8,6 +8,7 @@ process. This module holds what a helper is and how it reads, for the app (`to_w
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from functools import lru_cache
@@ -75,6 +76,11 @@ class Helper:
     careful: bool = False
     """Asked for in a conversation that read outside text (the screen): its tools ask before changes too.
     See ADR 0014."""
+    instructions: str = ""
+    """What the worker gets instead of the description, when that is long: a routine's recipe. The
+    description stays short, for the Milo window."""
+    on_finish: Callable[[Helper], None] | None = field(default=None, compare=False, repr=False)
+    """Called once when it ends, however it ends (a routine's run log)."""
 
     @property
     def active(self) -> bool:

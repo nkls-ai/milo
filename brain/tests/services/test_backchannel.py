@@ -149,6 +149,21 @@ def test_held_milo_says_nothing():
     assert chan.played == 0
 
 
+def test_with_the_voice_off_there_is_no_hm_either():
+    gate = asyncio.Event()
+    s, chan = stack(FakeLiveModel(["[happy", "] Sure."], gate=gate))
+    s.speaker.silent = True
+
+    async def run():
+        turn = s.live_talk.start("hi")
+        await asyncio.sleep(LATE_S * 4)
+        gate.set()
+        await turn
+
+    asyncio.run(run())
+    assert chan.played == 0 and s.voice.spoken == []
+
+
 def test_a_first_piece_still_synthesizing_gets_a_backchannel_ahead_of_it():
     class SlowVoice(FakeVoice):
         def synthesize(self, text):

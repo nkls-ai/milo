@@ -14,6 +14,12 @@ public enum CharacterStyle: String, CaseIterable, Sendable {
     case pip
     /// The purple robot with the antenna.
     case classic
+    /// A small round dragon with tiny wings, who puffs smoke while he thinks.
+    case dragon
+    /// A fox folded from warm paper, who turns into a paper plane to fly.
+    case kit
+    /// A small lantern firefly, who points with a beam of light.
+    case glow
 }
 
 /// Why the user is holding a push-to-talk key.

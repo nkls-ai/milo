@@ -524,3 +524,26 @@ def test_once_task_results_are_in_a_steer_waits_for_a_yes_but_a_stop_never_does(
     second = s.tasks.helpers[1]
     assert second.status is HelperStatus.STOPPED and second.amendments == []
     assert len(s.harness.played) == 2, "the steer waited for a yes; the stop didn't"
+
+
+def test_instructions_go_to_the_worker_and_on_finish_hears_how_it_ended_once():
+    gate = asyncio.Event()
+    s = Stack(harness=ScriptedHarness(WorkerScript("Done."), WorkerScript(gate, "never")))
+    ended = []
+
+    async def run():
+        s.tasks.submit("Do the routine “Report”.", instructions="Follow this recipe: 1. Count.",
+                       on_finish=lambda h: ended.append((h.title, h.status)))
+        await s.tasks.idle()
+        stopped = s.tasks.submit("Do the routine “Tidy”.", title="Tidy", on_finish=lambda h: ended.append(
+            (h.title, h.status)))
+        await settle()
+        s.tasks.stop(stopped.id)
+        await s.tasks.idle()
+        follow = s.tasks.steer("1", "count to ten")
+        return follow
+
+    follow = asyncio.run(run())
+    assert s.harness.played[0].prompt.endswith("Follow this recipe: 1. Count.")
+    assert ended == [("Do the routine Report", HelperStatus.DONE), ("Tidy", HelperStatus.STOPPED)]
+    assert follow.instructions == "Follow this recipe: 1. Count." and follow.on_finish is None

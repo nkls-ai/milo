@@ -11,7 +11,7 @@ import numpy as np
 from milo.core.events import Event
 from milo.core.ports import LevelCallback
 from milo.core.types import (Audio, Emotion, HandsError, HarnessError, Nudge, Reminder, Reply, ScreenCapture, Signals,
-                             Step, Usage)
+                             Step, Usage, VoiceUnavailable)
 
 
 class FakeClock:
@@ -136,9 +136,13 @@ class FakeTranscriber:
         self.calls: list[Audio] = []
         self.previews: list[Audio] = []
         self.warmed = False
+        self.wakes = 0
 
     def warm(self) -> None:
         self.warmed = True
+
+    def wake(self) -> None:
+        self.wakes += 1
 
     def transcribe(self, audio: Audio, before: str = "", *, quick: bool = False) -> str:
         self.calls.append(audio)
@@ -150,6 +154,41 @@ class FakeTranscriber:
 
     def interrupt(self) -> None:
         pass
+
+
+class FakeTranscriptionSession:
+    def __init__(self, engine: FakeStreamingTranscriber):
+        self.engine = engine
+        self.fed: list[int] = []  # sample counts, in order
+        self.cancelled = False
+        self.finished = False
+
+    def feed(self, audio: Audio) -> None:
+        self.fed.append(len(audio))
+
+    async def finish(self) -> str:
+        self.finished = True
+        if self.engine.fail:
+            raise VoiceUnavailable(self.engine.fail)
+        return self.engine.texts.popleft() if self.engine.texts else ""
+
+    def cancel(self) -> None:
+        self.cancelled = True
+
+
+class FakeStreamingTranscriber:
+    """Answers each session with the next scripted text, or raises VoiceUnavailable(`fail`) if set."""
+
+    def __init__(self, *texts: str, fail: str = ""):
+        self.texts = deque(texts)
+        self.fail = fail
+        self.sessions: list[FakeTranscriptionSession] = []
+
+    def session(self, on_partial=None) -> FakeTranscriptionSession:
+        session = FakeTranscriptionSession(self)
+        session.on_partial = on_partial
+        self.sessions.append(session)
+        return session
 
 
 class FakeVoice:
@@ -172,6 +211,74 @@ class FakeVoice:
 
     def cancel(self) -> None:
         self.cancels += 1
+
+
+class FakeVoiceStream:
+    """A VoiceStream the test plays out by hand (`auto=False`), or one that answers every piece at once with its
+    audio in two halves, 10 samples per character, then the empty end-of-piece mark, and ends after finish()."""
+
+    def __init__(self, voice: FakeStreamingVoice):
+        self.voice = voice
+        self.sent: list[str] = []
+        self.finished = False
+        self.cancelled = False
+        self._queue: asyncio.Queue = asyncio.Queue()
+
+    def send(self, text: str) -> None:
+        self.sent.append(text)
+        if self.voice.auto:
+            self.play(len(self.sent) - 1)
+
+    def finish(self) -> None:
+        self.finished = True
+        if self.voice.auto:
+            self.end()
+
+    def cancel(self) -> None:
+        self.cancelled = True
+        self.end()
+
+    def play(self, index: int) -> None:
+        audio = np.full(10 * len(self.sent[index]), 0.1, dtype=np.float32)
+        half = len(audio) // 2
+        self._queue.put_nowait((index, audio[:half]))
+        self._queue.put_nowait((index, audio[half:]))
+        self._queue.put_nowait((index, audio[:0]))  # all of it has come
+
+    def end(self) -> None:
+        self._queue.put_nowait(None)
+
+    def fail(self, reason: str = "offline") -> None:
+        self._queue.put_nowait(VoiceUnavailable(reason))
+
+    async def __aiter__(self):
+        while (item := await self._queue.get()) is not None:
+            if isinstance(item, Exception):
+                raise item
+            yield item
+
+
+class FakeStreamingVoice(FakeVoice):
+    """A StreamingVoice. `streams` holds every stream it handed out; `available=False` makes stream() None."""
+
+    first_audio_s = 0.3
+
+    def __init__(self, auto: bool = True, available: bool = True):
+        super().__init__()
+        self.auto = auto
+        self.available = available
+        self.streams: list[FakeVoiceStream] = []
+        self.prepared = 0
+
+    def stream(self) -> FakeVoiceStream | None:
+        if not self.available:
+            return None
+        stream = FakeVoiceStream(self)
+        self.streams.append(stream)
+        return stream
+
+    def prepare(self) -> None:
+        self.prepared += 1
 
 
 class FakeAudioInput:
@@ -560,3 +667,197 @@ class FakeMemoryIndex:
             want |= {e.id: IndexItem.of_episode(e) for e in self.episodes.between(datetime.min, datetime.max)}
         self.items = want
         return 0  # all at once, so it is up to date after one call
+
+
+class MemoryRoutineBook:
+    """RoutineBook in memory. `drafts` holds what a worker "wrote" to each draft path."""
+
+    def __init__(self, *routines):
+        from milo.core.routines import Routine  # noqa: F401  for the type of what is stored
+
+        self.routines = {r.slug: r for r in routines}
+        self.broken: dict[str, str] = {}
+        self.drafts: dict[str, str] = {}
+        self.log: list[dict] = []
+        self.deleted: list[str] = []
+
+    def all(self):
+        return sorted(self.routines.values(), key=lambda r: r.name.lower())
+
+    def problems(self) -> dict[str, str]:
+        return dict(self.broken)
+
+    def get(self, slug):
+        return self.routines.get(slug)
+
+    def save(self, routine):
+        self.routines[routine.slug] = routine
+        return routine
+
+    def rename(self, slug, name):
+        from dataclasses import replace
+
+        from milo.core.routines import slugify
+
+        new = slugify(name)
+        if new != slug and new in self.routines:
+            raise ValueError(f"there is a routine called {name} already")
+        renamed = replace(self.routines.pop(slug), slug=new, name=name)
+        self.routines[new] = renamed
+        return renamed
+
+    def update(self, slug, fields):
+        from dataclasses import replace
+
+        if slug not in self.routines:
+            raise ValueError("there is no such routine")
+        if fields.get("paused", "no") not in ("yes", "no"):
+            raise ValueError("paused: must be yes or no")
+        values = {k: (v == "yes" if k == "paused" else v) for k, v in fields.items()}
+        self.routines[slug] = replace(self.routines[slug], **values)
+        return self.routines[slug]
+
+    def delete(self, slug):
+        if self.routines.pop(slug, None) is None:
+            return False
+        self.deleted.append(slug)
+        return True
+
+    def record_run(self, slug, run):
+        self.log.append({**run, "slug": slug})
+
+    def runs(self, slug, n=5):
+        return [r for r in self.log if r["slug"] == slug][-n:]
+
+    def draft_path(self, draft):
+        from pathlib import Path
+
+        return Path("/drafts") / f"{draft}.md"
+
+    def read_draft(self, draft):
+        return self.drafts.get(draft)
+
+    def write_draft(self, draft, text):
+        self.drafts[draft] = text
+
+    def drop_draft(self, draft):
+        self.drafts.pop(draft, None)
+
+
+class MemoryState:
+    """StateFile in memory; `saves` counts the writes."""
+
+    def __init__(self, data: dict | None = None):
+        self.data = data or {}
+        self.saves = 0
+
+    def load(self) -> dict:
+        import copy
+
+        return copy.deepcopy(self.data)
+
+    def save(self, data: dict) -> None:
+        import copy
+
+        self.data = copy.deepcopy(data)
+        self.saves += 1
+
+
+class MemoryConfigFile:
+    """config.toml as a dict. A write that makes it invalid raises and keeps the old one, like the real file."""
+
+    def __init__(self, raw: dict | None = None):
+        self.raw = raw if raw is not None else {}
+        self.writes: list[tuple[str, str, object]] = []
+
+    def read(self):
+        from milo.config import Config
+
+        return Config(self.raw)
+
+    def write(self, section, key, value):
+        from milo.config import Config
+
+        raw = {**self.raw, section: {**self.raw.get(section, {}), key: value}}
+        config = Config(raw)
+        self.raw = raw
+        self.writes.append((section, key, value))
+        return config
+
+
+class FakeChannel:
+    """A chat app in memory: push() what the phone sends, read what Milo sent back from `sent`."""
+
+    name = "fake"
+    label = "Chat"
+
+    def __init__(self):
+        self.inbox: asyncio.Queue = asyncio.Queue()
+        self.sent: list[tuple[str, str]] = []
+        self.questions: list[tuple[str, str, str]] = []
+        self.files: list[tuple[str, str, str]] = []
+        self.file_data: list[bytes] = []
+        self.acks: list[tuple[str, str]] = []
+        self.typing_count = 0
+        self.starts = 0
+        self.closed = False
+        self.fail_start: list[Exception] = []
+        self.fail_send: Exception | None = None
+
+    def push(self, *items) -> None:
+        for item in items:
+            self.inbox.put_nowait(item)
+
+    def texts(self, chat: str | None = None) -> list[str]:
+        return [text for to, text in self.sent if chat is None or to == chat]
+
+    async def start(self) -> None:
+        self.starts += 1
+        if self.fail_start:
+            raise self.fail_start.pop(0)
+
+    async def receive(self) -> list:
+        batch = [await self.inbox.get()]
+        while not self.inbox.empty():
+            batch.append(self.inbox.get_nowait())
+        return batch
+
+    async def send(self, chat: str, text: str) -> None:
+        if self.fail_send is not None:
+            raise self.fail_send
+        self.sent.append((chat, text))
+
+    async def ask(self, chat: str, id: str, question: str) -> None:
+        self.questions.append((chat, id, question))
+
+    async def typing(self, chat: str) -> None:
+        self.typing_count += 1
+
+    async def send_file(self, chat: str, name: str, data: bytes, caption: str = "") -> None:
+        self.files.append((chat, name, caption))
+        self.file_data.append(data)
+
+    async def acknowledge(self, inbound, text: str = "") -> None:
+        self.acks.append((inbound.answer, text))
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+class MemoryRemoteState:
+    def __init__(self, data: dict | None = None):
+        self.data = dict(data or {})
+        self.saves = 0
+
+    def load(self) -> dict:
+        return json_copy(self.data)
+
+    def save(self, data: dict) -> None:
+        self.data = json_copy(data)
+        self.saves += 1
+
+
+def json_copy(data: dict) -> dict:
+    import json
+
+    return json.loads(json.dumps(data))

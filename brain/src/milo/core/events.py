@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any, ClassVar
 
-from .types import Emotion, ListenMode, LiveMode, MiloState, ScreenCapture
+from .types import Emotion, ListenMode, MiloState, ScreenCapture
 
 
 class ProtocolError(ValueError):
@@ -254,11 +254,59 @@ class Facts(Event):
 
 
 @dataclass(frozen=True)
-class DictationStream(Event):
-    """The current [dictation] stream ("off", "preview" or "type"), on connect and after a change."""
+class Routines(Event):
+    """The user's routines for the Milo window, by name, and the recipe drafts waiting for a look.
 
-    type: ClassVar[str] = "dictation_stream"
-    stream: str
+    Each routine: {id, name, description, schedule, paused, last_run, next_run?, inputs, problem?}. `id` is the
+    file name without .md; `next_run` is a local time like "2026-11-02T09:00" while a schedule is on; a file
+    that doesn't read has only id, name and `problem`. Each draft: {id, name, recipe, schedule}, where `recipe`
+    is the whole file the user can save or ask to change. Sent on connect, on get_history and on every change.
+    """
+
+    type: ClassVar[str] = "routines"
+    routines: list[dict]
+    drafts: list[dict]
+
+
+@dataclass(frozen=True)
+class SettingsReport(Event):
+    """What the Settings window shows. Sent on `get_settings` and after every `set_setting`.
+
+    Each setting is {section, key, value, options, labels, live}: `options` lists the allowed values (empty
+    for free text or a switch) and `labels` names them in plain words. `live` false: a change applies after
+    a restart. `restart`: a saved change is waiting for one. `error`: why the last change was not saved.
+    """
+
+    type: ClassVar[str] = "settings"
+    settings: list[dict]
+    restart: bool = False
+    error: str = ""
+
+
+@dataclass(frozen=True)
+class Remote(Event):
+    """Milo by message, for the menu. `channel` is the chat app's name ("telegram"), `label` what the user calls
+    it. state: "starting", "unpaired" (no phone yet; `detail` says how to connect), "paired" (`detail`: the
+    owner's name in the chat app) or "error" (`detail`: what is wrong, in plain words). Sent on connect when
+    messages are on, and on every change."""
+
+    type: ClassVar[str] = "remote"
+    channel: str
+    label: str
+    state: str
+    paused: bool = False
+    detail: str = ""
+
+
+@dataclass(frozen=True)
+class MeetingRecord(Event):
+    """Record the meeting `id`: the microphone and the call's audio, each in 30 s WAV chunks (16 kHz mono) into
+    `dir`, named `me-0001.wav` and `them-0001.wav`. on=false stops it. A red dot shows while the app records."""
+
+    type: ClassVar[str] = "meeting_record"
+    id: str
+    dir: str
+    on: bool
 
 
 # ---- app -> brain
@@ -416,12 +464,109 @@ class EditFact(Command):
     text: str
 
 
-@dataclass(frozen=True)
-class SetDictationStream(Command):
-    """The user picked a dictation style in the menu. The brain uses it from the next recording and saves it."""
+ROUTINE_ACTIONS = ("run", "pause", "resume", "delete")
 
-    type: ClassVar[str] = "set_dictation_stream"
-    stream: LiveMode
+
+@dataclass(frozen=True)
+class RoutineAction(Command):
+    """A button in the Routines section of the Milo window: run, pause, resume or delete the routine `id`."""
+
+    type: ClassVar[str] = "routine"
+    id: str
+    action: str
+
+
+@dataclass(frozen=True)
+class RoutineDraftAnswer(Command):
+    """Save on a recipe draft (`save` true), or throw it away (false)."""
+
+    type: ClassVar[str] = "routine_draft_answer"
+    id: str
+    save: bool
+
+
+@dataclass(frozen=True)
+class GetSettings(Command):
+    """The Settings window opened: send `settings`."""
+
+    type: ClassVar[str] = "get_settings"
+
+
+@dataclass(frozen=True)
+class SetSetting(Command):
+    """Change one setting in config.toml, e.g. section "ui", key "character", value "dragon"."""
+
+    type: ClassVar[str] = "set_setting"
+    section: str
+    key: str
+    value: Any
+
+
+@dataclass(frozen=True)
+class RemotePause(Command):
+    """The menu's "Pause messages from your phone": Milo ignores the phone until it is switched off again."""
+
+    type: ClassVar[str] = "remote_pause"
+    on: bool
+
+
+@dataclass(frozen=True)
+class RemoteForget(Command):
+    """The menu's "Disconnect phone": unpair it. Connecting again needs a new code shown on the Mac."""
+
+    type: ClassVar[str] = "remote_forget"
+
+
+@dataclass(frozen=True)
+class CallStarted(Command):
+    """The app saw a call start: a call app or a browser tab with a call uses the microphone."""
+
+    type: ClassVar[str] = "call_started"
+    app: str
+    bundle: str = ""
+    title: str = ""
+
+
+@dataclass(frozen=True)
+class CallEnded(Command):
+    type: ClassVar[str] = "call_ended"
+    app: str
+
+
+@dataclass(frozen=True)
+class MeetingChunk(Command):
+    """The app finished chunk `index` (from 1) of `track` ("me" or "them") of the meeting `id`.
+
+    `start` is seconds since recording started, `seconds` how much audio the chunk holds.
+    """
+
+    type: ClassVar[str] = "meeting_chunk"
+    id: str
+    track: str
+    index: int
+    path: str
+    start: float
+    seconds: float
+
+
+@dataclass(frozen=True)
+class MeetingRecording(Command):
+    """What the app's recorder is doing: sent when it starts or stops, and on every connect. `tracks` are the
+    tracks it records; `error` says in plain words what it can't record (the call's audio without permission)."""
+
+    type: ClassVar[str] = "meeting_recording"
+    id: str
+    on: bool
+    tracks: tuple[str, ...] = ()
+    error: str = ""
+
+
+@dataclass(frozen=True)
+class MeetingToggle(Command):
+    """The user asked from the menu bar to start (on) or stop taking meeting notes."""
+
+    type: ClassVar[str] = "meeting_toggle"
+    on: bool
 
 
 def parse_command(raw: object) -> Command:
@@ -468,6 +613,12 @@ def parse_command(raw: object) -> Command:
                 return ConfirmAnswer(str(raw["id"]), raw["yes"])
             case "app_response":
                 return AppResponse(str(raw["id"]), raw["ok"] is True, raw.get("result"), str(raw.get("error") or ""))
+            case "remote_pause":
+                if not isinstance(raw["on"], bool):
+                    raise ProtocolError("on must be true or false")
+                return RemotePause(raw["on"])
+            case "remote_forget":
+                return RemoteForget()
             case "stop_helper":
                 id = str(raw["id"]).strip()
                 if not id:
@@ -479,8 +630,43 @@ def parse_command(raw: object) -> Command:
                 return ForgetFact(_required(raw, "id"))
             case "edit_fact":
                 return EditFact(_required(raw, "id"), _required(raw, "text"))
-            case "set_dictation_stream":
-                return SetDictationStream(LiveMode(raw["stream"]))
+            case "routine":
+                action = str(raw["action"])
+                if action not in ROUTINE_ACTIONS:
+                    raise ProtocolError(f"action must be one of {', '.join(ROUTINE_ACTIONS)}")
+                return RoutineAction(str(raw["id"]), action)
+            case "routine_draft_answer":
+                if not isinstance(raw["save"], bool):
+                    raise ProtocolError("save must be true or false")
+                return RoutineDraftAnswer(str(raw["id"]), raw["save"])
+            case "get_settings":
+                return GetSettings()
+            case "set_setting":
+                value = raw["value"]
+                if not isinstance(value, str | bool | int | float):
+                    raise ProtocolError("value must be text, a number or true/false")
+                return SetSetting(str(raw["section"]), str(raw["key"]), value)
+            case "call_started":
+                return CallStarted(str(raw.get("app") or ""), str(raw.get("bundle") or ""), str(raw.get("title") or ""))
+            case "call_ended":
+                return CallEnded(str(raw.get("app") or ""))
+            case "meeting_chunk":
+                if raw["track"] not in ("me", "them"):
+                    raise ProtocolError("track must be me or them")
+                index = int(raw["index"])
+                if index < 1:
+                    raise ProtocolError("index starts at 1")
+                return MeetingChunk(str(raw["id"]), raw["track"], index, str(raw["path"]),
+                                    max(0.0, float(raw["start"])), max(0.0, float(raw["seconds"])))
+            case "meeting_recording":
+                tracks = raw.get("tracks") or ()
+                if not isinstance(tracks, list | tuple):
+                    raise ProtocolError("tracks must be a list")
+                return MeetingRecording(str(raw.get("id") or ""), raw["on"] is True,
+                                        tuple(str(t) for t in tracks if t in ("me", "them")),
+                                        str(raw.get("error") or ""))
+            case "meeting_toggle":
+                return MeetingToggle(raw["on"] is True)
     except (KeyError, TypeError, ValueError) as e:
         raise ProtocolError(f"bad {kind} message: {e}") from None
     raise ProtocolError(f"unknown message type {kind!r}")

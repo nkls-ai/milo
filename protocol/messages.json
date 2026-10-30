@@ -40,7 +40,12 @@
       {"id": "01JBF6Z3Q8M2X4K7N9P0R5T6VW", "text": "The user's name is Niklas.", "topic": "basics", "since": "2026-10-30T09:12:00", "pinned": true},
       {"id": "01JBF7A1B2C3D4E5F6G7H8J9KM", "text": "Anna is the user's sister. Her birthday is March 3.", "topic": "people", "since": "2026-10-30T18:05:41", "pinned": false}
     ]},
-    {"type": "dictation_stream", "stream": "preview"}
+    {"type": "routines", "routines": [{"id": "monday-report", "name": "Monday report", "description": "Sums last week's sales into a one-page report.", "schedule": "every Monday at 09:00", "paused": false, "last_run": "2026-10-26 09:00, done", "next_run": "2026-11-02T09:00", "inputs": ["month"]}, {"id": "tidy-downloads", "name": "Tidy downloads", "description": "", "schedule": "", "paused": true, "last_run": "", "inputs": []}, {"id": "broken", "name": "broken", "problem": "it must start with a line of three dashes (---)"}], "drafts": [{"id": "d4e5f6a7", "name": "Invoice folder", "recipe": "---\nname: Invoice folder\nschedule:\npaused: no\nversion: 1\n---\n\n## Steps\n\n1. Move this month's invoices from Downloads into Invoices.\n   Check: Downloads has no invoice left.\n", "schedule": ""}]},
+    {"type": "settings", "settings": [{"section": "ui", "key": "character", "value": "dragon", "options": ["pip", "classic", "dragon", "kit", "glow"], "labels": ["Pip", "Robot", "Dragon", "Kit", "Glow"], "live": true}, {"section": "ui", "key": "voice", "value": true, "options": [], "labels": [], "live": true}, {"section": "chat", "key": "updates", "value": "bubble", "options": ["quiet", "bubble", "chatty"], "labels": ["Only the answer", "Short notes in his bubble", "Tells you each step"], "live": true}, {"section": "dictation", "key": "stream", "value": "preview", "options": ["off", "preview", "type"], "labels": ["When you let go", "Show the words as you speak", "Type as you speak"], "live": true}], "restart": false, "error": ""},
+    {"type": "settings", "settings": [], "restart": false, "error": "The dictate key and the talk key need to be different keys."},
+    {"type": "remote", "channel": "telegram", "label": "Telegram", "state": "paired", "paused": false, "detail": "Niklas (@niklas)"},
+    {"type": "remote", "channel": "telegram", "label": "Telegram", "state": "unpaired", "paused": false, "detail": "Message @milo_mac_bot from your phone to connect."},
+    {"type": "meeting_record", "id": "2026-10-30-1400-weekly-sync", "dir": "/Users/you/Milo/meetings/2026-10-30-1400-weekly-sync/audio", "on": true}
   ],
   "app_to_brain": [
     {"type": "listen_start", "mode": "dictate"},
@@ -68,6 +73,18 @@
     {"type": "get_facts"},
     {"type": "forget_fact", "id": "01JBF7A1B2C3D4E5F6G7H8J9KM"},
     {"type": "edit_fact", "id": "01JBF7A1B2C3D4E5F6G7H8J9KM", "text": "Anna is the user's sister. Her birthday is March 4."},
-    {"type": "set_dictation_stream", "stream": "type"}
+    {"type": "routine", "id": "monday-report", "action": "run"},
+    {"type": "routine", "id": "tidy-downloads", "action": "resume"},
+    {"type": "routine_draft_answer", "id": "d4e5f6a7", "save": true},
+    {"type": "get_settings"},
+    {"type": "set_setting", "section": "ui", "key": "character", "value": "dragon"},
+    {"type": "set_setting", "section": "ui", "key": "voice", "value": false},
+    {"type": "remote_pause", "on": true},
+    {"type": "remote_forget"},
+    {"type": "call_started", "app": "Zoom", "bundle": "us.zoom.xos", "title": "Zoom Meeting"},
+    {"type": "call_ended", "app": "Zoom"},
+    {"type": "meeting_chunk", "id": "2026-10-30-1400-weekly-sync", "track": "them", "index": 3, "path": "/Users/you/Milo/meetings/2026-10-30-1400-weekly-sync/audio/them-0003.wav", "start": 60.0, "seconds": 30.0},
+    {"type": "meeting_recording", "id": "2026-10-30-1400-weekly-sync", "on": true, "tracks": ["me"], "error": "I can only hear you, not the others. Turn on System Audio Recording for Milo in System Settings › Privacy & Security."},
+    {"type": "meeting_toggle", "on": false}
   ]
 }

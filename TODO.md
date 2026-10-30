@@ -10,9 +10,9 @@
 - Run the eval on Codex as the worker too, and on a few German phrasings.
 - Thumbs up/down on unprompted nudges, stored in memory, so rules learn what you care about.
 - Context-aware dictation formatting by frontmost app (casual in Slack, formal in Mail), via a local model `TextCleaner`.
-- A stable signing identity so macOS permissions survive rebuilds.
 
-- Pip's idle CPU is too high: measured 6.5% for Milo.app on screen, asleep at night (2026-10-30, 03:35), against the robot's ~0.4%. Find what keeps redrawing while he sleeps (the sleeping pose, the "z", the 15 Hz clock) and stop the clock when nothing moves. One frame of Pip costs 1.3 ms against the robot's 1.7 ms, so the clock rate is the likely cause, not the drawing.
+- Idle CPU awake is still above 1%: about 1.8 to 3% for a release build with nobody touching the Mac (2026-10-30, on a busy machine; asleep 0.04%, before the skin system 7.2%). Repeating motion is in Core Animation now; what's left is each pose change (blinks, glances, the eyes following the cursor) redrawing the whole figure and every looping part's own hosting view, plus the springs' frames. Next: draw the eyes in their own small layer so a blink or a glance redraws only them.
+- Setup window: Automation is checked against Mail only, and macOS can only say while Mail is open. Check Notes too.
 - Pip pointing near the left screen edge: the bubble hangs to his left and can be cut off. Move the bubble to his right when he perches there.
 - Pip: a fold or flap animation when he takes off and lands, instead of starting mid-flap.
 
@@ -40,6 +40,13 @@
 - Voice barge-in (`[chat] voice_barge_in`): try it with the MacBook speakers in a real room, then with headphones, and tune `TalkDetector` on what it gets wrong. Turn it on by default once a few days of use show no false stops. It only listens while Milo speaks; talking while he thinks still needs the key.
 - First sound is about 1.5 to 2.5 s after the user's words, and most of it is OmniVoice's first piece (each diffusion step costs 200 to 500 ms even for a short piece, and the audio decoder another 0.3 s). Idea not yet measured: a per-call cache of the voice reference's encoder pass. Starting the chat turn on the committed words before the key comes up is possible now (the live transcript commits phrases while the user speaks, and the words are ready about 0.5 s after release), but a message sent to the running model can't be taken back if the user goes on talking, so it would need a throwaway conversation per guess.
 - OmniVoice garbled one 6-step render out of about 40 in a Whisper check ("Goodnight..."). If it happens in use, 8 steps when the GPU is free.
+
+- Milo by message: try it with a real bot (make one with @BotFather, pair, ask for a file, answer a question from the phone). Everything so far ran against a fake Bot API.
+- Milo by message: run the iMessage channel against the real Messages app (message yourself, check that Milo's own messages are skipped and that "from me" rows of the self chat come through as expected).
+- Milo by message: a field for the bot token and a "Connect your phone" button in the Settings window (now config.toml and a file).
+- Milo by message: voice notes from the phone through Whisper, photos to the chat model as images (both are refused with a plain note now).
+- Milo by message: say which helper a phone question comes from, and let a helper's turn wait as long as a question on the phone does (now the harness timeout ends it first).
+- Milo by message: keep helpers from writing into ~/Milo/state and ~/Milo/secrets at all, not only putting them back while the owner is away.
 
 ## Later
 - Wake word ("hey Milo") with a small local model.

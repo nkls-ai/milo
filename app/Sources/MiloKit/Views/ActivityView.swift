@@ -3,6 +3,7 @@ import SwiftUI
 /// Work Milo handed to his helper: a header, the steps hanging on a thread, then what he reported.
 /// Open while it runs or failed, folded once it is done; a click on the header toggles it.
 struct TaskBlock: View {
+    @Environment(\.miloTheme) private var theme
     let entry: TranscriptEntry
     @State private var expanded: Bool?
     /// Step ids whose detail starts open. For offscreen renders.
@@ -60,7 +61,7 @@ struct TaskBlock: View {
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 10)
-        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(WindowColors.inset))
+        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(theme.ink.opacity(0.05)))
         .overlay(alignment: .leading) {
             UnevenRoundedRectangle(topLeadingRadius: 9, bottomLeadingRadius: 9, style: .continuous)
                 .fill(WindowColors.status(entry.status))
@@ -80,6 +81,7 @@ struct TaskBlock: View {
 
 /// One step: a bead on the thread, what Milo did in plain words, and the raw detail on request.
 struct StepRow: View {
+    @Environment(\.miloTheme) private var theme
     let step: ActivityStep
     let last: Bool
     @State private var showDetail: Bool
@@ -123,14 +125,14 @@ struct StepRow: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(8)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(WindowColors.inset))
+                        .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(theme.ink.opacity(0.05)))
                 }
             }
             .padding(.bottom, last ? 0 : 9)
         }
         .background(alignment: .topLeading) {
             if !last {
-                Rectangle().fill(WindowColors.thread).frame(width: 1.5)
+                Rectangle().fill(theme.primary.opacity(0.25)).frame(width: 1.5)
                     .padding(.top, 18).padding(.leading, 6.25)
             }
         }

@@ -17,25 +17,29 @@ Only one brain runs per workspace. It takes an `flock` on `~/Milo/run/brain.lock
 brain/src/milo/
   core/           types, ports (Protocols), wire events, registries, clock, hands (the milo-mac tools and
                   their schemas), wording (plain titles and questions for app actions), logtext (what the log
-                  may say). Depends on nothing.
+                  may say), routines (the recipe format and plain-word schedules). Depends on nothing.
   adapters/       concrete engines, each registering itself by name
     harness/      codex, claude (agent harnesses), claude_live (the streaming chat model)
     stt/          mlx_whisper
+    diarize/      sherpa_onnx (voice embeddings for meeting notes, TitaNet-small by default)
     tts/          omnivoice, say
     audio/        sounddevice (mic in, speaker out), wav (a real-time virtual sound card that writes WAV files,
                   and a WAV file as the mic, for timing tests and voice comparisons without the speakers)
     text/         fillers, plain (dictation cleanup)
     connect/      mac (Calendar and Reminders through the app, Mail and Notes through AppleScript,
                   Shortcuts, Spotlight files), fake (a made-up world in ~/Milo/fake)
+    channel/      telegram (Bot API long polling), imessage (experimental: chat.db and Messages AppleScript)
     headless/     none: no microphone, no voice, no speaker, for tests and the eval
     embed/        mlx_e5 (multilingual-e5-small in MLX), hash (hashed words, no model; tests and CI)
   connect/        the MCP tool server the worker loads (python -m milo.connect)
   eval/           the 30-task eval (python -m milo.eval) and the on-screen eval (python -m milo.eval.screen)
   memory/         Workspace paths and bootstrap, profile.md, reminders.md, usage ledger, dictation history,
-                  transcript (the Milo window's conversation), and long-term memory: episodes and facts
-                  (append-only JSONL), fact_profile (profile.md as a view of the facts), index (FTS5 and
-                  vectors in state/memory.sqlite), recall, when (time phrases), consolidate (the night),
-                  recall_eval
+                  transcript (the Milo window's conversation), routines (the recipe folder and its state),
+                  remote (state/messages.json: the paired phone), and
+                  long-term memory: episodes and facts (append-only JSONL), fact_profile (profile.md as a view of
+                  the facts), index (FTS5 and vectors in state/memory.sqlite), recall, when (time phrases),
+                  consolidate (the night), recall_eval, meetings (FileMeetingStore,
+                  JsonVoiceBook)
   proactive/      heartbeat engine, daily LLM budget, rules (one class per rule, registered by name)
   services/       use cases built only on ports: listening (push-to-talk, barge-in), dictation,
                   live_transcript (pause segmenter, phrases committed while recording, live words),
@@ -48,15 +52,20 @@ brain/src/milo/
                   AppEyes, AppHands, Calendar and Reminders work), tool_requests (what the tool socket may do),
                   screen (screen data for the chat model), hands + risk (checking and logging the worker's Mac
                   actions), sheets + documents (the AppleScript behind sheet_write and write_document), memory (recall for each turn, search, forget, edit), episode_stubs (episodes
-                  of turns, tasks, looks and dictations), memory_requests (the worker's memory tools), sleep
-                  (when the night's consolidation runs), plus small shared pieces: ui_state, context (latest app/idle report), levels
+                  of turns, tasks, routine runs, looks and dictations), memory_requests (the worker's memory tools), sleep
+                  (when the night's consolidation runs), routines (writing, running and scheduling recipes, see ADR 16),
+                  messages + pairing + sharing + brief + settings_guard (Milo by message, ADR 17),
+                  meetings + meeting_text + meeting_speakers + background_stt (meeting notes, see below),
+                  plus small shared pieces: ui_state, context (latest app/idle report), levels
                   (throttled meters), quiet (wait for a turn to end), fallback_voice
   transport/      Unix socket JSONL servers: brain.sock (an EventSink), hands.sock, and the tool socket and its
                   client
   mcp_server.py   the milo-mac MCP stdio server the worker CLI starts; forwards calls to hands.sock
   brain.py        routes inbound commands to services
   config.py       reads config.toml into sections
-  config_edit.py  changes one setting in config.toml in place (the menu's dictation style)
+  config_file.py  changes one key of config.toml and keeps the user's comments (the Settings window and the
+                  menu's dictation style)
+  settings.py     the settings the Settings window may change, their choices, and how a change lands
   compose.py      composition root: the only module that names concrete classes
   server.py       main()
 ```
@@ -76,7 +85,8 @@ Beyond `milo.core.ports`, these entry points are fixed:
 | Function / class | Owner | Contract |
 |---|---|---|
 | `milo.adapters.load_builtin() -> None` | adapters | Imports every built-in adapter module so it registers. Idempotent. Heavy imports (torch, mlx) stay inside methods, never at module import. |
-| `milo.memory.workspace.Workspace(home)` | memory | `.ensure()` copies the template without overwriting, and creates dirs. Path properties: `config_path`, `reminders_path`, `profile_path`, `persona_path`, `state_dir`, `log_dir`, `socket_path`, `lock_path`, `usage_path`, `dictation_history_path`, `transcript_path`, `heartbeat_state_path`, `hands_socket_path`, `screens_dir`, `tools_socket_path`, and for memory `episodes_dir`, `facts_path`, `journal_dir`, `memory_index_path`, `profile_snapshot_path`, `sleep_state_path`. |
+| `milo.memory.workspace.Workspace(home)` | memory | `.ensure()` copies the template without overwriting, and creates dirs. Path properties: `config_path`, `reminders_path`, `profile_path`, `persona_path`, `state_dir`, `log_dir`, `socket_path`, `lock_path`, `usage_path`, `dictation_history_path`, `transcript_path`, `heartbeat_state_path`, `hands_socket_path`, `screens_dir`, `tools_socket_path`, for memory `episodes_dir`, `facts_path`, `journal_dir`, `memory_index_path`, `profile_snapshot_path`, `sleep_state_path`, and for routines `routines_dir`, `routine_runs_path`, `routine_state_path`, `routine_drafts_dir`. |
+| `milo.memory.routines.MarkdownRoutineBook(folder, runs, drafts)` | memory | `RoutineBook` over `routines/*.md`. Re-parses a file only when its mtime or size changes. `update(slug, fields)` rewrites front matter lines in place; `delete` moves the file to `routines/deleted/`. |
 | `milo.memory.reminders.MarkdownReminders(path)` | memory | `ReminderBook`. Re-parses only when mtime changes. `add(due, text)` appends a line. Shared by the heartbeat and LiveTalk. |
 | `milo.memory.profile.MarkdownProfile(path)` | memory | `ProfileMemory` over `memory/profile.md`. Used only with `[memory] enabled = false`. |
 | `milo.memory.fact_profile.FactProfile(facts, path, snapshot, clock)` | memory | `ProfileMemory` as a view of the `FactStore`: `read()` renders facts, `remember()` adds one, the user's edits to `profile.md` become fact changes. `migrate()` turns an old `profile.md` into facts once. |
@@ -88,6 +98,7 @@ Beyond `milo.core.ports`, these entry points are fixed:
 | `milo.memory.transcript.JsonlTranscript(path)` | memory | `TranscriptStore` over `state/transcript.jsonl`. `tail(n)` reads the file backwards block by block, so its cost doesn't grow with the file. |
 | `milo.services.approvals.Approvals` | services | `approve(kind, summary) -> Decision` applies the action level and asks if needed. `confirm(summary) -> bool` always asks (the `Confirmer` port). |
 | `milo.transport.tool_client.BrainClient(path)` | transport | `request(body) -> dict` on `run/tools.sock`; `approve(kind, summary) -> Decision`. Used by the MCP server, and by any helper process that needs a yes. |
+| `milo.services.messages.MessageService` | services | Milo by message. `run()` polls the `Channel` until cancelled, `tick()` runs on the heartbeat. A `QuestionRelay` for `Approvals` (`asked`, `closed`), an `Orchestrator` watcher (`helper_changed`), and the `Phone` behind the tool socket's `send_to_phone` (`check`, `question`, `send_file`). `pause(on)`, `forget()`, `status() -> Remote`. |
 | `milo.proactive.build_engine(section, ctx, reminders) -> ProactiveEngine` | proactive | `section` is the whole `[heartbeat]` table including sub-tables. Ignores `enabled` (compose.py decides whether to run it). |
 
 ## Listening
@@ -100,11 +111,13 @@ Both keys listen the same way (`services/listening.py`, `services/live_transcrip
 4. **Preview.** Otherwise the small model (whisper-base) re-reads the open phrase for the live words above Milo (`partial`). Commits and guesses always go first, so at most one preview pass (about 0.05 s) runs ahead of the full model.
 5. **Release.** `finish()` interrupts a commit or preview in flight (`Transcriber.interrupt()`: the Whisper encoder runs four layers at a time and checks between them), lets a guess finish, then does whatever is left in quick passes: phrases still waiting and the open phrase unless a guess covers it.
 
+The key going down first queues `Transcriber.wake()`: a short pass over a second of silence on each loaded model. On a 16 GB Mac with a browser and a few agents open, macOS pages an idle brain's 5 GB of model memory out, and the first pass after that took 3.8 s for 2 s of speech. Waking at key-down pages the models back in while the user is still talking. A wake that takes over half a second is logged.
+
 All passes run one at a time on the STT thread. A quick pass encodes the audio plus 1 s of silence, but at least 10 s, instead of a padded 30 s window, so it costs roughly its own length (0.3 s for a short phrase on an idle M3 against 1.1 s). With less than 10 s the decoder loses track of where speech ends and repeats itself; a quick decode that loops, runs past 8 tokens a second or that Whisper itself doubts goes through the full window instead. Quick passes miss a few more words (on 48 test phrases 2.7% against 1.7%), which is why only the last phrase of a recording normally gets one. `stream = "off"` runs no live passes and transcribes the whole recording on release with full windows.
 
 Measured on recorded test speech, replayed in real time while other models shared the GPU (about 2.5x slower than idle): from release to pasted text, a 2 s dictation took 0.76 s (2.5 s with one pass over the whole recording), 15 s took 0.93 s (2.9 s), 60 s took 0.98 s (11.5 s). Talk, from release to the text reaching LiveTalk: 0.69 s, 1.8 s and 0.44 s (3.2 s, 4.2 s, 11.9 s). Word errors were equal or lower (60 s: 1.6% against 2.7%).
 
-The menu bar item's "Dictation style" sends `set_dictation_stream`; the brain uses it from the next recording, writes `[dictation] stream` into `config.toml` in place (`config_edit.py`, comments kept) and answers `dictation_stream`, which it also sends on connect.
+The menu bar item's "Dictation style" changes `[dictation] stream` the way the Settings window does (`set_setting`, see Settings below): the brain saves it and uses it from the next recording. The menu ticks the value from the brain's last `settings`, which the brain also sends on connect.
 
 ## A user turn
 
@@ -122,7 +135,7 @@ Typed and spoken turns take the same path through `LiveTalk`:
 Milo remembers episodes (what happened) and facts (what is true about the user) for years. See the [design](design/memory.md) and [ADR 15](adr/0015-memory-files-and-a-rebuildable-index.md).
 
 - **Files.** `memory/episodes/YYYY-MM.jsonl` and `memory/facts.jsonl` are append-only logs and the only truth. `memory/profile.md` is written from the facts; the user may edit it. `state/memory.sqlite` is a search index that rebuilds itself from the logs.
-- **During the day.** `EpisodeTranscript` (around the transcript store) makes an episode of each user turn with Milo's answer and of each task; `EpisodeEyes` of each look; `EpisodeDictations` of dictations if `[memory] dictations` is on. `<remember>` and the worker's `memory_remember` add facts. The index catches up on the memory thread in batches.
+- **During the day.** `EpisodeTranscript` (around the transcript store) makes an episode of each user turn with Milo's answer and of each task; `RoutineEpisodes` (on `Routines.on_episode`) makes the episode of a routine run instead, a task episode named after the routine with its inputs and apps; `EpisodeEyes` of each look; `EpisodeDictations` of dictations if `[memory] dictations` is on. `<remember>` and the worker's `memory_remember` add facts. The index catches up on the memory thread in batches.
 - **Each turn.** The recall runs hybrid search (FTS5 words, with German and English words for each other, and e5 vectors, merged by reciprocal rank fusion), boosts recent episodes, the current app and named people, adds the episodes of a time phrase ("yesterday", "letzte Woche"), and fits the result into `[memory] recall_tokens` (800). Outside episodes come marked as data and taint the conversation (ADR 10). No model call.
 - **At night.** `SleepRunner` consolidates each finished day with one worker call: better summaries, new, changed and retired facts, and a journal section. Every change is a log line; `python -m milo.memory.consolidate --undo <run>` takes a night back.
 - **The user's view.** "What Milo knows…" in the menu bar lists the facts by topic with Edit and Forget. The worker has `memory_search`, `memory_remember` and `memory_forget` in the `milo` MCP server; the latter two ask the user first.
@@ -142,6 +155,17 @@ The chat model, the talker, has no tools and never waits for work. Work that nee
 
 Task results reach the chat model as `<task_result>` blocks with `<` and `>` escaped, and the reply rules say they are data. Once a result is in the conversation, LiveTalk asks before it acts on any later tag in it, until the conversation resets. See [ADR 10](adr/0010-untrusted-results-and-a-private-log.md).
 
+## Routines
+
+A routine is a recipe in words that a helper follows again: `~/Milo/routines/<slug>.md`, Markdown with front matter (`name`, `description`, `inputs`, `schedule`, `apps`, `paused`, `last_run`, `version`) and a body with Goal, Steps with `Check:` lines, and Ask first. `services/routines.py` owns them. See [ADR 16](adr/0016-routines.md).
+
+- **Tags.** The talker writes `<routine do="create|save|change|run|schedule|rename|pause|resume|delete" name="...">`. The system prompt lists the routines by name and schedule, with names inert like task results. Create never asks (the draft is looked at before it counts); the others follow the task rule of a tainted conversation.
+- **Create.** A careful helper writes a draft to `state/routine-drafts/` from the last finished helper's task, steps and result. The brain normalizes it and sends it in the `routines` event; the window's draft card shows the steps, inputs and apps, or the whole file, with Save and Change it (`routine_draft_answer`).
+- **Run.** A helper gets the recipe and the inputs (`month: October`, a bare value for a single input, or the defaults). A recipe changed since it was saved, or a schedule set outside Milo, asks before it runs. `last_run` and `state/routine-runs.jsonl` record each run.
+- **Schedules.** `HeartbeatRunner.on_tick` calls `Routines.tick`, which costs no model call. Missed runs coalesce into one, run at wake within `[routines] grace_hours` and are reported after it. `[routines] max_runs_per_day` caps scheduled runs.
+- **Tasks that repeat.** `Orchestrator.on_done` calls `Routines.seen`, which keeps the shape of each finished task (`core/task_patterns.py`) for 45 days and offers, once per kind, to keep the third one alike as a routine.
+- **The window.** A Routines section above the conversation lists them with their schedule, next and last run, Run now and a menu for pause, resume and delete (`routine`).
+
 ## Looking and computer use
 
 See [ADR 6](adr/0006-looking-at-the-screen.md) and [ADR 7](adr/0007-computer-use-through-the-brain.md).
@@ -150,7 +174,7 @@ See [ADR 6](adr/0006-looking-at-the-screen.md) and [ADR 7](adr/0007-computer-use
 - **Computer use.** Workers get the milo-mac tools (`core/hands.py`) through `AdapterContext.mac_tools`, which compose.py fills when `[hands] enabled`. Codex and Claude start `python -m milo.mcp_server`, next to the app connections server, and it sends each call to `~/Milo/run/hands.sock`. `HandsService` validates it, asks the app to describe the target, classifies it with `services/risk.py`, asks through the `Confirmer` port (`Approvals`, see below) when needed, logs a step, and then has the app run it (`hands_request`, `hands_result`). It only answers while a screen helper runs, and only one does at a time.
 - **Background delivery.** `MacHands` works on apps without the real cursor or keyboard where macOS allows it, deciding the route per app family with the pure planner `Screen/Delivery`: `AXPress` for buttons, `AXFocused` plus a caret for a click into a field, `AXSelectedText` (read back) for typing, `AXShowMenu` for a right-click, the scroll bar's value for scrolling. What can't be done that way (a plain keystroke, a double-click, web content, Office documents) returns `HandsFailure(borrow:)`; `HandsService` asks "Can I borrow your mouse for a moment?" through the `Confirmer`, and on a yes sends `hands_borrow`. The app lends that one device on a 15 s sliding clock and warps the real pointer back afterwards. See [ADR 12](adr/0012-background-delivery.md).
 - **Scripts Milo writes.** `sheet_write`, `sheet_read` (Excel, Numbers), `write_document` (TextEdit, Pages) and `ax_find` are composed in the brain: `services/sheets.py` and `services/documents.py` turn plain arguments into AppleScript with every value as an escaped literal, and run it through the app's `run_applescript` action, which works in the background. They need no question unless `sheet_write` would replace filled cells. The tool descriptions put them first, then `run_applescript` (always asks), then the accessibility tree, then screenshots. See [ADR 14](adr/0014-scripts-milo-writes-and-short-questions.md).
-- **On screen.** Milo's own lavender cursor (`AppKit/CursorOverlay`, a click-through overlay, never the system cursor) glides to each spot before the action, ripples on a click and shows a caret while typing. The window he works in gets a soft outline with a "Milo is working here" tag and a Stop button (`AppKit/WorkingOutline`, `MiloModel.workingWindow`), followed by `Adapters/MacWindowWatcher`. Pip perches on its corner (`FlightDriver`). The whole-screen frame (`AppKit/WorkingFrame`) shows only while the real mouse or keyboard are borrowed. `describe` returns the target's `window` and `pid` for the outline.
+- **On screen.** Milo's own cursor in his skin's colours (`AppKit/CursorOverlay`, a click-through overlay, never the system cursor) glides to each spot before the action, ripples on a click and shows a caret while typing. The window he works in gets a soft outline with a "Milo is working here" tag and a Stop button (`AppKit/WorkingOutline`, `MiloModel.workingWindow`), followed by `Adapters/MacWindowWatcher`. Pip perches on its corner (`FlightDriver`). The whole-screen frame (`AppKit/WorkingFrame`) shows only while the real mouse or keyboard are borrowed. `describe` returns the target's `window` and `pid` for the outline.
 - **Stopping.** `Screen/ScreenController` watches real input during a session through `UserInputSource`. `TakeoverDetector` is pure and has two modes: in `background` the user's own mouse and keyboard never stop Milo (that's the point), only `esc` or the Stop button does; while a device is `borrowed` any real touch stops him, as before. Input doesn't count while a question waits (`confirm` until `confirm_done`). On a stop the app sends `hands_stop` and the brain fails every later call in that task.
 
 ## App connections
@@ -175,6 +199,28 @@ worker CLI ──stdio──▶ milo.connect ──run/tools.sock──▶ brain
 
 `Approvals` owns the one open question. `approve(kind, summary)` looks up the level in `[approvals.levels]`: `read` and `change` go ahead, `never` is refused, `ask_first` asks. Asking sends `confirm` (the bubble and the window show Yes and No), speaks the question unless a turn is running, and waits for `confirm_answer`, a short spoken or typed yes or no while the bubble still shows the question, or `[approvals] timeout_s`, which counts as no. `confirm_done` tells the app it is over. Computer use asks through the same flow with `confirm(summary)`; its own classifier decides when, so the levels don't loosen it. `approve(kind, summary, careful=True)`, for a careful helper (see Delegated tasks), asks before `change` actions as well.
 
+## Milo by message
+
+The owner reaches Milo from their phone through a chat app (`[messages]`, off by default). See [ADR 17](adr/0017-milo-by-message.md) and the [setup guide](setup/messages.md).
+
+```
+phone ──Telegram──▶ api.telegram.org ◀──HTTPS long poll── brain: TelegramChannel ──▶ MessageService
+                                                                                       │
+             pairing code ◀── bubble and window on the Mac ◀────────────────────────────┤
+             LiveTalk.message (text turn, same conversation) ◀──────────────────────────┤
+             Approvals questions while away ──▶ Yes/No buttons in the chat ─────────────┤
+             helpers started from the phone ──▶ milestones and results in the chat ─────┤
+             worker's send_to_phone ──tools.sock──▶ check, ask "share", send the bytes ─┘
+```
+
+- **Channels** (`CHANNELS` registry, `core/ports.Channel`) only move messages. Telegram uses the Bot API over HTTPS with the standard library, so nothing on the Mac listens for the network. The token comes from `~/Milo/secrets/telegram-token` (0600, never logged). iMessage reads chat.db read-only (Full Disk Access) and sends with AppleScript to the owner's own handle only.
+- **Pairing** (`services/pairing.py`): the first message from an unknown private chat makes a 6-digit code that shows on the Mac only; sending it back makes that chat the owner (`state/messages.json`, 0600). Codes are tied to their chat, last 10 minutes and 5 tries. After pairing everything but the owner's private chat is dropped and logged without its text.
+- **Turns.** `LiveTalk.message` runs a text turn on the live model: same persona, memory and helpers, no speech, no looking. Forwarded, quoted and long (pasted) text goes in as escaped `<forwarded>`, `<quoted>`, `<pasted>` data and makes later tags ask first.
+- **Questions.** `Approvals.relays` holds the MessageService. While the Mac has been idle for `away_after_min`, a question goes to the chat and only the chat may answer (`Relayed.only`); while the owner writes from the phone and the Mac is in use, both may.
+- **Files.** The connections server lists `send_to_phone` when messages are on. `ToolRequests` asks `services/sharing.py` whether the file may go (no private folders, case-insensitive, links resolved, at most `max_file_mb`), asks `share`, then sends the bytes read through one descriptor opened without following links, if it is still the same file.
+- **Safety while away.** `services/settings_guard.py` puts `config.toml`, `state/messages.json` and `secrets/` back if they change while the owner is away (Milo's own saves excepted). `/pause` works from the phone; resuming, pairing and disconnecting only at the Mac (the menu sends `remote_pause` and `remote_forget`).
+- **Morning brief** (`services/brief.py`, `brief_at`): today's events and Apple Reminders through the app, `reminders.md`, helpers at work. Templates only, zero tokens, on the heartbeat's tick (`HeartbeatRunner.on_tick`).
+
 ## Logs
 
 `logs/brain.log` rotates at `[logging] max_mb` and keeps `keep` old files. It holds sizes and timings, never what the user said, Milo's replies or file contents: services log `milo.core.logtext.private(text)`, which is `<42 chars>` unless `[logging] content = true`. `logs/connect.log` is the MCP server's.
@@ -189,6 +235,55 @@ The window shows the conversation as text and lets the user type to Milo. Clicki
 - **Questions.** While Milo waits for a yes or no, the bubble shows the question with Yes and No buttons and stays up, and a bar above the text field shows it too.
 - **Typing.** The text field sends `text`. The window's "speak replies" toggle (off by default, kept in UserDefaults) adds `"speak": false`, and Milo then answers in the bubble and the window without audio.
 
+## Settings
+
+The Settings window changes a few keys of `~/Milo/config.toml` through the brain; the app stores nothing.
+
+- **Protocol.** The app sends `get_settings` when the window opens and `set_setting {section, key, value}` for each change, from the window or the menu's "Dictation style". The brain sends `settings` on connect and answers both with `settings {settings, restart, error}`: one row per setting with `value`, its `options` and their plain `labels` (both empty for a switch), and `live`. `restart` is true while a saved change waits for one; `error` says in plain words why the last change wasn't saved.
+- **What can change.** `settings.SETTINGS` lists them: `[ui] character`, `[chat] updates`, `[dictation] stream`, `[ui] dictate_key`, `talk_key`, `whats_this_key` and `[ui] voice`. Anything else is refused.
+- **Saving.** `config_file.TomlConfigFile`, the brain's only writer of config.toml, edits the file with tomlkit, so comments, order and blank lines stay, and a comment at the end of the changed line keeps its column. It loads the edited text with `Config` first and writes nothing if it fails (a clash of keys, a wrong type, an already broken file); the write goes to a temporary file that replaces config.toml.
+- **Applying.** `compose.py` hands `Settings` one function per key that can change live: the look and the keys re-send `ui_config` (and later connects send the new one), `voice` sets `Speaker.silent` (replies still show piece by piece at speaking pace, without audio), `stream` sets `Listening.live_mode` for the next recording, `[chat] updates` goes to `LiveSettings` at once (the helpers' updates; it would otherwise notice the changed file within 2 s). Every setting in the window applies live today; a key without a function would wait for a restart, and the window would then show a Restart Milo button, which restarts the brain.
+
+## The setup window
+
+`SetupWindow` opens by itself at launch when the microphone, Accessibility or Screen Recording is missing, and from the menu bar as "Check permissions…". Calendars, Reminders and Mail and Notes (Automation, checked against Mail) are optional rows.
+
+- **Checks.** `SetupModel` reads every permission through the `PermissionSource` port (`SystemPermissions` in the app, `FakePermissions` in tests) once a second, only while the window is open, so a tick appears as soon as the switch flips.
+- **Granting.** The row's button first puts Milo in that permission's list (`register`: `AXIsProcessTrustedWithOptions` with the prompt, `CGRequestScreenCaptureAccess`, `AVCaptureDevice.requestAccess`, EventKit's request, an Apple Event question to Mail). Where macOS hasn't asked yet and asks in a dialog, that's all; otherwise it then opens the exact page (`x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_…`). For Accessibility and Screen Recording a small floating panel shows Milo as a tile to drag into the list.
+- **Stale entries.** After a rebuild macOS can show Milo switched on while the check says no. A permission that was granted before (remembered in UserDefaults) or is still off 8 s after its page opened gets a Fix it button: `tccutil reset Accessibility|ScreenCapture <Milo's bundle id>` for Milo's own entry only, then register and open the page again.
+- **Screen Recording** only counts after a restart, so once its page was opened the row offers Restart Milo, which relaunches the app.
+- **Scenes.** Each row plays a short loop of what Milo does with the permission, drawn with the active skin (`Views/SetupScenes.swift`), only while the window is open; with Reduce Motion each shows its last step still.
+
+## Themes
+
+Every skin brings a theme, and every surface around Milo uses it: the bubble, the live words, the Milo window, the Settings and setup windows, the menu bar sign. Other overlays (the cursor, the working outline, helpers) should use it too.
+
+```swift
+let theme = Theme.for(.dragon)       // or model.theme, from MiloModel.character
+theme.primary  theme.tint  theme.accent  theme.ink  theme.glow   // SwiftUI Colors, light and dark built in
+theme.onPrimary  theme.card  theme.rule                          // text on primary, cards on tint, hairlines
+theme.appKit.primary                                             // the same colours as NSColor, for AppKit
+theme.motion.spring  theme.motion.gentle                         // the skin's springs; never linear tweens
+theme.motion.animation(reduced: reduceMotion)                    // a short fade under Reduce Motion
+theme.motion.bob                                                 // how far decorative things float, Pip = 1
+
+someView.themed(by: model)                     // puts model.theme in the environment, follows the skin live
+@Environment(\.miloTheme) private var theme    // inside any view below it
+```
+
+`primary` is the skin's main colour (buttons, selection, the thread of a task), `tint` a soft wash of it (window paper), `accent` a second colour that pops, `ink` text on `tint`, `glow` halos and highlights. Pip is lavender and airy, the robot purple, the dragon teal with ember sparks and bouncy springs, Kit paper and fox orange and crisp, Glow lantern amber on night blue and floaty. The API lives in `app/Sources/MiloKit/Theme.swift`; add a colour there rather than in a view. Windows use `.themed(by:)`; the always-there overlay panels (the cursor, the working outline, the borrowed-mouse frame) subscribe to `model.$character` instead and pass the theme into their view, so they redraw only when the skin changes. Task status colours (running, done, failed, needs you) stay the same under every skin.
+
+## Meeting notes
+
+See [docs/design/meetings.md](design/meetings.md) and [docs/research/meetings.md](research/meetings.md).
+
+- **The app records, the brain decides.** `Meetings/MeetingController` polls `CallSignals` (`Adapters/MacCallSignals`: who uses the mic, from Core Audio's process list, and browser window titles) and turns them into `call_started` and `call_ended` through the pure `CallDetector`. The brain's `MeetingService` asks once through `Approvals` ("Looks like a meeting. Should I take notes?", shown, not spoken) or starts on its own for `[meetings] auto = "calendar"` when the calendar has an event now. It sends `meeting_record` with the folder. The app's `MeetingRecorder` (`Adapters/MacMeetingRecorder`) writes two tracks, `me` (the mic) and `them` (a Core Audio process tap of everything but Milo and the brain, or ScreenCaptureKit), as 30 s WAV chunks through `Meetings/ChunkWriter`, and sends `meeting_chunk` for each one on disk. `meeting_recording` says which tracks are recorded, on every connect too, so a restarted brain goes on with the meeting the app is still recording. A red dot shows on Milo and in the menu bar, whose "Take meeting notes" item sends `meeting_toggle`.
+- **Passes.** `MeetingService` transcribes the track furthest behind in passes of up to 30 s, cut at the quietest moment, with `TimedTranscriber.words` (Whisper word times) through `BackgroundStt`, which waits while the user dictates or talks. When a dictate or talk key goes down, `Listening.start` calls `BackgroundStt.yield_now` before it queues `wake()`: a meeting call running on the STT thread ends with `Transcriber.interrupt()`, and one still waiting there never starts. The service rolls the speaker tracker back and runs that same pass again first, once the user is done, so the user's passes never wait on a meeting. Each pass appends its lines and a progress mark to `meetings/<id>/transcript.jsonl` in one write (`MeetingStore`), and re-renders `transcript.md`. A crash repeats at most the pass it was in, and its lines count once.
+- **Speakers.** The `them` track's Whisper segments go to the `Diarizer` (`DIARIZERS` registry, `[meetings] diarizer`), one voice embedding each. `SpeakerTracker` keeps the meeting's voices across passes. Names come from `VoiceBook` (voices the user named before), the calendar (one attendee and one voice), and the user ("that was Anna", "Speaker 2 is Tom").
+- **During the call.** LiveTalk asks `MeetingService.before_turn(text)` for a `<meeting>` block with what was said, newest last and escaped, and treats it like screen data: untrusted, and the conversation counts as tainted.
+- **After.** A fresh chat-model session writes the summary, decisions, to-dos and a follow-up draft as JSON (`meeting_text.SUMMARY_RULES`). The brain writes `notes.md`, deletes the audio unless `[meetings] keep_audio`, offers the user's to-dos as Reminders and the mail draft through `Approvals` (the draft goes to a careful helper with the meeting text as data), and records a `meeting` episode in memory (`Memory.record` through `on_episode`): the title and summary, the people named, the app, `source` `meeting:<id>`, untrusted because it's other people's words.
+
+
 ## Heartbeat cost model
 
 The heartbeat must not burn tokens. One tick does a `stat()` on `reminders.md`, runs the enabled rules in memory and writes `state/heartbeat.json`. That's zero harness calls. A rule can attach an `llm_prompt` asking for nicer wording, but the runner uses it only if `LlmBudget.allow(today)` is true. The default `llm_calls_per_day = 0` means it never is. `tests/proactive` simulates a full day of ticks and asserts zero calls.
@@ -199,24 +294,37 @@ A chat turn costs one message to the running chat model: about 600 tokens, with 
 
 ```
 app/
-  Sources/MiloKit/   protocols, wire types, controller, hotkey state machine, views (all testable).
+  Sources/MiloKit/   protocols, wire types (Wire/RemoteStatus: Milo by message for the menu), controller, hotkey
+                     state machine, views (all testable).
                      The Milo window: TranscriptModel, Views/ConversationView + ActivityView,
                      Views/HelperViews (the birds next to Milo and the helpers list, Wire/Helper),
+                     Views/RoutineViews (the Routines section and the recipe draft card, Wire/Routine),
                      AppKit/ConversationWindow. Screen/: ScreenController and TakeoverDetector.
                      Hotkeys/KeyCombo. Adapters/: Accessibility, SystemScreenReader, ScreenShots,
                      MacHands (delivery through Accessibility, borrow the real pointer otherwise),
                      MacWindowWatcher, NSEventInputMonitor, CarbonHotkey, EventKitConnections (answers
-                     app_request for Calendar and Reminders). Milo's cursor and the window outline:
-                     AppKit/CursorOverlay + Views/CursorView, AppKit/WorkingOutline + Views/WorkingOutlineView,
-                     Screen/Delivery + Screen/CursorGlide. The character: Views/PipFigure (the bird, default) or
-                     Views/CharacterView's CharacterFigure (the robot, [ui] character = "classic"), both
-                     posed by CharacterLife. Flight.swift + AppKit/FlightDriver fly the overlay panel to
-                     MiloModel.flyTarget (AppKit global screen coordinates) and back
+                     app_request for Calendar and Reminders), SystemPermissions (the setup window's checks).
+                     Milo's cursor and the window outline: AppKit/CursorOverlay + Views/CursorView,
+                     AppKit/WorkingOutline + Views/WorkingOutlineView, Screen/Delivery + Screen/CursorGlide.
+                     The character: Views/Skin.swift defines a skin (one SwiftUI view that gets the same
+                     state, emotion, life pose and flight as every other) and CharacterFigure(for: style, …),
+                     the one way to draw Milo at any size. Skins: PipFigure (the bird, default), RobotFigure
+                     ("classic"), DragonFigure, KitFigure (the paper fox), GlowFigure (the lantern firefly).
+                     CharacterLife poses them; repeating motion (breathing, wings, tails, smoke) runs as Core
+                     Animation keyframes through Views/Looping.swift, so a still Milo costs the app nothing.
+                     Theme.swift: each skin's colours and springs; every window and overlay (the bubble, the
+                     Milo window, the helper birds, the cursor, the working outline and frame, What Milo
+                     knows) takes them from MiloModel.theme and follows a skin change at once.
+                     SettingsModel + Views/SettingsView + AppKit/SettingsWindow; SetupModel + Views/SetupView
+                     + SetupScenes + AppKit/SetupWindow. Flight.swift + AppKit/FlightDriver fly the overlay
+                     panel to MiloModel.flyTarget (AppKit global screen coordinates) and back. Meetings/: MeetingController,
+                     CallDetector, ChunkWriter; Adapters/MacMeetingRecorder + CoreAudioProcesses
   Sources/Milo/      main.swift: builds concrete adapters, hands them to MiloController
   Tests/MiloKitTests Swift Testing; decodes protocol/messages.json, drives the controller with fakes.
                      MILO_RENDER_DIR=/tmp/milo-render swift test --filter ConversationRender renders the
-                     window offscreen into PNGs. MILO_RENDER_DIR=... --filter PipRender renders Pip's key
-                     frames; MILO_RENDER_DIR=... --filter HelperRender renders the birds and the helpers list;
-                     MILO_PROBE_DIR=... --filter OverlayProbe puts the overlay on screen, measures
-                     its CPU and flies Pip to a point and back
+                     window offscreen into PNGs. MILO_RENDER_DIR=... --filter SkinRender renders every skin
+                     in every state (MILO_SKINS=dragon,kit to pick), --filter SettingsRender the Settings and
+                     setup windows in every skin, --filter HelperRender the birds and the helpers list;
+                     MILO_PROBE_DIR=... --filter OverlayProbe puts the overlay on screen, measures its CPU
+                     and what a pose change costs per skin, and flies him to a point and back
 ```

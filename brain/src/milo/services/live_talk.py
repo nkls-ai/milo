@@ -25,7 +25,9 @@ from .transcript import Transcript, unrecorded
 from .ui_state import UiState
 
 if TYPE_CHECKING:
+    from .meetings import MeetingService
     from .orchestrator import Orchestrator
+    from .routines import Routines
 
 log = logging.getLogger("milo.live")
 
@@ -151,9 +153,12 @@ class LiveTalk:
                  persona: Callable[[], str], idle_reset_s: float, tasks: Orchestrator,
                  transcript: Transcript | None = None, eyes: ScreenEyes | None = None,
                  approvals: Approvals | None = None, memory: TurnMemory | None = None,
-                 backchannel: Backchannel | None = None):
+                 backchannel: Backchannel | None = None, routines: Routines | None = None,
+                 meetings: MeetingService | None = None):
         self._model = model
+        self._meetings = meetings
         self._backchannel = backchannel
+        self._routines = routines
         self._memory = memory
         """Recalls what each turn needs (services/memory.py). None: Milo remembers only the profile."""
         self._eyes = eyes
@@ -290,6 +295,37 @@ class LiveTalk:
         await self._settle_interrupt()
         await self._reply(update_prompt(untrusted(update, 300)), (), True, screen=False, tags=False)
 
+    # ---- text turns from a chat channel (the owner's phone, see messages.py)
+
+    def message(self, text: str, prompt: str, *, data: Sequence[str] = ()) -> asyncio.Task[str | None]:
+        """A message from the owner's phone, answered in text: the same conversation, persona and memory as
+        a spoken turn, without speech and without looking at the screen.
+
+        `text` is what the user wrote, for the transcript; `prompt` is what the model gets (messages.py adds
+        how to answer by message). `data` are blocks of outside text (forwarded, quoted, pasted), already
+        made inert: like task results they make every later tag in this conversation wait for a yes. The
+        task's result is what Milo answered, or None if the model failed. It is a turn like any other, so
+        a turn at the Mac interrupts it.
+        """
+        self.interrupt(rest=False)
+        self._turn = asyncio.create_task(self._message_turn(text, prompt, list(data)))
+        return self._turn
+
+    async def _message_turn(self, text: str, prompt: str, data: list[str]) -> str | None:
+        self._ui.emit(Heard(text))
+        self._transcript.user(text, "message")
+        await self._settle_interrupt()
+        self._notes.extend(data)
+        try:
+            parser = await self._reply(prompt, (), False, screen=False)
+        finally:
+            if self._look_started is not None:  # no looking at the screen from afar
+                self._look_started.cancel()
+                self._look_started = None
+                self._looking(False)
+                self._ui.thinking = False
+        return None if parser is None else parser.spoken
+
     async def warm(self) -> None:
         """Start the conversation ahead of the first turn. Raises HarnessError."""
         await self._ensure_conversation()
@@ -298,8 +334,10 @@ class LiveTalk:
         """The user started talking to Milo: get the conversation ready while they speak.
 
         After `idle_reset_s` of silence the next turn starts a fresh conversation, a new model process that
-        takes 1 to 3 s before its first word. Starting it now hides that behind the user's own words.
+        takes 1 to 3 s before its first word. Starting it now hides that behind the user's own words. A streaming
+        voice opens its connection now too.
         """
+        self._speaker.prepare()
         if (self._preparing is None or self._preparing.done()) and self._needs_fresh_conversation():
             self._preparing = asyncio.create_task(self._prepare())
 
@@ -359,11 +397,14 @@ class LiveTalk:
             self._backchannel.arm()
         try:
             await self._ensure_conversation()
-            recalled = await self._recall(text, screen, outside=self._tainted or bool(notes) or self._saw_screen)
-            self._tainted = self._tainted or bool(notes) or not recalled.trusted
+            meeting = await self._meeting(text) if tags and not screen else ""
+            recalled = await self._recall(text, screen,
+                                          outside=self._tainted or bool(notes) or bool(meeting) or self._saw_screen)
+            self._tainted = self._tainted or bool(notes) or bool(meeting) or not recalled.trusted
             self._saw_screen = self._saw_screen or screen
             self._streaming = True
-            async for delta in self._model.turn(self._prompt(text, [*notes, recalled.block]), images):
+            blocks = [*notes, recalled.block, *([meeting] if meeting else [])]
+            async for delta in self._model.turn(self._prompt(text, blocks), images):
                 if first_at is None:
                     first_at = self._clock.monotonic()
                     if self._ui_looking:
@@ -428,6 +469,16 @@ class LiveTalk:
             self._ui.rest()
         return parser
 
+    async def _meeting(self, text: str) -> str:
+        """During a call Milo takes notes in: what was said, as data (see services/meetings.py)."""
+        if self._meetings is None:
+            return ""
+        try:
+            return await self._meetings.before_turn(text)
+        except Exception:
+            log.exception("the meeting context failed")
+            return ""
+
     def _screen_message(self, capture: ScreenCapture, question: str) -> tuple[str, list[Path]]:
         images = [Path(capture.image)] if capture.image else []
         return look_prompt(capture, question, image=bool(images)), images
@@ -483,6 +534,8 @@ class LiveTalk:
         parts.append(HELPER_RULES.strip())
         if self._memory is not None:
             parts.append(self._memory.rules.strip())
+        if self._routines is not None:
+            parts.append(self._routines.rules())
         profile = self._profile.read().strip()
         if profile:
             parts.append(f"## What you know about the user\n\n{profile}")
@@ -494,7 +547,8 @@ class LiveTalk:
 
     def _prompt(self, text: str, notes: list[str]) -> str:
         helpers = self._tasks.board()
-        lines = [*(n for n in notes if n), *([helpers] if helpers else []), text]
+        routines = self._routines.note(self._system or "") if self._routines is not None else ""
+        lines = [*(n for n in notes if n), *([helpers] if helpers else []), *([routines] if routines else []), text]
         return stamp("\n".join(lines), self._clock.now(), self._context.app)
 
     async def _recall(self, text: str, screen: bool, *, outside: bool) -> Recalled:
@@ -543,6 +597,9 @@ class LiveTalk:
             detail = change if question.endswith("…?") else ""
             effects.append((question, detail, lambda ref=ref, change=change: self._tasks.steer(
                 ref, change, careful=careful), ask_tasks))
+        if self._routines is not None:  # a routine run is a task: same rule, unless the routine says otherwise
+            for question, detail, apply, ask in self._routines.effects(parser.routines, careful=careful):
+                effects.append((question, detail, apply, ask_tasks if ask is None else ask))
         for ref in parser.stops:  # stopping is always safe
             self._tasks.stop(ref)
         for _, _, apply, ask in effects:

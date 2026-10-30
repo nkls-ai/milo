@@ -3,7 +3,7 @@ import SwiftUI
 import Testing
 @testable import MiloKit
 
-/// Offscreen pictures of Milo's cursor and the working-window outline, on a mock desktop:
+/// Offscreen pictures of Milo's cursor, the working-window outline and the borrowed-mouse frame, on a mock desktop:
 /// `MILO_RENDER_DIR=/tmp/milo-cursor swift test --filter CursorRender`.
 @Suite(.enabled(if: ProcessInfo.processInfo.environment["MILO_RENDER_DIR"] != nil))
 @MainActor
@@ -14,13 +14,22 @@ struct CursorRenderTests {
         for (gesture, name) in [(MiloCursorView.Gesture.none, "pointer"), (.click, "click"), (.typing, "typing")] {
             try save(Scene { MiloCursorView(gesture: gesture, presence: 1, clickTick: 1) }, name: "cursor-\(name)")
         }
+        // Every skin dresses the cursor in its own colours.
+        for style in CharacterStyle.allCases where style != .pip {
+            try save(Scene { MiloCursorView(gesture: .typing, presence: 1, clickTick: 1, theme: .for(style)) },
+                     name: "cursor-typing-\(style.rawValue)")
+        }
     }
 
     @Test func renderWorkingOutline() throws {
-        try save(ZStack {
-            Mock()
-            WorkingOutlineView(onStop: {}).frame(width: 360, height: 240)
-        }.frame(width: 440, height: 320), name: "outline")
+        for style in CharacterStyle.allCases {
+            try save(ZStack {
+                Mock()
+                WorkingOutlineView(onStop: {}, theme: .for(style)).frame(width: 360, height: 240)
+            }.frame(width: 440, height: 320), name: style == .pip ? "outline" : "outline-\(style.rawValue)")
+            try save(WorkingFrameView(theme: .for(style)).frame(width: 440, height: 280).background(Mock()),
+                     name: "frame-\(style.rawValue)")
+        }
     }
 
     private func save(_ view: some View, name: String) throws {

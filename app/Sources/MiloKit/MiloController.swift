@@ -16,16 +16,20 @@ public final class MiloController {
         public var doubleTap: TimeInterval
         /// A hands-free recording stops by itself after this long, until `ui_config` says otherwise.
         public var handsFreeMax: TimeInterval
+        /// Show macOS's Accessibility dialog at start when it's missing. Off when the setup window asks instead.
+        public var promptForAccessibility: Bool
 
         public init(contextInterval: TimeInterval = 15, drowsyAfter: TimeInterval = 600,
                     bindings: HotkeyBindings = .default, minHold: TimeInterval = 0.25,
-                    doubleTap: TimeInterval = 0.35, handsFreeMax: TimeInterval = 300) {
+                    doubleTap: TimeInterval = 0.35, handsFreeMax: TimeInterval = 300,
+                    promptForAccessibility: Bool = true) {
             self.contextInterval = contextInterval
             self.drowsyAfter = drowsyAfter
             self.bindings = bindings
             self.minHold = minHold
             self.doubleTap = doubleTap
             self.handsFreeMax = handsFreeMax
+            self.promptForAccessibility = promptForAccessibility
         }
     }
 
@@ -34,11 +38,18 @@ public final class MiloController {
     public let transcript = TranscriptModel()
     /// What the "What Milo knows" window shows.
     public let knowledge = KnowledgeModel()
+    /// What the Settings window shows and changes. The menu's "Dictation style" reads and changes it too.
+    public let settingsModel = SettingsModel()
     /// Looking at the screen and the worker's actions on it; nil without those ports.
     public let screen: ScreenController?
+    /// Calls and meeting recordings; nil without a recorder.
+    public let meetings: MeetingController?
     public private(set) var muted = false
-    /// The dictation style the brain uses; nil until it says.
-    public private(set) var dictationStyle: DictationStyle?
+    /// The dictation style the brain uses, from its `settings`; nil while no brain is connected.
+    public var dictationStyle: DictationStyle? {
+        guard model.connected, let value = settingsModel.value("dictation", "stream")?.string else { return nil }
+        return DictationStyle(rawValue: value)
+    }
     public var bindings: HotkeyBindings { pushToTalk.bindings }
     /// Called when `ui_config` changes the bindings.
     public var onBindingsChange: ((HotkeyBindings) -> Void)?
@@ -59,9 +70,10 @@ public final class MiloController {
     public init(model: MiloModel, brain: BrainClient, launcher: BrainLauncher, inserter: TextInserter,
                 keys: KeyEventSource, context: ContextProvider, accessibility: AccessibilityPermission,
                 scheduler: Scheduler, connections: AppConnections? = nil, settings: Settings = Settings(),
-                screen: ScreenController? = nil) {
+                screen: ScreenController? = nil, meetings: MeetingController? = nil) {
         self.model = model
         self.screen = screen
+        self.meetings = meetings
         self.brain = brain
         self.launcher = launcher
         self.inserter = inserter
@@ -78,6 +90,9 @@ public final class MiloController {
     public func start() {
         model.onAnswer = { [weak self] question, yes in self?.brain.send(.confirmAnswer(id: question.id, yes: yes)) }
         model.onStopHelper = { [weak self] id in self?.brain.send(.stopHelper(id: id)) }
+        model.onRoutine = { [weak self] id, action in self?.brain.send(.routine(id: id, action: action)) }
+        model.onDraftAnswer = { [weak self] id, save in self?.brain.send(.routineDraftAnswer(id: id, save: save)) }
+        settingsModel.send = { [weak self] in self?.brain.send($0) }
         brain.onEvent = { [weak self] in self?.received($0) }
         brain.onConnectionChange = { [weak self] in self?.connectionChanged($0) }
         // Development brains are started by hand; only launch one if nothing answers.
@@ -87,8 +102,9 @@ public final class MiloController {
         keys.onEvent = { [weak self] in self?.handleKey($0) }
         keys.start()
         screen?.start()
+        meetings?.start()
 
-        if !accessibility.isTrusted(prompt: true) {
+        if !accessibility.isTrusted(prompt: settings.promptForAccessibility) {
             model.show("Grant me Accessibility in System Settings so I can hear the \(bindings.dictate.displayName) key and paste for you.")
         }
 
@@ -108,13 +124,24 @@ public final class MiloController {
         brain.send(.mute(muted))
     }
 
+    /// The menu's "Pause messages from your phone". Only the Mac can switch it back on.
+    public func setRemotePaused(_ on: Bool) {
+        brain.send(.remotePause(on))
+    }
+
+    /// The menu's "Disconnect phone".
+    public func forgetPhone() {
+        brain.send(.remoteForget)
+    }
+
     public func restartBrain() {
         launcher.restart()
     }
 
-    /// The menu's "Dictation style". The brain confirms with `dictation_stream`.
+    /// The menu's "Dictation style": the same `set_setting` the Settings window sends. The brain answers with
+    /// `settings`, which puts the old style back if it couldn't save the new one.
     public func setDictationStyle(_ style: DictationStyle) {
-        brain.send(.setDictationStream(style))
+        settingsModel.change("dictation", "stream", to: .string(style.rawValue))
     }
 
     static let noConnections = "This version of Milo can't reach your calendar or reminders."
@@ -123,6 +150,7 @@ public final class MiloController {
 
     private func received(_ event: BrainEvent) {
         if let screen, screen.apply(event) { return }
+        if let meetings, meetings.apply(event) { return }
         switch event {
         case let .dictation(text):
             // Without Accessibility macOS drops Milo's Cmd-V without an error. An ad-hoc signed
@@ -146,8 +174,8 @@ public final class MiloController {
             transcript.apply(event)
         case .facts:
             knowledge.apply(event)
-        case let .dictationStream(style):
-            dictationStyle = style
+        case let .settings(report):
+            settingsModel.apply(report)
         case let .appRequest(id, op, args):
             guard let connections else {
                 brain.send(.appResponse(id: id, outcome: .failure(Self.noConnections)))
@@ -190,15 +218,16 @@ public final class MiloController {
 
     private func connectionChanged(_ up: Bool) {
         model.connected = up
+        meetings?.connectionChanged(up)
         guard up else {
             // A brain that died mid-answer never sends idle; don't leave Milo speaking or listening.
             // A new brain sends its own state on connect. Its helpers died with it.
             pushToTalkChanged(pushToTalk.reset(), at: nil)
             model.apply(.state(.idle))
             model.apply(.helpers([]))
-            dictationStyle = nil  // the next brain says which it uses
             return
         }
+        // The brain's greeting carries its settings, so a restarted brain's changes show without asking.
         sendContext()
         brain.send(.mute(muted))
     }
@@ -232,7 +261,9 @@ public final class MiloController {
 
     private func sendContext() {
         let now = context.current()
-        model.drowsy = now.idleSeconds > settings.drowsyAfter
+        // Only on a change: every assignment redraws each view that watches the model, hidden windows too.
+        let drowsy = now.idleSeconds > settings.drowsyAfter
+        if model.drowsy != drowsy { model.drowsy = drowsy }
         brain.send(.context(app: now.app, idleSeconds: now.idleSeconds))
     }
 }

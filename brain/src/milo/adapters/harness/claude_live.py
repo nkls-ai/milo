@@ -52,7 +52,7 @@ _WAKE = object()  # interrupt() wants the running turn to notice at once
 @dataclass(frozen=True)
 class ClaudeLiveOptions:
     binary: str = ""
-    model: str = "claude-sonnet-5-5"
+    model: str = "claude-haiku-5-5"  # first sentence after ~1.3 s; Sonnet 5.5 took 2 to 4 s (docs/research/voice.md)
     effort: str = "low"
     prime: bool = True  # send a priming message when a conversation starts, so the first turn is fast
 
@@ -130,7 +130,7 @@ class _Turn:
 class ClaudeLiveModel:
     name = "claude_live"
 
-    def __init__(self, binary: str, workdir: Path, *, model: str = "claude-sonnet-5-5", effort: str = "low",
+    def __init__(self, binary: str, workdir: Path, *, model: str = "claude-haiku-5-5", effort: str = "low",
                  prime: bool = True):
         self.binary = binary
         self.workdir = workdir

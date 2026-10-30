@@ -2,6 +2,7 @@ import SwiftUI
 
 /// "What Milo knows": the facts Milo keeps about the user, by topic, each with Edit and Forget.
 public struct KnowledgeView: View {
+    @Environment(\.miloTheme) private var theme
     @ObservedObject var knowledge: KnowledgeModel
     let forget: (_ id: String) -> Void
     let edit: (_ id: String, _ text: String) -> Void
@@ -41,7 +42,7 @@ public struct KnowledgeView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(WindowColors.paper)
+        .background(theme.tint)
     }
 }
 
@@ -65,6 +66,7 @@ private struct KnowledgeNote: View {
 }
 
 private struct TopicHeading: View {
+    @Environment(\.miloTheme) private var theme
     let title: String
 
     var body: some View {
@@ -72,13 +74,14 @@ private struct TopicHeading: View {
             Text(title)
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
-            Rectangle().fill(WindowColors.rule).frame(height: 1)
+            Rectangle().fill(theme.rule).frame(height: 1)
         }
     }
 }
 
 /// One fact. Edit turns it into a field; Forget asks once more.
 struct FactRow: View {
+    @Environment(\.miloTheme) private var theme
     let fact: MemoryFact
     let forget: () -> Void
     let edit: (String) -> Void
@@ -99,9 +102,9 @@ struct FactRow: View {
                     .onExitCommand { draft = nil }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
-                    .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(WindowColors.field))
+                    .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(theme.card))
                     .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .strokeBorder(WindowColors.accent.opacity(0.55), lineWidth: 1))
+                        .strokeBorder(theme.primary.opacity(0.55), lineWidth: 1))
                 Button("Save", action: save).keyboardShortcut(.defaultAction)
                 Button("Cancel") { draft = nil }
             } else {
@@ -113,7 +116,7 @@ struct FactRow: View {
                     if fact.pinned {
                         Text("Always in mind")
                             .font(.system(size: 10.5, weight: .medium))
-                            .foregroundStyle(WindowColors.accent)
+                            .foregroundStyle(theme.primary)
                             .help("Milo has this in mind in every conversation.")
                     }
                 }
@@ -132,7 +135,7 @@ struct FactRow: View {
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 10)
-        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(WindowColors.inset))
+        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(theme.ink.opacity(0.05)))
         .onHover { hovering = $0 }
         .confirmationDialog("Should Milo forget this?", isPresented: $askingToForget) {
             Button("Forget", role: .destructive, action: forget)

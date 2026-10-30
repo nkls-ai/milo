@@ -82,7 +82,45 @@ private func entries(_ key: String) throws -> [[String: Any]] {
                 MemoryFact(id: "01JBF7A1B2C3D4E5F6G7H8J9KM", text: "Anna is the user's sister. Her birthday is March 3.",
                            topic: "people", since: "2026-10-30T18:05:41"),
             ]),
-            .dictationStream(.preview),
+            .routines([
+                RoutineInfo(id: "monday-report", name: "Monday report",
+                            description: "Sums last week's sales into a one-page report.",
+                            schedule: "every Monday at 09:00", lastRun: "2026-10-26 09:00, done",
+                            nextRun: try #require(RoutineInfo.parseTime("2026-11-02T09:00")), inputs: ["month"]),
+                RoutineInfo(id: "tidy-downloads", name: "Tidy downloads", paused: true),
+                RoutineInfo(id: "broken", name: "broken", problem: "it must start with a line of three dashes (---)"),
+            ], drafts: [
+                RoutineDraft(id: "d4e5f6a7", name: "Invoice folder", recipe: """
+                    ---
+                    name: Invoice folder
+                    schedule:
+                    paused: no
+                    version: 1
+                    ---
+
+                    ## Steps
+
+                    1. Move this month's invoices from Downloads into Invoices.
+                       Check: Downloads has no invoice left.
+
+                    """),
+            ]),
+            .settings(SettingsReport(settings: [
+                Setting(section: "ui", key: "character", value: "dragon",
+                        options: ["pip", "classic", "dragon", "kit", "glow"],
+                        labels: ["Pip", "Robot", "Dragon", "Kit", "Glow"]),
+                Setting(section: "ui", key: "voice", value: true),
+                Setting(section: "chat", key: "updates", value: "bubble", options: ["quiet", "bubble", "chatty"],
+                        labels: ["Only the answer", "Short notes in his bubble", "Tells you each step"]),
+                Setting(section: "dictation", key: "stream", value: "preview", options: ["off", "preview", "type"],
+                        labels: ["When you let go", "Show the words as you speak", "Type as you speak"]),
+            ])),
+            .settings(SettingsReport(settings: [], error: "The dictate key and the talk key need to be different keys.")),
+            .remote(RemoteStatus(channel: "telegram", label: "Telegram", state: .paired, detail: "Niklas (@niklas)")),
+            .remote(RemoteStatus(channel: "telegram", label: "Telegram", state: .unpaired,
+                                 detail: "Message @milo_mac_bot from your phone to connect.")),
+            .meetingRecord(id: "2026-10-30-1400-weekly-sync",
+                           dir: "/Users/you/Milo/meetings/2026-10-30-1400-weekly-sync/audio", on: true),
         ])
     }
 
@@ -118,7 +156,21 @@ private func entries(_ key: String) throws -> [[String: Any]] {
                          error: "Excel doesn't take clicks in the background."),
             .getFacts, .forgetFact(id: "01JBF7A1B2C3D4E5F6G7H8J9KM"),
             .editFact(id: "01JBF7A1B2C3D4E5F6G7H8J9KM", text: "Anna is the user's sister. Her birthday is March 4."),
-            .setDictationStream(.type),
+            .routine(id: "monday-report", action: .run),
+            .routine(id: "tidy-downloads", action: .resume),
+            .routineDraftAnswer(id: "d4e5f6a7", save: true),
+            .getSettings,
+            .setSetting(section: "ui", key: "character", value: "dragon"),
+            .setSetting(section: "ui", key: "voice", value: false),
+            .remotePause(true), .remoteForget,
+            .callStarted(app: "Zoom", bundle: "us.zoom.xos", title: "Zoom Meeting"),
+            .callEnded(app: "Zoom"),
+            .meetingChunk(MeetingChunk(
+                id: "2026-10-30-1400-weekly-sync", track: "them", index: 3,
+                path: "/Users/you/Milo/meetings/2026-10-30-1400-weekly-sync/audio/them-0003.wav", start: 60, seconds: 30)),
+            .meetingRecording(id: "2026-10-30-1400-weekly-sync", on: true, tracks: ["me"],
+                              error: "I can only hear you, not the others. Turn on System Audio Recording for Milo in System Settings › Privacy & Security."),
+            .meetingToggle(false),
         ]
         let encoder = JSONEncoder()
         let encoded = try commands.map { command in
@@ -133,11 +185,6 @@ private func entries(_ key: String) throws -> [[String: Any]] {
         }
     }
 
-    @Test func anUnknownDictationStyleIsIgnored() throws {
-        let data = Data(#"{"type": "dictation_stream", "stream": "telepathy"}"#.utf8)
-        #expect(try JSONDecoder().decode(BrainEvent.self, from: data) == .unknown("dictation_stream"))
-    }
-
     @Test func unknownTypeDecodesToUnknown() throws {
         let event = try JSONDecoder().decode(BrainEvent.self, from: Data(#"{"type":"confetti","n":3}"#.utf8))
         #expect(event == .unknown("confetti"))
@@ -150,7 +197,7 @@ private func entries(_ key: String) throws -> [[String: Any]] {
     }
 
     @Test func uiConfigWithAnUnknownCharacterDecodesAsNone() throws {
-        let json = #"{"type":"ui_config","dictate_key":"fn","talk_key":"right_option","character":"dragon"}"#
+        let json = #"{"type":"ui_config","dictate_key":"fn","talk_key":"right_option","character":"unicorn"}"#
         #expect(try JSONDecoder().decode(BrainEvent.self, from: Data(json.utf8))
                 == .uiConfig(dictateKey: "fn", talkKey: "right_option", character: nil))
     }
@@ -178,5 +225,30 @@ private func entries(_ key: String) throws -> [[String: Any]] {
         #expect(throws: DecodingError.self) {
             try JSONDecoder().decode(BrainEvent.self, from: Data(#"{"text":"hi"}"#.utf8))
         }
+    }
+}
+
+@Suite struct RemoteStatusTests {
+    @Test func theMenuLineSaysWhereThingsStand() {
+        var status = RemoteStatus(channel: "telegram", label: "Telegram", state: .paired, detail: "Niklas")
+        #expect(status.summary == "Telegram: connected (Niklas)")
+        status.paused = true
+        #expect(status.summary == "Telegram: paused (Niklas)")
+        #expect(RemoteStatus(channel: "imessage", label: "iMessage", state: .unpaired).summary
+            == "iMessage: no phone connected yet")
+        #expect(RemoteStatus(channel: "telegram", label: "Telegram", state: .error, detail: "bad token").summary
+            == "Telegram: not working")
+    }
+
+    @Test func theModelKeepsTheLastStatusAndAMessageTurnShowsAPhone() throws {
+        let model = MiloModel(scheduler: ManualScheduler())
+        #expect(model.remote == nil)
+        let status = RemoteStatus(channel: "telegram", label: "Telegram", state: .paired)
+        model.apply(.remote(status))
+        #expect(model.remote == status)
+        let entry = try JSONDecoder().decode(TranscriptEntry.self, from: Data("""
+            {"id": "a", "ts": "2026-10-30T09:12:03", "kind": "user", "text": "hi", "via": "message"}
+            """.utf8))
+        #expect(entry.via == .message)
     }
 }

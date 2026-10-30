@@ -26,6 +26,7 @@ log = logging.getLogger("milo")
 DEFAULT_HOME = "~/Milo"
 NOISY_LOGGERS = ("httpx", "httpx2", "huggingface_hub")
 CLOSE_TIMEOUT_S = 3.0
+MESSAGES_TICK_S = 30.0
 
 Warmup = tuple[Executor, Callable[[], None]] | Callable[[], Awaitable[None]]
 """A blocking warm() and the executor it must run on, or a coroutine function run on the loop."""
@@ -85,6 +86,11 @@ def _setup_logging(log_file: Path, settings: LoggingSettings) -> None:
 async def _serve(runtime: Runtime) -> None:
     # The app stops its brain with SIGTERM (uv passes that on, not SIGINT). Shut down as for Ctrl-C.
     asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, asyncio.current_task().cancel)
+    for notice in runtime.notices:
+        notice.loop = asyncio.get_running_loop()
+    if runtime.meetings is not None:
+        # Before the socket opens: the app says first thing whether it still records a meeting a crash left open.
+        runtime.meetings.start()
     await runtime.server.start()
     await runtime.tool_server.start()
     if runtime.hands_server is not None:
@@ -107,6 +113,10 @@ async def _serve(runtime: Runtime) -> None:
         tasks.append(asyncio.create_task(memory.sleep.run()))
     if runtime.barge_in is not None:
         tasks.append(asyncio.create_task(runtime.barge_in.run()))
+    if runtime.messages is not None:
+        tasks.append(asyncio.create_task(runtime.messages.run()))
+        if runtime.heartbeat is None:  # the brief and the settings guard still need their tick
+            tasks.append(asyncio.create_task(_every(MESSAGES_TICK_S, runtime.messages.tick)))
     try:
         await runtime.server.serve_forever()
     finally:
@@ -114,11 +124,21 @@ async def _serve(runtime: Runtime) -> None:
             task.cancel()
         runtime.stt_executor.shutdown(wait=False, cancel_futures=True)
         runtime.tts_executor.shutdown(wait=False, cancel_futures=True)
+        if runtime.diarize_executor is not None:
+            runtime.diarize_executor.shutdown(wait=False, cancel_futures=True)
+        if runtime.meetings is not None:
+            await runtime.meetings.close()
         if memory is not None:
             memory.memory.close()  # queued behind whatever the memory thread is doing
             memory.executor.shutdown(wait=False)
         await runtime.tool_server.close()
         await _close(runtime)
+
+
+async def _every(seconds: float, check: Callable[[], Awaitable[None]]) -> None:
+    while True:
+        await asyncio.sleep(seconds)
+        await check()
 
 
 async def _close(runtime: Runtime) -> None:

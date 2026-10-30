@@ -9,6 +9,7 @@ import SwiftUI
 public final class WorkingOutline {
     private let panel: NSPanel
     private var subscription: AnyCancellable?
+    private var restyle: AnyCancellable?
 
     public init(model: MiloModel, onStop: @escaping () -> Void) {
         panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered,
@@ -22,6 +23,10 @@ public final class WorkingOutline {
         // Only the tag and its Stop button take clicks; the rest of the panel is see-through to the app below.
         let hosting = ClickThroughHostingView(rootView: WorkingOutlineView(onStop: onStop))
         panel.contentView = hosting
+        // The skin's colours, changed only when the skin is.
+        restyle = model.$character.removeDuplicates().sink { [weak hosting] in
+            hosting?.rootView = WorkingOutlineView(onStop: onStop, theme: Theme.for($0))
+        }
         subscription = model.$workingWindow.removeDuplicates().receive(on: DispatchQueue.main)
             .sink { [weak self] frame in self?.show(frame) }
     }

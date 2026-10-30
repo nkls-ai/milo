@@ -19,7 +19,7 @@ let screen = ScreenController(
     ports: ScreenPorts(reader: SystemScreenReader(screensFolder: paths.screens),
                        hands: MacHands(screensFolder: paths.screens),
                        input: NSEventInputMonitor(), hotkey: CarbonHotkey(),
-                       cursor: CursorOverlay(), windows: MacWindowWatcher()),
+                       cursor: CursorOverlay(model: model), windows: MacWindowWatcher()),
     toAppKit: OverlayPanel.appKitPoint)
 let controller = MiloController(
     model: model,
@@ -33,7 +33,13 @@ let controller = MiloController(
     accessibility: SystemAccessibilityPermission(),
     scheduler: scheduler,
     connections: EventKitConnections(),
-    screen: screen)
+    // The setup window explains Accessibility with the other permissions, so no system dialog on top of it.
+    // MILO_DROWSY_AFTER (seconds) lets a test instance fall asleep sooner, to measure him asleep.
+    settings: MiloController.Settings(drowsyAfter: environment["MILO_DROWSY_AFTER"].flatMap(Double.init) ?? 600,
+                                      promptForAccessibility: false),
+    screen: screen,
+    meetings: MeetingController(model: model, brain: brain, recorder: MacMeetingRecorder(brainLock: paths.brainLock),
+                                signals: MacCallSignals(), scheduler: scheduler))
 
 // Windows and the status item are created once the app has finished launching.
 var panel: OverlayPanel?
@@ -50,14 +56,30 @@ let lifecycle = AppLifecycle(
         workingFrame = WorkingFrame(model: model)
         workingOutline = WorkingOutline(model: model) { screen.stopPressed() }
         let window = ConversationWindow(controller: controller)
+        let settingsWindow = SettingsWindow(controller: controller)
+        window.onSettings = { settingsWindow.open() }
         overlay.onClick = { window.toggle() }
         model.onOpenHelper = { window.show(helper: $0) }
-        let statusMenu = StatusMenu(controller: controller, panel: overlay, window: window, paths: paths)
-        controller.onBindingsChange = { statusMenu.show($0); window.show($0) }
+        let setupWindow = SetupWindow(
+            setup: SetupModel(permissions: SystemPermissions(), scheduler: scheduler,
+                              dictateKey: controller.bindings.dictate.displayName,
+                              // A copy with its own MILO_HOME shares the bundle id: keep its notes apart.
+                              defaults: environment["MILO_HOME"].flatMap { home in
+                                  UserDefaults(suiteName: "dev.nkls.milo.home" + home.replacingOccurrences(of: "/", with: "."))
+                              } ?? .standard),
+            model: model)
+        let statusMenu = StatusMenu(controller: controller, panel: overlay, window: window, settings: settingsWindow,
+                                    setup: setupWindow, paths: paths)
+        controller.onBindingsChange = {
+            statusMenu.show($0)
+            window.show($0)
+            setupWindow.setup.dictateKey = $0.dictate.displayName
+        }
         conversation = window
         panel = overlay
         menu = statusMenu
         controller.start()
+        setupWindow.openIfNeeded()
     },
     onTerminate: { controller.stop() })
 

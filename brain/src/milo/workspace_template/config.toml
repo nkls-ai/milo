@@ -1,4 +1,5 @@
 # Milo configuration. Restart Milo after editing (menu bar > Restart brain).
+# Milo's Settings window changes some of these for you and keeps your comments.
 #
 # Every swappable part has `use = "<name>"` and a table `[<part>.<name>]` with that
 # implementation's options. Unknown keys are an error, so typos fail loudly.
@@ -20,7 +21,9 @@ backchannels = true
 
 [chat.claude_live]
 binary = ""                       # empty: PATH, then ~/.local/bin
-model = "claude-sonnet-5-5"       # claude-haiku-5-5 is cheaper and about as fast
+# claude-haiku-5-5 answers faster and steadier: its first sentence is ready after about 1.3 s, Sonnet's
+# after 2 to 4 s. Real work goes to the helpers either way. claude-sonnet-5-5 for deeper small talk.
+model = "claude-haiku-5-5"
 effort = "low"
 
 [harness]
@@ -74,13 +77,43 @@ buy = "ask_first"
 shortcut = "ask_first"            # your own shortcuts can do any of the above
 # password, money and security are always "never".
 
+[messages]
+# Reach Milo on this Mac from your phone, through a chat app. Setup: docs/setup/messages.md.
+# Make a bot with @BotFather in Telegram, put its token in the token file below, switch this on and
+# restart Milo, then message the bot and send it the code Milo shows here.
+enabled = false
+use = "telegram"                  # telegram | imessage (experimental, needs Full Disk Access)
+max_per_minute = 10               # messages Milo answers per minute; more are dropped
+# With no mouse or keyboard use for this long, Milo's questions go to your phone, and only your phone
+# can answer them. While you are away, changes to this file are put back.
+away_after_min = 5
+question_timeout_s = 150          # how long a question on your phone waits; no answer means no
+brief_at = ""                     # "07:30": today's calendar, reminders and helpers every morning. "" is off.
+max_file_mb = 45                  # Milo sends you a file only after your yes, up to this size
+
+[messages.telegram]
+token_file = "secrets/telegram-token"   # in ~/Milo, readable by you only: chmod 600
+
+[messages.imessage]
+handle = ""                       # your own phone number or Apple ID email, the chat Milo uses
+
 [logging]
 content = false                   # true puts what you say and Milo's answers in brain.log. Debugging only.
 max_mb = 2
 keep = 3
 
 [stt]
-use = "mlx_whisper"
+use = "mlx_whisper"               # on this Mac: dictation, and talking to Milo unless `talk` is set
+# A cloud service that listens along while you talk to Milo, so the text is ready 0.2 s after you let go
+# instead of after a full pass here. "elevenlabs" sends what you say to Milo to ElevenLabs (it needs the key,
+# see [tts.elevenlabs]). Empty: nothing you say leaves this Mac. If the service can't be reached, Milo
+# transcribes here and says so.
+talk = ""
+cloud_dictation = false           # true sends dictation there too (not with stream = "type")
+
+[stt.elevenlabs]
+languages = ["de", "en"]          # the languages you speak, so it tells them apart
+keyterms = []                     # names it should get right, like ["Milo"]; costs a little more
 
 [stt.mlx_whisper]
 model = "mlx-community/whisper-large-v3-turbo"
@@ -89,8 +122,23 @@ language = ""                     # empty: auto-detect. "de" or "en" to pin it.
 vocabulary = "Milo, Codex, Claude" # names Whisper should spell right
 
 [tts]
-use = "omnivoice"                 # omnivoice | say
-fallback = "say"                  # used if `use` fails to load
+# omnivoice: on this Mac, a cloned voice, piece by piece. elevenlabs: a cloud voice that speaks a whole answer
+# as one, starting about 0.2 s after his first sentence is written; needs a key in ~/Milo/secrets/elevenlabs.key.
+# say: the Mac's own voice.
+use = "omnivoice"
+# Used if `use` fails to load, and while elevenlabs can't be reached. It loads only when needed: "say" at
+# once, "omnivoice" sounds more like Milo but takes a while and a few GB of memory the first time.
+fallback = "say"
+
+[tts.elevenlabs]
+# One of your account's voices. Will (the default) is relaxed and friendly; other good ones for Milo:
+# Chris iP95p4xoKVk53GoZ742B, River SAz9YHcvj6GT2YYXdXww, Roger CwhRBWXzGAHq8TQ4Fs17.
+voice_id = "bIHbv24MWmeRgasZH58o"
+model = "eleven_flash_v2_5"       # the fastest. eleven_turbo_v2_5 is about as fast, eleven_multilingual_v2 slower
+stability = 0.5                   # lower: livelier, higher: steadier
+similarity_boost = 0.75
+speed = 1.0                       # 0.7 to 1.2
+language = ""                     # empty: follows the text, German and English mixed
 
 [tts.omnivoice]
 device = "mps"
@@ -157,9 +205,17 @@ grace_hours = 12
 dictate_key = "fn"                # fn | right_option | right_command | right_control
 talk_key = "right_option"
 hands_free_max_s = 300            # double-tap a key for hands-free; it stops by itself after this
-character = "pip"                 # pip (the bird) | classic (the purple robot)
+character = "pip"                 # pip (the bird) | classic (the robot) | dragon | kit (the fox) | glow (the firefly)
+voice = true                      # false: answers show in the bubble without being said out loud
 # Ask Milo about the selection, or the front window if nothing is selected. "" turns it off.
 whats_this_key = "ctrl+option+m"
+
+[routines]
+# Recipes for work you want done again ("remember how to do this, call it the Monday report"), kept as
+# Markdown in ~/Milo/routines. Schedules run on the heartbeat, without a model call to decide.
+enabled = true
+max_runs_per_day = 6              # scheduled runs a day, all routines together; asking yourself isn't capped
+grace_hours = 4                   # a run the Mac slept through runs at wake if at most this late, else he tells you
 
 [hands]
 # Let the worker agent use the Mac: read windows, press buttons, type and click. Needs Accessibility,
@@ -184,3 +240,16 @@ consolidate_calls_per_day = 2     # hard cap; 0 turns it off
 model = "intfloat/multilingual-e5-small"
 device = "gpu"                    # gpu | cpu
 
+[meetings]
+# When Milo notices a call (Zoom, Teams, Meet, FaceTime, Slack huddles): "ask" asks once whether to take notes,
+# "calendar" takes notes without asking when your calendar has a meeting now (and asks otherwise), "off" never
+# asks. "Take meeting notes" in the menu bar works either way. Notes go to ~/Milo/meetings/.
+auto = "ask"
+keep_audio = false                # keep the recording after the notes are written
+diarizer = "sherpa_onnx"          # tells the other people apart; "" labels them all "Others"
+offer_reminders = true            # after the call, offer to put your to-dos into Reminders
+offer_mail = true                 # after the call, offer a follow-up mail draft
+end_after_s = 30                  # notes stop this long after the call ends
+
+[meetings.sherpa_onnx]
+match = 0.6                       # how alike two stretches of speech must sound to count as one person
