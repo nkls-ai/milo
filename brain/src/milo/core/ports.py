@@ -48,8 +48,11 @@ class Transcriber(Protocol):
         """Load models so the first call is fast. Blocking; called on a worker thread."""
         ...
 
-    def transcribe(self, audio: Audio) -> str:
-        """16 kHz mono audio to text. Returns "" for silence or noise. Blocking."""
+    def transcribe(self, audio: Audio, before: str = "") -> str:
+        """16 kHz mono audio to text. Returns "" for silence or noise. Blocking.
+
+        `before` is what the user said just before this audio in the same recording, when it is one
+        phrase of a longer one. The engine may use it as context (spelling, casing, language)."""
         ...
 
     def preview(self, audio: Audio) -> str:

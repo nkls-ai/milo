@@ -67,7 +67,7 @@ class FakeTranscriber:
     def warm(self) -> None:
         self.warmed = True
 
-    def transcribe(self, audio: Audio) -> str:
+    def transcribe(self, audio: Audio, before: str = "") -> str:
         self.calls.append(audio)
         return self.texts.popleft() if self.texts else ""
 
