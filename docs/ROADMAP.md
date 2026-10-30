@@ -84,6 +84,6 @@ Everything in TODO.md's "Later" list, plus: calendar awareness, a "what's this?"
 
 ## Open questions for the user
 
-- Which of the three character directions?
+- Which character? Pip is built and is the default now; the concept page has three more directions (Kit, Glow, Puff) to compare.
 - Personal tool first, or design every choice for strangers from now on?
 - Is the agent's default "ask before acting" or "act, then tell me"?

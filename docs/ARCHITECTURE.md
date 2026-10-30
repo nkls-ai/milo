@@ -95,9 +95,14 @@ A chat turn costs one message to the running chat model: about 600 tokens, with 
 app/
   Sources/MiloKit/   protocols, wire types, controller, hotkey state machine, views (all testable).
                      The Milo window: TranscriptModel, Views/ConversationView + ActivityView,
-                     AppKit/ConversationWindow
+                     AppKit/ConversationWindow. The character: Views/PipFigure (the bird, default) or
+                     Views/CharacterView's CharacterFigure (the robot, [ui] character = "classic"), both
+                     posed by CharacterLife. Flight.swift + AppKit/FlightDriver fly the overlay panel to
+                     MiloModel.flyTarget (top-left global screen coordinates) and back
   Sources/Milo/      main.swift: builds concrete adapters, hands them to MiloController
   Tests/MiloKitTests Swift Testing; decodes protocol/messages.json, drives the controller with fakes.
                      MILO_RENDER_DIR=/tmp/milo-render swift test --filter ConversationRender renders the
-                     window offscreen into PNGs
+                     window offscreen into PNGs. MILO_RENDER_DIR=... --filter PipRender renders Pip's key
+                     frames; MILO_PROBE_DIR=... --filter OverlayProbe puts the overlay on screen, measures
+                     its CPU and flies Pip to a point and back
 ```
