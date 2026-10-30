@@ -15,8 +15,8 @@ import stat
 from dataclasses import dataclass
 from pathlib import Path
 
-CONTROL_FILES = ("config.toml", "persona.md", "AGENTS.md", "CLAUDE.md", "reminders.md")
-"""Files directly in the workspace."""
+CONTROL_FILES = ("config.toml", "persona.md", "AGENTS.md", "CLAUDE.md", "reminders.md", "dictionary.md")
+"""Files directly in the workspace. dictionary.md changes what the user's dictation says before it is pasted."""
 CONTROL_FOLDERS = ("routines", "memory", "secrets", "state", "run", ".codex", ".claude")
 """Folders in the workspace, with everything below them. state/ holds the paired phone, the routines the user
 approved and the worker's own settings; run/ the sockets; .codex and .claude the worker CLIs' homes."""

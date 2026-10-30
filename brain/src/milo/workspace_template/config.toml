@@ -172,6 +172,10 @@ keep_history = true               # log dictations to dictation-history.jsonl
 #   "type":    each phrase is typed into the app at the pause after it (talking to Milo works like preview).
 #   "off":     nothing while you speak; the whole recording is transcribed when you let go (slower).
 stream = "preview"
+# When you fix a word Milo pasted (he wrote "Cloud Code", you make it "Claude Code"), he notices it and spells it
+# your way next time. He reads the pasted text in that field for up to 45 s, never password fields, and keeps
+# the fixes in dictionary.md, which you can edit. Settings > Dictation switches it too.
+learn = true
 
 [dictation.fillers]
 languages = ["en", "de"]

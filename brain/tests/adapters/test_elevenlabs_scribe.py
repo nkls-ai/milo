@@ -4,7 +4,7 @@ out while "recording", and the commit on release brings back the text."""
 import asyncio
 import base64
 import json
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, parse_qsl, urlsplit
 
 import numpy as np
 import pytest
@@ -12,7 +12,7 @@ from websockets.asyncio.server import serve
 
 from milo.adapters.audio.wav_file import WavMicrophone, write_wav
 from milo.adapters.stt import elevenlabs_scribe
-from milo.adapters.stt.elevenlabs_scribe import ScribeRealtime
+from milo.adapters.stt.elevenlabs_scribe import MAX_KEYTERMS, ScribeRealtime
 from milo.core.types import STT_SAMPLE_RATE, VoiceUnavailable
 from milo.services.cloud_hearing import CloudHearing
 
@@ -143,3 +143,13 @@ def test_partial_transcripts_are_the_live_words_until_the_commit(tmp_path):
 
     assert asyncio.run(run()) == f"heard {STT_SAMPLE_RATE // 4} samples"
     assert partials and set(partials) == {"hallo Mi"}
+
+
+def test_learned_words_join_the_keyterms_up_to_a_cap(tmp_path):
+    scribe = engine("ws://127.0.0.1:1", tmp_path, keyterms=("Milo",))
+    scribe.use_vocabulary(["Claude Code", "Milo", "x" * 51, *(f"Name{i}" for i in range(100))])
+    assert scribe.keyterms[:3] == ("Milo", "Claude Code", "Name0")
+    assert len(scribe.keyterms) == MAX_KEYTERMS
+    assert ("keyterms", "Claude Code") in parse_qsl(urlsplit(scribe._url()).query)
+    scribe.use_vocabulary([])
+    assert scribe.keyterms == ("Milo",)

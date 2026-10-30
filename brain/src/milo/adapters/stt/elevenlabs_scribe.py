@@ -18,7 +18,7 @@ import base64
 import contextlib
 import json
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -38,6 +38,9 @@ MAX_CHUNK = STT_SAMPLE_RATE * 2  # bytes in one message: a second of audio, the 
 LONG_S = 30.0  # past this much audio the service may have committed by itself (at ~36 s): wait for stragglers
 STRAGGLER_S = 0.3
 
+MAX_KEYTERMS = 50  # learned words are added to the configured keyterms up to this many
+MAX_KEYTERM_CHARS = 50
+
 _COMMIT = object()
 
 
@@ -56,9 +59,15 @@ class ScribeRealtime:
                  server: str = "wss://api.elevenlabs.io"):
         self.key_file = key_file
         self.languages = languages
+        self.configured = keyterms
         self.keyterms = keyterms
         self.server = server.rstrip("/")
         self._key: str | None = None
+
+    def use_vocabulary(self, words: Sequence[str]) -> None:
+        """Vocabulary: the dictionary's words join `keyterms` from the next session on, up to MAX_KEYTERMS."""
+        terms = list(dict.fromkeys(" ".join(w.split()) for w in (*self.configured, *words)))
+        self.keyterms = tuple(t for t in terms if t and len(t) <= MAX_KEYTERM_CHARS)[:MAX_KEYTERMS]
 
     def session(self, on_partial: Callable[[str], None] | None = None) -> ScribeSession:
         try:

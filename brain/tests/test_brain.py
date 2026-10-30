@@ -96,6 +96,20 @@ def check_mute(s: Stack, msg: dict) -> None:
     assert s.heartbeat.muted is msg["on"]
 
 
+def check_dictation_fixed(s: Stack, msg: dict) -> None:
+    from milo.services.corrections import Corrections
+    from tests.fakes import MemoryDictionary
+
+    dictionary = MemoryDictionary()
+    corrections = Corrections(dictionary, s.ui)
+    brain = Brain(s.ui, s.listening, s.live_talk, s.context, s.heartbeat, UiSettings(), corrections=corrections)
+    run(s, parse_command(msg), brain=brain)
+    assert [(h, m) for h, m, _ in dictionary.learned] == [(f["heard"], f["meant"]) for f in msg["fixes"]]
+    assert "- Cloud Code -> Claude Code (seen 1)" in dictionary.markdown
+    assert s.sink.of(Status)[-1].text == "Learned: Claude Code, Niklas"
+    assert s.model.turns == [] and s.harness.calls == [], "learning costs no model call"
+
+
 def answered(s: Stack, msg: dict, ask) -> object:
     """Start a request through the bridge, feed the fixture message to the brain, return what the request got."""
     async def go():
@@ -407,6 +421,7 @@ CHECKS = {
     "text": check_text,
     "context": check_context,
     "mute": check_mute,
+    "dictation_fixed": check_dictation_fixed,
 }
 
 
