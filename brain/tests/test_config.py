@@ -178,3 +178,18 @@ def test_hands_and_the_whats_this_key_have_defaults_and_can_be_changed():
     changed = Config.parse(MINIMAL + "[ui]\nwhats_this_key = \"cmd+shift+F12\"\n[hands]\napplescript = false\n")
     assert changed.ui.whats_this_key == "cmd+shift+F12" and not changed.hands.applescript
     assert Config.parse(MINIMAL + "[ui]\nwhats_this_key = \"\"\n").ui.whats_this_key == ""
+
+
+def test_messages_are_off_by_default_and_validated():
+    from milo.config import MessagesSettings, brief_time
+
+    config = Config.parse(MINIMAL)
+    assert config.messages == MessagesSettings() and config.messages.enabled is False
+    assert config.pluggable("messages")[0] == "telegram"
+    assert Config.load(TEMPLATE).messages.enabled is False, "the shipped template keeps it off"
+    assert str(brief_time("7:05")) == "07:05:00" and brief_time("") is None
+    for key, value, words in (("max_per_minute", 0, "max_per_minute"), ("away_after_min", 0, "away_after_min"),
+                              ("question_timeout_s", 5, "question_timeout_s"), ("max_file_mb", 60, "max_file_mb"),
+                              ("brief_at", '"25:00"', "brief_at"), ("enabled", '"yes"', "enabled")):
+        with pytest.raises(ConfigError, match=words):
+            Config.parse(MINIMAL + f"[messages]\n{key} = {value}\n")

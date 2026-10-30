@@ -352,3 +352,37 @@ def test_files_never_move_into_shared_or_synced_folders(tmp_path):
     assert _files.shared(home / "Public" / "Drop Box", home)
     assert _files.shared(home / "OneDrive - Work" / "x", home) and _files.shared(home / "Dropbox", home)
     assert not _files.shared(home / "Documents" / "Invoices", home) and not _files.shared(tmp_path / "x", home)
+
+
+def test_send_to_phone_is_there_only_with_messages_on_and_lets_the_brain_ask(home):
+    from milo.connect.server import BrainPhone
+
+    class Brain(FakeBrain):
+        def request(self, body):
+            self.requests.append(body)
+            return {"sent": "slides.key"}
+
+    brain = Brain()
+    brain.requests = []
+    plain = {t["name"] for t in rpc(mcp_server(toolbox(home)), "tools/list")["result"]["tools"]}
+    assert "send_to_phone" not in plain
+    import dataclasses
+    connections = dataclasses.replace(_fake({}, AdapterContext(home, home, FakeClock())), phone=BrainPhone(brain))
+    server = mcp_server(Toolbox(connections, brain))
+    tools = {t["name"]: t for t in rpc(server, "tools/list")["result"]["tools"]}
+    assert tools["send_to_phone"]["inputSchema"]["required"] == ["path"]
+    ok, result = call(server, "send_to_phone", {"path": "/Users/me/Documents/slides.key", "caption": "today"})
+    assert ok and result == {"sent": "slides.key"}
+    assert brain.asked == [], "the brain checks the file and asks itself"
+    assert brain.requests == [{"op": "send_to_phone", "path": "/Users/me/Documents/slides.key", "caption": "today"}]
+    assert wording.title("send_to_phone", {"path": "/x/slides.key"}) == "Sending “slides.key” to your phone"
+
+
+def test_the_server_offers_send_to_phone_when_messages_are_on(home):
+    (home / "config.toml").write_text('[connections]\nuse = "fake"\n\n[messages]\nenabled = true\n')
+    messages = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}},
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}]
+    done = subprocess.run([sys.executable, "-m", "milo.connect"], input="".join(json.dumps(m) + "\n" for m in messages),
+                          capture_output=True, text=True, timeout=30, env={**os.environ, "MILO_HOME": str(home)})
+    names = {t["name"] for t in [json.loads(line) for line in done.stdout.splitlines()][1]["result"]["tools"]}
+    assert "send_to_phone" in names
