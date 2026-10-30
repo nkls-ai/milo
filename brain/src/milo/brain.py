@@ -98,7 +98,7 @@ class Brain:
             case ListenConfirm():
                 self._listening.confirm()
             case ListenStop():
-                await self._listening.stop()
+                self._listening.release()  # transcribes in the background: the next command is read at once
             case ListenCancel():
                 self._listening.cancel()
             case TextInput(text, speak):

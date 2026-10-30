@@ -38,6 +38,7 @@ def test_the_gate_holds_each_way_words_were_lost():
     assert by_id["en-release-after-pause"].release_s <= 0.1, "let go right after words that followed a pause"
     assert any(p.level <= 0.1 for p in by_id["de-soft-tail"].parts), "trailing off softly"
     assert by_id["en-15s-quiet-mic"].mic <= 0.1, "a quiet microphone"
+    assert by_id["en-again-200ms"].again and by_id["en-again-200ms"].again_after_s <= 0.2, "pressed again at once"
 
 
 def test_tones_are_heard_back_as_the_words_at_any_level():
@@ -56,7 +57,7 @@ def test_word_errors_count_what_is_missing():
 
 
 def test_runs_fail_on_lost_words_slow_pastes_and_missing_live_words():
-    off = e2e.Run("c", "en", 5.0, "off", errors=1, lost=1, words=10)
+    off = e2e.Run("c", "en", 5.0, "whole", errors=1, lost=1, words=10)
     good = e2e.Run("c", "en", 5.0, "preview", paste_s=0.1, first_partial_s=0.4, state_s=0.09, errors=1, lost=1,
                    words=10)
     bad = e2e.Run("c", "en", 5.0, "preview", text="x", paste_s=0.9, first_partial_s=None, state_s=0.3, errors=4,

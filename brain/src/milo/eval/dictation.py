@@ -29,7 +29,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
 import numpy as np
@@ -65,10 +65,21 @@ class Case:
     mic: float = 1.0  # the whole recording's level: 0.15 is a microphone far away
     noise: float = 0.002  # room noise, RMS
     voice: str = ""
+    again: tuple[Part, ...] = ()  # a second dictation, the key pressed again `again_after_s` after the release
+    again_after_s: float = 0.2
+    streams: tuple[str, ...] = ()  # run these too, whatever the run's streams
 
     @property
     def script(self) -> str:
-        return " ".join(p.text for p in self.parts)
+        return " ".join(p.text for p in self.parts + self.again)
+
+    @property
+    def takes(self) -> list[Case]:
+        """One case per key press. The second begins speaking right away: the user goes on."""
+        second = [replace(self, id=f"{self.id}-again", parts=self.again, again=(), lead_s=0.05)] if self.again else []
+        return [replace(self, again=())] + second
+
+    lead_s: float = LEAD_S  # silence before the first word
 
 
 @dataclass(frozen=True)
@@ -81,7 +92,7 @@ class Limits:
 
 
 REAL = Limits(paste_s=0.5, paste_long_s=1.0, first_partial_s=1.5, state_s=0.1, extra_lost=1)
-FAKE = Limits(paste_s=0.25, paste_long_s=0.3, first_partial_s=1.0, state_s=0.1, extra_lost=0)
+FAKE = Limits(paste_s=0.3, paste_long_s=0.4, first_partial_s=1.0, state_s=0.1, extra_lost=0)
 
 CASES = (
     Case("en-2s", "en", (Part("Sounds good, see you at the station."),)),
@@ -94,6 +105,10 @@ CASES = (
         Part("Ich brauche noch die Zahlen", 0.5),
         Part("für den Bericht am Freitag", level=0.1),
     ), release_s=0.15),
+    Case("en-again-200ms", "en", (
+        Part("Please book a table for four people", 0.4),
+        Part("at the Italian place on Friday"),
+    ), release_s=0.1, again=(Part("and ask them whether they have a quiet corner"),), streams=("off",)),
     Case("en-15s", "en", (
         Part("So I was thinking about the trip next week,", 0.8),
         Part("and honestly I would rather take the train", 0.5),
@@ -149,7 +164,7 @@ CASES = (
     )),
 )
 
-GATE = ("en-2s", "en-release-after-pause", "de-soft-tail", "en-15s-quiet-mic")
+GATE = ("en-2s", "en-release-after-pause", "de-soft-tail", "en-15s-quiet-mic", "en-again-200ms")
 """The cases pytest runs with --fake on every gate: short, and each one a way words were lost before."""
 
 
@@ -192,7 +207,7 @@ def recording(case: Case, *, fake: bool, cache: Path, codec: ToneCodec | None = 
     if path.exists():
         return read_wav(path)[0]
     rng = np.random.default_rng(int(key, 16) % 2**32)
-    chunks = [np.zeros(int(LEAD_S * SR), dtype=np.float32)]
+    chunks = [np.zeros(int(case.lead_s * SR), dtype=np.float32)]
     with tempfile.TemporaryDirectory() as tmp:
         for part in case.parts:
             if fake:
@@ -358,35 +373,44 @@ class Run:
     problems: list[str] = field(default_factory=list)
 
 
-async def dictate(brain: Brain, case: Case, audio: np.ndarray, stream: str) -> Run:
-    """Hold the dictation key for the length of `audio` while the brain hears it, the way the app does."""
+async def dictate(brain: Brain, case: Case, takes: list[np.ndarray], stream: str) -> Run:
+    """Hold the dictation key for the length of each take while the brain hears it, the way the app does: a
+    second take is pressed `case.again_after_s` after the first was let go."""
     since = time.monotonic()
     await brain.send({"type": "set_setting", "section": "dictation", "key": "stream", "value": stream})
     switched = await brain.wait(lambda e: e["type"] == "settings", since, 5)
     if switched is None or switched[1].get("error"):
         raise RuntimeError(f"the brain didn't switch the dictation stream: {switched}")
     mic = brain.home / "mic.wav"
-    write_wav(mic.with_suffix(".tmp"), audio, SR)
-    os.replace(mic.with_suffix(".tmp"), mic)
-    seconds = len(audio) / SR
-    down = await brain.send({"type": "listen_start", "mode": "dictate", "tentative": True})
-    await asyncio.sleep(max(0.0, down + SHOW_AFTER_S - time.monotonic()))
-    await brain.send({"type": "listen_confirm"})
-    await asyncio.sleep(max(0.0, down + seconds - time.monotonic()))
-    release = await brain.send({"type": "listen_stop"})
+    downs, releases = [], []
+    for audio in takes:
+        if releases:
+            await asyncio.sleep(max(0.0, releases[-1] + case.again_after_s - time.monotonic()))
+        write_wav(mic.with_suffix(".tmp"), audio, SR)
+        os.replace(mic.with_suffix(".tmp"), mic)
+        mic.with_suffix(".json").write_text(json.dumps({"pressed_at": time.time()}))  # a late mic misses words
+        down = await brain.send({"type": "listen_start", "mode": "dictate", "tentative": True})
+        await asyncio.sleep(max(0.0, down + SHOW_AFTER_S - time.monotonic()))
+        await brain.send({"type": "listen_confirm"})
+        await asyncio.sleep(max(0.0, down + len(audio) / SR - time.monotonic()))
+        downs.append(down)
+        releases.append(await brain.send({"type": "listen_stop"}))
+    seconds = sum(len(a) for a in takes) / SR
+    release = releases[-1]
     done = await brain.wait(lambda e: e == {"type": "state", "state": "idle"}, release, 60 + seconds)
     if done is None:
         raise RuntimeError(f"{case.id}: no paste {60 + seconds:.0f}s after the release")
-    events = [(t, e) for t, e in brain.events if down <= t <= done[0]]
+    events = [(t, e) for t, e in brain.events if downs[0] <= t <= done[0]]
     pastes = [(t, e["text"]) for t, e in events if e["type"] == "dictation"]
-    partials = [t for t, e in events if e["type"] == "partial" and t < release]
-    shown = next((t for t, e in events if e == {"type": "state", "state": "dictating"}), None)
-    run = Run(case.id, case.lang, round(seconds, 1), stream, text="".join(text for _, text in pastes))
+    partials = [t for t, e in events if e["type"] == "partial" and t < releases[0]]
+    run = Run(case.id, case.lang, round(seconds, 1), stream, text=" ".join(text for _, text in pastes))
     after = [t for t, _ in pastes if t >= release]
     run.paste_s = round(after[-1] - release, 3) if after else None
-    run.first_partial_s = round(partials[0] - (down + LEAD_S), 3) if partials else None
+    run.first_partial_s = round(partials[0] - (downs[0] + case.lead_s), 3) if partials else None
     run.partials = len(partials)
-    run.state_s = round(shown - down, 3) if shown is not None else None
+    shown = [next((t for t, e in events if t >= down and e == {"type": "state", "state": "dictating"}), None)
+             for down in downs]
+    run.state_s = None if None in shown else round(max(t - down for t, down in zip(shown, downs)), 3)
     score(run, case.script)
     return run
 
@@ -402,9 +426,13 @@ def score(run: Run, script: str) -> None:
 
 def check(runs: list[Run], limits: Limits) -> None:
     """Note each run's problems against `limits` and the "off" run of the same case."""
-    off = {r.case: r for r in runs if r.stream == "off"}
+    off = {r.case: r for r in runs if r.stream in ("off", "whole")}
     for run in runs:
+        if run.stream == "whole":
+            continue
         if run.stream == "off":
+            if run.state_s is None or run.state_s > limits.state_s:
+                run.problems.append(f"listening state {run.state_s}s after key-down (limit {limits.state_s:.2f}s)")
             continue
         base = off.get(run.case)
         if base is not None and run.lost > base.lost + limits.extra_lost:
@@ -454,7 +482,7 @@ async def run(cases: list[Case], root: Path, *, fake: bool, streams: tuple[str, 
     """Every case once per stream (and rep) through one brain on `root`, checked against `limits`."""
     cache = cache or root / "clips"
     codec = ToneCodec(vocabulary()) if fake else None
-    recordings = {c.id: recording(c, fake=fake, cache=cache, codec=codec) for c in cases}
+    recordings = {c.id: [recording(take, fake=fake, cache=cache, codec=codec) for take in c.takes] for c in cases}
     home = root / "home"
     home.mkdir(parents=True, exist_ok=True)
     if fake:
@@ -464,15 +492,16 @@ async def run(cases: list[Case], root: Path, *, fake: bool, streams: tuple[str, 
     try:
         for _ in range(reps):
             for case in cases:
-                for stream in streams:
+                for stream in dict.fromkeys(streams + case.streams):
                     runs.append(await dictate(brain, case, recordings[case.id], stream))
                     await asyncio.sleep(0.3)
     finally:
         await brain.close()
-    if fake and "off" not in streams:  # what "off" does: the whole recording in one pass
+    if fake and "off" not in streams:  # to compare: what "off" hears, the whole recording in one pass
         for case in cases:
-            off = Run(case.id, case.lang, round(len(recordings[case.id]) / SR, 1), "off",
-                      text=" ".join(codec.hear(recordings[case.id])))
+            takes = recordings[case.id]
+            off = Run(case.id, case.lang, round(sum(len(a) for a in takes) / SR, 1), "whole",
+                      text=" ".join(" ".join(codec.hear(audio)) for audio in takes))
             score(off, case.script)
             runs.append(off)
     check(runs, limits or (FAKE if fake else REAL))

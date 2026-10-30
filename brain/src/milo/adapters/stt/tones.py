@@ -90,8 +90,8 @@ class ToneTranscriber:
     """A Transcriber that hears tones. A full pass takes `full_s`, a quick one `quick_s` plus `quick_per_s`
     for each second of audio, a preview `preview_s`."""
 
-    def __init__(self, codec: ToneCodec, *, full_s: float = 0.15, quick_s: float = 0.04, quick_per_s: float = 0.004,
-                 preview_s: float = 0.01, wake_s: float = 0.02):
+    def __init__(self, codec: ToneCodec, *, full_s: float = 0.5, quick_s: float = 0.1, quick_per_s: float = 0.01,
+                 preview_s: float = 0.02, wake_s: float = 0.02):
         self.codec = codec
         self._full_s = full_s
         self._quick_s = quick_s
@@ -132,10 +132,10 @@ class ToneTranscriber:
 @dataclass(frozen=True)
 class TonesOptions:
     words: str = ""  # a JSON list of the vocabulary, in the order that gives each word its tone
-    full_s: float = 0.15
-    quick_s: float = 0.04
-    quick_per_s: float = 0.004
-    preview_s: float = 0.01
+    full_s: float = 0.5  # about Whisper's times on an M3, so a release waits as long as it would
+    quick_s: float = 0.1
+    quick_per_s: float = 0.01
+    preview_s: float = 0.02
     wake_s: float = 0.02
 
 
