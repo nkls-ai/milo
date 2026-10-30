@@ -51,9 +51,12 @@ _SCRIPTABLE = ("numbers", "pages", "keynote", "microsoft excel", "microsoft word
                "calendar", "reminders", "contacts", "finder", "safari", "mail", "music", "preview", "textedit",
                "photos")
 _TARGET = re.compile(r"\b(?:application|app)\s+(id\s+)?\"([^\"]*)\"", re.IGNORECASE)
+_APP_WORD = re.compile(r"\b(?:application|app)\b", re.IGNORECASE)
+_OPENS = re.compile(r"\b(open|launch|reopen)\b", re.IGNORECASE)
 _REACHES_OUT = re.compile(r"\b(do\s+shell\s+script|do\s+script|do\s+javascript|run\s+script|load\s+script|"
                           r"store\s+script|osascript|use\s+framework|use\s+scripting\s+additions|current\s+application"
-                          r"|open\s+location)\b|«|<<|\bapplication\s+id\b|\bpath\s+to\b", re.IGNORECASE)
+                          r"|open\s+location|system\s+events|keystroke|key\s+code)\b|«|<<|\bapplication\s+id\b"
+                          r"|\bpath\s+to\b", re.IGNORECASE)
 _SETTINGS_APPS = ("system settings", "system preferences", "systemeinstellungen", "com.apple.systempreferences")
 _SECRET_APPS = ("keychain access", "schlüsselbundverwaltung", "passwords", "passwörter", "com.apple.keychainaccess",
                 "com.apple.passwords")
@@ -128,10 +131,14 @@ def classify(tool: str, args: dict, target: dict) -> Verdict:
         script = str(args.get("script", ""))
         if _SECRET.search(script):
             return Verdict(Risk.NEVER, "passwords")
-        targets = {name.lower() for has_id, name in _TARGET.findall(script) if not has_id}
-        if (_REACHES_OUT.search(script) or _TARGET.search(script) is None or any(has_id for has_id, _ in
-                                                                                 _TARGET.findall(script))
-                or not targets <= set(_SCRIPTABLE)):
+        found = _TARGET.findall(script)
+        targets = {name.lower() for _, name in found}
+        # Every app the script names must be a plain quoted name on the list: `application ("Ter" & "minal")`
+        # or a variable would get past a name check, so any other use of the word asks.
+        plain = len(found) == len(_APP_WORD.findall(script)) and not any(has_id for has_id, _ in found)
+        opens_apps = "finder" in targets and _OPENS.search(script)
+        if (_REACHES_OUT.search(script) or not found or not plain or not targets <= set(_SCRIPTABLE)
+                or opens_apps):
             return Verdict(Risk.ASK, "run other programs or type for you")
         return _words(script)
     return OK
