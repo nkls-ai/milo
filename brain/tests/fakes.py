@@ -347,14 +347,14 @@ class FakeAudioOutput:
 
 
 class FakeLiveModel:
-    """Streams scripted replies. Each script entry is a list of deltas, or a HarnessError to raise.
+    """Streams scripted replies. Each script entry is a list of deltas, or an exception to raise.
 
     `gate` (an asyncio.Event) pauses after the first delta until set, so tests can interrupt mid-reply.
     """
 
     name = "fake-live"
 
-    def __init__(self, *script: list[str] | HarnessError, gate: asyncio.Event | None = None):
+    def __init__(self, *script: list[str] | Exception, gate: asyncio.Event | None = None):
         self.script = deque(script)
         self.gate = gate
         self.system_prompts: list[str] = []
@@ -376,7 +376,7 @@ class FakeLiveModel:
         self.images.append(list(images))
         self._interrupted.clear()
         item = self.script.popleft() if self.script else ["[neutral] ok."]
-        if isinstance(item, HarnessError):
+        if isinstance(item, Exception):
             raise item
         for i, delta in enumerate(item):
             if self._interrupted.is_set():

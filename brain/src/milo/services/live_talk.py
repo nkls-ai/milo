@@ -430,6 +430,7 @@ class LiveTalk:
             return None
         except Exception:
             log.exception("live turn crashed")
+            self._notes[:0] = notes  # like a failed turn: the next one still tells the user what helpers found
             self._end_reply(shown, parser)
             self._hiccup()
             return None
