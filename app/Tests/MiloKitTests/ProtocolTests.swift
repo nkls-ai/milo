@@ -124,7 +124,7 @@ private func entries(_ key: String) throws -> [[String: Any]] {
     }
 
     @Test func uiConfigWithAnUnknownCharacterDecodesAsNone() throws {
-        let json = #"{"type":"ui_config","dictate_key":"fn","talk_key":"right_option","character":"dragon"}"#
+        let json = #"{"type":"ui_config","dictate_key":"fn","talk_key":"right_option","character":"unicorn"}"#
         #expect(try JSONDecoder().decode(BrainEvent.self, from: Data(json.utf8))
                 == .uiConfig(dictateKey: "fn", talkKey: "right_option", character: nil))
     }
