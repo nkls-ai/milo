@@ -30,7 +30,8 @@ brain/src/milo/
   connect/        the MCP tool server the worker loads (python -m milo.connect)
   eval/           the 30-task eval (python -m milo.eval)
   memory/         Workspace paths and bootstrap, profile.md, reminders.md, usage ledger, dictation history,
-                  transcript (the Milo window's conversation)
+                  transcript (the Milo window's conversation), config_file (changes one key of config.toml
+                  and keeps the user's comments)
   proactive/      heartbeat engine, daily LLM budget, rules (one class per rule, registered by name)
   services/       use cases built only on ports: listening (push-to-talk, barge-in), dictation,
                   live_transcript (pause segmenter and partial passes while recording),
@@ -47,6 +48,7 @@ brain/src/milo/
   mcp_server.py   the milo-mac MCP stdio server the worker CLI starts; forwards calls to hands.sock
   brain.py        routes inbound commands to services
   config.py       reads config.toml into sections
+  settings.py     the settings the Settings window may change, their choices, and how a change lands
   compose.py      composition root: the only module that names concrete classes
   server.py       main()
 ```
@@ -136,6 +138,44 @@ The window shows the conversation as text and lets the user type to Milo. Clicki
 - **Questions.** While Milo waits for a yes or no, the bubble shows the question with Yes and No buttons and stays up, and a bar above the text field shows it too.
 - **Typing.** The text field sends `text`. The window's "speak replies" toggle (off by default, kept in UserDefaults) adds `"speak": false`, and Milo then answers in the bubble and the window without audio.
 
+## Settings
+
+The Settings window changes a few keys of `~/Milo/config.toml` through the brain; the app stores nothing.
+
+- **Protocol.** The app sends `get_settings` when the window opens and `set_setting {section, key, value}` for each change. The brain answers both with `settings {settings, restart, error}`: one row per setting with `value`, its `options` and their plain `labels` (both empty for a switch), and `live`. `restart` is true while a saved change waits for one; `error` says in plain words why the last change wasn't saved.
+- **What can change.** `settings.SETTINGS` lists them: `[ui] character`, `[chat] updates`, `[dictation] stream`, `[ui] dictate_key`, `talk_key`, `whats_this_key` and `[ui] voice`. Anything else is refused.
+- **Saving.** `memory/config_file.TomlConfigFile` edits the file with tomlkit, so comments, order and blank lines stay, and a comment at the end of the changed line keeps its column. It loads the edited text with `Config` first and writes nothing if it fails (a clash of keys, a wrong type, an already broken file); the write goes to a temporary file that replaces config.toml.
+- **Applying.** `compose.py` hands `Settings` one function per key that can change live: the look and the keys re-send `ui_config` (and later connects send the new one), `voice` sets `Speaker.silent` (replies still show piece by piece at speaking pace, without audio), `stream` sets `Listening.live_mode` for the next recording. `[chat] updates` needs a restart; the window then shows a Restart Milo button, which restarts the brain.
+
+## The setup window
+
+`SetupWindow` opens by itself at launch when the microphone, Accessibility or Screen Recording is missing, and from the menu bar as "Check permissions…". Calendars, Reminders and Mail and Notes (Automation, checked against Mail) are optional rows.
+
+- **Checks.** `SetupModel` reads every permission through the `PermissionSource` port (`SystemPermissions` in the app, `FakePermissions` in tests) once a second, only while the window is open, so a tick appears as soon as the switch flips.
+- **Granting.** The row's button first puts Milo in that permission's list (`register`: `AXIsProcessTrustedWithOptions` with the prompt, `CGRequestScreenCaptureAccess`, `AVCaptureDevice.requestAccess`, EventKit's request, an Apple Event question to Mail). Where macOS hasn't asked yet and asks in a dialog, that's all; otherwise it then opens the exact page (`x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_…`). For Accessibility and Screen Recording a small floating panel shows Milo as a tile to drag into the list.
+- **Stale entries.** After a rebuild macOS can show Milo switched on while the check says no. A permission that was granted before (remembered in UserDefaults) or is still off 8 s after its page opened gets a Fix it button: `tccutil reset Accessibility|ScreenCapture <Milo's bundle id>` for Milo's own entry only, then register and open the page again.
+- **Screen Recording** only counts after a restart, so once its page was opened the row offers Restart Milo, which relaunches the app.
+- **Scenes.** Each row plays a short loop of what Milo does with the permission, drawn with the active skin (`Views/SetupScenes.swift`), only while the window is open; with Reduce Motion each shows its last step still.
+
+## Themes
+
+Every skin brings a theme, and every surface around Milo uses it: the bubble, the live words, the Milo window, the Settings and setup windows, the menu bar sign. Other overlays (the cursor, the working outline, helpers) should use it too.
+
+```swift
+let theme = Theme.for(.dragon)       // or model.theme, from MiloModel.character
+theme.primary  theme.tint  theme.accent  theme.ink  theme.glow   // SwiftUI Colors, light and dark built in
+theme.onPrimary  theme.card  theme.rule                          // text on primary, cards on tint, hairlines
+theme.appKit.primary                                             // the same colours as NSColor, for AppKit
+theme.motion.spring  theme.motion.gentle                         // the skin's springs; never linear tweens
+theme.motion.animation(reduced: reduceMotion)                    // a short fade under Reduce Motion
+theme.motion.bob                                                 // how far decorative things float, Pip = 1
+
+someView.themed(by: model)                     // puts model.theme in the environment, follows the skin live
+@Environment(\.miloTheme) private var theme    // inside any view below it
+```
+
+`primary` is the skin's main colour (buttons, selection, the thread of a task), `tint` a soft wash of it (window paper), `accent` a second colour that pops, `ink` text on `tint`, `glow` halos and highlights. Pip is lavender and airy, the robot purple, the dragon teal with ember sparks and bouncy springs, Kit paper and fox orange and crisp, Glow lantern amber on night blue and floaty. The API lives in `app/Sources/MiloKit/Theme.swift`; add a colour there rather than in a view.
+
 ## Heartbeat cost model
 
 The heartbeat must not burn tokens. One tick does a `stat()` on `reminders.md`, runs the enabled rules in memory and writes `state/heartbeat.json`. That's zero harness calls. A rule can attach an `llm_prompt` asking for nicer wording, but the runner uses it only if `LlmBudget.allow(today)` is true. The default `llm_calls_per_day = 0` means it never is. `tests/proactive` simulates a full day of ticks and asserts zero calls.
@@ -151,14 +191,23 @@ app/
                      AppKit/ConversationWindow. Screen/: ScreenController and TakeoverDetector.
                      Hotkeys/KeyCombo. Adapters/: Accessibility, SystemScreenReader, ScreenShots,
                      MacHands, NSEventInputMonitor, CarbonHotkey, EventKitConnections (answers app_request
-                     for Calendar and Reminders). The character: Views/PipFigure (the bird, default) or
-                     Views/CharacterView's CharacterFigure (the robot, [ui] character = "classic"), both
-                     posed by CharacterLife. Flight.swift + AppKit/FlightDriver fly the overlay panel to
-                     MiloModel.flyTarget (AppKit global screen coordinates) and back
+                     for Calendar and Reminders), SystemPermissions (the setup window's checks).
+                     The character: Views/Skin.swift defines a skin (one SwiftUI view that gets the same
+                     state, emotion, life pose and flight as every other) and CharacterFigure(for: style, …),
+                     the one way to draw Milo at any size. Skins: PipFigure (the bird, default), RobotFigure
+                     ("classic"), DragonFigure, KitFigure (the paper fox), GlowFigure (the lantern firefly).
+                     CharacterLife poses them; repeating motion (breathing, wings, tails, smoke) runs as Core
+                     Animation keyframes through Views/Looping.swift, so a still Milo costs the app nothing.
+                     Theme.swift: each skin's colours and springs. SettingsModel + Views/SettingsView +
+                     AppKit/SettingsWindow; SetupModel + Views/SetupView + SetupScenes + AppKit/SetupWindow.
+                     Flight.swift + AppKit/FlightDriver fly the overlay panel to MiloModel.flyTarget (AppKit
+                     global screen coordinates) and back
   Sources/Milo/      main.swift: builds concrete adapters, hands them to MiloController
   Tests/MiloKitTests Swift Testing; decodes protocol/messages.json, drives the controller with fakes.
                      MILO_RENDER_DIR=/tmp/milo-render swift test --filter ConversationRender renders the
-                     window offscreen into PNGs. MILO_RENDER_DIR=... --filter PipRender renders Pip's key
-                     frames; MILO_PROBE_DIR=... --filter OverlayProbe puts the overlay on screen, measures
-                     its CPU and flies Pip to a point and back
+                     window offscreen into PNGs. MILO_RENDER_DIR=... --filter SkinRender renders every skin
+                     in every state (MILO_SKINS=dragon,kit to pick), --filter SettingsRender the Settings and
+                     setup windows in every skin; MILO_PROBE_DIR=... --filter OverlayProbe puts the overlay on
+                     screen, measures its CPU and what a pose change costs per skin, and flies him to a point
+                     and back
 ```
