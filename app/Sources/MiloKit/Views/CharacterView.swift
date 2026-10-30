@@ -3,6 +3,8 @@ import SwiftUI
 /// Milo in the overlay: the life layer poses whichever skin `[ui] character` picked.
 struct CharacterView: View {
     @ObservedObject var model: MiloModel
+    /// The level drives his mouth and ears; it changes too often to live on the model.
+    @ObservedObject private var live: LiveLevel
     @StateObject private var life: CharacterLifeDriver
     /// A still figure (a helper's small bird): no blinking, no cursor following, no float. It redraws
     /// only when the model changes.
@@ -10,6 +12,7 @@ struct CharacterView: View {
 
     init(model: MiloModel, still: Bool = false) {
         self.model = model
+        live = model.live
         self.still = still
         _life = StateObject(wrappedValue: CharacterLifeDriver(onScreen: !still))
     }
@@ -18,7 +21,7 @@ struct CharacterView: View {
 
     var body: some View {
         CharacterFigure(for: model.character, state: model.state, emotion: model.emotion, asleep: asleep,
-                        level: model.level, connected: model.connected, pose: life.pose, flight: model.flight,
+                        level: live.level, connected: model.connected, pose: life.pose, flight: model.flight,
                         words: Self.words(in: model.partial), size: 120)
             .frame(width: 132, height: 132)
             .background(LifeAnchor(driver: life))

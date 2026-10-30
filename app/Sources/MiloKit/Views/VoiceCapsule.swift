@@ -14,7 +14,7 @@ struct VoiceCapsule: View {
             let color = Surface.color(for: phase.mode, theme)
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
-                    VoiceIndicator(phase: phase, level: model.level, color: color)
+                    VoiceIndicator(phase: phase, live: model.live, color: color)
                     if phase == .thinking, let since = model.thinkingSince {
                         // Checks the clock once a second, only while he thinks.
                         TimelineView(.periodic(from: .now, by: 1)) { _ in
@@ -117,7 +117,7 @@ struct VoiceCapsule: View {
 struct VoiceIndicator: View {
     @Environment(\.miloTheme) private var theme
     let phase: VoicePhase
-    let level: Double
+    let live: LiveLevel
     let color: Color
 
     var body: some View {
@@ -126,7 +126,7 @@ struct VoiceIndicator: View {
             case .armed:
                 RecordingLight(color: color).transition(.scale(scale: 0.6).combined(with: .opacity))
             case .listening:
-                LevelMeter(level: level, color: color).transition(.opacity)
+                LevelMeter(live: live, color: color).transition(.opacity)
             case .caught, .pasted:
                 DoneTick(color: color).transition(.scale(scale: 0.5).combined(with: .opacity))
             case .transcribing, .thinking:
@@ -153,9 +153,10 @@ struct RecordingLight: View {
 }
 
 /// A meter that follows the voice: the newest level in the middle, older ones moving outwards, sampled at a
-/// steady pace so silence settles instead of freezing a shape.
+/// steady pace so silence settles instead of freezing a shape. It reads the level on its own ticks rather than
+/// watching it, so only the meter redraws.
 struct LevelMeter: View {
-    let level: Double
+    let live: LiveLevel
     let color: Color
     /// Newest first.
     @State private var history = [Double](repeating: 0, count: 4)
@@ -172,7 +173,7 @@ struct LevelMeter: View {
         .frame(height: 16)
         .animation(.spring(response: 0.16, dampingFraction: 0.75), value: history)
         .onReceive(ticks) { _ in
-            history = [level] + history.dropLast()
+            history = [live.level] + history.dropLast()
         }
     }
 

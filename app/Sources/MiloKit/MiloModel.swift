@@ -18,7 +18,14 @@ public final class MiloModel: ObservableObject {
     @Published public var emotion: Emotion = .neutral
     @Published public var bubble: String?
     @Published public var heard: String?
-    @Published public var level: Double = 0
+    /// The mic or voice level, 0...1, about 20 times a second. Kept in `live`, which only the figure and the
+    /// meter watch, so it doesn't redraw every view of this model each time.
+    public var level: Double {
+        get { live.level }
+        set { if live.level != newValue { live.level = newValue } }
+    }
+    /// What changes many times a second while Milo listens or speaks.
+    public let live = LiveLevel()
     @Published public var connected = false
     @Published public var drowsy = false
     /// Live transcript of the recording in progress, shown next to Milo.
@@ -264,6 +271,11 @@ public final class MiloModel: ObservableObject {
             if state == .idle { emotion = .neutral }
         }
     }
+}
+
+/// The level on its own, for the few views that follow it.
+public final class LiveLevel: ObservableObject {
+    @Published public internal(set) var level: Double = 0
 }
 
 /// What the button under a bubble does.

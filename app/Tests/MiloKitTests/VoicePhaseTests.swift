@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Testing
 @testable import MiloKit
@@ -123,6 +124,17 @@ import Testing
         model.cancelPress()
         #expect(model.voicePhase == nil)
         #expect(model.bubble != nil)
+    }
+
+    @Test func theLevelDoesNotRedrawEveryWindow() {
+        var modelChanges = 0, liveChanges = 0
+        let a = model.objectWillChange.sink { modelChanges += 1 }
+        let b = model.live.objectWillChange.sink { liveChanges += 1 }
+        for value in [0.1, 0.4, 0.4, 0.2] { model.apply(.level(value)) }
+        #expect(modelChanges == 0)
+        #expect(liveChanges == 3)  // the repeat is dropped
+        #expect(model.level == 0.2)
+        _ = (a, b)
     }
 
     @Test func aButtonGoesWithItsText() {
