@@ -12,6 +12,7 @@ import logging
 import os
 import re
 import shutil
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -100,23 +101,68 @@ def _fold(path: Path) -> str:
 
 def clear_steering(workdir: Path) -> None:
     """Remove what a helper could have left in its folder to steer the next one (STEERING). A link is removed
-    itself, never what it points at. Raises OSError if one is still there."""
+    itself, never what it points at. Folders on the way get their owner's permissions back first, since the
+    helper may have locked them. Raises OSError if one is still there."""
     found = _steering_in(workdir)
     for path in found:
+        _unlock(path.parent, workdir)
         try:
-            if path.is_symlink() or not path.is_dir():
-                path.unlink()
+            if stat.S_ISDIR(os.lstat(path).st_mode):
+                shutil.rmtree(path, onexc=_unlock_and_retry)
             else:
-                shutil.rmtree(path)
+                os.unlink(path)
         except FileNotFoundError:
             continue
         except OSError as e:
             log.warning("could not remove %s from the worker's folder: %s", path, e)
             continue
         log.warning("removed %s a helper left in its folder", path.relative_to(workdir))
-    left = [str(path.relative_to(workdir)) for path in found if os.path.lexists(path)]
+    left = [str(path.relative_to(workdir)) for path in found if _still_there(path)]
     if left:
         raise OSError(f"{', '.join(left)} in {workdir} can't be removed")
+
+
+def _unlock(folder: Path, workdir: Path) -> None:
+    """Owner permissions on each folder from `workdir` down to `folder`, without following links. Top down:
+    a folder can only be changed once the one above it can be searched."""
+    for each in reversed([f for f in (folder, *folder.parents) if f.is_relative_to(workdir)]):
+        try:
+            os.chmod(each, 0o700, follow_symlinks=False)
+        except OSError:
+            pass
+
+
+def _unlock_and_retry(function, path: str, error: BaseException) -> None:
+    """rmtree's error handler: a locked folder inside a STEERING folder is unlocked and tried again once."""
+    if isinstance(error, FileNotFoundError):
+        return
+    parent = os.path.dirname(path)
+    for each in (parent, path):
+        try:
+            os.chmod(each, 0o700, follow_symlinks=False)
+        except OSError:
+            pass
+    if function is os.rmdir or function is os.unlink:
+        function(path)
+    elif function in (os.open, os.scandir, os.lstat):
+        shutil.rmtree(path, onexc=_last_try)
+    else:
+        raise error
+
+
+def _last_try(function, path: str, error: BaseException) -> None:
+    raise error
+
+
+def _still_there(path: Path) -> bool:
+    """Only "not found" counts as gone: a path that can't be looked at may well still be there."""
+    try:
+        os.lstat(path)
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    return True
 
 
 _STEERING_FOLDED = frozenset(name.casefold() for name in STEERING)
@@ -134,8 +180,5 @@ def _steering_in(workdir: Path) -> list[Path]:
         if not unreadable:
             return found
         for folder in unreadable:
-            try:
-                os.chmod(folder, 0o700, follow_symlinks=False)
-            except OSError:
-                pass
+            _unlock(Path(folder), workdir)
     raise OSError(f"can't look through {', '.join(unreadable)}")

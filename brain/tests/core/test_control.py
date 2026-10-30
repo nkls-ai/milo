@@ -82,3 +82,24 @@ def test_steering_in_another_case_or_behind_a_locked_folder_is_found_too(tmp_pat
     finally:
         (work / "locked").chmod(0o700)
     assert [p.name for p in work.rglob("*")] == ["locked", "deeper"]
+
+
+def test_a_folder_the_helper_locked_doesnt_hide_whats_still_in_it(tmp_path):
+    # Readable but not searchable: the names list, but lstat and unlink of what's inside fail. That must not
+    # count as removed.
+    from milo.core.control import clear_steering
+
+    work = tmp_path / "Milo" / "work"
+    (work / "ro").mkdir(parents=True)
+    (work / "ro" / "CLAUDE.md").write_text("still steering")
+    (work / "ro" / ".claude" / "inner").mkdir(parents=True)
+    (work / "ro" / ".claude" / "inner" / "settings.json").write_text("{}")
+    (work / "ro" / ".claude" / "inner").chmod(0o500)
+    (work / "ro").chmod(0o444)
+    try:
+        clear_steering(work)
+    finally:
+        for p in (work / "ro", work / "ro" / ".claude" / "inner"):
+            if p.exists() or p.is_symlink():
+                p.chmod(0o700)
+    assert list((work / "ro").iterdir()) == []
