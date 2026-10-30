@@ -62,7 +62,9 @@ class UnixSocketServer:
         if self._server is None:
             await self.start()
         try:
-            await self._server.serve_forever()
+            # Not Server.serve_forever: once cancelled, it waits for every client to hang up before anything
+            # closes them, so a brain stopped while the app was connected never exited.
+            await asyncio.get_running_loop().create_future()
         finally:
             await self.close()
 
