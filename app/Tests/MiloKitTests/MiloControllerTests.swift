@@ -429,3 +429,70 @@ private final class Harness {
         #expect(h.brain.sent == [.listenStart(.dictate, tentative: true), .listenStop])
     }
 }
+
+/// The overlay reacts to the keys in the same frame, before the brain has said anything.
+@Suite struct KeysShowAtOnceTests {
+    @Test func keyDownShowsTheLightBeforeTheBrainAnswers() {
+        let h = Harness()
+        h.brain.connect()
+        h.keys.press(.rightOption, at: 0)
+        #expect(h.model.voicePhase == .armed(.talk))
+        #expect(h.commandsSent.last == .listenStart(.talk, tentative: true))
+    }
+
+    @Test func aRealHoldListensWithoutWaitingForTheBrain() {
+        let h = Harness()
+        h.brain.connect()
+        h.keys.press(.fn, at: 0)
+        h.advance(to: 0.25)
+        #expect(h.model.voicePhase == .listening(.dictate, handsFree: false))
+    }
+
+    @Test func releaseGivesTheGotItBeatThenWhatTheBrainSays() {
+        let h = Harness()
+        h.brain.connect()
+        h.keys.press(.rightOption, at: 0)
+        h.advance(to: 0.3)
+        h.brain.emit(.state(.listening))
+        h.keys.release(.rightOption, at: 1)
+        h.brain.emit(.state(.transcribing))
+        #expect(h.model.voicePhase == .caught(.talk))
+        h.scheduler.advance(by: MiloModel.caughtBeat)
+        #expect(h.model.voicePhase == .transcribing(.talk))
+        h.brain.emit(.state(.thinking))
+        #expect(h.model.voicePhase == .thinking)
+    }
+
+    @Test func aTapOrAShortcutPutsTheLightOut() {
+        let h = Harness()
+        h.brain.connect()
+        h.keys.press(.rightOption, at: 0)
+        h.keys.type(at: 0.05)  // right ⌥ was for typing an @
+        #expect(h.model.voicePhase == nil)
+        h.keys.press(.fn, at: 1)
+        h.keys.release(.fn, at: 1.1)
+        #expect(h.model.voicePhase == .armed(.dictate))  // could still become a double tap
+        h.advance(to: 1.5)
+        #expect(h.model.voicePhase == nil)
+    }
+
+    @Test func pastedDictationShowsPasted() {
+        let h = Harness()
+        h.brain.connect()
+        h.keys.press(.fn, at: 0)
+        h.advance(to: 0.3)
+        h.keys.release(.fn, at: 1)
+        h.brain.emit(.dictation("See you at four."))
+        #expect(h.inserter.inserted == ["See you at four."])
+        #expect(h.model.voicePhase == .pasted)
+        h.scheduler.advance(by: MiloModel.pastedBeat)
+        #expect(h.model.voicePhase == nil)
+    }
+
+    @Test func aBlockedPasteOffersAFix() {
+        let h = Harness(trusted: false)
+        h.brain.emit(.dictation("See you at four."))
+        #expect(h.model.bubbleAction == .permissions)
+        #expect(!h.model.pasted)
+    }
+}

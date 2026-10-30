@@ -256,8 +256,8 @@ private func doubleTap(_ key: ModifierKey, at time: TimeInterval, into ptt: inou
     }
 
     @Test func liveTranscriptKeepsTheNewestWords() {
-        #expect(LiveTranscriptView.tail("short", limit: 10) == "short")
-        #expect(LiveTranscriptView.tail("one two three four", limit: 10) == "…three four")
+        #expect(VoiceCapsule.tail("short", limit: 10) == "short")
+        #expect(VoiceCapsule.tail("one two three four", limit: 10) == "…three four")
     }
 
     @Test(arguments: [

@@ -5,15 +5,17 @@ import SwiftUI
 /// A soft card on the window's tinted paper.
 struct ThemedCard<Content: View>: View {
     @Environment(\.miloTheme) private var theme
+    @Environment(\.colorSchemeContrast) private var contrast
     var padding: CGFloat = 16
     @ViewBuilder var content: Content
 
     var body: some View {
+        let (line, width) = Surface.edge(theme, contrast)
         content
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(theme.card))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(theme.rule, lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(line, lineWidth: width))
             .shadow(color: theme.primary.opacity(0.07), radius: 12, y: 4)
     }
 }
