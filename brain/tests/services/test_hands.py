@@ -345,3 +345,48 @@ def test_a_careful_helpers_next_turn_keeps_the_apps_the_user_cleared():
     t.service.begin("another-helper", careful=True)
     t.call("type", {"text": "eggs"})
     assert len(t.confirm.asked) == 2, "another helper asks again"
+
+
+class ChangingHands(FakeHands):
+    """Each describe of `tool` answers the next target in `seen`: the screen changes while the user decides."""
+
+    def __init__(self, tool: str, *seen: dict):
+        super().__init__()
+        self._tool, self._seen = tool, list(seen)
+
+    async def act(self, tool: str, args: dict) -> dict:
+        if tool == "describe" and args["tool"] == self._tool and len(self._seen) > 1:
+            self.calls.append((tool, args))
+            return dict(self._seen.pop(0))
+        if tool == "describe" and args["tool"] == self._tool:
+            self.calls.append((tool, args))
+            return dict(self._seen[0])
+        return await super().act(tool, args)
+
+
+SENDING = {"app": "Mail", "title": "Send", "role": "button", "point": {"x": 40, "y": 60}}
+DELETE = {"app": "Mail", "title": "Delete", "role": "button", "point": {"x": 40, "y": 60}}
+
+
+def test_a_target_that_changed_while_the_user_answered_is_asked_about_again():
+    # M5 in docs/review/2026-10-30.md: the yes was for "Send", but a minute later "Delete" sat at that spot.
+    t = Setup(ChangingHands("click", SENDING, DELETE, DELETE), FakeConfirm(True, False))
+    assert "said no" in t.fails("click", {"x": 1, "y": 2})
+    assert t.confirm.asked == ["I'm about to click “Send” in Mail. Go ahead?",
+                               "I'm about to click “Delete” in Mail. Go ahead?"]
+    assert t.port.actions == [], "nothing was clicked on the strength of the first yes"
+
+
+def test_a_target_that_turned_into_a_password_field_is_refused_after_the_yes():
+    t = Setup(ChangingHands("type", {"app": "Mail", "role": "text field", "title": "To"},
+                            {"app": "Safari", "secure": True}), FakeConfirm(True))
+    t.service._careful = True  # typing into Mail asks once ("may I use Mail?")
+    assert "never touches a password field" in t.fails("type", {"text": "anna@example.com"})
+    assert t.port.actions == []
+
+
+def test_the_same_target_moved_a_little_needs_no_second_question():
+    moved = {**SEND, "point": {"x": 44, "y": 61}}
+    t = Setup(ChangingHands("click", SEND, moved), FakeConfirm(True))
+    t.call("click", {"x": 1, "y": 2})
+    assert len(t.confirm.asked) == 1 and t.port.actions == ["click"]
