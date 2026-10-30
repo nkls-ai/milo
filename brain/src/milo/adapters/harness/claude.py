@@ -54,7 +54,8 @@ class ClaudeHarness:
             cmd += ["--model", self.model]
         if self.tool_servers and self.mcp_config is not None:
             # Milo's tools ask the user themselves when it matters, so -p mode may call them without a prompt.
-            cmd += ["--mcp-config", str(self.mcp_config),
+            # Strict: the worker gets Milo's tools only, not whatever else Claude Code has configured.
+            cmd += ["--mcp-config", str(self.mcp_config), "--strict-mcp-config",
                     "--allowedTools", *(f"mcp__{s.name}" for s in self.tool_servers)]
         if self.disallowed_tools:
             cmd += ["--disallowedTools", *self.disallowed_tools]

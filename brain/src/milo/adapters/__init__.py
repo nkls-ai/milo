@@ -20,6 +20,7 @@ BUILTIN = (
     "text.plain",
     "connect.mac",
     "connect.fake",
+    "headless.none",
 )
 
 
