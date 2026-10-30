@@ -36,6 +36,7 @@ use = "mlx_whisper"
 
 [stt.mlx_whisper]
 model = "mlx-community/whisper-large-v3-turbo"
+preview_model = "mlx-community/whisper-base-mlx"  # live words while you speak (~0.15 s a pass); "" uses model
 language = ""                     # empty: auto-detect. "de" or "en" to pin it.
 vocabulary = "Milo, Codex, Claude" # names Whisper should spell right
 

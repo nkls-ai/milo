@@ -146,16 +146,19 @@ class LiveTranscript:
     """Transcribes a recording while it runs, on the STT executor, one pass at a time.
 
     Every `poll_s` it reads the new audio and lets the segmenter close phrases at pauses. A closed phrase
-    is transcribed once: with `typed`, it is pasted at once; otherwise it is kept for the preview. Then the
-    open phrase after the last pause is transcribed again and shown as a Partial. `gap_s` of idle GPU
-    between passes keeps a final pass from usually waiting on a partial one.
+    is transcribed once: with `typed`, by `transcribe` and pasted at once; otherwise by the faster
+    `preview` and kept for the preview. Then the open phrase after the last pause is transcribed again with
+    `preview` and shown as a Partial. Only typed text needs the full model, so a final pass rarely waits
+    long behind a live one. `gap_s` of idle GPU between passes leaves room for speech synthesis.
     """
 
     def __init__(self, mic: AudioInput, transcribe: Callable[[Audio], str], executor: Executor, sink: EventSink,
-                 segmenter: PauseSegmenter, typed: TypedDictation | None = None, *, poll_s: float = 0.2,
-                 gap_s: float = 0.3, min_new_s: float = 0.5, monotonic: Callable[[], float] = time.monotonic):
+                 segmenter: PauseSegmenter, typed: TypedDictation | None = None, *,
+                 preview: Callable[[Audio], str] | None = None, poll_s: float = 0.2, gap_s: float = 0.3,
+                 min_new_s: float = 0.5, monotonic: Callable[[], float] = time.monotonic):
         self._mic = mic
         self._transcribe = transcribe
+        self._preview = preview or transcribe
         self._executor = executor
         self._sink = sink
         self._segmenter = segmenter
@@ -211,7 +214,8 @@ class LiveTranscript:
                     start, end = self._pending[0]
                     self._committing = True
                     try:
-                        text = await self._pass(self._mic.peek(start)[:end - start])
+                        text = await self._pass(self._mic.peek(start)[:end - start],
+                                                self._transcribe if self.typed is not None else self._preview)
                     finally:
                         self._committing = False
                     self._pending.pop(0)
@@ -225,16 +229,16 @@ class LiveTranscript:
                         return
                 if self._segmenter.open_has_speech and heard - previewed >= self._min_new:
                     previewed = heard
-                    self._show(await self._pass(self._mic.peek(self._segmenter.open_start)))
+                    self._show(await self._pass(self._mic.peek(self._segmenter.open_start), self._preview))
                     idle_s = max(self._poll_s, self._gap_s)
         except asyncio.CancelledError:
             raise
         except Exception:
             log.exception("live transcription failed; the final pass still runs")
 
-    async def _pass(self, audio: Audio) -> str:
+    async def _pass(self, audio: Audio, transcribe: Callable[[Audio], str]) -> str:
         started = self._monotonic()
-        text = await asyncio.get_running_loop().run_in_executor(self._executor, self._transcribe, audio)
+        text = await asyncio.get_running_loop().run_in_executor(self._executor, transcribe, audio)
         log.debug("live pass %.1fs audio in %.2fs", len(audio) / STT_SAMPLE_RATE, self._monotonic() - started)
         return text.strip()
 

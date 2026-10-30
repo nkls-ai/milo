@@ -78,7 +78,7 @@ class Listening:
             return
         typed = self._dictation.typed() if dictate and self._live_mode is LiveMode.TYPE else None
         self._live = LiveTranscript(self._mic, self._transcriber.transcribe, self._executor, self._ui,
-                                    PauseSegmenter(), typed)
+                                    PauseSegmenter(), typed, preview=self._transcriber.preview)
         self._live.start()
 
     async def stop(self) -> None:

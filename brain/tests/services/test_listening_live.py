@@ -12,12 +12,17 @@ from tests.services.test_live_transcript import GrowingMic, hear, quiet, tone
 class HearingStt:
     def __init__(self):
         self.calls: list[int] = []
+        self.previews: list[int] = []
 
     def warm(self) -> None:
         pass
 
     def transcribe(self, audio) -> str:
         self.calls.append(len(audio))
+        return hear(audio)
+
+    def preview(self, audio) -> str:
+        self.previews.append(len(audio))
         return hear(audio)
 
 
@@ -87,7 +92,8 @@ def test_preview_shows_words_live_and_pastes_one_final_pass_over_everything():
     asyncio.run(run())
     assert "alpha bravo" in [e.text for e in s.sink.of(Partial)]
     assert s.sink.of(Dictation) == [Dictation("ALPHA BRAVO")]
-    assert stt.calls[-1] == len(mic.audio), "the final pass covers the whole recording"
+    assert stt.calls == [len(mic.audio)], "live passes use the fast model; the final pass covers everything"
+    assert stt.previews
     assert s.history.entries == [("ALPHA BRAVO", "Notes")]
 
 
@@ -106,6 +112,7 @@ def test_type_mode_pastes_at_pauses_and_only_the_tail_on_release():
     asyncio.run(run())
     assert s.sink.of(Dictation) == [Dictation("ALPHA"), Dictation(" BRAVO"), Dictation(" CHARLIE")]
     assert stt.calls[-1] < 1.5 * 16000, "the final pass covers only the tail"
+    assert len(stt.calls) == 3, "typed phrases come from the full model"
     assert s.history.entries == [("ALPHA BRAVO CHARLIE", "Notes")]
     assert s.states()[-1] is MiloState.IDLE
 
