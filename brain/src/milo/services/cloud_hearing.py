@@ -68,13 +68,13 @@ class CloudHearing:
         self._clock = clock
         self._down_since: float | None = None
 
-    def start(self, mic: AudioInput) -> CloudRecording | None:
-        """A recording that listens along, or None while the cloud is down."""
+    def start(self, mic: AudioInput, on_partial: Callable[[str], None] | None = None) -> CloudRecording | None:
+        """A recording that listens along, or None while the cloud is down. `on_partial` gets the live words."""
         if self._down_since is not None:
             if self._clock() - self._down_since < RETRY_S:
                 return None
             self._down_since = None
-        return CloudRecording(self._engine.session(), mic)
+        return CloudRecording(self._engine.session(on_partial), mic)
 
     def failed(self, reason: str) -> None:
         now = self._clock()

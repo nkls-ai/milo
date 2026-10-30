@@ -18,7 +18,7 @@ import base64
 import contextlib
 import json
 import logging
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -59,12 +59,12 @@ class ScribeRealtime:
         self.server = server.rstrip("/")
         self._key: str | None = None
 
-    def session(self) -> ScribeSession:
+    def session(self, on_partial: Callable[[str], None] | None = None) -> ScribeSession:
         try:
             key = self._read_key()
         except VoiceUnavailable as e:
             return ScribeSession.failed(str(e))
-        return ScribeSession(self._url(), key)
+        return ScribeSession(self._url(), key, on_partial)
 
     def _read_key(self) -> str:
         if self._key is None:
@@ -88,7 +88,8 @@ class ScribeRealtime:
 class ScribeSession:
     """One recording. feed() queues audio; a task connects, sends it in order, and collects the committed text."""
 
-    def __init__(self, url: str | None, key: str = ""):
+    def __init__(self, url: str | None, key: str = "", on_partial: Callable[[str], None] | None = None):
+        self._on_partial = on_partial
         self._outbox: asyncio.Queue[object] = asyncio.Queue()
         self._texts: list[str] = []
         self._final = asyncio.Event()
@@ -186,7 +187,9 @@ class ScribeSession:
         async for raw in ws:
             message = json.loads(raw)
             kind = message.get("message_type", "")
-            if kind == "committed_transcript":
+            if kind == "partial_transcript" and self._on_partial is not None and not self._committed:
+                self._on_partial(" ".join(t for t in [*self._texts, str(message.get("text", "")).strip()] if t))
+            elif kind == "committed_transcript":
                 self._texts.append(str(message.get("text", "")).strip())
                 if self._committed:
                     self._final.set()

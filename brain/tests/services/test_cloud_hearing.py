@@ -2,7 +2,7 @@
 
 import asyncio
 
-from milo.core.events import Heard
+from milo.core.events import Heard, Partial
 from milo.core.types import ListenMode, LiveMode
 from milo.services.cloud_hearing import RETRY_S, CloudHearing
 from milo.services.listening import Listening
@@ -113,3 +113,45 @@ def test_with_live_words_on_the_cloud_text_still_wins_and_no_final_local_pass_ru
     asyncio.run(run())
     assert [h.text for h in s.sink.of(Heard)] == ["die Wolke"]
     assert s.transcriber.calls == []
+
+
+def test_the_cloud_s_guesses_are_the_live_words_and_the_local_model_stays_asleep():
+    cloud = FakeStreamingTranscriber("die Wolke hört zu")
+    s = Stack(model=FakeLiveModel(["[neutral] Ja."]), transcriber=FakeTranscriber("lokal"), hearing=CloudHearing(cloud),
+              mic=FakeAudioInput(seconds=2.0))
+    s.listening.live_mode = LiveMode.PREVIEW
+
+    async def run():
+        s.listening.start(ListenMode.TALK)
+        await asyncio.sleep(0.3)
+        cloud.sessions[0].on_partial("die Wolke")
+        await s.listening.stop()
+        await settle()
+
+    asyncio.run(run())
+    assert s.sink.of(Partial) == [Partial("die Wolke")]
+    assert [h.text for h in s.sink.of(Heard)] == ["die Wolke hört zu"]
+    assert s.transcriber.calls == [] and s.transcriber.previews == [], "no live passes on the Mac"
+    assert s.transcriber.wakes == 0, "the local model wasn't paged in for nothing"
+
+
+def test_while_the_cloud_rests_the_local_model_is_woken_and_shows_the_live_words():
+    now = [0.0]
+    cloud = FakeStreamingTranscriber(fail="offline")
+    s = Stack(model=FakeLiveModel(["[neutral] Ja."], ["[neutral] Nein."]),
+              transcriber=FakeTranscriber("eins", "zwei"), hearing=CloudHearing(cloud, clock=lambda: now[0]))
+
+    async def run():
+        s.listening.start(ListenMode.TALK)
+        await s.listening.stop()
+        await settle()
+        assert s.transcriber.wakes == 0
+        s.listening.start(ListenMode.TALK)
+        await settle()
+        assert s.transcriber.wakes == 1, "this recording is transcribed here"
+        await s.listening.stop()
+        await settle()
+
+    asyncio.run(run())
+    assert [h.text for h in s.sink.of(Heard)] == ["eins", "zwei"]
+    assert len(cloud.sessions) == 1

@@ -136,12 +136,13 @@ class FakeTranscriber:
         self.calls: list[Audio] = []
         self.previews: list[Audio] = []
         self.warmed = False
+        self.wakes = 0
 
     def warm(self) -> None:
         self.warmed = True
 
     def wake(self) -> None:
-        pass
+        self.wakes += 1
 
     def transcribe(self, audio: Audio, before: str = "", *, quick: bool = False) -> str:
         self.calls.append(audio)
@@ -183,8 +184,9 @@ class FakeStreamingTranscriber:
         self.fail = fail
         self.sessions: list[FakeTranscriptionSession] = []
 
-    def session(self) -> FakeTranscriptionSession:
+    def session(self, on_partial=None) -> FakeTranscriptionSession:
         session = FakeTranscriptionSession(self)
+        session.on_partial = on_partial
         self.sessions.append(session)
         return session
 

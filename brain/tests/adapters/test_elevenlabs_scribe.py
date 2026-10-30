@@ -22,8 +22,9 @@ KEY = "sk_" + "s" * 48
 class FakeScribe:
     """Collects the audio; answers the commit with how many samples it heard, or with `reply` if set."""
 
-    def __init__(self, reply: dict | None = None, silent: bool = False):
+    def __init__(self, reply: dict | None = None, silent: bool = False, partial: str = ""):
         self.reply = reply
+        self.partial = partial
         self.silent = silent
         self.audio = b""
         self.chunks: list[int] = []
@@ -42,6 +43,8 @@ class FakeScribe:
             if pcm:
                 self.audio += pcm
                 self.chunks.append(len(pcm))
+                if self.partial:
+                    await ws.send(json.dumps({"message_type": "partial_transcript", "text": self.partial}))
             if m["commit"]:
                 self.committed_after.append(len(self.audio))
                 if self.silent:
@@ -121,3 +124,22 @@ def test_nobody_listening_or_no_key_is_voice_unavailable(tmp_path):
         asyncio.run(run(engine("ws://127.0.0.1:9", tmp_path)))
     with pytest.raises(VoiceUnavailable, match="no ElevenLabs key"):
         asyncio.run(run(ScribeRealtime(tmp_path / "missing")))
+
+
+def test_partial_transcripts_are_the_live_words_until_the_commit(tmp_path):
+    fake = FakeScribe(partial="hallo Mi")
+    partials: list[str] = []
+
+    async def run():
+        server, url = await started(fake)
+        async with server:
+            session = engine(url, tmp_path).session(partials.append)
+            session.feed(np.zeros(STT_SAMPLE_RATE // 4, dtype=np.float32))
+            for _ in range(50):
+                if partials:
+                    break
+                await asyncio.sleep(0.02)
+            return await session.finish()
+
+    assert asyncio.run(run()) == f"heard {STT_SAMPLE_RATE // 4} samples"
+    assert partials and set(partials) == {"hallo Mi"}

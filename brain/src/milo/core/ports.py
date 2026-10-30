@@ -109,8 +109,9 @@ class StreamingTranscriber(Protocol):
     """A transcriber that listens along while the user speaks (a cloud service). Used only where config.toml
     allows audio to leave the Mac."""
 
-    def session(self) -> TranscriptionSession:
-        """Start a recording's session now (it connects while the user speaks). On the event loop."""
+    def session(self, on_partial: Callable[[str], None] | None = None) -> TranscriptionSession:
+        """Start a recording's session now (it connects while the user speaks). On the event loop.
+        `on_partial` gets the words so far whenever the service has a new guess, for the live words."""
         ...
 
 
