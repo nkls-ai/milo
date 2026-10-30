@@ -3,7 +3,8 @@
 
 The worker reads mail, files and web pages, so text it wants remembered may come from anyone: remembering and
 forgetting always ask the user first (ADR 0010). The question is written here from the fact itself, never taken
-from the caller.
+from the caller, with the fact on its own marked line so its text can't pass for Milo's question. The worker's facts
+never become basics, which go into every system prompt: only the user puts a fact there.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from .memory import Memory
 log = logging.getLogger("milo.memory")
 
 MAX_LIMIT = 30
+WORKER_TOPICS = tuple(t for t in TOPICS if t != "basics")
 
 
 class MemoryRequests:
@@ -42,11 +44,11 @@ class MemoryRequests:
                 if not text:
                     return _error("say what to remember (text)")
                 topic = _text(request, "topic")
-                if topic and topic not in TOPICS:
-                    return _error(f"topic must be one of {', '.join(TOPICS)}")
-                if not await self._approvals.confirm(f"Should I remember this: {text}?"):
+                if topic and topic not in WORKER_TOPICS:
+                    return _error(f"topic must be one of {', '.join(WORKER_TOPICS)}")
+                if not await self._approvals.confirm(_question("Should I remember this?", text)):
                     return _error("The user said no, so it isn't remembered.")
-                fact = self._remember(text, topic=topic, source="worker", by="worker")
+                fact = self._remember(text, topic=topic, source="worker", by="worker", always_on=False)
                 log.info("the worker remembered %s", private(text))
                 return _ok({"remembered": text, "id": getattr(fact, "id", None)} if fact else
                            {"remembered": text, "note": "Milo already knew that."})
@@ -55,11 +57,15 @@ class MemoryRequests:
                 what = self._memory.describe(id) if id else None
                 if what is None:
                     return _error("There is nothing with that id. Use memory_search to find it.")
-                if not await self._approvals.confirm(f"Should I forget this: {what}?"):
+                if not await self._approvals.confirm(_question("Should I forget this?", what)):
                     return _error("The user said no, so it stays.")
                 self._memory.forget(id, "the user asked", by="worker")
                 return _ok({"forgotten": what})
         return _error(f"unknown op {op!r}")
+
+
+def _question(ask: str, text: str) -> str:
+    return f"{ask}\n› {text}"
 
 
 def _text(request: dict, key: str) -> str:

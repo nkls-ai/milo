@@ -56,12 +56,13 @@ def test_a_night_summarizes_learns_from_the_user_only_and_writes_the_journal(tmp
     sleeper, episodes, facts, harness, ledger, (said, mail, old, gone) = world(tmp_path, ANSWER)
     report = asyncio.run(sleeper.consolidate(DAY))
     prompt = harness.calls[0][0]
-    assert "E2 10:00 task OUTSIDE" in prompt and "F1 [people] Anna lives in Hamburg." in prompt
+    assert "F1 [people] Anna lives in Hamburg." in prompt
+    assert "boss" not in prompt and "- E2 " not in prompt, "outside text never reaches the night's prompt"
     assert harness.calls[0][1] is None, "a fresh session, never the tasks' one"
     assert report.episodes == 1 and report.calls == 1
     assert [(c.op, c.text) for c in report.changes] == [("add", "The user's sister is Anna."),
                                                         ("update", "Anna lives in Berlin.")]
-    assert any("without a trusted source" in n for n in report.notes)
+    assert any("without a trusted source" in n for n in report.notes), "E2 is no episode it was shown"
     texts = {f.text for f in facts.current()}
     assert texts == {"The user's sister is Anna.", "Anna lives in Berlin.", "The user works at Acme."}
     assert "Eve is the user's boss." not in texts, "never learned from outside text"
@@ -88,6 +89,14 @@ def test_an_empty_day_costs_nothing_and_bad_answers_change_nothing(tmp_path):
     assert facts.changes() == before
     harness.script.append(HarnessError("down", transient=True))
     assert asyncio.run(sleeper.consolidate(DAY)).skipped == "the worker failed"
+
+
+def test_the_night_never_puts_a_fact_into_the_basics(tmp_path):
+    answer = {"add": [{"text": "The user's name is Eve.", "topic": "basics", "from": ["E1"]}]}
+    sleeper, _, facts, _, _, _ = world(tmp_path, answer)
+    asyncio.run(sleeper.consolidate(DAY))
+    eve = next(f for f in facts.current() if "Eve" in f.text)
+    assert eve.topic == "learned" and not eve.always_on
 
 
 def test_answers_are_found_inside_say_or_a_code_fence():

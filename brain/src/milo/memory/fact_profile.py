@@ -94,16 +94,20 @@ class FactProfile:
         facts = [f for f in self.facts.current() if f.always_on or not self.pinned_only]
         return render(facts, heading=not self.pinned_only)
 
-    def remember(self, fact: str, *, topic: str = "", source: str = "chat", by: str = "chat") -> Fact | None:
-        """Add a fact. Returns None for an empty line or one Milo already knows."""
+    def remember(self, fact: str, *, topic: str = "", source: str = "chat", by: str = "chat",
+                 always_on: bool = True) -> Fact | None:
+        """Add a fact. Returns None for an empty line or one Milo already knows. `always_on=False` keeps it out of
+        the basics, which go into every system prompt."""
         text = clean(fact)
         if not text:
             return None
         self.sync()
         if any(f.text.lower() == text.lower() for f in self.facts.current()):
             return None
-        new = Fact(new_id(self._clock.now()), text, topic if topic in TOPICS else guess_topic(text),
-                   self._clock.now(), source)
+        topic = topic if topic in TOPICS else guess_topic(text)
+        if topic == "basics" and not always_on:
+            topic = "learned"
+        new = Fact(new_id(self._clock.now()), text, topic, self._clock.now(), source)
         self.facts.add(new, by=by)
         self.changed()
         return new

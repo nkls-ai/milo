@@ -151,18 +151,19 @@ def test_the_worker_searches_freely_but_remembering_and_forgetting_ask():
         asking = asyncio.create_task(requests.handle("memory.remember", {"text": "Anna moved to Berlin.",
                                                                         "topic": "people"}))
         await settle()
-        assert s.sink.of(Confirm)[-1].question == "Should I remember this: Anna moved to Berlin.?"
+        assert s.sink.of(Confirm)[-1].question == "Should I remember this?\n› Anna moved to Berlin."
         s.approvals.answer(s.sink.of(Confirm)[-1].id, True)
         assert (await asking)["ok"] and added == [("Anna moved to Berlin.", {"topic": "people", "source": "worker",
-                                                                             "by": "worker"})]
+                                                                             "by": "worker", "always_on": False})]
         anna = next(f for f in s.facts.current() if f.topic == "people")
         asking = asyncio.create_task(requests.handle("memory.forget", {"id": anna.id}))
         await settle()
-        assert s.sink.of(Confirm)[-1].question == f"Should I forget this: {ANNA}?"
+        assert s.sink.of(Confirm)[-1].question == f"Should I forget this?\n› {ANNA}"
         s.approvals.answer(s.sink.of(Confirm)[-1].id, False)
         assert not (await asking)["ok"] and anna in s.facts.current()
         assert not (await requests.handle("memory.forget", {"id": "nope"}))["ok"]
         assert not (await requests.handle("memory.remember", {"text": "x", "topic": "gossip"}))["ok"]
+        assert not (await requests.handle("memory.remember", {"text": "x", "topic": "basics"}))["ok"]
 
     asyncio.run(run())
 

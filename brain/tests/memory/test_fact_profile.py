@@ -84,6 +84,7 @@ def test_remember_files_a_fact_by_topic_and_ignores_one_it_knows(tmp_path):
     assert profile.remember("   ") is None
     assert changes == [1]
     assert "- Anna is the user's sister" in path.read_text()
+    assert profile.remember("The user's name is Eve.", always_on=False).topic == "learned"
 
 
 def test_topic_guesses():
