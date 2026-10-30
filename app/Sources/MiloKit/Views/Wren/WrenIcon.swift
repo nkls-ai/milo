@@ -17,7 +17,7 @@ enum WrenIcon {
     }()
 
     /// The part of figure space the silhouette shows: the body, the tail tip and the feet.
-    static let silhouetteBox = CGRect(x: 32, y: 50, width: 156, height: 136)
+    static let silhouetteBox = CGRect(x: 16, y: 34, width: 176, height: 152)
 
     /// Draws the silhouette in black into `rect` of a context that counts y down.
     static func silhouette(_ ctx: CGContext, in rect: CGRect) {
@@ -35,23 +35,22 @@ enum WrenIcon {
         // the tail, a single wide feather cocked up behind him
         ctx.saveGState()
         ctx.translateBy(x: 100 + 26 + 0.2 * 34, y: 146)
-        ctx.rotate(by: WrenRig.rad(29))
+        ctx.rotate(by: WrenRig.rad(34))
         let tail = CGMutablePath()
-        tail.move(to: CGPoint(x: -6, y: 0))
-        tail.addLine(to: CGPoint(x: -12, y: -70))
-        tail.addQuadCurve(to: CGPoint(x: 12, y: -70), control: CGPoint(x: 0, y: -78))
-        tail.addLine(to: CGPoint(x: 6, y: 0))
+        tail.move(to: CGPoint(x: -8, y: 0))
+        tail.addLine(to: CGPoint(x: -15, y: -96))
+        tail.addQuadCurve(to: CGPoint(x: 15, y: -96), control: CGPoint(x: 0, y: -106))
+        tail.addLine(to: CGPoint(x: 8, y: 0))
         tail.closeSubpath()
         ctx.addPath(tail)
         ctx.fillPath()
         ctx.restoreGState()
-        // the beak, poking out of his front
+        // the beak, poking out of his front past the outline, so it shows in silhouette
         let th = t * 50
-        let bx = 100 + 52 * sin(WrenRig.rad(th)), by = 109.0
         let beak = CGMutablePath()
-        beak.move(to: CGPoint(x: bx - 9, y: by - 2))
-        beak.addLine(to: CGPoint(x: bx + 9, y: by - 2))
-        beak.addLine(to: CGPoint(x: bx + t * 9 - 1, y: by + 16))
+        beak.move(to: CGPoint(x: 52, y: 92))
+        beak.addLine(to: CGPoint(x: 22, y: 106))
+        beak.addLine(to: CGPoint(x: 54, y: 114))
         beak.closeSubpath()
         ctx.addPath(beak)
         ctx.fillPath()

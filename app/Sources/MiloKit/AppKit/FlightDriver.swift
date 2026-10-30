@@ -79,11 +79,15 @@ final class FlightDriver {
             return
         }
         let duration = FlightPlan.duration(distance)
-        let began = CACurrentMediaTime()
+        // He crouches and springs before the window moves (anticipation), so the figure is told first.
+        set(.flying(heading: Self.rounded(FlightPlan.direction(from: start, to: end))))
+        let began = CACurrentMediaTime() + Self.crouch
         var last = start
         let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] timer in
             guard let self, let panel = self.panel else { return timer.invalidate() }
-            let t = min(1, (CACurrentMediaTime() - began) / duration)
+            let now = CACurrentMediaTime()
+            guard now >= began else { return }
+            let t = min(1, (now - began) / duration)
             let p = FlightPlan.point(from: start, to: end, at: t)
             panel.setFrameOrigin(p)
             if t >= 1 {
@@ -94,11 +98,18 @@ final class FlightDriver {
             guard hypot(p.x - last.x, p.y - last.y) > 0.5 else { return }
             let heading = FlightPlan.direction(from: last, to: p)
             last = p
-            // Fifths, so the figure redraws when the heading really turns, not every frame.
-            set(.flying(heading: CGVector(dx: (heading.dx * 5).rounded() / 5, dy: (heading.dy * 5).rounded() / 5)))
+            set(.flying(heading: Self.rounded(heading)))
         }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
+    }
+
+    /// Seconds between the figure crouching for takeoff and the window starting to move.
+    static let crouch: CFTimeInterval = 0.16
+
+    /// Fifths, so the figure is told when the heading really turns, not every frame.
+    private static func rounded(_ heading: CGVector) -> CGVector {
+        CGVector(dx: (heading.dx * 5).rounded() / 5, dy: (heading.dy * 5).rounded() / 5)
     }
 
     private func set(_ flight: Flight) {
