@@ -11,7 +11,7 @@ import numpy as np
 from milo.core.events import Event
 from milo.core.ports import LevelCallback
 from milo.core.types import (Audio, Emotion, HandsError, HarnessError, Nudge, Reminder, Reply, ScreenCapture, Signals,
-                             Step, Usage)
+                             Step, Usage, VoiceUnavailable)
 
 
 class FakeClock:
@@ -169,6 +169,75 @@ class FakeVoice:
 
     def cancel(self) -> None:
         self.cancels += 1
+
+
+class FakeVoiceStream:
+    """A VoiceStream the test plays out by hand (`auto=False`), or one that answers every piece at once with its
+    audio in two halves, 10 samples per character, then the empty end-of-piece mark, and ends after finish()."""
+
+    def __init__(self, voice: FakeStreamingVoice):
+        self.voice = voice
+        self.sent: list[str] = []
+        self.finished = False
+        self.cancelled = False
+        self._queue: asyncio.Queue = asyncio.Queue()
+
+    def send(self, text: str) -> None:
+        self.sent.append(text)
+        if self.voice.auto:
+            self.play(len(self.sent) - 1)
+
+    def finish(self) -> None:
+        self.finished = True
+        if self.voice.auto:
+            self.end()
+
+    def cancel(self) -> None:
+        self.cancelled = True
+        self.end()
+
+    def play(self, index: int) -> None:
+        audio = np.full(10 * len(self.sent[index]), 0.1, dtype=np.float32)
+        half = len(audio) // 2
+        self._queue.put_nowait((index, audio[:half]))
+        self._queue.put_nowait((index, audio[half:]))
+        self._queue.put_nowait((index, audio[:0]))  # all of it has come
+
+    def end(self) -> None:
+        self._queue.put_nowait(None)
+
+    def fail(self, reason: str = "offline") -> None:
+        self._queue.put_nowait(VoiceUnavailable(reason))
+
+    async def __aiter__(self):
+        while (item := await self._queue.get()) is not None:
+            if isinstance(item, Exception):
+                raise item
+            yield item
+
+
+class FakeStreamingVoice(FakeVoice):
+    """A StreamingVoice. `streams` holds every stream it handed out; `available=False` makes stream() None."""
+
+    remote = True
+    first_audio_s = 0.3
+
+    def __init__(self, auto: bool = True, available: bool = True):
+        super().__init__()
+        self.auto = auto
+        self.available = available
+        self.streams: list[FakeVoiceStream] = []
+        self.prepared = 0
+
+    def stream(self) -> FakeVoiceStream | None:
+        if not self.available:
+            return None
+        stream = FakeVoiceStream(self)
+        self.streams.append(stream)
+        return stream
+
+    def prepare(self) -> None:
+        self.prepared += 1
 
 
 class FakeAudioInput:

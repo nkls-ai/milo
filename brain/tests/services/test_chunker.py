@@ -116,3 +116,29 @@ def test_whitespace_is_tidied_and_empty_text_gives_nothing():
     assert pieces("  Hello \n  there   my  good old friend,  how ") == ["Hello there my good old friend,", "how"]
     assert pieces("   ") == []
     assert SpeechChunker().flush() == ""
+
+
+def sentences(*deltas: str) -> list[str]:
+    chunker = SpeechChunker(sentences=True)
+    out = []
+    for d in deltas:
+        chunker.add(d)
+        while (p := chunker.next()) is not None:
+            out.append(p)
+    while (p := chunker.next(final=True)) is not None:
+        out.append(p)
+    return out
+
+
+def test_for_a_streaming_voice_pieces_are_whole_sentences_never_clauses():
+    assert sentences("Klar, ", "mach ich. Morgen um zehn, ", "dann frei. Oh, and ", "lunch") == [
+        "Klar, mach ich.", "Morgen um zehn, dann frei.", "Oh, and lunch"]
+    assert sentences("One. Two. Three. Fo", "ur") == ["One. Two. Three.", "Four"], "every whole sentence at once"
+    assert sentences("Version 2.5 is out, e.g. today. Nice") == ["Version 2.5 is out, e.g. today.", "Nice"]
+
+
+def test_a_sentence_too_long_for_one_piece_is_cut_at_its_last_clause():
+    long = "word " * 40 + "and then, " + "more " * 10 + "end. Next"
+    out = sentences(long)
+    assert len(out[0]) <= MAX_CHARS and out[0].endswith("then,")
+    assert " ".join(out).split() == long.split()

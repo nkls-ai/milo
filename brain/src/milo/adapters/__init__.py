@@ -15,6 +15,7 @@ BUILTIN = (
     "stt.mlx_whisper",
     "tts.say",
     "tts.omnivoice",
+    "tts.elevenlabs",
     "audio.sounddevice_io",
     "audio.wav_file",
     "text.fillers",

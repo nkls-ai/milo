@@ -10,12 +10,12 @@ import numpy as np
 
 from milo.core.events import Bubble
 from milo.core.logtext import private
-from milo.core.ports import AudioOutput, Voice
-from milo.core.types import Audio, Emotion, MiloState
+from milo.core.ports import AudioOutput, StreamingVoice, Voice, VoiceStream
+from milo.core.types import Audio, Emotion, MiloState, VoiceUnavailable
 
 from .chunker import SpeechChunker
 from .levels import throttled_levels
-from .speech_audio import END_PAD_S, pause_after, shape, silence
+from .speech_audio import END_PAD_S, PauseLimiter, pause_after, shape, silence
 from .ui_state import UiState
 
 log = logging.getLogger("milo.speaker")
@@ -63,11 +63,18 @@ class Utterance:
     Each piece is trimmed to its speech and levelled (`speech_audio`), and the pause before the next one depends
     on how this one ended: a sentence pause after a full stop, a breath after a comma. Time the next piece spent
     synthesizing counts towards that pause, so a late piece doesn't add a pause on top of the wait.
+
+    With a streaming voice (StreamingVoice) the reply is one delivery instead: each whole sentence goes to the
+    voice the moment it is written, and its audio is queued as it arrives, with the voice's own pauses (only
+    shortened past half a second). If the stream breaks, whatever wasn't heard yet goes on piece by piece with
+    synthesize(), which the voice then serves from its local fallback.
     """
 
     def __init__(self, speaker: Speaker):
         self._speaker = speaker
-        self._chunker = SpeechChunker()
+        self._stream = speaker.voice.stream() if isinstance(speaker.voice, StreamingVoice) else None
+        self._streaming = self._stream is not None
+        self._chunker = self._new_chunker()
         self._more = asyncio.Event()
         self._worker: asyncio.Task[bool] | None = None
         self._began = False
@@ -78,7 +85,7 @@ class Utterance:
         self._held = False
         self._fed: list[tuple[str, float, float]] = []  # each piece fed: text, loop time it starts and ends
         self._fillers: set[int] = set()  # indexes into _fed of interjected clips, which aren't part of the reply
-        self._synthesizing: str | None = None
+        self._waiting: list[str] = []  # pieces handed to the voice whose audio hasn't started yet
         self._synthesis_began = 0.0
         self._changed = asyncio.Event()
         self._shown_before = ""  # the bubble's text from before a hold
@@ -169,13 +176,10 @@ class Utterance:
         unheard = [_from_heard_part(text, (now - start) / max(1e-6, end - start)) if start < now else text
                    for text, start, end in fed if end > now]
         heard = [text for text, start, end in fed if end <= now]
-        if self._synthesizing is not None:
-            unheard.append(self._synthesizing)
-        rest = self._chunker.flush_raw()
-        self._chunker = SpeechChunker()
-        self._chunker.add(" ".join([*unheard, rest]) if unheard else rest)
+        unheard.extend(self._waiting)
+        self._requeue(unheard)
         self._stop_audio()
-        self._fed, self._fillers, self._synthesizing = [], set(), None
+        self._fed, self._fillers, self._waiting = [], set(), []
         self._began, self._play_end, self._pause = False, 0.0, 0.0
         self.shown = " ".join([self._shown_before, *heard]).strip() if heard or self._shown_before else ""
         self._shown_before = self.shown
@@ -205,10 +209,13 @@ class Utterance:
 
     def ready_in(self) -> float:
         """Roughly how long until the next piece is ready to play: infinite while there is no text."""
-        if self._synthesizing is None:
+        if not self._waiting:
             return 0.0 if self._fed else float("inf")
-        pace = self._speaker.pace
-        expected = pace.overhead_s + pace.seconds_per_char * len(self._synthesizing)
+        voice, pace = self._speaker.voice, self._speaker.pace
+        if self._streaming and isinstance(voice, StreamingVoice):
+            expected = voice.first_audio_s
+        else:
+            expected = pace.overhead_s + pace.seconds_per_char * len(self._waiting[0])
         return max(0.0, expected - (asyncio.get_running_loop().time() - self._synthesis_began))
 
     def _begin(self, loop: asyncio.AbstractEventLoop) -> None:
@@ -233,6 +240,15 @@ class Utterance:
         if (self._worker is None or self._worker.done()) and (not self._chunker.empty or
                                                               (self._closed and self._began)):
             self._worker = asyncio.create_task(self._play())
+
+    def _new_chunker(self) -> SpeechChunker:
+        return SpeechChunker(sentences=self._streaming)
+
+    def _requeue(self, unheard: list[str]) -> None:
+        """Start the chunker over with text that wasn't heard, ahead of text not yet cut into pieces."""
+        rest = self._chunker.flush_raw()
+        self._chunker = self._new_chunker()
+        self._chunker.add(" ".join([*unheard, rest]) if unheard else rest)
 
     def _stop_audio(self) -> None:
         if self._worker is not None and not self._worker.done():
@@ -259,11 +275,13 @@ class Utterance:
             speaker.output.begin(sample_rate, throttled_levels(ui, loop))
             self._began = True
         try:
+            if self._streaming:
+                await self._play_streamed(loop)
             while (piece := await self._next_piece(loop)) is not None:
                 started = self._synthesis_began = loop.time()
-                self._synthesizing = piece
+                self._waiting = [piece]
                 audio = await self._synthesize(piece)
-                self._synthesizing = None
+                self._waiting = []
                 if audio is None:
                     audio = np.zeros(int(SECONDS_PER_CHAR_WITHOUT_AUDIO * len(piece) * sample_rate), np.float32)
                 else:
@@ -284,6 +302,77 @@ class Utterance:
                 ui.speaking = False
                 if ui.state is MiloState.SPEAKING:
                     ui.rest()
+
+    async def _play_streamed(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Speak the reply as one delivery, sending each piece to the stream as soon as the chunker cuts it.
+        Returns once the stream has played out, or when it broke: then the unheard rest is back in the chunker."""
+        stream, self._stream = self._stream or self._speaker.voice.stream(), None  # a stream doesn't outlive a hold
+        if stream is None:
+            self._streaming = False  # the voice can't stream now: on piece by piece
+            self._requeue([])
+            return
+        sent: list[str] = []
+        sender = asyncio.create_task(self._send_pieces(stream, sent, loop))
+        limiter = PauseLimiter(self._speaker.voice.sample_rate)
+        playing = complete = -1
+        try:
+            async for index, audio in stream:
+                if not len(audio):
+                    complete = index
+                audio = limiter(audio)
+                if index != playing:
+                    playing = index
+                    self._waiting = sent[index + 1:]
+                    self._start_piece(audio, sent[index], loop)
+                elif len(audio):
+                    self._feed_more(audio, loop)
+            tail = limiter.flush()
+            if len(tail) and self._fed:
+                self._feed_more(tail, loop)
+            await sender
+        except VoiceUnavailable as e:
+            log.warning("the streaming voice broke, going on piece by piece: %s", e)
+            sender.cancel()
+            self._streaming = False
+            # A piece cut off midway starts over: a few words twice beat a sentence lost.
+            self._requeue(sent[max(playing, complete + 1):] if playing > complete else sent[complete + 1:])
+            self._waiting = []
+        finally:
+            if not sender.done():
+                sender.cancel()
+            stream.cancel()
+
+    async def _send_pieces(self, stream: VoiceStream, sent: list[str], loop: asyncio.AbstractEventLoop) -> None:
+        while (piece := await self._next_piece(loop)) is not None:
+            if not self._waiting:
+                self._synthesis_began = loop.time()
+            sent.append(piece)
+            self._waiting.append(piece)
+            stream.send(piece)
+        stream.finish()
+
+    def _start_piece(self, audio: Audio, piece: str, loop: asyncio.AbstractEventLoop) -> None:
+        """The first audio of a streamed piece: queue it and show the piece in the bubble."""
+        ui = self._speaker.ui
+        if not ui.speaking:
+            ui.speaking = True
+            ui.set_state(MiloState.SPEAKING)
+        self._feed(audio, piece, loop)
+        self._pause = 0.0  # the voice makes its own pauses between the pieces of a stream
+        self._sounded(audio, piece)
+        self.shown = f"{self.shown} {piece}".strip()
+        ui.emit(Bubble(self.shown))
+
+    def _feed_more(self, audio: Audio, loop: asyncio.AbstractEventLoop) -> None:
+        """More audio of the piece that is playing, straight after what is queued."""
+        now = loop.time()
+        if self._play_end and now > self._play_end + 0.05:
+            log.info("speech gap %.2fs inside %s", now - self._play_end, private(self._fed[-1][0][:40]))
+        start = max(now, self._play_end)
+        self._play_end = start + len(audio) / self._speaker.voice.sample_rate
+        text, began, _ = self._fed[-1]
+        self._fed[-1] = (text, began, self._play_end)
+        self._speaker.output.feed(audio)
 
     def _feed(self, audio: Audio, piece: str, loop: asyncio.AbstractEventLoop) -> None:
         """Queue a piece after the pause the previous one asked for, less the time already spent waiting."""
@@ -357,6 +446,11 @@ class Speaker:
             self.held = True
             self.current.hold()
         return self.current
+
+    def prepare(self) -> None:
+        """The user started talking: get a streaming voice's connection ready for the reply."""
+        if isinstance(self.voice, StreamingVoice):
+            self.voice.prepare()
 
     def hold(self) -> None:
         """Go quiet now, keeping the place in what is being said (see Utterance.hold)."""

@@ -95,6 +95,11 @@ class ToolError(Exception):
     """An app connection couldn't do what was asked. The message is plain language, fit for the user."""
 
 
+class VoiceUnavailable(Exception):
+    """A voice or transcriber that needs the network can't be used now: offline, a bad key, no credits left.
+    The message is plain enough for the log; the caller falls back to a local engine."""
+
+
 class HarnessError(Exception):
     """A harness call failed. `transient` says whether retrying later can help."""
 

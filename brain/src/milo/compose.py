@@ -16,7 +16,7 @@ from .core.clock import SystemClock
 from .core.ports import Harness, LiveModel, PlaybackTap, Transcriber, Voice
 from .core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, EMBEDDERS, HARNESSES, LIVE_MODELS, TEXT_CLEANERS,
                             TRANSCRIBERS, VOICES, AdapterContext, ConfigError, Registry)
-from .core.types import LiveMode, ToolServer
+from .core.types import Emotion, LiveMode, ToolServer
 from .services.app_bridge import AppBridge, AppEyes, AppHands
 from .services.approvals import ActionPolicy, Approvals
 from .services.backchannel import Backchannel
@@ -24,7 +24,7 @@ from .services.barge_in import BargeIn
 from .services.context import UserContext
 from .services.conversation import Conversation
 from .services.dictation import DictationService
-from .services.fallback_voice import FallbackVoice
+from .services.fallback_voice import FallbackVoice, VoiceNotice
 from .services.hands import HandsService
 from .services.heartbeat_runner import HeartbeatRunner
 from .services.episode_stubs import EpisodeDictations, EpisodeEyes, EpisodeTranscript
@@ -70,6 +70,7 @@ class Runtime:
     memory: MemoryRuntime | None = None
     barge_in: BargeIn | None = None
     backchannel: Backchannel | None = None
+    voice_notice: VoiceNotice | None = None
 
 
 @dataclass
@@ -141,6 +142,9 @@ def build(home: Path) -> Runtime:
     idle_reset_s = config.chat.conversation_idle_reset_s
     conversation = Conversation(harness, ledger, clock, idle_reset_s)
     speaker = Speaker(voice, output, ui, tts_executor)
+    # Milo says it once when his usual voice can't be reached and the local one takes over.
+    voice.on_switch = voice_notice = VoiceNotice(lambda text: speaker.say(text, Emotion.CONCERNED),
+                                                 busy=lambda: live_talk.busy or speaker.active or mic.active)
     backchannel = Backchannel(speaker, enabled=config.chat.backchannels)
     transcript_store = JsonlTranscript(workspace.transcript_path)
     if mem is not None:
@@ -204,7 +208,8 @@ def build(home: Path) -> Runtime:
                   bridge=bridge, hands=hands, screens=workspace.screens_dir, helpers=helpers,
                   memory=mem.memory if mem is not None else None)
     return Runtime(brain, server, heartbeat, transcriber, voice, stt_executor, tts_executor, harness,
-                   live_model, live_talk, tool_server, hands_server, helpers, mem, barge_in, backchannel)
+                   live_model, live_talk, tool_server, hands_server, helpers, mem, barge_in, backchannel,
+                   voice_notice)
 
 
 def _memory(config: Config, workspace, ctx: AdapterContext, clock, ui: UiState, harness: Harness, ledger,
