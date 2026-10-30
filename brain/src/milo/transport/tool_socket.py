@@ -14,6 +14,8 @@ log = logging.getLogger("milo.transport.tools")
 MAX_IN_FLIGHT = 4
 """Requests one connection may have waiting at once. Each question queues behind the one before it, so a
 helper in a loop could otherwise line up questions without end."""
+MAX_IN_FLIGHT_ALL = 16
+"""And across every connection, so hanging up and dialling again doesn't make room."""
 BUSY = "Too many requests at once. Wait for the answers to the ones you sent, then try again."
 
 RequestHandler = Callable[[dict], Awaitable[dict]]
@@ -70,13 +72,16 @@ class ToolSocketServer:
                 if not line:
                     break
                 if line.strip():
-                    task = asyncio.create_task(self._answer(line, writer, busy=len(mine) >= MAX_IN_FLIGHT))
+                    busy = len(mine) >= MAX_IN_FLIGHT or len(self._running) >= MAX_IN_FLIGHT_ALL
+                    task = asyncio.create_task(self._answer(line, writer, busy=busy))
                     for running in (self._running, mine):
                         running.add(task)
                         task.add_done_callback(running.discard)
         except ConnectionError:
             pass
         finally:
+            for task in mine:  # nobody is left to answer: a question it asked goes away too
+                task.cancel()
             writer.close()
 
     async def _answer(self, line: bytes, writer: asyncio.StreamWriter, *, busy: bool = False) -> None:
