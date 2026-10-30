@@ -158,11 +158,13 @@ class NightlyConsolidator:
 
         changes: list[FactChange] = []
         known = {f.text.lower() for f in self._facts.current()}
-        forgotten = [_words(f.text) for f in self._facts.forgotten()]
+        gone = self._facts.forgotten()
+        forgotten_exact = {f.text.lower() for f in gone}
+        forgotten = [_words(f.text) for f in gone]
 
         def was_forgotten(text: str) -> bool:
             words = _words(text)
-            return any(_resembles(gone, words) for gone in forgotten)
+            return text.lower() in forgotten_exact or any(_resembles(fact, words) for fact in forgotten)
         for item in _list(proposal, "add"):
             text, source = _clean(item.get("text")), trusted_source(item)
             if not text or text.lower() in known:
@@ -277,9 +279,11 @@ def _words(text: str) -> set[str]:
 
 
 def _resembles(fact: set[str], other: set[str]) -> bool:
-    """Most of a fact's words (at least two) appear in `other`."""
+    """Most of a fact's words (at least two) appear in `other`; for a fact of one or two words, all of them."""
     shared = len(fact & other)
-    return shared >= 2 and shared >= 0.6 * len(fact)
+    if len(fact) <= 2:
+        return shared >= 1 and shared == len(fact)
+    return shared >= 0.6 * len(fact)
 
 
 def _line(text: str) -> str:
