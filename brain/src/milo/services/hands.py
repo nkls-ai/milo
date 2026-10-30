@@ -198,12 +198,16 @@ def confirm_question(tool: str, args: dict, target: dict, reason: str) -> str:
     if tool == "key":
         return f"I'm about to press {_pretty_combo(str(args['combo']))}{in_app}, which may {reason}. Go ahead?"
     if tool == "run_applescript":
-        script = str(args["script"]).strip()
-        apps = list(dict.fromkeys(_TELL.findall(script)))
-        where = f" for {', '.join(apps)}" if apps else ""
-        can = "" if reason == "run a script" else f" that can {reason}"
-        shown = f"\n\n{script}\n\n" if len(script) <= 300 else " The whole script is in my window. "
-        return f"I'm about to run a script{where}{can}.{shown}Go ahead?".replace(".\n", ":\n", 1)
+        lines = [" ".join(line.split()) for line in str(args["script"]).splitlines() if line.strip()]
+        apps = list(dict.fromkeys(_TELL.findall("\n".join(lines))))
+        where = f" that mentions {', '.join(apps)}" if apps else ""
+        can = "" if reason == "run a script" else f" and can {reason}" if apps else f" that can {reason}"
+        # Each line is marked as the script's, so its text can't pass for Milo's own question.
+        if len(lines) <= 6 and sum(map(len, lines)) <= 300:
+            shown = ":\n" + "\n".join(f"› {line}" for line in lines) + "\n"
+        else:
+            shown = ". The whole script is in my window. "
+        return f"I'm about to run a script{where}{can}{shown}Go ahead?"
     return f"I'm about to {reason}{in_app}. Go ahead?"
 
 

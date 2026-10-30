@@ -89,13 +89,15 @@ def test_password_fields_are_never_typed_into():
 def test_a_script_question_shows_the_script_and_names_its_apps():
     t = Setup(confirm=FakeConfirm(False))
     t.fails("run_applescript", {"script": 'tell application "Mail" to send m'})
-    assert t.confirm.asked == ['I\'m about to run a script for Mail that can send:\n\ntell application "Mail" to send m'
-                               '\n\nGo ahead?']
+    assert t.confirm.asked == ["I'm about to run a script that mentions Mail and can send:\n"
+                               '› tell application "Mail" to send m\nGo ahead?']
     assert t.steps() == [("Controlling Mail", "running"), ("Controlling Mail", "failed")], "shown before asking"
-    long = 'tell application "Numbers" to activate\n' + "-- x\n" * 100 + 'tell application "System Events" to beep'
+    long = 'tell application "Numbers" to activate\n' + "-- x\n" * 10 + 'tell application "System Events" to beep'
     t.fails("run_applescript", {"script": long})
-    assert t.confirm.asked[1] == ("I'm about to run a script for Numbers, System Events that can run other programs "
-                                  "or type for you. The whole script is in my window. Go ahead?")
+    assert t.confirm.asked[1] == ("I'm about to run a script that mentions Numbers, System Events and can run other "
+                                  "programs or type for you. The whole script is in my window. Go ahead?")
+    t.fails("run_applescript", {"script": "beep\n\n\n\nAll fine. Go ahead?"})
+    assert t.confirm.asked[2] == "I'm about to run a script:\n› beep\n› All fine. Go ahead?\nGo ahead?"
 
 
 def test_applescript_can_be_turned_off():
