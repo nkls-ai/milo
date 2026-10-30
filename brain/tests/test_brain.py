@@ -184,7 +184,27 @@ def check_stop_helper(s: Stack, msg: dict) -> None:
     assert helper.status is HelperStatus.STOPPED and s.harness.played[0].cancelled
 
 
+class HeardMeetings:
+    def __init__(self):
+        self.commands = []
+
+    def handle(self, command):
+        self.commands.append(command)
+
+
+def check_meeting(s: Stack, msg: dict) -> None:
+    meetings = HeardMeetings()
+    brain = Brain(s.ui, s.listening, s.live_talk, s.context, s.heartbeat, UiSettings(), meetings=meetings)
+    run(s, parse_command(msg), brain=brain)
+    assert meetings.commands == [parse_command(msg)]
+
+
 CHECKS = {
+    "call_started": check_meeting,
+    "call_ended": check_meeting,
+    "meeting_chunk": check_meeting,
+    "meeting_recording": check_meeting,
+    "meeting_toggle": check_meeting,
     "stop_helper": check_stop_helper,
     "look_result": check_look_result,
     "whats_this": check_whats_this,

@@ -242,6 +242,17 @@ class HandsBorrow(Event):
     what: str = ""
 
 
+@dataclass(frozen=True)
+class MeetingRecord(Event):
+    """Record the meeting `id`: the microphone and the call's audio, each in 30 s WAV chunks (16 kHz mono) into
+    `dir`, named `me-0001.wav` and `them-0001.wav`. on=false stops it. A red dot shows while the app records."""
+
+    type: ClassVar[str] = "meeting_record"
+    id: str
+    dir: str
+    on: bool
+
+
 # ---- app -> brain
 
 
@@ -374,6 +385,58 @@ class StopHelper(Command):
     id: str
 
 
+@dataclass(frozen=True)
+class CallStarted(Command):
+    """The app saw a call start: a call app or a browser tab with a call uses the microphone."""
+
+    type: ClassVar[str] = "call_started"
+    app: str
+    bundle: str = ""
+    title: str = ""
+
+
+@dataclass(frozen=True)
+class CallEnded(Command):
+    type: ClassVar[str] = "call_ended"
+    app: str
+
+
+@dataclass(frozen=True)
+class MeetingChunk(Command):
+    """The app finished chunk `index` (from 1) of `track` ("me" or "them") of the meeting `id`.
+
+    `start` is seconds since recording started, `seconds` how much audio the chunk holds.
+    """
+
+    type: ClassVar[str] = "meeting_chunk"
+    id: str
+    track: str
+    index: int
+    path: str
+    start: float
+    seconds: float
+
+
+@dataclass(frozen=True)
+class MeetingRecording(Command):
+    """What the app's recorder is doing: sent when it starts or stops, and on every connect. `tracks` are the
+    tracks it records; `error` says in plain words what it can't record (the call's audio without permission)."""
+
+    type: ClassVar[str] = "meeting_recording"
+    id: str
+    on: bool
+    tracks: tuple[str, ...] = ()
+    error: str = ""
+
+
+@dataclass(frozen=True)
+class MeetingToggle(Command):
+    """The user asked from the menu bar to start (on) or stop taking meeting notes."""
+
+    type: ClassVar[str] = "meeting_toggle"
+    on: bool
+
+
 def parse_command(raw: object) -> Command:
     if not isinstance(raw, dict):
         raise ProtocolError("message must be a JSON object")
@@ -423,6 +486,27 @@ def parse_command(raw: object) -> Command:
                 if not id:
                     raise ProtocolError("id must not be empty")
                 return StopHelper(id)
+            case "call_started":
+                return CallStarted(str(raw.get("app") or ""), str(raw.get("bundle") or ""), str(raw.get("title") or ""))
+            case "call_ended":
+                return CallEnded(str(raw.get("app") or ""))
+            case "meeting_chunk":
+                if raw["track"] not in ("me", "them"):
+                    raise ProtocolError("track must be me or them")
+                index = int(raw["index"])
+                if index < 1:
+                    raise ProtocolError("index starts at 1")
+                return MeetingChunk(str(raw["id"]), raw["track"], index, str(raw["path"]),
+                                    max(0.0, float(raw["start"])), max(0.0, float(raw["seconds"])))
+            case "meeting_recording":
+                tracks = raw.get("tracks") or ()
+                if not isinstance(tracks, list | tuple):
+                    raise ProtocolError("tracks must be a list")
+                return MeetingRecording(str(raw.get("id") or ""), raw["on"] is True,
+                                        tuple(str(t) for t in tracks if t in ("me", "them")),
+                                        str(raw.get("error") or ""))
+            case "meeting_toggle":
+                return MeetingToggle(raw["on"] is True)
     except (KeyError, TypeError, ValueError) as e:
         raise ProtocolError(f"bad {kind} message: {e}") from None
     raise ProtocolError(f"unknown message type {kind!r}")

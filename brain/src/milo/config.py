@@ -19,7 +19,7 @@ log = logging.getLogger("milo.config")
 KEY_NAMES = ("fn", "right_option", "right_command", "right_control")
 CHARACTERS = ("pip", "classic")
 PLUGGABLE = ("chat", "harness", "stt", "tts", "audio", "dictation", "connections")
-SECTIONS = (*PLUGGABLE, "ui", "heartbeat", "hands", "approvals", "logging")
+SECTIONS = (*PLUGGABLE, "ui", "heartbeat", "hands", "approvals", "logging", "meetings")
 _COMBO = re.compile(r"^((ctrl|control|option|alt|shift|cmd|command)\+)+[a-z0-9]+$|^f([1-9]|1[0-9])$")
 
 # `use` when a section leaves it out. Lets configs written before a section existed keep working.
@@ -142,6 +142,35 @@ class LoggingSettings:
     """Old logs kept besides brain.log, each up to max_mb."""
 
 
+MEETING_AUTO = ("ask", "calendar", "off")
+
+
+@dataclass(frozen=True)
+class MeetingSettings:
+    """[meetings]. The diarizer's own options go in a table named after it, like [meetings.sherpa_onnx]."""
+
+    auto: str = "ask"
+    """When Milo notices a call: "ask" (he asks once whether to take notes), "calendar" (he takes notes without
+    asking when your calendar has a meeting now, and asks otherwise) or "off" (he never asks; "Take meeting notes"
+    in the menu bar still works)."""
+    keep_audio: bool = False
+    """Keep the recording after the notes are written. Off: it's deleted."""
+    diarizer: str = "sherpa_onnx"
+    """What tells the other people apart. "" labels everyone on the call as "Others"."""
+    offer_reminders: bool = True
+    """After the call, offer to put your to-dos into Reminders."""
+    offer_mail: bool = True
+    """After the call, offer a follow-up mail draft to the others."""
+    end_after_s: float = 30.0
+    """Notes stop this long after the call ends, so a dropped connection doesn't split a meeting in two."""
+
+    def __post_init__(self):
+        if self.auto not in MEETING_AUTO:
+            raise ConfigError(f"[meetings] auto must be one of {', '.join(MEETING_AUTO)}")
+        if self.end_after_s < 0:
+            raise ConfigError("[meetings] end_after_s must be 0 or more")
+
+
 @dataclass(frozen=True)
 class SttSettings:
     pass
@@ -184,6 +213,9 @@ class Config:
         heartbeat = {k: v for k, v in raw.get("heartbeat", {}).items() if k == "enabled"}
         self.heartbeat = _typed(HeartbeatSettings(**heartbeat), "heartbeat")
         self.hands = _typed(options_from(HandsSettings, _current(raw.get("hands", {}), "hands"), "hands"), "hands")
+        self.meetings: MeetingSettings = _pluggable_settings(MeetingSettings, raw.get("meetings", {}), "meetings")
+        if self.meetings.diarizer and not isinstance(raw.get("meetings", {}).get(self.meetings.diarizer, {}), dict):
+            raise ConfigError(f"[meetings.{self.meetings.diarizer}] must be a table")
 
     @classmethod
     def load(cls, path: Path) -> Config:

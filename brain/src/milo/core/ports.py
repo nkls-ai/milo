@@ -12,7 +12,10 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
+import numpy as np
+
 from .events import Event
+from .meetings import Chunk, MeetingInfo, MeetingNotes, TimedWord, Track, TranscriptLine, Turn
 from .types import Audio, Nudge, Reminder, Reply, ScreenCapture, Signals, Step, Usage
 
 LevelCallback = Callable[[float], None]
@@ -380,3 +383,102 @@ class Connections:
     notes: Notes | None = None
     shortcuts: Shortcuts | None = None
     files: Files | None = None
+
+
+# ---- meeting notes (docs/design/meetings.md)
+
+
+@runtime_checkable
+class TimedTranscriber(Protocol):
+    """Speech to words with times, for meeting transcripts. Runs on the STT thread, below dictation."""
+
+    def words(self, audio: Audio) -> list[TimedWord]:
+        """16 kHz mono audio to the words in it, seconds from its start. [] for silence or noise. Blocking."""
+        ...
+
+
+@runtime_checkable
+class Diarizer(Protocol):
+    """Whose voice each stretch of the call's audio is. Blocking; runs on its own thread."""
+
+    model: str
+    """Names the voice embeddings: voices of different models don't compare."""
+    match: float
+    """How alike (cosine) two voices of this model must be to count as one person."""
+
+    def warm(self) -> None:
+        """Download and load the models. Blocking."""
+        ...
+
+    def speakers(self, audio: Audio, spans: Sequence[tuple[float, float]]) -> list[Turn]:
+        """A voice for each span of speech (seconds into `audio`, from the transcriber's segments and pauses).
+        Spans too short to tell a voice are left out."""
+        ...
+
+
+@runtime_checkable
+class VoiceBook(Protocol):
+    """Known voices, so "Speaker 2" becomes "Anna" after the user names her once. Kept on the Mac only."""
+
+    def match(self, voice: np.ndarray) -> str | None:
+        """The name of the known voice this one sounds like, None if none is close enough."""
+        ...
+
+    def learn(self, name: str, voice: np.ndarray) -> None: ...
+
+
+@runtime_checkable
+class MeetingStore(Protocol):
+    """Meetings on disk, one folder each: audio chunks, transcript.jsonl, transcript.md and notes.md.
+
+    Transcript lines are appended together with a progress mark for their track, so a crash between two
+    passes loses nothing and repeats nothing: lines without their mark are dropped on reading.
+    """
+
+    def open(self, meeting: MeetingInfo) -> str:
+        """Make the folder for a new meeting and return its id."""
+        ...
+
+    def info(self, meeting_id: str) -> MeetingInfo: ...
+
+    def audio_dir(self, meeting_id: str) -> Path:
+        """Where the app writes the chunks: `me-0001.wav`, `them-0001.wav`, ..."""
+        ...
+
+    def chunks(self, meeting_id: str) -> list[Chunk]:
+        """Every chunk on disk, by track and index, including one the app is still writing."""
+        ...
+
+    def audio(self, meeting_id: str, track: Track, start: float, end: float) -> Audio:
+        """The track's audio from `start` to `end` seconds, as far as it's on disk. Silence where a chunk is missing."""
+        ...
+
+    def append(self, meeting_id: str, lines: Sequence[TranscriptLine], *, track: Track, upto: float) -> None:
+        """Add the lines of one pass over `track`, which is now transcribed up to `upto` seconds."""
+        ...
+
+    def progress(self, meeting_id: str) -> dict[Track, float]:
+        """How far each track is transcribed, in seconds since the meeting started."""
+        ...
+
+    def lines(self, meeting_id: str) -> list[TranscriptLine]:
+        """Every committed line, in the order they were added."""
+        ...
+
+    def state(self, meeting_id: str) -> dict:
+        """The meeting's own small JSON state (speakers, names, private times, whether recording stopped)."""
+        ...
+
+    def save_state(self, meeting_id: str, state: dict) -> None: ...
+
+    def render(self, meeting_id: str, text: str) -> None:
+        """Replace transcript.md."""
+        ...
+
+    def close(self, meeting_id: str, notes: MeetingNotes, markdown: str, *, keep_audio: bool = False) -> Path:
+        """Write notes.md, mark the meeting done and delete its audio unless kept. Returns the notes path."""
+        ...
+
+    def unfinished(self) -> list[str]:
+        """Meetings with chunks on disk that aren't transcribed yet, for recovery after a crash."""
+        ...

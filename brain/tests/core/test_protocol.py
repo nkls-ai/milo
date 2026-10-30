@@ -37,6 +37,7 @@ OUTBOUND = {
     "app_request": lambda m: ev.AppRequest(m["id"], m["op"], m["args"]),
     "helpers": lambda m: ev.Helpers(m["helpers"]),
     "hands_borrow": lambda m: ev.HandsBorrow(m["on"], m["what"]),
+    "meeting_record": lambda m: ev.MeetingRecord(m["id"], m["dir"], m["on"]),
 }
 
 
@@ -109,3 +110,25 @@ def test_bad_commands_raise_protocol_error(raw):
 ])
 def test_fakes_satisfy_their_ports(fake, port):
     assert isinstance(fake, port)
+
+
+def test_meeting_commands_parse_into_their_values():
+    by_type = {m["type"]: ev.parse_command(m) for m in FIXTURE["app_to_brain"] if m["type"].startswith(("call", "meeting"))}
+    assert by_type["call_started"] == ev.CallStarted("Zoom", "us.zoom.xos", "Zoom Meeting")
+    assert by_type["call_ended"] == ev.CallEnded("Zoom")
+    chunk = by_type["meeting_chunk"]
+    assert (chunk.track, chunk.index, chunk.start, chunk.seconds) == ("them", 3, 60.0, 30.0)
+    assert chunk.path.endswith("them-0003.wav")
+    recording = by_type["meeting_recording"]
+    assert recording.on and recording.tracks == ("me",) and "System Audio Recording" in recording.error
+    assert by_type["meeting_toggle"] == ev.MeetingToggle(False)
+
+
+@pytest.mark.parametrize("bad", [
+    {"type": "meeting_chunk", "id": "m", "track": "both", "index": 1, "path": "x", "start": 0, "seconds": 30},
+    {"type": "meeting_chunk", "id": "m", "track": "me", "index": 0, "path": "x", "start": 0, "seconds": 30},
+    {"type": "meeting_recording", "id": "m", "on": True, "tracks": "me"},
+])
+def test_bad_meeting_commands_are_refused(bad):
+    with pytest.raises(ev.ProtocolError):
+        ev.parse_command(bad)

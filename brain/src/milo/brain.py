@@ -6,9 +6,10 @@ import logging
 from pathlib import Path
 
 from .config import UiSettings
-from .core.events import (AppResponse, Command, ConfirmAnswer, ContextUpdate, EmotionChanged, Event, GetHistory,
-                          HandsResult, HandsStop, ListenCancel, ListenConfirm, ListenStart, ListenStop, LookResult,
-                          Mute, StateChanged, StopHelper, TextInput, UiConfig, WhatsThis)
+from .core.events import (AppResponse, CallEnded, CallStarted, Command, ConfirmAnswer, ContextUpdate, EmotionChanged,
+                          Event, GetHistory, HandsResult, HandsStop, ListenCancel, ListenConfirm, ListenStart,
+                          ListenStop, LookResult, MeetingChunk, MeetingRecording, MeetingToggle, Mute, StateChanged,
+                          StopHelper, TextInput, UiConfig, WhatsThis)
 from .services.app_bridge import AppBridge
 from .services.approvals import Approvals
 from .services.context import UserContext
@@ -16,6 +17,7 @@ from .services.hands import HandsService
 from .services.heartbeat_runner import HeartbeatRunner
 from .services.listening import Listening
 from .services.live_talk import LiveTalk
+from .services.meetings import MeetingService
 from .services.orchestrator import Orchestrator
 from .services.screen import checked, inside
 from .services.transcript import Transcript
@@ -34,7 +36,8 @@ class Brain:
                  heartbeat: HeartbeatRunner | None, ui_settings: UiSettings, transcript: Transcript | None = None,
                  *, approvals: Approvals | None = None, bridge: AppBridge | None = None,
                  hands: HandsService | None = None, screens: Path | None = None,
-                 helpers: Orchestrator | None = None):
+                 helpers: Orchestrator | None = None, meetings: MeetingService | None = None):
+        self._meetings = meetings
         self._hands = hands
         self._helpers = helpers
         self._screens = screens
@@ -100,6 +103,9 @@ class Brain:
             case AppResponse():
                 if self._bridge is not None:
                     self._bridge.resolve(command)
+            case CallStarted() | CallEnded() | MeetingChunk() | MeetingRecording() | MeetingToggle():
+                if self._meetings is not None:
+                    self._meetings.handle(command)
             case _:
                 log.warning("no handler for %s", command.type)
 
