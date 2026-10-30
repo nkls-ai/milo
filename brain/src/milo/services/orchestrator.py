@@ -90,6 +90,7 @@ class Orchestrator:
         self._speaking = asyncio.Lock()
         self._emit_handle: asyncio.TimerHandle | None = None
         self._expire_handle: asyncio.TimerHandle | None = None
+        self._sent: Helpers | None = None
         self.on_result: Callable[[str, str], None] | None = None
         """Called with (description, what Milo said) after each finished helper, e.g. LiveTalk.note."""
 
@@ -389,7 +390,10 @@ class Orchestrator:
 
     def _emit(self) -> None:
         self._emit_handle = None
-        self._sink.emit(self.snapshot())
+        event = self.snapshot()
+        if event != self._sent:
+            self._sent = event
+            self._sink.emit(event)
         if self._expire_handle is not None:
             self._expire_handle.cancel()
             self._expire_handle = None

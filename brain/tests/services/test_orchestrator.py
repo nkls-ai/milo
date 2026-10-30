@@ -217,6 +217,8 @@ def test_stop_one_helper_ends_its_worker_and_leaves_the_others():
     assert first.status is HelperStatus.STOPPED and s.harness.played[0].cancelled
     assert second.status is HelperStatus.DONE and s.voice.spoken == ["Second done."]
     assert statuses(s, 1) == ["working", "stopped"]
+    events = s.sink.of(Helpers)
+    assert all(a != b for a, b in zip(events, events[1:])), "the same helpers event is never sent twice in a row"
 
 
 def test_stop_all_ends_every_worker_and_empties_the_queue():
