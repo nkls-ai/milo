@@ -87,9 +87,8 @@ struct HelperBird: View {
         }
         .frame(width: Self.width)
         .contentShape(Rectangle())
-        .task {
-            try? await Task.sleep(for: .seconds(0.55))
-            arriving = false
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) { arriving = false }
         }
     }
 

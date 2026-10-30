@@ -86,10 +86,12 @@ final class WrenView: NSView {
         var input = input
         if let level { input.level = level }
         director.direct(input, small: small, motion: &motion, at: CACurrentMediaTime(), reduceMotion: reduceMotion)
-        if first || reduceMotion && !motion.playing.isEmpty {
+        // Nobody sees the moves while the window isn't shown (and its display link never fires): just take the pose.
+        let unseen = window?.isVisible != true
+        if first || unseen || reduceMotion && !motion.playing.isEmpty {
             motion.snap()
         }
-        if first || reduceMotion { apply() }
+        if first || unseen || reduceMotion { apply() }
         updateBreathing()
         run()
     }
