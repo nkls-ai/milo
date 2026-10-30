@@ -30,6 +30,7 @@ from milo.core.ports import Clock, EpisodeLog, FactStore, Harness, UsageLedger
 from milo.core.types import HarnessError
 
 from . import jsonl
+from .index import terms
 
 log = logging.getLogger("milo.sleep")
 
@@ -48,7 +49,7 @@ the JSON object in it as text and set emotion to "neutral").
 What Milo knows now, one fact per line with its id and topic:
 {facts}
 
-The user asked Milo to forget these. Never add them back, in any wording, even if the day mentions them:
+The user asked Milo to forget these, and the day mentions them. Never add them back, in any wording:
 {forgotten}
 
 What happened that day, oldest first, one episode per line with its id:
@@ -104,7 +105,11 @@ class NightlyConsolidator:
         episode_lines = "\n".join(
             f"- {a} {e.at:%H:%M} {e.kind}: {_line(e.summary)}"
             + (f" (apps: {', '.join(e.apps)})" if e.apps else "") for a, e in episodes.items())
-        forgotten = "\n".join(f"- {_line(f.text)}" for f in self._facts.forgotten()[:MAX_FORGOTTEN]) or "- (nothing)"
+        # Only what the day itself brings up: the text of everything forgotten never goes out again.
+        day_words = [_words(e.summary) for e in happened]
+        mentioned = [f for f in self._facts.forgotten()[:MAX_FORGOTTEN]
+                     if any(_resembles(_words(f.text), words) for words in day_words)]
+        forgotten = "\n".join(f"- {_line(f.text)}" for f in mentioned) or "- (nothing)"
         text = PROMPT.format(day=f"{day:%A %-d %B %Y}", facts=fact_lines, forgotten=forgotten,
                              episodes=episode_lines, topics="|".join(TOPICS))
         return text, episodes, facts
@@ -153,12 +158,16 @@ class NightlyConsolidator:
 
         changes: list[FactChange] = []
         known = {f.text.lower() for f in self._facts.current()}
-        forgotten = {f.text.lower() for f in self._facts.forgotten()}
+        forgotten = [_words(f.text) for f in self._facts.forgotten()]
+
+        def was_forgotten(text: str) -> bool:
+            words = _words(text)
+            return any(_resembles(gone, words) for gone in forgotten)
         for item in _list(proposal, "add"):
             text, source = _clean(item.get("text")), trusted_source(item)
             if not text or text.lower() in known:
                 continue
-            if text.lower() in forgotten:
+            if was_forgotten(text):
                 notes.append(f"left out a fact the user had forgotten: {private(text)}")
                 continue
             if source is None:
@@ -174,6 +183,9 @@ class NightlyConsolidator:
         for item in _list(proposal, "update"):
             old, text, source = facts.get(str(item.get("id"))), _clean(item.get("text")), trusted_source(item)
             if old is None or not text or text == old.text:
+                continue
+            if was_forgotten(text):
+                notes.append(f"left out an update to a fact the user had forgotten: {private(text)}")
                 continue
             if source is None:
                 notes.append(f"left out an update without a trusted source: {private(text)}")
@@ -257,6 +269,17 @@ def _strings(value) -> list[str]:
 
 def _clean(value) -> str:
     return " ".join(str(value or "").split())[:MAX_LINE]
+
+
+def _words(text: str) -> set[str]:
+    """The words that carry meaning, cut to five letters so "trinkt" and "trinke" match."""
+    return {w[:5] for w in terms(text) if len(w) > 2}
+
+
+def _resembles(fact: set[str], other: set[str]) -> bool:
+    """Most of a fact's words (at least two) appear in `other`."""
+    shared = len(fact & other)
+    return shared >= 2 and shared >= 0.6 * len(fact)
 
 
 def _line(text: str) -> str:

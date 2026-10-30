@@ -106,9 +106,18 @@ def test_the_night_never_learns_again_what_the_user_had_forgotten(tmp_path):
     sister = Fact(new_id(at), "The user's sister is Anna.", "people", at, "chat")
     facts.add(sister)
     facts.retire(sister.id, "the user forgot it in What Milo knows", by="you")
+    secret = Fact(new_id(at), "The user's old bank is Sparkasse Köln.", "learned", at, "chat")
+    facts.add(secret)
+    facts.retire(secret.id, "the user forgot it in What Milo knows", by="you")
+    harness.script.append(harness.script[0])
+    harness.script[0] = Reply(Emotion.NEUTRAL, json.dumps(
+        {"add": [{"text": "Anna is the user's sister.", "topic": "people", "from": ["E1"]}]}), Usage(9000, 0, 400), "s1")
     report = asyncio.run(sleeper.consolidate(DAY))
     prompt = harness.calls[0][0]
-    assert "forget these" in prompt and "- The user's sister is Anna." in prompt
+    assert "forget these" in prompt and "- The user's sister is Anna." in prompt, "the day mentions Anna's sisterhood"
+    assert "Sparkasse" not in prompt, "what the day doesn't bring up never goes out again"
+    assert report.changes == () and any("had forgotten" in n for n in report.notes), "reworded, still refused"
+    report = asyncio.run(sleeper.consolidate(DAY))
     assert report.changes == () and any("had forgotten" in n for n in report.notes)
     assert all("sister" not in f.text for f in facts.current())
 
