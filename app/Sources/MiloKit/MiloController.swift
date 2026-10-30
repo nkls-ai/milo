@@ -16,16 +16,20 @@ public final class MiloController {
         public var doubleTap: TimeInterval
         /// A hands-free recording stops by itself after this long, until `ui_config` says otherwise.
         public var handsFreeMax: TimeInterval
+        /// Show macOS's Accessibility dialog at start when it's missing. Off when the setup window asks instead.
+        public var promptForAccessibility: Bool
 
         public init(contextInterval: TimeInterval = 15, drowsyAfter: TimeInterval = 600,
                     bindings: HotkeyBindings = .default, minHold: TimeInterval = 0.25,
-                    doubleTap: TimeInterval = 0.35, handsFreeMax: TimeInterval = 300) {
+                    doubleTap: TimeInterval = 0.35, handsFreeMax: TimeInterval = 300,
+                    promptForAccessibility: Bool = true) {
             self.contextInterval = contextInterval
             self.drowsyAfter = drowsyAfter
             self.bindings = bindings
             self.minHold = minHold
             self.doubleTap = doubleTap
             self.handsFreeMax = handsFreeMax
+            self.promptForAccessibility = promptForAccessibility
         }
     }
 
@@ -86,7 +90,7 @@ public final class MiloController {
         keys.start()
         screen?.start()
 
-        if !accessibility.isTrusted(prompt: true) {
+        if !accessibility.isTrusted(prompt: settings.promptForAccessibility) {
             model.show("Grant me Accessibility in System Settings so I can hear the \(bindings.dictate.displayName) key and paste for you.")
         }
 

@@ -32,6 +32,10 @@ let controller = MiloController(
     accessibility: SystemAccessibilityPermission(),
     scheduler: scheduler,
     connections: EventKitConnections(),
+    // The setup window explains Accessibility with the other permissions, so no system dialog on top of it.
+    // MILO_DROWSY_AFTER (seconds) lets a test instance fall asleep sooner, to measure him asleep.
+    settings: MiloController.Settings(drowsyAfter: environment["MILO_DROWSY_AFTER"].flatMap(Double.init) ?? 600,
+                                      promptForAccessibility: false),
     screen: screen)
 
 // Windows and the status item are created once the app has finished launching.
@@ -50,13 +54,22 @@ let lifecycle = AppLifecycle(
         let settingsWindow = SettingsWindow(controller: controller)
         window.onSettings = { settingsWindow.open() }
         overlay.onClick = { window.toggle() }
+        let setupWindow = SetupWindow(
+            setup: SetupModel(permissions: SystemPermissions(), scheduler: scheduler,
+                              dictateKey: controller.bindings.dictate.displayName),
+            model: model)
         let statusMenu = StatusMenu(controller: controller, panel: overlay, window: window, settings: settingsWindow,
-                                    paths: paths)
-        controller.onBindingsChange = { statusMenu.show($0); window.show($0) }
+                                    setup: setupWindow, paths: paths)
+        controller.onBindingsChange = {
+            statusMenu.show($0)
+            window.show($0)
+            setupWindow.setup.dictateKey = $0.dictate.displayName
+        }
         conversation = window
         panel = overlay
         menu = statusMenu
         controller.start()
+        setupWindow.openIfNeeded()
     },
     onTerminate: { controller.stop() })
 

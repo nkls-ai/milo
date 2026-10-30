@@ -47,12 +47,33 @@ struct SettingsRenderTests {
         }
     }
 
+    @Test func renderTheSetupWindow() throws {
+        _ = NSApplication.shared
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let permissions = FakePermissions()
+        permissions.states = [.microphone: .notAsked, .screenRecording: .denied, .reminders: .notAsked,
+                              .automation: .unknown]
+        let setup = SetupModel(permissions: permissions, scheduler: ManualScheduler())
+        for dark in [false, true] {
+            try render(SetupView(setup: setup, done: {}), size: CGSize(width: 520, height: 800),
+                       name: "setup-\(dark ? "dark" : "light")", dark: dark)
+        }
+        permissions.states = [:]
+        setup.startWatching()
+        setup.noticed(.dictating)
+        try render(SetupView(setup: setup, done: {}), size: CGSize(width: 520, height: 800), name: "setup-done-light",
+                   dark: false)
+    }
+
     private func render(_ settings: SettingsModel, name: String, dark: Bool) throws {
         let model = MiloModel(scheduler: ManualScheduler())
-        let view = SettingsView(settings: settings, model: model, restart: {})
-            .frame(width: Self.size.width, height: Self.size.height)
+        try render(SettingsView(settings: settings, model: model, restart: {}), size: Self.size, name: name, dark: dark)
+    }
+
+    private func render(_ content: some View, size: CGSize, name: String, dark: Bool) throws {
+        let view = content.frame(width: size.width, height: size.height)
         let host = NSHostingView(rootView: view)
-        host.frame = NSRect(origin: .zero, size: Self.size)
+        host.frame = NSRect(origin: .zero, size: size)
         let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
         window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         window.contentView = host

@@ -177,3 +177,18 @@ final class FakeConnections: AppConnections {
         reply(outcome)
     }
 }
+
+final class FakePermissions: PermissionSource {
+    var states: [Permission: PermissionState] = [:]
+    private(set) var checks = 0
+    private(set) var prompted: [Permission] = []
+    private(set) var opened: [Permission] = []
+
+    func state(of permission: Permission) -> PermissionState {
+        checks += 1
+        return states[permission] ?? .granted
+    }
+
+    func prompt(_ permission: Permission) { prompted.append(permission) }
+    func openSettings(_ permission: Permission) { opened.append(permission) }
+}

@@ -106,3 +106,26 @@ public protocol HotkeySource: AnyObject {
     /// nil removes it. Returns false if macOS refused, e.g. another app holds the combo.
     @discardableResult func register(_ combo: KeyCombo?) -> Bool
 }
+
+/// A macOS permission the setup window walks through.
+public enum Permission: String, CaseIterable, Sendable {
+    case microphone, accessibility, screenRecording, calendars, reminders, automation
+}
+
+public enum PermissionState: Equatable, Sendable {
+    case granted
+    /// macOS hasn't asked yet; asking shows its own dialog.
+    case notAsked
+    case denied
+    /// macOS can't say right now, e.g. Mail isn't open to check Automation.
+    case unknown
+}
+
+/// Reads and asks for permissions. Every call is cheap enough to poll once a second.
+public protocol PermissionSource: AnyObject {
+    func state(of permission: Permission) -> PermissionState
+    /// Shows macOS's own question. Only for permissions that can be `notAsked`.
+    func prompt(_ permission: Permission)
+    /// Opens the page in System Settings where the user switches Milo on.
+    func openSettings(_ permission: Permission)
+}
