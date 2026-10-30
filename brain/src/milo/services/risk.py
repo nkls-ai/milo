@@ -107,7 +107,8 @@ time."""
 # What a script may not do for an Allow to cover it: write or open files and links itself, or work in Finder.
 _SCRIPT_REACH = re.compile(r"\b(open\s+for\s+access|write|set\s+eof|open|location|store\s+script|posix\s+file"
                            r"|alias|path\s+to|choose\s+file|mount\s+volume|delete|move|duplicate|save|export|print"
-                           r"|file|folder|url|close|quit)\b|\"[/~]|https?:|://", re.IGNORECASE)
+                           r"|file|folder|url|close|quit|read|info\s+for|list\s+(disk|folder))\b|\"[/~]|https?:|://"
+                           r'|"[^"\n]*:[^"\n]*:[^"\n]*"', re.IGNORECASE)  # the last: an HFS path, "Disk:Users:me"
 _FILE_APPS = ("finder", "com.apple.finder", "path finder", "forklift", "commander one")
 
 

@@ -25,7 +25,7 @@ struct BubbleView: View {
         let phase = model.voicePhase
         if phase?.recording == true { return nil }
         if let question = model.question {
-            return AnyView(QuestionView(question: question, answer: model.answer))
+            return AnyView(QuestionView(question: question, answer: { model.answer($0) }))
         }
         if case .transcribing = phase { return nil }
         guard let text = model.bubble else { return nil }
@@ -115,7 +115,7 @@ struct RevealingText: View {
 struct QuestionView: View {
     @Environment(\.miloTheme) private var theme
     let question: PendingQuestion
-    let answer: (Bool) -> Void
+    let answer: (Answer) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -131,7 +131,7 @@ struct QuestionView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
                 .help(question.text)
-            AnswerButtons(answer: answer)
+            AnswerButtons(always: question.always, answer: answer)
                 .padding(.top, 2)
         }
         .accessibilityElement(children: .contain)
@@ -149,18 +149,49 @@ struct TightLabel: LabelStyle {
     }
 }
 
+/// Yes and No, or for a question about working in an app, Allow, Allow always and No (ADR 22). Where the three
+/// don't fit in a row (the bubble), Allow always goes on a line of its own under the other two.
 struct AnswerButtons: View {
-    let answer: (Bool) -> Void
+    var always = false
+    let answer: (Answer) -> Void
 
     var body: some View {
-        HStack(spacing: 8) {
-            Button("Yes") { answer(true) }
-                .buttonStyle(AnswerButtonStyle(prominent: true))
-                .accessibilityHint("Milo goes ahead")
-            Button("No") { answer(false) }
-                .buttonStyle(AnswerButtonStyle(prominent: false))
-                .accessibilityHint("Milo leaves it")
+        if always {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { allow; allowAlways; no }
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) { allow; no }
+                    allowAlways
+                }
+            }
+        } else {
+            HStack(spacing: 8) {
+                Button("Yes") { answer(.yes) }
+                    .buttonStyle(AnswerButtonStyle(prominent: true))
+                    .accessibilityHint("Milo goes ahead")
+                no
+            }
         }
+    }
+
+    private var allow: some View {
+        Button("Allow") { answer(.yes) }
+            .buttonStyle(AnswerButtonStyle(prominent: true))
+            .accessibilityHint("Milo goes ahead, and doesn't ask again about this work in this app until the task is done")
+    }
+
+    private var allowAlways: some View {
+        Button("Allow always") { answer(.always) }
+            .buttonStyle(AnswerButtonStyle(prominent: false))
+            .accessibilityHint("Milo won't ask about work in this app again. Take it back in Settings.")
+            .help("Milo won't ask about work in this app again. Sending, deleting and buying still ask. "
+                  + "Take it back in Settings.")
+    }
+
+    private var no: some View {
+        Button("No") { answer(.no) }
+            .buttonStyle(AnswerButtonStyle(prominent: false))
+            .accessibilityHint("Milo leaves it")
     }
 }
 

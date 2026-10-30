@@ -62,6 +62,9 @@ public struct SettingsView: View {
                     }
                 }
             }
+            if let ask = report["approvals", "ask"] {
+                ThemedCard { asking(ask, allowed: report["approvals", "allowed_apps"]) }
+            }
             if let stream = report["dictation", "stream"] {
                 ThemedCard {
                     VStack(alignment: .leading, spacing: 10) {
@@ -95,6 +98,58 @@ public struct SettingsView: View {
                 }
             }
         }
+    }
+
+    /// `[approvals] ask` and the apps the user chose Allow always for, each with Remove (ADR 22).
+    private func asking(_ ask: Setting, allowed: Setting?) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            CardHeading(icon: ask.value.string == "auto" ? "bolt.fill" : "hand.raised",
+                        title: "How often Milo asks before he acts", detail: "While he works in an app for you.")
+            choices(ask)
+            Text(ask.value.string == "auto"
+                 ? "Milo does what you ask without checking first. He still asks before he sends, deletes or buys, "
+                   + "and never touches passwords, money or security settings."
+                 : "Sending, deleting and buying always ask. Passwords, money and security settings he never touches.")
+                .font(.system(size: 11.5, weight: ask.value.string == "auto" ? .medium : .regular))
+                .foregroundStyle(ask.value.string == "auto" ? theme.accent : theme.ink.opacity(0.65))
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.leading, 26)
+            if let allowed { allowedApps(allowed) }
+        }
+    }
+
+    private func allowedApps(_ setting: Setting) -> some View {
+        let apps = setting.value.array ?? []
+        return VStack(alignment: .leading, spacing: 6) {
+            Text("Always allowed")
+                .font(.system(size: 13))
+                .foregroundStyle(theme.ink)
+            if apps.isEmpty {
+                Text("No apps yet. Choose Allow always when Milo asks, and the app shows here.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(theme.ink.opacity(0.65))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach(Array(apps.enumerated()), id: \.offset) { index, app in
+                HStack {
+                    Image(systemName: "checkmark.seal")
+                        .foregroundStyle(theme.primary)
+                    Text(app["name"]?.string.flatMap { $0.isEmpty ? nil : $0 } ?? app["bundle"]?.string ?? "?")
+                        .font(.system(size: 13))
+                        .foregroundStyle(theme.ink)
+                    Spacer()
+                    Button("Remove") {
+                        var rest = apps
+                        rest.remove(at: index)
+                        settings.change(setting.section, setting.key, to: .array(rest))
+                    }
+                    .buttonStyle(AnswerButtonStyle(prominent: false))
+                    .controlSize(.small)
+                    .accessibilityHint("Milo asks again before he works in this app")
+                }
+            }
+        }
+        .padding(.leading, 26)
     }
 
     /// `[dictation] learn`, and the button that shows what was learned.

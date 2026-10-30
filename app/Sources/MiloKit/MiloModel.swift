@@ -1,15 +1,23 @@
 import Foundation
 import Combine
 
-/// A yes-or-no question Milo waits on before an action.
+/// A yes-or-no question Milo waits on before an action. `always`: it is about working in an app, so it also
+/// offers Allow always (ADR 22).
 public struct PendingQuestion: Equatable, Sendable {
     public let id: String
     public let text: String
+    public let always: Bool
 
-    public init(id: String, text: String) {
+    public init(id: String, text: String, always: Bool = false) {
         self.id = id
         self.text = text
+        self.always = always
     }
+}
+
+/// The user's answer to a question: Allow (Yes), Allow always, or No.
+public enum Answer: Equatable, Sendable {
+    case yes, always, no
 }
 
 /// Everything the character view draws. Updated on the main queue.
@@ -53,8 +61,8 @@ public final class MiloModel: ObservableObject {
     @Published public internal(set) var flight: Flight = .perched
     /// Shown with Yes and No in the bubble and the Milo window until answered or over.
     @Published public private(set) var question: PendingQuestion?
-    /// Called with the user's click on Yes (true) or No. Set by the controller.
-    public var onAnswer: ((PendingQuestion, Bool) -> Void)?
+    /// Called with the user's click on Yes, Allow always or No. Set by the controller.
+    public var onAnswer: ((PendingQuestion, Answer) -> Void)?
     /// The helpers working for Milo, oldest first, from the brain's `helpers` event.
     @Published public private(set) var helpers: [HelperInfo] = []
     /// Called when the user clicks Stop on a helper. Set by the controller.
@@ -143,8 +151,8 @@ public final class MiloModel: ObservableObject {
             partial = text.isEmpty ? nil : text
         case let .looking(on):
             looking = on
-        case let .confirm(id, text):
-            question = PendingQuestion(id: id, text: text)
+        case let .confirm(id, text, always):
+            question = PendingQuestion(id: id, text: text, always: always)
             scheduleBubbleHide()
         case let .confirmDone(id, _):
             guard question?.id == id else { return }
@@ -166,9 +174,14 @@ public final class MiloModel: ObservableObject {
 
     /// The user clicked Yes or No. The question goes away at once; `confirm_done` confirms it.
     public func answer(_ yes: Bool) {
+        answer(yes ? .yes : .no)
+    }
+
+    /// The user clicked Allow, Allow always or No. Allow always only counts where it was offered.
+    public func answer(_ choice: Answer) {
         guard let question else { return }
         self.question = nil
-        onAnswer?(question, yes)
+        onAnswer?(question, choice == .always && !question.always ? .yes : choice)
         scheduleBubbleHide()
     }
 

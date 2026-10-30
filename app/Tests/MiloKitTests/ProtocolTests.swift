@@ -66,6 +66,8 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .flyTo(nil),
             .confirm(id: "3b9e7a01c4d2", question: "I'm about to run your shortcut “Text Anna I'm late”. Go ahead?"),
             .confirmDone(id: "3b9e7a01c4d2", answer: "yes"),
+            .confirm(id: "5c1d2e3f4a5b", question: "Replace 8 filled cells in “Budget”?", always: true),
+            .confirmDone(id: "5c1d2e3f4a5b", answer: "always"),
             .appRequest(id: "a41f", op: "calendar.add_event", args: .object([
                 "title": .string("Doctor"), "start": .string("2026-11-05T15:00:00"), "end": .string("2026-11-05T16:00:00"),
             ])),
@@ -203,6 +205,7 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .handsResult(id: "hands-5", ok: false, result: [:], error: "There is no element e99. Call ax_tree again."),
             .handsStop(reason: "escape"),
             .confirmAnswer(id: "3b9e7a01c4d2", yes: true),
+            .confirmAnswer(id: "5c1d2e3f4a5b", yes: true, always: true),
             .appResponse(id: "a41f", outcome: .success(.object([
                 "id": .string("E1F2-77"), "title": .string("Doctor"), "start": .string("2026-11-05T15:00:00"),
                 "end": .string("2026-11-05T16:00:00"), "calendar": .string("Home"),

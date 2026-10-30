@@ -137,8 +137,10 @@ def short_title(description: str, title: str = "") -> str:
 
 
 def reads_outside(step: Step) -> bool:
-    """A worker step that brings in text someone else wrote: a web page, a search, a download, mail."""
-    return step.kind == "web" or (step.kind == "tool" and step.title.lower().startswith(("mail", "message")))
+    """A worker step that may bring in text someone else wrote: the web, any of Milo's connection tools (mail,
+    notes, calendar, files: the Mac tools never show up as worker steps), or a file's contents. Listing a folder
+    or searching file names doesn't count."""
+    return step.kind in ("web", "tool") or (step.kind == "read" and step.title.startswith("Reading"))
 
 
 def plain_step(step: Step, installed=None) -> str:

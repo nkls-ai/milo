@@ -497,3 +497,26 @@ def test_scripts_that_reach_outside_the_open_sheet_ask_even_in_auto_mode(script)
     s, worker = excel_stack("auto", [("run_applescript", {"script": script})])
     [asked] = work(s, worker, "no", user_asked=True)
     assert len(asked) == 1 and not asked[0].always
+
+
+@pytest.mark.parametrize("text, work", [
+    ("look at my screen and fix this sheet", True), ("can you fill this in", True), ("füll das bitte aus", True),
+    ("make this a table", True), ("can you see my screen", False), ("what do you think of this?", False),
+    ("why is this cell red", False), ("was ist das", False), ("look at my screen", False),
+])
+def test_only_words_that_ask_for_work_let_a_task_from_a_look_start_unasked(text, work):
+    from milo.services.live_talk import asks_for_work
+
+    assert asks_for_work(text) is work
+
+
+@pytest.mark.parametrize("kind, title, outside", [
+    ("web", "Reading example.com", True), ("tool", "Mail search", True), ("tool", "Notes read", True),
+    ("read", "Reading invoice.pdf", True), ("read", "Looking in Downloads", False),
+    ("search", "Looking for files", False), ("edit", "Editing notes.md", False),
+])
+def test_what_counts_as_reading_outside_text(kind, title, outside):
+    from milo.core.types import Step, StepStatus
+    from milo.services.helpers import reads_outside
+
+    assert reads_outside(Step("s", kind, title, "", StepStatus.DONE)) is outside

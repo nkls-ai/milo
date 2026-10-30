@@ -130,15 +130,18 @@ mention them to the user.
 QUESTION_CHARS = 80
 _FIRST_SENTENCE = re.compile(r"(?<=[.!?;:])\s")
 _WORK = re.compile(r"\b((fix|fill|put|add|make|change|update|correct|write|enter|insert|sort|format|create|build|"
-                   r"finish|complete|edit|move|rename|copy|paste|replace|set|type|sum)(es|s|ed|d|ing)?|made|"
-                   r"(mach|füll|änder|korrigier|trag|schreib|erstell|sortier|formatier|bearbeit|füg|setz|erledig|"
+                   r"finish|complete|edit|move|rename|copy|paste|replace)(es|s|ed|d|ing)?|"
+                   r"(mach|füll|änder|korrigier|trag|schreib|erstell|sortier|formatier|bearbeit|füg|erledig|"
                    r"kopier|ersetz|verschieb|benenn)\w*)\b", re.IGNORECASE)
+_QUESTION = re.compile(r"^\s*(what|why|how|who|whom|whose|where|when|which|is|are|was|were|does|did|do|has|have|"
+                       r"was|warum|wieso|weshalb|wie|wer|wo|wann|welche\w*|ist|sind|hat|haben)\b", re.IGNORECASE)
 
 
 def asks_for_work(text: str) -> bool:
     """Whether the user's own words ask Milo to do something, not only to look or explain: "fix this sheet",
-    "füll das aus". In auto mode only then may a task from the reply to what he saw start without a question."""
-    return bool(_WORK.search(text))
+    "can you fill this in", "füll das aus". A question ("what is this?", "why is it red?") never does. In auto
+    mode only then may a task from the reply to what he saw start without a question."""
+    return not _QUESTION.search(text) and bool(_WORK.search(text))
 _PLAIN = ((re.compile(r"\s+(on|in) the user's (Mac|computer)\b", re.I), ""),
           (re.compile(r"\s+for the user\b", re.I), ""),
           (re.compile(r"\bthe user's\b", re.I), "your"),
