@@ -355,7 +355,7 @@ def test_speaking_again_drops_the_guess():
     assert [secs for secs, _ in stt.full()][-1] >= 2.0, "the last pass covers the whole open phrase again"
 
 
-def test_while_recording_a_phrase_is_committed_at_full_accuracy_even_after_a_guess():
+def test_a_guess_that_holds_a_closed_phrase_is_its_commit():
     mic, stt, sink = GrowingMic(), HearingStt(), RecordingSink()
     lt = live(mic, stt, sink, settle_s=0.3)
 
@@ -369,8 +369,25 @@ def test_while_recording_a_phrase_is_committed_at_full_accuracy_even_after_a_gue
         return await lt.finish(mic.stop())
 
     assert asyncio.run(run()) == "ALPHA BRAVO"
-    assert [k for k in stt.kinds() if k != "preview"] == ["quick", "full", "quick"], \
-        "guess, then the commit at full accuracy, then the tail after the release"
+    assert [k for k in stt.kinds() if k != "preview"] == ["quick", "quick"], \
+        "the guess, then the tail after the release: the same model never hears alpha twice"
+
+
+def test_a_phrase_with_more_said_after_its_guess_is_committed_at_full_accuracy():
+    mic, stt, sink = GrowingMic(), HearingStt(), RecordingSink()
+    lt = live(mic, stt, sink, settle_s=0.3)
+
+    async def run():
+        lt.start()
+        mic.say(tone("alpha", 1), quiet(0.4))
+        await settle()
+        mic.say(tone("bravo", 0.4), quiet(1.2), tone("charlie", 1))
+        await settle()
+        assert lt.phrases == ["ALPHA BRAVO"]
+        return await lt.finish(mic.stop())
+
+    assert asyncio.run(run()) == "ALPHA BRAVO CHARLIE"
+    assert [k for k in stt.kinds() if k != "preview"][:2] == ["quick", "full"], "the guess missed bravo"
 
 
 def test_type_mode_hands_over_each_phrase_in_order_and_previews_only_the_open_one():

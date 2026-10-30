@@ -343,7 +343,7 @@ class LiveTranscript:
         self._pending.extend(self._segmenter.feed(new))
         guess = self._guess
         if guess is not None:
-            closed = next((cut for cut in self._pending if cut.start == guess.start), None)
+            closed = self._pending[0] if self._pending else None  # guesses are only made with nothing pending
             if (closed.speech_end if closed is not None else self._segmenter.speech_end) > guess.end:
                 self._guess = None  # the user went on talking
 
@@ -376,15 +376,24 @@ class LiveTranscript:
                 self._show()
 
     async def _commit_next(self) -> None:
-        """Commit the oldest closed phrase at full accuracy. It runs from the end of the last one, less silence."""
-        cut = self._pending[0]
-        audio = self._mic.peek(self._covered)[:cut.end - self._covered]
-        voice = self._voice_start(audio)
-        start = self._covered + voice if voice is not None else cut.start
-        text = await self._pass(self._stt.transcribe, audio[start - self._covered:], self.text)
-        self._pending.pop(0)
-        self._covered = cut.end
-        if self._guess is not None and self._guess.start < cut.end:
+        """Commit the oldest closed phrase at full accuracy. It runs from the end of the last one, less silence.
+        A guess that holds all of it is the commit: the same model already heard the same audio. The guess
+        may end past the cut (it came before the pause was long enough to close the phrase); then it covers
+        up to its own end."""
+        cut, guess, covered = self._pending[0], self._guess, self._covered
+        end = max(cut.end, guess.end) if guess is not None else cut.end
+        audio = self._mic.peek(covered)[:end - covered]
+        if guess is not None and self._guess_covers(guess, audio, end):
+            text = guess.text
+        else:
+            end, audio = cut.end, audio[:cut.end - covered]
+            voice = self._voice_start(audio)
+            start = covered + voice if voice is not None else cut.start
+            text = await self._pass(self._stt.transcribe, audio[start - covered:], self.text)
+        self._covered = end
+        while self._pending and self._pending[0].end <= end:
+            self._pending.pop(0)
+        if self._guess is not None and self._guess.start < end:
             self._guess = None
         self._preview = ""
         self._commit(text)
