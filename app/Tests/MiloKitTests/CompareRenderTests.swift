@@ -35,6 +35,18 @@ struct CompareRenderTests {
                 let png = try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
                 try png.write(to: dir.appendingPathComponent("\(tag)-\(name)-\(dark ? "dark" : "light").png"))
             }
+            // the same states at helper size, where cute has to survive too
+            let small = HStack(spacing: 4) {
+                ForEach(Self.states, id: \.0) { _, input in CharacterFigure(input: input, size: 36, time: 1.3) }
+            }
+            .padding(6)
+            .background(Wallpaper(dark: dark))
+            .environment(\.colorScheme, dark ? .dark : .light)
+            let renderer = ImageRenderer(content: small)
+            renderer.scale = 3
+            let image = try #require(renderer.cgImage)
+            let png = try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
+            try png.write(to: dir.appendingPathComponent("\(tag)-small-\(dark ? "dark" : "light").png"))
         }
     }
 }

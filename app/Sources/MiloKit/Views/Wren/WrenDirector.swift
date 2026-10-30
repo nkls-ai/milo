@@ -76,7 +76,8 @@ struct WrenDirector {
         p.turn = 0.2 * s
         p.gazeX = life.gaze.dx
         p.gazeY = life.gaze.dy
-        p.headTilt = life.tilt
+        // a slight curious tilt toward the screen, even at rest
+        p.headTilt = life.tilt + 3 * s
         p.squash = life.squash * 1.3
         p.lift = max(0, life.squash) * 60
 
@@ -90,6 +91,7 @@ struct WrenDirector {
             p.browL = 0.35; p.browR = 0.35
             p.tail = 10 + level * 20
             p.tailFan = level
+            p.crest = 0.6 + level * 0.4
             p.squash += 0.02
         case .dictating:
             p.lean = 2.5 * s
@@ -98,6 +100,7 @@ struct WrenDirector {
             p.browTiltL = -0.1; p.browTiltR = -0.1
             p.tail = 6 + level * 16
             p.tailFan = level * 0.8
+            p.crest = 0.3 + level * 0.3
             p.gazeY += 0.2
         case .thinking, .transcribing:
             p.lidL = 0.28; p.lidR = 0.24
@@ -105,6 +108,7 @@ struct WrenDirector {
             if s < 0 { p.browL = 0.75; p.browR = -0.1; p.browTiltR = -0.3 } else { p.browR = 0.75; p.browL = -0.1; p.browTiltL = -0.3 }
             p.headTilt += -6 * s
             p.tail = 4
+            p.crest = 0.25
         case .speaking:
             p.beak = pow(min(1, level * 1.25), 0.8)
             p.browL = 0.15 + level * 0.35; p.browR = p.browL
@@ -112,6 +116,7 @@ struct WrenDirector {
             p.lidL = 0.14; p.lidR = 0.14
             p.squash -= level * 0.025
             p.tail = 6
+            p.crest = 0.15 + level * 0.25
         }
 
         if input.working {
@@ -120,6 +125,7 @@ struct WrenDirector {
             p.browTiltL = -0.25; p.browTiltR = -0.25
             p.scarfToss = 1
             p.tail = max(p.tail, 4)
+            p.crest = max(p.crest, 0.2)
         }
         if input.asking {
             p.headTilt += 9 * s
@@ -129,6 +135,7 @@ struct WrenDirector {
             p.browTiltL = 0.2; p.browTiltR = 0.2
             p.tail = 16
             p.tailFan = 0.4
+            p.crest = max(p.crest, 0.5)
         }
 
         switch emotion {
@@ -139,6 +146,7 @@ struct WrenDirector {
             p.lidL = 0.2; p.lidR = 0.2
             p.blush = 0.8
             p.tail += 12
+            p.crest = max(p.crest, 0.4)
             p.browL = 0.35; p.browR = 0.35
             p.squash += 0.02
         case .excited:
@@ -148,6 +156,7 @@ struct WrenDirector {
             p.blush = 0.75
             p.tail += 20
             p.tailFan = max(p.tailFan, 0.7)
+            p.crest = 1
             p.browL = 0.6; p.browR = 0.6
             p.wingL = 12; p.wingR = 12
         case .thinking:
@@ -160,6 +169,7 @@ struct WrenDirector {
             p.browL = 0.1; p.browR = 0.1
             p.lidL = 0.3; p.lidR = 0.3
             p.tail -= 8
+            p.crest = -0.3
             p.wingL = -4; p.wingR = -4
             p.lean -= 2 * s
             p.squash -= 0.02
@@ -169,6 +179,7 @@ struct WrenDirector {
             p.browTiltL = 0.8; p.browTiltR = 0.8
             p.browL = -0.2; p.browR = -0.2
             p.tail -= 16
+            p.crest = -0.8
             p.squash -= 0.04
             p.headY += 3
             p.gazeY = max(p.gazeY, 0.45)
@@ -178,6 +189,7 @@ struct WrenDirector {
             if s < 0 { p.browR = 0.7; p.browL = -0.25; p.browTiltL = -0.3 } else { p.browL = 0.7; p.browR = -0.25; p.browTiltR = -0.3 }
             p.lidL = s < 0 ? 0.3 : 0.12; p.lidR = s < 0 ? 0.12 : 0.3
             p.gazeX -= 0.3 * s
+            p.crest = 0.4
         case .sleepy:
             if sleeping {
                 p.lidL = 1; p.lidR = 1
@@ -187,11 +199,13 @@ struct WrenDirector {
                 p.headTilt = 5 * s
                 p.squash = -0.06
                 p.tail = -12
+                p.crest = -1
                 p.gazeX = 0; p.gazeY = 0
                 p.browL = -0.1; p.browR = -0.1
                 p.wingL = -3; p.wingR = -3
             } else {
                 p.lidL = 0.45; p.lidR = 0.45
+                p.crest = -0.5
             }
         }
 
@@ -221,6 +235,7 @@ struct WrenDirector {
             p.lidL = 0.08; p.lidR = 0.08
             p.browL = 0.3; p.browR = 0.3
             p.tail = 0; p.tailFan = 1
+            p.crest = -0.4
             p.lift = 0; p.squash = 0
         case let .pointing(toward):
             p.turn = toward.dx < 0 ? -0.2 : 0.2
@@ -265,13 +280,14 @@ struct WrenDirector {
         }
         if glad.contains(eb) && !glad.contains(ea) {
             clips.append(a.working || a.state == .thinking ? WrenClips.proud : WrenClips.hop)
+            clips.append(eb == .excited ? WrenClips.fluffUp : WrenClips.wiggle)
             if eb == .excited { clips.append(WrenClips.flutter) }
         } else if eb == .excited && ea != .excited {
             clips.append(WrenClips.flutter)
         }
         if eb == .concerned && ea != .concerned { clips.append(WrenClips.flinch.mirrored(-s)) }
         if eb == .sad && ea != .sad { clips.append(WrenClips.deflate) }
-        if eb == .confused && ea != .confused { clips.append(WrenClips.doubleTake.mirrored(-s)) }
+        if eb == .confused && ea != .confused { clips.append(WrenClips.doubleTake.mirrored(-s)); clips.append(WrenClips.fluffUp) }
 
         if b.state != a.state {
             switch b.state {
@@ -411,6 +427,21 @@ enum WrenClips {
     }
 
     /// Wings spread and flutter twice.
+    /// Pleased: a little side-to-side wiggle after the hop lands, the tuft swinging after it.
+    static let wiggle = WrenClip("wiggle", [
+        .lean: [(0, 0), (0.42, 0), (0.52, 5), (0.66, -5), (0.8, 3.5), (0.94, -2), (1.1, 0)],
+        .lowerL: [(0, 0), (0.45, 0.25), (0.95, 0.25), (1.15, 0)],
+        .lowerR: [(0, 0), (0.45, 0.25), (0.95, 0.25), (1.15, 0)],
+    ])
+
+    /// Surprised: he fluffs up, rounder for a moment, tuft up and eyes wide, then settles.
+    static let fluffUp = WrenClip("fluffUp", [
+        .squash: [(0, 0), (0.07, -0.08), (0.24, 0.03), (0.45, 0)],
+        .crest: [(0, 0), (0.12, 0.6), (0.5, 0.4), (0.9, 0)],
+        .eyeL: [(0, 0), (0.07, 0.12), (0.5, 0)],
+        .eyeR: [(0, 0), (0.07, 0.12), (0.5, 0)],
+    ])
+
     static let flutter = WrenClip("flutter", [
         .openL: [(0, 0), (0.1, 1), (0.6, 1), (0.8, 0)],
         .openR: [(0, 0), (0.1, 1), (0.6, 1), (0.8, 0)],

@@ -31,7 +31,7 @@ import Testing
         .turn: 0.6, .lean: 20, .squash: 0.4, .lift: 30, .headTilt: 25, .headX: 6, .headY: 6, .gazeX: 2, .gazeY: 2,
         .lidL: 1, .lidR: 1, .lowerL: 1, .lowerR: 1, .eyeL: 0.3, .eyeR: 0.3, .browL: 1.5, .browR: 1.5,
         .browTiltL: 1.5, .browTiltR: 1.5, .beak: 1, .blush: 1, .wingL: 120, .wingR: 120, .openL: 1, .openR: 1,
-        .fly: 1, .tail: 60, .tailFan: 1, .scarf: 100, .scarfToss: 1, .scarfUp: 1, .feet: 1,
+        .fly: 1, .tail: 60, .tailFan: 1, .scarf: 100, .scarfToss: 1, .scarfUp: 1, .feet: 1, .crest: 2, .crestSway: 60,
     ]
 
     @Test func everyChangeOfStateBlendsWithoutAPop() {

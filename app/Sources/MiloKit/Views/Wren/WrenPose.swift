@@ -24,7 +24,7 @@ struct WrenPose: Equatable {
     /// Upper lids, 0 open ... 1 shut. About 0.2 at rest: calm, a little dry.
     var lidL = 0.2, lidR = 0.2
     /// Lower lids pushing up into a smile, 0...1.
-    var lowerL = 0.0, lowerR = 0.0
+    var lowerL = 0.14, lowerR = 0.14
     var eyeL = 1.0, eyeR = 1.0
     /// Brow stripes raised (+) or lowered, and tilted: + lifts the inner end (worried).
     var browL = 0.0, browR = 0.0
@@ -49,6 +49,10 @@ struct WrenPose: Equatable {
     var scarfUp = 0.0
     /// 0 tucked ... 1 standing.
     var feet = 1.0
+    /// The tuft on his crown: -1 laid flat (asleep, sad), 0 at rest, 1 perked right up.
+    var crest = 0.0
+    /// Degrees the tuft sways. Driven by the body's motion, never set by a state.
+    var crestSway = 0.0
     /// Breathing, -1...1, for renders; on screen Core Animation breathes him.
     var breath = 0.0
 
@@ -60,7 +64,7 @@ struct WrenPose: Equatable {
 enum WrenChannel: Int, CaseIterable {
     case turn, lean, squash, lift, headTilt, headX, headY, gazeX, gazeY
     case lidL, lidR, lowerL, lowerR, eyeL, eyeR, browL, browR, browTiltL, browTiltR
-    case beak, blush, wingL, wingR, openL, openR, fly, tail, tailFan, scarf, scarfToss, scarfUp, feet
+    case beak, blush, wingL, wingR, openL, openR, fly, tail, tailFan, scarf, scarfToss, scarfUp, feet, crest, crestSway
 
     var keyPath: WritableKeyPath<WrenPose, Double> {
         switch self {
@@ -96,6 +100,8 @@ enum WrenChannel: Int, CaseIterable {
         case .scarfToss: \.scarfToss
         case .scarfUp: \.scarfUp
         case .feet: \.feet
+        case .crest: \.crest
+        case .crestSway: \.crestSway
         }
     }
 
@@ -123,13 +129,15 @@ enum WrenChannel: Int, CaseIterable {
         case .scarfToss: (0.36, 0.55)
         case .scarfUp: (0.6, 0.9)
         case .feet: (0.2, 1)
+        case .crest: (0.26, 0.5)                   // perks up with a little bounce
+        case .crestSway: (0.4, 0.28)               // soft feathers: they wobble after every move
         }
     }
 
     /// Closer than this to the target, at rest, counts as settled.
     var epsilon: Double {
         switch self {
-        case .lean, .headTilt, .wingL, .wingR, .tail, .scarf: 0.05
+        case .lean, .headTilt, .wingL, .wingR, .tail, .scarf, .crestSway: 0.05
         case .lift, .headX, .headY: 0.02
         default: 0.002
         }

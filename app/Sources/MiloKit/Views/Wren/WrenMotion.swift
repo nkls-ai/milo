@@ -52,7 +52,7 @@ struct WrenClip: Equatable {
     func mirrored(_ side: Double) -> WrenClip {
         guard side < 0 else { return self }
         var clip = self
-        for channel in [WrenChannel.lean, .headTilt, .headX, .gazeX, .turn, .scarf] {
+        for channel in [WrenChannel.lean, .headTilt, .headX, .gazeX, .turn, .scarf, .crestSway] {
             clip.tracks[channel] = clip.tracks[channel]?.map { Key(at: $0.at, value: -$0.value) }
         }
         return clip
@@ -180,7 +180,8 @@ struct WrenMotion {
     }
 
     /// The scarf end swings like a pendulum when the knot is thrown sideways or up; the tail whips the
-    /// other way; the head lags the body's lean and settles after it (overlapping action).
+    /// other way; the head lags the body's lean and settles after it; the tuft sways behind the head and
+    /// is pressed flat as he goes up, then springs back (overlapping action).
     private mutating func throwLooseParts(_ h: Double) {
         let now = output(raw: true)
         let knotX = 100 + 52 * sin(now.turn * 50 * .pi / 180 + 32 * .pi / 180) + 60 * now.lean * .pi / 180 + now.headX * 0.3
@@ -197,6 +198,8 @@ struct WrenMotion {
         velocity[WrenChannel.tail.rawValue] += (-ay * 0.16 + ax * 0.35 * (now.turn > 0 ? -1 : 1)) * h
         velocity[WrenChannel.headTilt.rawValue] += -al * 0.5 * h
         velocity[WrenChannel.headY.rawValue] += ay * 0.012 * h
+        velocity[WrenChannel.crestSway.rawValue] += (-ax * 1.6 - al * 0.9) * h
+        velocity[WrenChannel.crest.rawValue] += -ay * 0.004 * h
     }
 
     /// The spring values with the `.add` clips, the blink and the flap laid on top.

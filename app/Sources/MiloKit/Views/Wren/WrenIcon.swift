@@ -3,7 +3,7 @@ import CoreGraphics
 
 /// Milo's icons, drawn from the rig so they always match him: the menu bar silhouette and the app icon.
 enum WrenIcon {
-    /// An 18 pt template image: his round body, the cocked tail and the beak, with the eye cut out so it
+    /// An 18 pt template image: his round body, the tuft, the cocked tail and the beak, with the eye cut out so it
     /// reads as him and not any bird. (The scarf, cut out as a line, split him in two at that size.) It takes the menu bar's colour like every icon there.
     static let menuBar: NSImage = {
         let image = NSImage(size: NSSize(width: 18, height: 18), flipped: true) { rect in
@@ -17,7 +17,7 @@ enum WrenIcon {
     }()
 
     /// The part of figure space the silhouette shows: the body, the tail tip and the feet.
-    static let silhouetteBox = CGRect(x: 14, y: 72, width: 182, height: 114)
+    static let silhouetteBox = CGRect(x: 14, y: 42, width: 182, height: 144)
 
     /// Draws the silhouette in black into `rect` of a context that counts y down.
     static func silhouette(_ ctx: CGContext, in rect: CGRect) {
@@ -32,6 +32,13 @@ enum WrenIcon {
         ctx.setFillColor(black)
         ctx.addPath(WrenRig.bodyPath(turn: t, scarfUp: 0))
         ctx.fillPath()
+        // the tuft on his crown
+        ctx.saveGState()
+        ctx.translateBy(x: 100 + t * 14, y: WrenRig.bodyTop + 11)
+        ctx.rotate(by: WrenRig.rad(t * 12))
+        ctx.addPath(WrenRig.crestPath(perk: 0))
+        ctx.fillPath()
+        ctx.restoreGState()
         // the tail, a single wide feather cocked up behind him
         ctx.saveGState()
         ctx.translateBy(x: 100 + 30 + 0.2 * 34, y: 152)
@@ -95,7 +102,7 @@ enum WrenIcon {
         let figure = CGRect(x: tile.minX + tile.width * 0.04, y: tile.minY + tile.height * 0.02,
                             width: tile.width * 0.92, height: tile.height * 0.92)
         WrenRender.draw(pose, small: pixels <= 64, in: ctx, rect: figure,
-                        viewBox: CGRect(x: 16, y: 50, width: 172, height: 150), flipped: false)
+                        viewBox: CGRect(x: 14, y: 40, width: 176, height: 160), flipped: false)
         ctx.restoreGState()
         return ctx.makeImage()
     }
