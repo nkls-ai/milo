@@ -4,9 +4,10 @@ import asyncio
 
 from milo.brain import Brain
 from milo.config import UiSettings
-from milo.core.events import Activity, EntryChanged, GetHistory, History, ReplyDelta, TextInput
+from milo.core.events import Activity, EntryChanged, GetHistory, Helpers, History, ReplyDelta, TextInput
 from milo.core.types import Emotion, HarnessError, Step, StepStatus
 from milo.services.live_talk import LiveTalk
+from milo.services.orchestrator import Orchestrator
 from milo.services.task_runner import TASK_FAILED, TaskRunner
 from milo.services.transcript import Transcript
 from tests.fakes import FakeClock, FakeHarness, FakeLiveModel, MemoryTranscript, RecordingSink
@@ -100,10 +101,12 @@ def wired(model: FakeLiveModel | None = None, harness: FakeHarness | None = None
     s = Stack(model=model or FakeLiveModel(), harness=harness or FakeHarness())
     sink, store = RecordingSink(), MemoryTranscript()
     transcript = Transcript(sink, store, s.clock)
-    tasks = TaskRunner(s.conversation, s.speaker, s.context, wait_s=0.05, poll_s=0.005, transcript=transcript)
+    tasks = Orchestrator(TaskRunner(s.harness, s.ledger, s.clock, s.context), s.speaker, s.ui, s.clock,
+                         transcript=transcript, wait_s=0.05, poll_s=0.005, coalesce_s=0)
     live = LiveTalk(s.model, s.speaker, s.ui, s.context, s.clock, s.profile, s.reminders, s.ledger,
                     lambda: s.persona, s.idle_reset_s, tasks, transcript)
-    brain = Brain(s.ui, s.listening, live, s.context, s.heartbeat, UiSettings(), transcript)
+    tasks.on_result = live.note
+    brain = Brain(s.ui, s.listening, live, s.context, s.heartbeat, UiSettings(), transcript, helpers=tasks)
     return s, brain, tasks, sink, store
 
 
@@ -157,6 +160,6 @@ def test_a_failed_task_is_marked_failed():
 def test_get_history_and_connect_send_the_recent_transcript_without_calling_any_model():
     s, brain, _, _, _ = wired()
     asyncio.run(brain.handle(GetHistory()))
-    assert isinstance(brain.greeting()[-1], History)
+    assert isinstance(brain.greeting()[-2], History) and brain.greeting()[-1] == Helpers([])
     assert any(isinstance(e, History) for e in s.sink.events)
     assert s.model.turns == [] and s.harness.calls == []

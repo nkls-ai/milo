@@ -30,14 +30,31 @@ RETIRED = {("harness", "conversation_idle_reset_s"): "it moved to [chat]",
            ("hands", "confirm_timeout_s"): "questions wait [approvals] timeout_s"}
 
 
+UPDATES = ("quiet", "bubble", "chatty")
+MAX_HELPERS = 8
+
+
 @dataclass(frozen=True)
 class ChatSettings:
     conversation_idle_reset_s: float = 600.0
+    updates: str = "bubble"
+    """How Milo tells you about work in progress: "quiet" (only the small birds and the window), "bubble"
+    (short notes in the bubble) or "chatty" (he also says them). Results and questions always come through."""
+
+    def __post_init__(self):
+        if self.updates not in UPDATES:
+            raise ConfigError(f"[chat] updates must be one of {', '.join(UPDATES)}")
 
 
 @dataclass(frozen=True)
 class HarnessSettings:
-    pass
+    max_helpers: int = 3
+    """How many helpers work at the same time. Work on the screen always goes one at a time."""
+
+    def __post_init__(self):
+        if isinstance(self.max_helpers, bool) or not isinstance(self.max_helpers, int) \
+                or not 1 <= self.max_helpers <= MAX_HELPERS:
+            raise ConfigError(f"[harness] max_helpers must be a whole number from 1 to {MAX_HELPERS}")
 
 
 @dataclass(frozen=True)

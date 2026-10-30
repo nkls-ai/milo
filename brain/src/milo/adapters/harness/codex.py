@@ -9,11 +9,11 @@ from pathlib import Path
 from typing import Any
 
 from milo.core.hands import mac_server
-from milo.core.ports import StepCallback
+from milo.core.ports import PlanCallback, SessionCallback, StepCallback
 from milo.core.registry import HARNESSES, AdapterContext, options_from
 from milo.core.types import REPLY_SCHEMA, HarnessError, Reply, ToolServer, Usage
 
-from ._activity import CodexActivity
+from ._activity import CodexActivity, RunWatch, lines
 from ._binary import find_binary
 from ._process import last_line, run
 
@@ -68,10 +68,13 @@ class CodexHarness:
             cmd += mcp_overrides(server)
         return cmd + ["--", prompt]
 
-    async def reply(self, prompt: str, session_id: str | None, *, on_step: StepCallback | None = None) -> Reply:
-        on_line = CodexActivity(on_step, self.workdir).line if on_step is not None else None
+    async def reply(self, prompt: str, session_id: str | None, *, on_step: StepCallback | None = None,
+                    on_session: SessionCallback | None = None, on_plan: PlanCallback | None = None) -> Reply:
+        on_line = lines(CodexActivity(on_step, self.workdir).line if on_step is not None else None,
+                        RunWatch(on_session, on_plan).line if on_session or on_plan else None)
+        # codex takes another 4-6 s to exit after turn.completed; the answer is complete by then.
         code, out, err = await run(self.command(prompt, session_id), cwd=self.workdir, timeout_s=self.timeout_s,
-                                   on_line=on_line)
+                                   on_line=on_line, done=turn_over)
         thread_id, text, usage, error = parse_events(out.splitlines())
         if error or code != 0 or text is None:
             raise HarnessError(f"codex failed: {error or last_line(err, code)}", transient=True)
@@ -91,6 +94,12 @@ def mcp_overrides(server: ToolServer) -> list[str]:
             "-c", f"{key}.env={{{env}}}",
             "-c", f'{key}.default_tools_approval_mode="approve"',
             "-c", f"{key}.tool_timeout_sec={TOOL_TIMEOUT_S}"]
+
+
+def turn_over(line: str) -> bool:
+    """The line ends the turn: everything parse_events needs has arrived."""
+    head = line[:40]
+    return '"type":"turn.completed"' in head or '"type":"turn.failed"' in head
 
 
 def parse_events(lines: Iterable[str]) -> tuple[str | None, str | None, Usage, str | None]:

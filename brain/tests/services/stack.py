@@ -21,6 +21,7 @@ from milo.services.heartbeat_runner import HeartbeatRunner
 from milo.services.listening import Listening
 from milo.services.live_talk import LiveTalk
 from milo.services.speaker import Speaker
+from milo.services.orchestrator import Orchestrator
 from milo.services.task_runner import TaskRunner
 from milo.services.ui_state import UiState
 from tests.fakes import (FakeAudioInput, FakeAudioOutput, FakeClock, FakeEyes, FakeHands, FakeHarness,
@@ -46,6 +47,9 @@ class InlineExecutor(Executor):
 class Stack:
     model: FakeLiveModel = field(default_factory=FakeLiveModel)
     harness: FakeHarness = field(default_factory=FakeHarness)
+    background: object | None = None
+    """The worker without the Mac tools. None: every helper runs on `harness`, none on the screen."""
+    max_helpers: int = 3
     transcriber: FakeTranscriber = field(default_factory=FakeTranscriber)
     voice: FakeVoice = field(default_factory=FakeVoice)
     mic: FakeAudioInput = field(default_factory=FakeAudioInput)
@@ -75,9 +79,12 @@ class Stack:
                                    quiet=lambda: self.live_talk.busy)
         self.bridge = AppBridge(self.ui, timeout_s=self.confirm_timeout_s)
         self.hands = HandsService(self.hands_port, self.approvals, self.ui)
-        self.tasks = TaskRunner(self.conversation, self.speaker, self.context,
-                                quiet=lambda: self.live_talk.busy or self.mic.active, wait_s=self.wait_s,
-                                poll_s=0.005, hands=self.hands)
+        self.runner = TaskRunner(self.harness, self.ledger, self.clock, self.context, background=self.background,
+                                 hands=self.hands)
+        self.tasks = Orchestrator(self.runner, self.speaker, self.ui, self.clock,
+                                  max_helpers=lambda: self.max_helpers,
+                                  quiet=lambda: self.live_talk.busy or self.mic.active, wait_s=self.wait_s,
+                                  poll_s=0.005, coalesce_s=0)
         self.live_talk = LiveTalk(self.model, self.speaker, self.ui, self.context, self.clock, self.profile,
                                   self.reminders, self.ledger, lambda: self.persona, self.idle_reset_s, self.tasks,
                                   eyes=self.eyes, approvals=self.approvals)
@@ -89,7 +96,8 @@ class Stack:
                                          self.mic, self.clock, busy=lambda: self.live_talk.busy,
                                          wait_s=self.wait_s, poll_s=0.005)
         self.brain = Brain(self.ui, self.listening, self.live_talk, self.context, self.heartbeat, UiSettings(),
-                           approvals=self.approvals, bridge=self.bridge, hands=self.hands, screens=self.screens)
+                           approvals=self.approvals, bridge=self.bridge, hands=self.hands, screens=self.screens,
+                           helpers=self.tasks)
 
     def states(self) -> list[MiloState]:
         return [e.state for e in self.sink.of(StateChanged)]

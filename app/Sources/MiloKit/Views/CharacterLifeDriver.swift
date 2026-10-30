@@ -27,8 +27,10 @@ final class CharacterLifeDriver: ObservableObject {
     private var pollInterval: TimeInterval = 0
     private var running = false
 
+    /// `onScreen` false for a figure that never starts: it pauses the float from the first frame.
     init(scheduler: Scheduler = MainQueueScheduler(), clock: @escaping () -> Date = Date.init,
-         seed: UInt64 = .random(in: 0...UInt64.max)) {
+         seed: UInt64 = .random(in: 0...UInt64.max), onScreen: Bool = true) {
+        self.onScreen = onScreen
         self.scheduler = scheduler
         self.clock = clock
         origin = clock()

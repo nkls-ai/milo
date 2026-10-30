@@ -21,6 +21,12 @@ LevelCallback = Callable[[float], None]
 StepCallback = Callable[[Step], None]
 """Receives each step of a harness turn as it starts and again when it ends. Called on the event loop."""
 
+SessionCallback = Callable[[str], None]
+"""Receives the session id of a harness turn as soon as the CLI names it, long before the reply."""
+
+PlanCallback = Callable[[int, int], None]
+"""Receives (done, total) whenever the worker's own to-do list changes."""
+
 
 @runtime_checkable
 class Clock(Protocol):
@@ -34,10 +40,13 @@ class Harness(Protocol):
 
     name: str
 
-    async def reply(self, prompt: str, session_id: str | None, *, on_step: StepCallback | None = None) -> Reply:
+    async def reply(self, prompt: str, session_id: str | None, *, on_step: StepCallback | None = None,
+                    on_session: SessionCallback | None = None, on_plan: PlanCallback | None = None) -> Reply:
         """Answer `prompt`, continuing `session_id` if given. Raises HarnessError.
 
-        `on_step` hears about the commands, file edits and tool calls while the agent works.
+        `on_step` hears about the commands, file edits and tool calls while the agent works, `on_session`
+        the session id once the CLI has one (so a stopped turn can be resumed), and `on_plan` how far the
+        agent is through its to-do list. Cancelling the call ends the CLI.
         """
         ...
 

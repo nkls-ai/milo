@@ -8,7 +8,7 @@ from pathlib import Path
 from .config import UiSettings
 from .core.events import (AppResponse, Command, ConfirmAnswer, ContextUpdate, EmotionChanged, Event, GetHistory,
                           HandsResult, HandsStop, ListenCancel, ListenConfirm, ListenStart, ListenStop, LookResult,
-                          Mute, StateChanged, TextInput, UiConfig, WhatsThis)
+                          Mute, StateChanged, StopHelper, TextInput, UiConfig, WhatsThis)
 from .services.app_bridge import AppBridge
 from .services.approvals import Approvals
 from .services.context import UserContext
@@ -16,6 +16,7 @@ from .services.hands import HandsService
 from .services.heartbeat_runner import HeartbeatRunner
 from .services.listening import Listening
 from .services.live_talk import LiveTalk
+from .services.orchestrator import Orchestrator
 from .services.screen import checked, inside
 from .services.transcript import Transcript
 from .services.ui_state import UiState
@@ -32,8 +33,10 @@ class Brain:
     def __init__(self, ui: UiState, listening: Listening, live_talk: LiveTalk, context: UserContext,
                  heartbeat: HeartbeatRunner | None, ui_settings: UiSettings, transcript: Transcript | None = None,
                  *, approvals: Approvals | None = None, bridge: AppBridge | None = None,
-                 hands: HandsService | None = None, screens: Path | None = None):
+                 hands: HandsService | None = None, screens: Path | None = None,
+                 helpers: Orchestrator | None = None):
         self._hands = hands
+        self._helpers = helpers
         self._screens = screens
         self._ui = ui
         self._approvals = approvals
@@ -51,7 +54,7 @@ class Brain:
                 UiConfig(self._ui_settings.dictate_key, self._ui_settings.talk_key,
                          self._ui_settings.hands_free_max_s, self._ui_settings.whats_this_key,
                          self._ui_settings.character),
-                *self._history()]
+                *self._history(), *([self._helpers.snapshot()] if self._helpers is not None else [])]
 
     def _history(self) -> list[Event]:
         return [self._transcript.history()] if self._transcript is not None else []
@@ -91,6 +94,9 @@ class Brain:
             case ConfirmAnswer(id, yes):
                 if self._approvals is not None and not self._approvals.answer(id, yes):
                     log.info("an answer came for a question that is over")
+            case StopHelper(id):
+                if self._helpers is not None and not self._helpers.stop(id):
+                    log.info("Stop came for a helper that isn't working")
             case AppResponse():
                 if self._bridge is not None:
                     self._bridge.resolve(command)

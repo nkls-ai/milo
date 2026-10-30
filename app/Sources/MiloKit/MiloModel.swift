@@ -40,6 +40,12 @@ public final class MiloModel: ObservableObject {
     @Published public private(set) var question: PendingQuestion?
     /// Called with the user's click on Yes (true) or No. Set by the controller.
     public var onAnswer: ((PendingQuestion, Bool) -> Void)?
+    /// The helpers working for Milo, oldest first, from the brain's `helpers` event.
+    @Published public private(set) var helpers: [HelperInfo] = []
+    /// Called when the user clicks Stop on a helper. Set by the controller.
+    public var onStopHelper: ((String) -> Void)?
+    /// Called when the user clicks a helper's bird: show it in the Milo window. Set by main.swift.
+    public var onOpenHelper: ((String) -> Void)?
 
     private let scheduler: Scheduler
     private var hideBubble: ScheduledTask?
@@ -86,6 +92,8 @@ public final class MiloModel: ObservableObject {
             guard question?.id == id else { return }
             question = nil
             scheduleBubbleHide()
+        case let .helpers(list):
+            if list != helpers { helpers = list }
         case .dictation, .uiConfig, .history, .entry, .replyDelta, .activity, .lookRequest, .handsRequest,
              .handsSession, .flyTo, .appRequest, .unknown:
             break
@@ -98,6 +106,16 @@ public final class MiloModel: ObservableObject {
         self.question = nil
         onAnswer?(question, yes)
         scheduleBubbleHide()
+    }
+
+    /// The user clicked Stop on the helper `id`.
+    public func stopHelper(_ id: String) {
+        onStopHelper?(id)
+    }
+
+    /// The user clicked a helper's bird or row.
+    public func openHelper(_ id: String) {
+        onOpenHelper?(id)
     }
 
     /// Shows text in the bubble for a while. Empty text hides it.

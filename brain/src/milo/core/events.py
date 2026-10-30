@@ -216,6 +216,19 @@ class AppRequest(Event):
     args: dict
 
 
+@dataclass(frozen=True)
+class Helpers(Event):
+    """The helpers working for Milo, oldest first: each {id, title, status, step, progress?}.
+
+    status is queued, working, needs_you, done, failed or stopped; `step` says what it does now in plain
+    words; `progress` (0..1) is there only while the worker keeps a to-do list. `id` is the transcript entry
+    of its task. Sent whenever one changes; a finished helper stays in the list for a few seconds.
+    """
+
+    type: ClassVar[str] = "helpers"
+    helpers: list[dict]
+
+
 # ---- app -> brain
 
 
@@ -340,6 +353,14 @@ class AppResponse(Command):
     error: str = ""
 
 
+@dataclass(frozen=True)
+class StopHelper(Command):
+    """The user clicked Stop on the helper `id` (an id from `helpers`)."""
+
+    type: ClassVar[str] = "stop_helper"
+    id: str
+
+
 def parse_command(raw: object) -> Command:
     if not isinstance(raw, dict):
         raise ProtocolError("message must be a JSON object")
@@ -384,6 +405,11 @@ def parse_command(raw: object) -> Command:
                 return ConfirmAnswer(str(raw["id"]), raw["yes"])
             case "app_response":
                 return AppResponse(str(raw["id"]), raw["ok"] is True, raw.get("result"), str(raw.get("error") or ""))
+            case "stop_helper":
+                id = str(raw["id"]).strip()
+                if not id:
+                    raise ProtocolError("id must not be empty")
+                return StopHelper(id)
     except (KeyError, TypeError, ValueError) as e:
         raise ProtocolError(f"bad {kind} message: {e}") from None
     raise ProtocolError(f"unknown message type {kind!r}")

@@ -30,6 +30,17 @@ public final class ConversationWindow: NSWindow {
         settings.talkKey = bindings.talk.displayName
     }
 
+    /// Show it with the task of helper `id` in view.
+    public func show(helper id: String) {
+        if !isVisible {
+            controller.requestHistory()
+            NSApp.activate(ignoringOtherApps: true)
+            makeKeyAndOrderFront(nil)
+        }
+        settings.focus = nil
+        settings.focus = id
+    }
+
     /// Show it, or hide it if it is open.
     public func toggle() {
         if isVisible {

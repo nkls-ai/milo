@@ -73,6 +73,7 @@ public final class MiloController {
 
     public func start() {
         model.onAnswer = { [weak self] question, yes in self?.brain.send(.confirmAnswer(id: question.id, yes: yes)) }
+        model.onStopHelper = { [weak self] id in self?.brain.send(.stopHelper(id: id)) }
         brain.onEvent = { [weak self] in self?.received($0) }
         brain.onConnectionChange = { [weak self] in self?.connectionChanged($0) }
         // Development brains are started by hand; only launch one if nothing answers.
@@ -163,9 +164,10 @@ public final class MiloController {
         model.connected = up
         guard up else {
             // A brain that died mid-answer never sends idle; don't leave Milo speaking or listening.
-            // A new brain sends its own state on connect.
+            // A new brain sends its own state on connect. Its helpers died with it.
             pushToTalkChanged(pushToTalk.reset(), at: nil)
             model.apply(.state(.idle))
+            model.apply(.helpers([]))
             return
         }
         sendContext()

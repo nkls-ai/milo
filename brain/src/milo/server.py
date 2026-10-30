@@ -109,6 +109,12 @@ async def _serve(runtime: Runtime) -> None:
 
 
 async def _close(runtime: Runtime) -> None:
+    if runtime.helpers is not None:
+        try:
+            # Workers run in their own process groups, so they would outlive the brain.
+            await asyncio.wait_for(runtime.helpers.close(), CLOSE_TIMEOUT_S)
+        except Exception:
+            log.exception("stopping the helpers failed")
     if runtime.hands_server is not None:
         await runtime.hands_server.close()
     try:

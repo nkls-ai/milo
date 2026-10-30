@@ -1,102 +1,93 @@
 from __future__ import annotations
 
-import asyncio
 import logging
-from collections import deque
-from collections.abc import Callable
 
 from milo.core.logtext import private
-from milo.core.types import Emotion, HarnessError
+from milo.core.ports import Clock, Harness, PlanCallback, SessionCallback, StepCallback, UsageLedger
+from milo.core.types import Reply
 
 from .context import UserContext
-from .conversation import Conversation
+from .conversation import stamp
 from .hands import HandsService
-from .quiet import POLL_S, wait_while
-from .speaker import Speaker
-from .transcript import Transcript, unrecorded
+from .helpers import Helper
 
 log = logging.getLogger("milo.tasks")
 
 TASK_FAILED = "I couldn't finish that task. Check ~/Milo/logs/brain.log."
-WAIT_FOR_QUIET_S = 30.0
+NEEDS_SCREEN = "NEEDS_SCREEN"
+
+# Said to a helper that works without the screen. If it needs the screen after all, it comes back with
+# NEEDS_SCREEN and the orchestrator queues it again for the screen.
+NO_SCREEN = (f"(You have no milo-mac tools for this task. If it can only be done by working in an app on the "
+             f"screen, stop at once and reply with say exactly {NEEDS_SCREEN}.)")
+
+
+def first_prompt(helper: Helper, *, no_screen: bool) -> str:
+    """The task as the talker wrote it, plus whatever the user changed since. Self-contained."""
+    parts = [helper.description]
+    if helper.amendments:
+        changes = "\n".join(f"- {a}" for a in helper.amendments)
+        parts.append(f"The user changed the task since:\n{changes}\nAn earlier try may have done part of it "
+                     f"already: check before you redo anything.")
+    if no_screen:
+        parts.append(NO_SCREEN)
+    return "\n\n".join(parts)
+
+
+def steer_prompt(change: str) -> str:
+    """Continues a helper's session after Milo stopped its turn because the user changed the task."""
+    return (f"The user changed the task while you were working on it: {change}\n"
+            f"Continue from where you stopped and take the change into account. Check what you already did "
+            f"before you redo anything.")
+
+
+def follow_up_prompt(change: str) -> str:
+    """Continues the session of a helper that had finished."""
+    return f"The user has a change to the task you just did: {change}"
 
 
 class TaskRunner:
-    """Real work the live model handed off (files, research, several steps), done by the agent harness.
+    """One turn of a helper on the worker harness. The orchestrator decides which turns run, and when.
 
-    Tasks run in the background one at a time, on the harness session in `conversation`, so the agent
-    keeps context across them and works in its sandbox. When one finishes Milo says the result. If the
-    user is mid-turn (`quiet()`), the result waits for the turn to end, and is shown silently if that
-    takes longer than `wait_s`. Each task and the steps the agent takes show in `transcript`. The Mac
-    tools in `hands` work only while a task runs.
+    Helpers on the screen run on `harness`, which has the milo-mac tools, and hold `hands` for the turn.
+    All others run on `background`, the same CLI without the Mac tools, so they can't reach for the one
+    screen. Without `background` (the Mac tools are switched off) every helper runs on `harness`.
     """
 
-    def __init__(self, conversation: Conversation, speaker: Speaker, context: UserContext,
-                 quiet: Callable[[], bool] = lambda: False, *, wait_s: float = WAIT_FOR_QUIET_S,
-                 poll_s: float = POLL_S, transcript: Transcript | None = None, hands: HandsService | None = None):
-        self._conversation = conversation
-        self._hands = hands
-        self._transcript = transcript or unrecorded()
-        self._speaker = speaker
+    def __init__(self, harness: Harness, ledger: UsageLedger, clock: Clock, context: UserContext, *,
+                 background: Harness | None = None, hands: HandsService | None = None):
+        self._harness = harness
+        self._background = background
+        self._ledger = ledger
+        self._clock = clock
         self._context = context
-        self._quiet = quiet
-        self._wait_s = wait_s
-        self._poll_s = poll_s
-        self._queue: deque[str] = deque()
-        self._worker: asyncio.Task | None = None
-        self.on_result: Callable[[str, str], None] | None = None
-        """Called with (description, what Milo said) after each finished task, e.g. LiveTalk.note."""
+        self._hands = hands
 
     @property
-    def busy(self) -> bool:
-        return self._worker is not None and not self._worker.done()
+    def has_screen(self) -> bool:
+        """Some helpers can work on the screen, so the others are told they can't."""
+        return self._background is not None
 
-    def submit(self, description: str) -> None:
-        self._queue.append(description)
-        if not self.busy:
-            self._worker = asyncio.create_task(self._work())
+    def first_prompt(self, helper: Helper) -> str:
+        return first_prompt(helper, no_screen=self.has_screen and not helper.screen)
 
-    async def idle(self) -> None:
-        """Wait until every submitted task is done and reported. For tests and shutdown."""
-        while self.busy:
-            await asyncio.wait({self._worker})
-
-    async def _work(self) -> None:
-        while self._queue:
-            await self._run(self._queue.popleft())
-
-    async def _run(self, description: str) -> None:
-        log.info("task started, %s", private(description))
-        task_id = self._transcript.task_started(description)
+    async def run(self, helper: Helper, prompt: str, session_id: str | None, *, on_step: StepCallback,
+                  on_session: SessionCallback, on_plan: PlanCallback) -> Reply:
+        """Raises HarnessError. Cancelling it ends the worker."""
+        harness = self._harness if helper.screen or self._background is None else self._background
+        holds_hands = helper.screen and self._hands is not None
+        started = self._clock.monotonic()
+        if holds_hands:
+            self._hands.begin(helper.id)
         try:
-            reply = await self._chat(description, task_id)
-        except HarnessError as e:
-            log.error("task failed: %s", e)
-            self._transcript.task_finished(task_id, False, TASK_FAILED)
-            await self._report(TASK_FAILED, Emotion.CONFUSED, speak=False)
-            return
-        except Exception:
-            log.exception("task crashed")
-            self._transcript.task_finished(task_id, False, TASK_FAILED)
-            await self._report(TASK_FAILED, Emotion.CONFUSED, speak=False)
-            return
-        log.info("task done, said %s", private(reply.say))
-        self._transcript.task_finished(task_id, True, reply.say)
-        if self.on_result is not None:
-            self.on_result(description, reply.say)
-        if reply.say.strip():
-            await self._report(reply.say, reply.emotion)
-
-    async def _chat(self, description: str, task_id: str):
-        if self._hands is not None:
-            self._hands.begin(task_id)
-        try:
-            return await self._conversation.chat(description, self._context.app, source="task",
-                                                 on_step=lambda step: self._transcript.task_step(task_id, step))
+            reply = await harness.reply(stamp(prompt, self._clock.now(), self._context.app), session_id,
+                                        on_step=on_step, on_session=on_session, on_plan=on_plan)
         finally:
-            if self._hands is not None:
-                self._hands.end(task_id)
-
-    async def _report(self, text: str, emotion: Emotion, *, speak: bool = True) -> None:
-        free = await wait_while(self._quiet, self._wait_s, self._poll_s)
-        await asyncio.wait({self._speaker.say(text, emotion, speak=speak and free)})
+            if holds_hands:
+                self._hands.end(helper.id)
+        u = reply.usage
+        log.info("helper %d %s turn %.1fs, %d in (%d cached), %d out, said %s", helper.number, harness.name,
+                 self._clock.monotonic() - started, u.input_tokens, u.cached_input_tokens, u.output_tokens,
+                 private(reply.say))
+        self._ledger.record("task", harness.name, u)
+        return reply
