@@ -52,6 +52,8 @@ public enum BrainEvent: Equatable, Sendable {
     /// The user lent Milo one real device ("mouse" or "keyboard") for an action that can't be done in the
     /// background. The app hands it back on its own a while after the last such action, or when the session ends.
     case handsBorrow(on: Bool, what: String)
+    /// Milo by message: which chat app, whether a phone is connected, paused.
+    case remote(RemoteStatus)
     case unknown(String)
 }
 
@@ -113,6 +115,7 @@ extension BrainEvent: Decodable {
         case "hands_borrow":
             self = .handsBorrow(on: try c.decode(Bool.self, forKey: .on),
                                 what: try c.decodeIfPresent(String.self, forKey: .what) ?? "")
+        case "remote": self = .remote(try RemoteStatus(from: decoder))
         default: self = .unknown(type)
         }
     }

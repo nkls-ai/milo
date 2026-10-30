@@ -92,6 +92,15 @@ private final class Harness {
         #expect(h.brain.sent == [.context(app: "Xcode", idleSeconds: 3.5), .mute(false)])
     }
 
+    @Test func theRemoteMenuItemsSendTheirCommands() {
+        let h = Harness()
+        h.brain.connect()
+        h.brain.clearSent()
+        h.controller.setRemotePaused(true)
+        h.controller.forgetPhone()
+        #expect(h.brain.sent == [.remotePause(true), .remoteForget])
+    }
+
     @Test func toggleMuteSendsAndReconnectResendsIt() {
         let h = Harness()
         h.brain.connect()

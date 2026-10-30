@@ -29,6 +29,10 @@ public enum BrainCommand: Equatable, Sendable {
     case appResponse(id: String, outcome: AppOutcome)
     /// The user clicked Stop on the helper `id`.
     case stopHelper(id: String)
+    /// The menu's "Pause messages from your phone".
+    case remotePause(Bool)
+    /// The menu's "Disconnect phone": a new connection needs a new code shown on the Mac.
+    case remoteForget
 }
 
 /// What the app did with an `app_request`: a JSON result, or a plain-language error for the user.
@@ -103,6 +107,11 @@ extension BrainCommand: Encodable {
         case let .stopHelper(id):
             try c.encode("stop_helper", forKey: .type)
             try c.encode(id, forKey: .id)
+        case let .remotePause(on):
+            try c.encode("remote_pause", forKey: .type)
+            try c.encode(on, forKey: .on)
+        case .remoteForget:
+            try c.encode("remote_forget", forKey: .type)
         }
     }
 }

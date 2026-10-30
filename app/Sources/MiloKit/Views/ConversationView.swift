@@ -139,13 +139,17 @@ enum Layout {
 struct UserLine: View {
     let entry: TranscriptEntry
 
+    static let icon: [TranscriptEntry.Via: String] = [.voice: "mic.fill", .typed: "keyboard", .message: "iphone"]
+    static let help: [TranscriptEntry.Via: String] = [.voice: "You said this", .typed: "You typed this",
+                                                      .message: "You sent this from your phone"]
+
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 7) {
-            Image(systemName: entry.via == .typed ? "keyboard" : "mic.fill")
+            Image(systemName: Self.icon[entry.via] ?? "mic.fill")
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(.secondary)
                 .frame(width: 12)
-                .help(entry.via == .typed ? "You typed this" : "You said this")
+                .help(Self.help[entry.via] ?? "You said this")
             Text(entry.text)
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)

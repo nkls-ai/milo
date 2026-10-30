@@ -35,6 +35,8 @@ public final class MiloModel: ObservableObject {
     @Published public var workingWindow: CGRect?
     /// How Milo looks, from the brain's `ui_config`.
     @Published public var character: CharacterStyle = .pip
+    /// Milo by message, for the menu. nil while messages are off.
+    @Published public var remote: RemoteStatus?
     /// A point on screen Milo should fly to and point at, in AppKit global screen coordinates (points,
     /// origin bottom-left of the main display). nil sends him home to his corner.
     @Published public var flyTarget: CGPoint?
@@ -98,6 +100,8 @@ public final class MiloModel: ObservableObject {
             scheduleBubbleHide()
         case let .helpers(list):
             if list != helpers { helpers = list }
+        case let .remote(status):
+            remote = status
         case .dictation, .uiConfig, .history, .entry, .replyDelta, .activity, .lookRequest, .handsRequest,
              .handsSession, .flyTo, .appRequest, .handsBorrow, .unknown:
             break

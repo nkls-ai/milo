@@ -104,6 +104,16 @@ public final class MiloController {
         brain.send(.mute(muted))
     }
 
+    /// The menu's "Pause messages from your phone". Only the Mac can switch it back on.
+    public func setRemotePaused(_ on: Bool) {
+        brain.send(.remotePause(on))
+    }
+
+    /// The menu's "Disconnect phone".
+    public func forgetPhone() {
+        brain.send(.remoteForget)
+    }
+
     public func restartBrain() {
         launcher.restart()
     }

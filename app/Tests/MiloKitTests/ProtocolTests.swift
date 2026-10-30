@@ -76,6 +76,9 @@ private func entries(_ key: String) throws -> [[String: Any]] {
                 HelperInfo(id: "f2f2f2f2f2f2", title: "Dentist email", status: .done),
             ]),
             .handsBorrow(on: true, what: "mouse"),
+            .remote(RemoteStatus(channel: "telegram", label: "Telegram", state: .paired, detail: "Niklas (@niklas)")),
+            .remote(RemoteStatus(channel: "telegram", label: "Telegram", state: .unpaired,
+                                 detail: "Message @milo_mac_bot from your phone to connect.")),
         ])
     }
 
@@ -109,6 +112,7 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .stopHelper(id: "c0ffee12ab34"),
             .handsResult(id: "hands-7", ok: false, result: ["borrow": "mouse"],
                          error: "Excel doesn't take clicks in the background."),
+            .remotePause(true), .remoteForget,
         ]
         let encoder = JSONEncoder()
         let encoded = try commands.map { command in
@@ -163,5 +167,30 @@ private func entries(_ key: String) throws -> [[String: Any]] {
         #expect(throws: DecodingError.self) {
             try JSONDecoder().decode(BrainEvent.self, from: Data(#"{"text":"hi"}"#.utf8))
         }
+    }
+}
+
+@Suite struct RemoteStatusTests {
+    @Test func theMenuLineSaysWhereThingsStand() {
+        var status = RemoteStatus(channel: "telegram", label: "Telegram", state: .paired, detail: "Niklas")
+        #expect(status.summary == "Telegram: connected (Niklas)")
+        status.paused = true
+        #expect(status.summary == "Telegram: paused (Niklas)")
+        #expect(RemoteStatus(channel: "imessage", label: "iMessage", state: .unpaired).summary
+            == "iMessage: no phone connected yet")
+        #expect(RemoteStatus(channel: "telegram", label: "Telegram", state: .error, detail: "bad token").summary
+            == "Telegram: not working")
+    }
+
+    @Test func theModelKeepsTheLastStatusAndAMessageTurnShowsAPhone() throws {
+        let model = MiloModel(scheduler: ManualScheduler())
+        #expect(model.remote == nil)
+        let status = RemoteStatus(channel: "telegram", label: "Telegram", state: .paired)
+        model.apply(.remote(status))
+        #expect(model.remote == status)
+        let entry = try JSONDecoder().decode(TranscriptEntry.self, from: Data("""
+            {"id": "a", "ts": "2026-10-30T09:12:03", "kind": "user", "text": "hi", "via": "message"}
+            """.utf8))
+        #expect(entry.via == .message)
     }
 }
