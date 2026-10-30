@@ -6,13 +6,16 @@ milo.core.registry and are picked by name from config.toml in milo.compose.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Callable, Collection, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
+import numpy as np
+
 from .events import Event
+from .memory import ConsolidationReport, Document, Episode, Fact, Hit, IndexItem, Recall, TurnContext
 from .types import Audio, Nudge, Reminder, Reply, ScreenCapture, Signals, Step, Usage
 
 LevelCallback = Callable[[float], None]
@@ -363,3 +366,101 @@ class Connections:
     notes: Notes | None = None
     shortcuts: Shortcuts | None = None
     files: Files | None = None
+
+
+# ---- memory: episodes, facts and the user's things (docs/design/memory.md)
+#
+# Files are the truth and the index is a cache: EpisodeLog and FactStore append JSON lines, MemoryIndex can be
+# deleted and rebuilt from them. Everything here blocks; the brain calls it on its memory thread.
+
+
+@runtime_checkable
+class EpisodeLog(Protocol):
+    def append(self, episode: Episode) -> None:
+        """Add an episode, or a newer version of one with the same id (a summary replacing a stub)."""
+        ...
+
+    def between(self, start: datetime, end: datetime) -> list[Episode]:
+        """Episodes with start <= at < end, oldest first, latest version of each, forgotten ones left out."""
+        ...
+
+    def forget(self, id: str, reason: str) -> None:
+        """Leave the episode out from now on. The old lines stay, so it can be brought back."""
+        ...
+
+
+@runtime_checkable
+class FactStore(Protocol):
+    def current(self) -> list[Fact]:
+        """Facts that are neither retired nor replaced."""
+        ...
+
+    def add(self, fact: Fact) -> None: ...
+
+    def retire(self, id: str, reason: str) -> None: ...
+
+    def restore(self, id: str, reason: str) -> None:
+        """Undo a retire."""
+        ...
+
+    def get(self, id: str) -> Fact | None:
+        """Any fact ever added, current or not, with `retired` as it is now."""
+        ...
+
+
+@runtime_checkable
+class Embedder(Protocol):
+    """Turns text into vectors for search. Local, runs on its own single-thread executor like STT and TTS."""
+
+    dimensions: int
+    key: str
+    """Names the vector space (engine and model). The index re-embeds everything when it changes."""
+
+    def warm(self) -> None: ...
+
+    def embed(self, texts: Sequence[str], *, query: bool = False) -> np.ndarray:
+        """One unit-length float32 row per text. `query`: the text is a search, not something to be found."""
+        ...
+
+
+@runtime_checkable
+class MemoryIndex(Protocol):
+    """Search over facts, episodes and knowledge. A cache: rebuild() recreates it from the logs."""
+
+    def upsert(self, items: Sequence[IndexItem]) -> None: ...
+
+    def remove(self, ids: Collection[str]) -> None: ...
+
+    def search(self, query: str, *, kinds: Collection[str] = (), since: datetime | None = None,
+               until: datetime | None = None, limit: int = 20) -> list[Hit]:
+        """Best first. Text and vector matches fused, so something comes back even for a vague query."""
+        ...
+
+    def rebuild(self) -> None: ...
+
+    def refresh(self, limit: int | None = None) -> int:
+        """Catch up with the logs, at most `limit` items at a time. Returns how many changed; 0: up to date."""
+        ...
+
+
+@runtime_checkable
+class Recaller(Protocol):
+    """Picks what memory a turn needs, within a token budget. No LLM call."""
+
+    def recall(self, turn: str, context: TurnContext, budget_tokens: int) -> Recall: ...
+
+
+@runtime_checkable
+class Consolidator(Protocol):
+    """The nightly "sleep": turns the day's raw records into episodes and facts."""
+
+    async def consolidate(self, day: date) -> ConsolidationReport: ...
+
+
+@runtime_checkable
+class KnowledgeSource(Protocol):
+    """One place the user's things live: a folder, Notes, Mail, meeting notes."""
+
+    name: str
+
+    def changed_since(self, since: datetime) -> Iterable[Document]: ...

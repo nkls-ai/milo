@@ -373,3 +373,55 @@ class FakeConfirm:
     async def confirm(self, summary: str) -> bool:
         self.asked.append(summary)
         return self.answers.popleft() if self.answers else False
+
+
+class MemoryEpisodeLog:
+    """EpisodeLog in a list. Same rules as the file: a newer line with the same id wins, forget hides."""
+
+    def __init__(self):
+        self.lines: list = []
+        self.forgotten: set[str] = set()
+
+    def append(self, episode) -> None:
+        self.lines.append(episode)
+
+    def between(self, start, end) -> list:
+        latest = {e.id: e for e in self.lines}
+        return sorted((e for e in latest.values() if start <= e.at < end and e.id not in self.forgotten),
+                      key=lambda e: (e.at, e.id))
+
+    def forget(self, id: str, reason: str) -> None:
+        if not any(e.id == id for e in self.lines):
+            raise KeyError(id)
+        self.forgotten.add(id)
+
+
+class MemoryFactStore:
+    """FactStore in a dict."""
+
+    def __init__(self, *facts):
+        self.facts: dict = {}
+        self.log: list[tuple[str, str, str]] = []
+        for fact in facts:
+            self.add(fact)
+
+    def current(self) -> list:
+        replaced = {f.replaces for f in self.facts.values() if f.replaces and not f.retired}
+        return [f for f in self.facts.values() if not f.retired and f.id not in replaced]
+
+    def add(self, fact, *, by: str = "") -> None:
+        self.facts[fact.id] = fact
+        self.log.append(("add", fact.id, by))
+
+    def retire(self, id: str, reason: str, *, by: str = "") -> None:
+        from dataclasses import replace
+        self.facts[id] = replace(self.facts[id], retired=True)
+        self.log.append(("retire", id, by))
+
+    def restore(self, id: str, reason: str, *, by: str = "") -> None:
+        from dataclasses import replace
+        self.facts[id] = replace(self.facts[id], retired=False)
+        self.log.append(("restore", id, by))
+
+    def get(self, id: str):
+        return self.facts.get(id)
