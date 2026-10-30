@@ -99,10 +99,20 @@ public final class MiloController {
         launcher.restart()
     }
 
+    static let pasteBlocked = "I can't paste: macOS turned off my Accessibility permission. Your text is on the clipboard, press ⌘V. To fix it, remove Milo in System Settings › Privacy & Security › Accessibility and add him again."
+
     private func received(_ event: BrainEvent) {
         switch event {
         case let .dictation(text):
-            inserter.insert(text)
+            // Without Accessibility macOS drops Milo's Cmd-V without an error. An ad-hoc signed
+            // rebuild loses the permission while System Settings still shows it switched on.
+            if accessibility.isTrusted(prompt: false) {
+                inserter.insert(text)
+            } else {
+                inserter.copy(text)
+                NSLog("Milo: not trusted for Accessibility, dictation left on the clipboard")
+                model.show(Self.pasteBlocked)
+            }
         case let .uiConfig(dictateKey, talkKey, handsFreeMax):
             if let handsFreeMax, handsFreeMax > 0 { pushToTalk.maxLocked = handsFreeMax }
             let next = bindings.applying(dictateKey: dictateKey, talkKey: talkKey)

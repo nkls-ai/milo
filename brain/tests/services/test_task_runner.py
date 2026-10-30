@@ -45,7 +45,7 @@ def test_an_empty_result_says_nothing():
 
 def test_the_result_waits_for_a_live_turn_to_finish_instead_of_cutting_milo_off():
     gate = asyncio.Event()
-    s = Stack(model=FakeLiveModel(["[happy] Let me explain this, ", "slowly."], gate=gate),
+    s = Stack(model=FakeLiveModel(["[happy] Let me explain this to you, ", "slowly."], gate=gate),
               harness=FakeHarness("Task done."), wait_s=5)
 
     async def run():
@@ -53,13 +53,13 @@ def test_the_result_waits_for_a_live_turn_to_finish_instead_of_cutting_milo_off(
         await settle()
         s.tasks.submit("background")
         await asyncio.sleep(0.03)
-        assert s.voice.spoken == ["Let me explain this,"], "the result waits"
+        assert s.voice.spoken == ["Let me explain this to you,"], "the result waits"
         gate.set()
         await turn
         await s.tasks.idle()
 
     asyncio.run(run())
-    assert s.voice.spoken == ["Let me explain this,", "slowly.", "Task done."]
+    assert s.voice.spoken == ["Let me explain this to you,", "slowly.", "Task done."]
 
 
 def test_while_the_user_keeps_talking_the_result_is_only_shown():

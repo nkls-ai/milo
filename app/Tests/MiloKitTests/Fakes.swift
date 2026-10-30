@@ -28,7 +28,9 @@ final class FakeBrainLauncher: BrainLauncher {
 
 final class FakeTextInserter: TextInserter {
     private(set) var inserted: [String] = []
+    private(set) var copied: [String] = []
     func insert(_ text: String) { inserted.append(text) }
+    func copy(_ text: String) { copied.append(text) }
 }
 
 final class FakeKeySource: KeyEventSource {

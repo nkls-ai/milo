@@ -36,3 +36,6 @@ class FallbackVoice:
 
     def synthesize(self, text: str) -> Audio:
         return self._voice.synthesize(text)
+
+    def cancel(self) -> None:
+        self._voice.cancel()

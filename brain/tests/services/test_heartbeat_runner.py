@@ -70,7 +70,7 @@ def test_no_llm_wording_while_a_chat_turn_is_in_flight_and_no_speech():
 
 def test_a_nudge_waits_for_the_live_turn_instead_of_cutting_milo_off():
     gate = asyncio.Event()
-    s = Stack(model=FakeLiveModel(["[happy] Here is my answer, ", "all of it."], gate=gate),
+    s = Stack(model=FakeLiveModel(["[happy] Here is my whole answer, ", "all of it."], gate=gate),
               engine=ScriptedEngine(CountingBudget(5)), wait_s=5)
 
     async def run():
@@ -79,14 +79,14 @@ def test_a_nudge_waits_for_the_live_turn_instead_of_cutting_milo_off():
         s.engine.queue.append([REMINDER])
         tick = asyncio.create_task(s.heartbeat.tick())
         await asyncio.sleep(0.02)
-        assert not tick.done() and s.voice.spoken == ["Here is my answer,"]
+        assert not tick.done() and s.voice.spoken == ["Here is my whole answer,"]
         gate.set()
         await turn
         await tick
         await settle()
 
     asyncio.run(run())
-    assert s.voice.spoken == ["Here is my answer,", "all of it.", "Call the dentist."]
+    assert s.voice.spoken == ["Here is my whole answer,", "all of it.", "Call the dentist."]
 
 
 def test_a_nudge_during_a_long_live_turn_is_shown_silently_without_llm_wording():

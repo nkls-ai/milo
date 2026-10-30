@@ -41,6 +41,9 @@ class MacSay:
                 pcm = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16)
         return pcm.astype(np.float32) / 32768
 
+    def cancel(self) -> None:
+        pass  # `say` renders a sentence in well under a second; not worth killing
+
 
 @VOICES.register("say")
 def _say(options: Mapping[str, Any], ctx: AdapterContext) -> MacSay:

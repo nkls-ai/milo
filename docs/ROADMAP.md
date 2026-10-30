@@ -1,6 +1,6 @@
 # Milo roadmap
 
-Written 2026-10-30. [TODO.md](../TODO.md) holds the small items. This file says where Milo is going and in what order.
+Written 2026-10-30. [TODO.md](../TODO.md) holds the small items. This file says where Milo is going and in what order. [VISION.md](VISION.md) has the bigger brainstorm: app connections, features, parallel helpers, sync and other devices.
 
 ## The product in one sentence
 

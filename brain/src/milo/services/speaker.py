@@ -110,6 +110,7 @@ class Utterance:
         self._closed = self._interrupted = True
         if self._worker is not None and not self._worker.done():
             self._worker.cancel()
+            self._speaker.voice.cancel()
         if self._began:
             self._speaker.output.interrupt()
 

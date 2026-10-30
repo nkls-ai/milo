@@ -77,6 +77,7 @@ class FakeVoice:
         self.spoken: list[str] = []
         self.fail = fail
         self.warmed = False
+        self.cancels = 0
 
     def warm(self) -> None:
         self.warmed = True
@@ -86,6 +87,9 @@ class FakeVoice:
             raise RuntimeError("tts broke")
         self.spoken.append(text)
         return np.full(10 * len(text), 0.1, dtype=np.float32)
+
+    def cancel(self) -> None:
+        self.cancels += 1
 
 
 class FakeAudioInput:

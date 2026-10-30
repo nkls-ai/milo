@@ -171,7 +171,7 @@ def test_interrupt_mid_reply_stops_the_model_and_the_audio_at_once():
 
 def test_a_new_turn_interrupts_the_running_one():
     gate = asyncio.Event()
-    s = Stack(model=FakeLiveModel(["[happy] First answer goes on, ", "and on."], ["[sad] Second."], gate=gate))
+    s = Stack(model=FakeLiveModel(["[happy] The first answer goes on, ", "and on."], ["[sad] Second."], gate=gate))
 
     async def run():
         first = s.live_talk.start("one")
@@ -183,7 +183,7 @@ def test_a_new_turn_interrupts_the_running_one():
 
     asyncio.run(run())
     assert s.model.interrupts == 1
-    assert s.voice.spoken == ["First answer goes on,", "Second."]
+    assert s.voice.spoken == ["The first answer goes on,", "Second."]
     assert s.bubbles()[-1] == "Second."
     assert s.ui.state is MiloState.IDLE
 

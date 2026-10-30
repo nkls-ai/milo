@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from milo.adapters.audio.sounddevice_io import Player, Recorder, level_of
-from milo.adapters.tts.omnivoice import REF_TEXT, OmniVoiceTTS
+from milo.adapters.tts.omnivoice import REF_TEXT, OmniVoiceTTS, SynthesisCancelled
 from milo.adapters.tts.say import MacSay
 from milo.core.ports import AudioOutput
 from milo.core.registry import AUDIO_INPUTS, AUDIO_OUTPUTS, VOICES, ConfigError
@@ -31,6 +31,8 @@ class FakeOmniModel:
     def __init__(self):
         self.generated: list[dict] = []
         self.clones: list[dict] = []
+        self.hooks = []
+        self.on_step = None  # called before each step, so a test can cancel mid-generation
 
     @classmethod
     def from_pretrained(cls, name, **kwargs):
@@ -38,8 +40,16 @@ class FakeOmniModel:
         model.loaded = (name, kwargs)
         return model
 
+    def register_forward_pre_hook(self, hook):
+        self.hooks.append(hook)
+
     def generate(self, **kwargs):
         self.generated.append(kwargs)
+        for step in range(kwargs.get("num_step", 1)):
+            if self.on_step:
+                self.on_step(step)
+            for hook in self.hooks:
+                hook(self, ())
         return [np.full(24_000, 0.25, dtype=np.float32)]
 
     def create_voice_clone_prompt(self, **kwargs):
@@ -118,6 +128,18 @@ def test_omnivoice_synthesize_always_clones(tmp_path, fake_omnivoice):
     assert a == {"text": "Hi.", "voice_clone_prompt": voice._clone_prompt, "num_step": 6}
     assert b == {"text": "Again.", "voice_clone_prompt": voice._clone_prompt, "num_step": 6}
     assert len(voice._model.clones) == 1
+
+
+def test_omnivoice_cancel_aborts_the_running_synthesis_at_the_next_step(tmp_path, fake_omnivoice):
+    voice = OmniVoiceTTS(tmp_path / "voice", steps=6)
+    voice.warm()
+    voice._model.on_step = lambda step: step == 2 and voice.cancel()
+    with pytest.raises(SynthesisCancelled):
+        voice.synthesize("A long piece the user talked over.")
+    voice._model.on_step = None
+    assert len(voice.synthesize("The next one plays.")) == 24_000, "a cancel never leaks into later calls"
+    voice.cancel()  # idle: nothing to abort
+    assert len(voice.synthesize("Still fine.")) == 24_000
 
 
 def test_omnivoice_restores_logging_disabled_while_loading(tmp_path, fake_omnivoice, monkeypatch):

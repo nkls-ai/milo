@@ -51,6 +51,13 @@ public final class PasteboardInserter: TextInserter {
         pendingRestore = (saved, changeCount, task)
     }
 
+    public func copy(_ text: String) {
+        pendingRestore?.task.cancel()
+        pendingRestore = nil
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+    }
+
     private static func sendCommandV() {
         let source = CGEventSource(stateID: .combinedSessionState)
         let vKey: CGKeyCode = 9

@@ -170,6 +170,15 @@ private final class Harness {
         #expect(quiet.model.bubble == nil)
     }
 
+    @Test func dictationWithoutAccessibilityLandsOnTheClipboardAndSaysSo() {
+        let h = Harness()
+        h.accessibility.trusted = false
+        h.brain.emit(.dictation("Sounds good, ship it."))
+        #expect(h.inserter.inserted.isEmpty)
+        #expect(h.inserter.copied == ["Sounds good, ship it."])
+        #expect(h.model.bubble == MiloController.pasteBlocked)
+    }
+
     @Test func displayEventsUpdateTheModel() {
         let h = Harness()
         h.brain.emit(.state(.listening))

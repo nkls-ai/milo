@@ -61,6 +61,14 @@ class Voice(Protocol):
         """Text to mono audio at `sample_rate`. Blocking; called on a worker thread."""
         ...
 
+    def cancel(self) -> None:
+        """Abort every synthesis already started, so barge-in frees the TTS thread at once.
+
+        Safe from any thread. An aborted synthesize() raises; one started afterwards is unaffected.
+        Engines that can't abort may do nothing.
+        """
+        ...
+
 
 @runtime_checkable
 class AudioInput(Protocol):

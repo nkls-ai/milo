@@ -26,6 +26,8 @@ public protocol BrainLauncher: AnyObject {
 /// Puts text into the focused app.
 public protocol TextInserter: AnyObject {
     func insert(_ text: String)
+    /// Puts the text on the clipboard and leaves it there, for when pasting isn't allowed.
+    func copy(_ text: String)
 }
 
 /// Keyboard events from every app. Callbacks arrive on the main queue.

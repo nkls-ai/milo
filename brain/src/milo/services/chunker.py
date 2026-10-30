@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import re
 
-FIRST_MIN_WORDS = 3
-FIRST_MAX_WORDS = 8
+FIRST_MIN_WORDS = 5
+FIRST_MAX_WORDS = 12
 MIN_BUDGET = 45  # shorter pieces synthesize slower than they play, so they never help
 MAX_CHARS = 220
 OVERSHOOT = 1.4

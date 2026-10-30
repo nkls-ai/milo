@@ -31,6 +31,10 @@ DESIGN_STEPS = 32  # the reference is made once, so it gets full quality
 WARM_UP_TEXT = "Okay."
 
 
+class SynthesisCancelled(Exception):
+    """cancel() stopped a synthesis between diffusion steps."""
+
+
 @dataclass(frozen=True)
 class OmniVoiceOptions:
     device: str = "mps"
@@ -55,6 +59,9 @@ class OmniVoiceTTS:
         self.steps = steps
         self._model = None
         self._clone_prompt = None
+        self._started = 0  # id of the latest synthesize() call
+        self._running = 0  # id of the call on the TTS thread right now, 0 if idle
+        self._cancel_upto = 0  # calls with an id up to this one abort at their next step
 
     def warm(self) -> None:
         if self._model is not None:
@@ -68,6 +75,9 @@ class OmniVoiceTTS:
             model = OmniVoice.from_pretrained(MODEL, device_map=self.device, dtype=dtype)
         finally:
             logging.disable(logging.NOTSET)  # OmniVoice disables INFO logging process-wide while loading
+        # generate() runs the model once per diffusion step; checking before each run makes cancel() take
+        # effect within one step (~0.1-0.4 s) instead of after the whole piece.
+        model.register_forward_pre_hook(self._abort_if_cancelled)
         audio_path, text = self._reference(model, torch)
         log.info("cloning voice from %s", audio_path)
         prompt = model.create_voice_clone_prompt(ref_audio=str(audio_path), ref_text=text)
@@ -77,8 +87,20 @@ class OmniVoiceTTS:
 
     def synthesize(self, text: str) -> Audio:
         self.warm()
-        audio = self._model.generate(text=text, voice_clone_prompt=self._clone_prompt, num_step=self.steps)[0]
+        self._started += 1
+        self._running = self._started
+        try:
+            audio = self._model.generate(text=text, voice_clone_prompt=self._clone_prompt, num_step=self.steps)[0]
+        finally:
+            self._running = 0
         return np.asarray(audio, dtype=np.float32).reshape(-1)
+
+    def cancel(self) -> None:
+        self._cancel_upto = self._started
+
+    def _abort_if_cancelled(self, module, args) -> None:
+        if self._running and self._running <= self._cancel_upto:
+            raise SynthesisCancelled(f"synthesis {self._running} cancelled")
 
     def _reference(self, model, torch) -> tuple[Path, str | None]:
         """The clip to clone and its transcript (None: let OmniVoice transcribe it)."""

@@ -12,15 +12,15 @@ def test_say_speaks_chunk_by_chunk_on_one_stream_with_a_growing_bubble():
     s = Stack()
 
     async def run():
-        assert await s.speaker.say("Hello there, my friend. How are you?", Emotion.HAPPY)
+        assert await s.speaker.say("Hello there, my good old friend. How are you?", Emotion.HAPPY)
         await settle()
 
     asyncio.run(run())
-    assert s.voice.spoken == ["Hello there, my friend.", "How are you?"]
+    assert s.voice.spoken == ["Hello there, my good old friend.", "How are you?"]
     assert len(s.output.streams) == 1, "one stream per utterance, so chunks play without gaps"
     assert s.output.streams[0]["sample_rate"] == FakeVoice.sample_rate
-    assert s.output.fed == [10 * len("Hello there, my friend."), 10 * len("How are you?")]
-    assert s.bubbles() == ["Hello there, my friend.", "Hello there, my friend. How are you?"]
+    assert s.output.fed == [10 * len("Hello there, my good old friend."), 10 * len("How are you?")]
+    assert s.bubbles() == ["Hello there, my good old friend.", "Hello there, my good old friend. How are you?"]
     assert s.states() == [MiloState.SPEAKING, MiloState.IDLE]
     assert s.sink.of(EmotionChanged) == [EmotionChanged(Emotion.HAPPY)]
     assert s.sink.of(Level), "voice loudness reaches the app"
@@ -56,7 +56,7 @@ def test_interrupt_stops_speech_and_drops_the_rest():
 
     async def run():
         utterance = s.speaker.utterance(Emotion.NEUTRAL)
-        utterance.add("One two three, ")
+        utterance.add("One two three four five, ")
         await settle()
         assert s.speaker.active and s.ui.state is MiloState.SPEAKING
         s.speaker.interrupt()
@@ -65,9 +65,9 @@ def test_interrupt_stops_speech_and_drops_the_rest():
         await settle()
 
     asyncio.run(run())
-    assert s.voice.spoken == ["One two three,"]
+    assert s.voice.spoken == ["One two three four five,"]
     assert s.output.interrupts == 1
-    assert s.bubbles() == ["One two three,"]
+    assert s.bubbles() == ["One two three four five,"]
     assert s.states() == [MiloState.SPEAKING, MiloState.IDLE]
     assert not s.speaker.active and not s.ui.speaking
 
@@ -89,12 +89,12 @@ def test_tts_failure_still_shows_the_text_and_plays_silence_for_its_length():
     s = Stack(voice=FakeVoice(fail=True))
 
     async def run():
-        await s.speaker.say("Hi there you. Yo.", Emotion.HAPPY)
+        await s.speaker.say("Hi there, how are you. Yo.", Emotion.HAPPY)
 
     asyncio.run(run())
-    assert s.bubbles() == ["Hi there you.", "Hi there you. Yo."]
-    rate = FakeVoice.sample_rate * SECONDS_PER_CHAR_WITHOUT_AUDIO
-    assert s.output.fed == [int(rate * len("Hi there you.")), int(rate * len("Yo."))]
+    assert s.bubbles() == ["Hi there, how are you.", "Hi there, how are you. Yo."]
+    silence = lambda text: int(SECONDS_PER_CHAR_WITHOUT_AUDIO * len(text) * FakeVoice.sample_rate)
+    assert s.output.fed == [silence("Hi there, how are you."), silence("Yo.")]
     assert s.states() == [MiloState.SPEAKING, MiloState.IDLE]
 
 
@@ -171,3 +171,18 @@ def test_pace_fits_overhead_and_per_char_cost_from_pieces_of_different_length():
     assert abs(pace.overhead_s - 1.5) < 1e-6 and abs(pace.seconds_per_char - 0.02) < 1e-6
     assert pace.budget(4.0) == int((4.0 * pace.margin - 1.5) / 0.02)
     assert pace.budget(0.5) == 0
+
+
+
+def test_interrupt_cancels_the_synthesis_in_flight():
+    s = Stack(output=FakeAudioOutput(block=True))
+
+    async def run():
+        utterance = s.speaker.utterance(Emotion.NEUTRAL)
+        utterance.add("One two three four five, ")
+        await settle()
+        s.speaker.interrupt()
+        assert await utterance.finish() is False
+
+    asyncio.run(run())
+    assert s.voice.cancels == 1, "frees the TTS thread so the next reply needn't wait for this one"
