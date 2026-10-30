@@ -1,8 +1,16 @@
-"""Codex CLI adapter: one `codex exec` (or `codex exec resume`) process per turn."""
+"""Codex CLI adapter: one `codex exec` (or `codex exec resume`) process per turn.
+
+The worker runs in a Codex home of its own (`state/codex-home`), not the user's `~/.codex`: there it gets
+Milo's tools and instructions only, none of the user's plugins, skills, MCP servers, global AGENTS.md or
+settings. Only the login is shared, through a symlink to the user's `auth.json`. Codex writes a refreshed
+login through the link (checked with codex 0.164), so the user's own Codex stays logged in.
+"""
 
 from __future__ import annotations
 
 import json
+import logging
+import os
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,10 +25,59 @@ from ._activity import CodexActivity
 from ._binary import find_binary
 from ._process import last_line, run
 
+log = logging.getLogger(__name__)
+
 # Long enough for a question to the user (approvals time out at 60 s by default).
 TOOL_TIMEOUT_S = 240
 # Where the ChatGPT desktop app ships its own codex.
 BUNDLED_CODEX = Path("/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex")
+
+# The config.toml of Milo's own Codex home. Codex's built-in computer use, browser, plugins, apps, sub-agents,
+# image generation and skills are off, so the worker uses Milo's tools, which check and show every action.
+HOME_CONFIG = """\
+# Written by Milo before every task; edits are overwritten. Milo's worker uses only Milo's tools.
+check_for_update_on_startup = false
+
+[features]
+computer_use = false
+browser_use = false
+in_app_browser = false
+plugins = false
+remote_plugin = false
+apps = false
+tool_suggest = false
+multi_agent = false
+goals = false
+memories = false
+image_generation = false
+
+[skills]
+include_instructions = false
+
+[skills.bundled]
+enabled = false
+"""
+
+
+def user_codex_home() -> Path:
+    """Where the user's own Codex keeps its login: $CODEX_HOME, else ~/.codex."""
+    return Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex").expanduser()
+
+
+def prepare_home(home: Path, login_from: Path) -> None:
+    """Milo's Codex home: a fresh config.toml and a link to the user's login.
+
+    A link that is already there is kept, and so is a real auth.json (a login made for Milo alone).
+    """
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "config.toml").write_text(HOME_CONFIG)
+    auth, source = home / "auth.json", login_from / "auth.json"
+    if auth.is_symlink() and not auth.exists():
+        auth.unlink()  # the user's login moved or went away
+    if not auth.exists() and not auth.is_symlink() and source.exists():
+        auth.symlink_to(source)
+    if not auth.exists():
+        log.warning("codex has no login in %s; run `codex login` first", login_from)
 
 
 @dataclass(frozen=True)
@@ -37,8 +94,12 @@ class CodexHarness:
 
     def __init__(self, binary: str, workdir: Path, schema_path: Path, *, model: str = "",
                  reasoning_effort: str = "low", sandbox: str = "workspace-write", timeout_s: float = 180,
-                 mac_tools: Sequence[str] = (), tool_servers: tuple[ToolServer, ...] = ()):
+                 mac_tools: Sequence[str] = (), tool_servers: tuple[ToolServer, ...] = (),
+                 home: Path | None = None, login_from: Path | None = None):
+        """`home` is Milo's own Codex home (None: the user's, for tests), `login_from` the user's."""
         self.binary = binary
+        self.home = home
+        self.login_from = login_from or user_codex_home()
         self.mac_tools = tuple(mac_tools)
         self.tool_servers = tool_servers
         self.workdir = workdir
@@ -57,6 +118,7 @@ class CodexHarness:
         cmd += [
             "--json",
             "--skip-git-repo-check",
+            "--ignore-rules",  # the user's command rules are for their own Codex
             "--output-schema", str(self.schema_path),
             # `exec resume` has no --sandbox flag, so set it through config on both paths.
             "-c", f'sandbox_mode="{self.sandbox}"',
@@ -70,8 +132,12 @@ class CodexHarness:
 
     async def reply(self, prompt: str, session_id: str | None, *, on_step: StepCallback | None = None) -> Reply:
         on_line = CodexActivity(on_step, self.workdir).line if on_step is not None else None
+        env = None
+        if self.home is not None:
+            prepare_home(self.home, self.login_from)
+            env = {**os.environ, "CODEX_HOME": str(self.home)}
         code, out, err = await run(self.command(prompt, session_id), cwd=self.workdir, timeout_s=self.timeout_s,
-                                   on_line=on_line)
+                                   on_line=on_line, env=env)
         thread_id, text, usage, error = parse_events(out.splitlines())
         if error or code != 0 or text is None:
             raise HarnessError(f"codex failed: {error or last_line(err, code)}", transient=True)
@@ -132,4 +198,5 @@ def _codex(options: Mapping[str, Any], ctx: AdapterContext) -> CodexHarness:
         timeout_s=o.timeout_s,
         mac_tools=ctx.mac_tools,
         tool_servers=ctx.tool_servers,
+        home=ctx.state_dir / "codex-home",
     )

@@ -8,7 +8,7 @@ import pytest
 
 from milo.adapters.harness import _binary
 from milo.adapters.harness.claude import ClaudeHarness, parse_result
-from milo.adapters.harness.codex import CodexHarness, parse_events
+from milo.adapters.harness.codex import HOME_CONFIG, CodexHarness, parse_events, prepare_home
 from milo.core.registry import HARNESSES, ConfigError
 from milo.core.types import Emotion, HarnessError, Reply, ToolServer, Usage
 
@@ -266,3 +266,71 @@ def test_the_worker_gets_milo_mac_and_the_app_connections_together(tmp_path):
     cmd = CodexHarness("codex", tmp_path, tmp_path / "s.json", mac_tools=mac_tools, tool_servers=connections).command(
         "hi", None)
     assert 'mcp_servers.milo-mac.command="/py"' in cmd and 'mcp_servers.milo.args=["-m", "milo.connect"]' in cmd
+
+
+# ---- the worker gets Milo's tools only
+
+
+def test_codex_runs_in_milos_own_home_with_the_users_login(tmp_path, ctx):
+    login = tmp_path / "user-codex"
+    login.mkdir()
+    (login / "auth.json").write_text("{}")
+    (login / "config.toml").write_text("[plugins.\"computer-use@openai-bundled\"]\nenabled = true\n")
+    events = tmp_path / "events.jsonl"
+    events.write_text(CODEX_EVENTS)
+    binary = fake_cli(tmp_path, f'echo "$CODEX_HOME" > "{tmp_path}/codex-home"\ncat "{events}"\n')
+    h = codex(ctx, binary)
+    h.login_from = login
+    asyncio.run(h.reply("hi", None))
+    home = Path((tmp_path / "codex-home").read_text().strip())
+    assert home == ctx.state_dir / "codex-home"
+    assert (home / "auth.json").resolve() == (login / "auth.json").resolve()
+    assert (home / "config.toml").read_text() == HOME_CONFIG
+    _, args = recorded(binary)
+    assert "--ignore-rules" in args
+
+
+def test_milos_codex_home_turns_off_codex_computer_use_plugins_and_skills():
+    import tomllib
+    config = tomllib.loads(HOME_CONFIG)
+    assert all(config["features"][f] is False for f in ("computer_use", "browser_use", "plugins", "apps"))
+    assert config["skills"] == {"include_instructions": False, "bundled": {"enabled": False}}
+    assert "mcp_servers" not in config  # Milo's own servers come in with -c on every call
+
+
+def test_prepare_home_keeps_a_login_and_mends_a_broken_link(tmp_path):
+    login, home = tmp_path / "login", tmp_path / "home"
+    login.mkdir()
+    (login / "auth.json").write_text("{}")
+    prepare_home(home, login)
+    (home / "config.toml").write_text("edited")
+    prepare_home(home, login)
+    assert (home / "config.toml").read_text() == HOME_CONFIG and (home / "auth.json").is_symlink()
+    (home / "auth.json").unlink()
+    (home / "auth.json").symlink_to(tmp_path / "gone.json")
+    prepare_home(home, login)
+    assert (home / "auth.json").resolve() == (login / "auth.json").resolve()
+    (home / "auth.json").unlink()
+    (home / "auth.json").write_text('{"own": 1}')  # a login made for Milo alone stays
+    prepare_home(home, login)
+    assert (home / "auth.json").read_text() == '{"own": 1}'
+
+
+def test_without_a_home_codex_uses_the_users_environment(tmp_path, monkeypatch):
+    events = tmp_path / "events.jsonl"
+    events.write_text(CODEX_EVENTS)
+    monkeypatch.setenv("CODEX_HOME", "/somewhere")
+    binary = fake_cli(tmp_path, f'echo "$CODEX_HOME" > "{tmp_path}/codex-home"\ncat "{events}"\n')
+    asyncio.run(CodexHarness(binary, tmp_path, tmp_path / "s.json").reply("hi", None))
+    assert (tmp_path / "codex-home").read_text().strip() == "/somewhere"
+
+
+def test_claude_worker_skips_user_settings_skills_and_memory(tmp_path):
+    cmd = ClaudeHarness("claude", tmp_path, disallowed_tools=("Bash", "WebFetch")).command("hi", None)
+    assert cmd[cmd.index("--setting-sources") + 1] == "project,local"
+    assert json.loads(cmd[cmd.index("--settings") + 1]) == {"autoMemoryEnabled": False}
+    assert "--disable-slash-commands" in cmd and "--strict-mcp-config" in cmd
+    assert cmd[cmd.index("--tools") + 1] == "Read,Edit,Write,Glob,Grep,WebSearch"
+    everything_off = ("Bash", "Read", "Edit", "Write", "Glob", "Grep", "WebSearch", "WebFetch")
+    cmd = ClaudeHarness("claude", tmp_path, disallowed_tools=everything_off).command("hi", None)
+    assert cmd[cmd.index("--tools") + 1] == ""

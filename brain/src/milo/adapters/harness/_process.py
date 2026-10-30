@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from milo.core.types import HarnessError
@@ -14,16 +14,17 @@ log = logging.getLogger(__name__)
 STDOUT_LIMIT = 16 * 1024 * 1024  # one JSON event can carry a whole command's output
 
 
-async def run(cmd: list[str], *, cwd: Path, timeout_s: float,
-              on_line: Callable[[str], None] | None = None) -> tuple[int, str, str]:
+async def run(cmd: list[str], *, cwd: Path, timeout_s: float, on_line: Callable[[str], None] | None = None,
+              env: Mapping[str, str] | None = None) -> tuple[int, str, str]:
     """Return (exit code, stdout, stderr). Raises HarnessError on timeout or if the binary won't start.
 
-    `on_line` gets each stdout line as it arrives. An exception in it is logged, never raised.
+    `on_line` gets each stdout line as it arrives. An exception in it is logged, never raised. `env` replaces
+    the environment; None inherits it.
     """
     try:
         # stdin must be closed: `codex exec` waits for piped stdin otherwise and hangs.
         proc = await asyncio.create_subprocess_exec(
-            *cmd, cwd=cwd, stdin=asyncio.subprocess.DEVNULL, limit=STDOUT_LIMIT,
+            *cmd, cwd=cwd, env=env, stdin=asyncio.subprocess.DEVNULL, limit=STDOUT_LIMIT,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         )
     except OSError as e:
