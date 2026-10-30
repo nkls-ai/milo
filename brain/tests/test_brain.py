@@ -184,7 +184,37 @@ def check_stop_helper(s: Stack, msg: dict) -> None:
     assert helper.status is HelperStatus.STOPPED and s.harness.played[0].cancelled
 
 
+def paired_stack() -> Stack:
+    from tests.fakes import FakeChannel, MemoryRemoteState
+
+    return Stack(channel=FakeChannel(), remote=MemoryRemoteState(
+        {"owner": {"channel": "fake", "chat": "42", "sender": "42", "name": "Niklas"}}))
+
+
+def check_remote_pause(s: Stack, msg: dict) -> None:
+    s = paired_stack()
+    run(s, parse_command(msg))
+    assert s.messages.paused is msg["on"] and s.remote.data["paused"] is msg["on"]
+    assert s.messages.status().paused is msg["on"]
+    run(Stack(), parse_command(msg))  # without messages it is ignored
+
+
+def check_remote_forget(s: Stack, msg: dict) -> None:
+    s = paired_stack()
+
+    async def go():
+        await s.brain.handle(parse_command(msg))
+        await settle()
+
+    asyncio.run(go())
+    assert s.messages.owner is None and "owner" not in s.remote.data
+    assert s.channel.sent == [("42", "Milo on your Mac disconnected this chat.")]
+    run(Stack(), parse_command(msg))
+
+
 CHECKS = {
+    "remote_pause": check_remote_pause,
+    "remote_forget": check_remote_forget,
     "stop_helper": check_stop_helper,
     "look_result": check_look_result,
     "whats_this": check_whats_this,

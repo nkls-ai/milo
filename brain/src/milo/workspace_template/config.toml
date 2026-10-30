@@ -69,6 +69,26 @@ buy = "ask_first"
 shortcut = "ask_first"            # your own shortcuts can do any of the above
 # password, money and security are always "never".
 
+[messages]
+# Reach Milo on this Mac from your phone, through a chat app. Setup: docs/setup/messages.md.
+# Make a bot with @BotFather in Telegram, put its token in the token file below, switch this on and
+# restart Milo, then message the bot and send it the code Milo shows here.
+enabled = false
+use = "telegram"                  # telegram | imessage (experimental, needs Full Disk Access)
+max_per_minute = 10               # messages Milo answers per minute; more are dropped
+# With no mouse or keyboard use for this long, Milo's questions go to your phone, and only your phone
+# can answer them. While you are away, changes to this file are put back.
+away_after_min = 5
+question_timeout_s = 150          # how long a question on your phone waits; no answer means no
+brief_at = ""                     # "07:30": today's calendar, reminders and helpers every morning. "" is off.
+max_file_mb = 45                  # Milo sends you a file only after your yes, up to this size
+
+[messages.telegram]
+token_file = "secrets/telegram-token"   # in ~/Milo, readable by you only: chmod 600
+
+[messages.imessage]
+handle = ""                       # your own phone number or Apple ID email, the chat Milo uses
+
 [logging]
 content = false                   # true puts what you say and Milo's answers in brain.log. Debugging only.
 max_mb = 2

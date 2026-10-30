@@ -8,6 +8,7 @@ import re
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import time
 from pathlib import Path
 from typing import Any
 
@@ -18,12 +19,12 @@ log = logging.getLogger("milo.config")
 
 KEY_NAMES = ("fn", "right_option", "right_command", "right_control")
 CHARACTERS = ("pip", "classic")
-PLUGGABLE = ("chat", "harness", "stt", "tts", "audio", "dictation", "connections")
+PLUGGABLE = ("chat", "harness", "stt", "tts", "audio", "dictation", "connections", "messages")
 SECTIONS = (*PLUGGABLE, "ui", "heartbeat", "hands", "approvals", "logging")
 _COMBO = re.compile(r"^((ctrl|control|option|alt|shift|cmd|command)\+)+[a-z0-9]+$|^f([1-9]|1[0-9])$")
 
 # `use` when a section leaves it out. Lets configs written before a section existed keep working.
-DEFAULT_USE = {"chat": "claude_live", "connections": "mac"}
+DEFAULT_USE = {"chat": "claude_live", "connections": "mac", "messages": "telegram"}
 
 # Keys older templates had. ~/Milo/config.toml is never overwritten, so they are skipped with a warning.
 RETIRED = {("harness", "conversation_idle_reset_s"): "it moved to [chat]",
@@ -134,6 +135,48 @@ class ApprovalSettings:
 
 
 @dataclass(frozen=True)
+class MessagesSettings:
+    """Milo by message: reach Milo on the Mac from your phone (`use` picks the chat app). Off by default."""
+
+    enabled: bool = False
+    max_per_minute: int = 10
+    """Messages from your phone Milo answers per minute. More are dropped, with one note."""
+    away_after_min: float = 5.0
+    """With no keyboard or mouse use for this long, Milo's questions go to your phone and only it can answer."""
+    question_timeout_s: float = 150.0
+    """How long a question sent to your phone waits. A helper's turn ends after [harness.*] timeout_s anyway."""
+    brief_at: str = ""
+    """A morning brief to your phone every day at this time, like "07:30". "" is off."""
+    max_file_mb: float = 45.0
+    """The biggest file Milo sends you (always after a yes). Telegram takes up to 50 MB from a bot."""
+
+    def __post_init__(self):
+        if isinstance(self.max_per_minute, bool) or not isinstance(self.max_per_minute, int) \
+                or not 1 <= self.max_per_minute <= 60:
+            raise ConfigError("[messages] max_per_minute must be a whole number from 1 to 60")
+        if not 0 < self.away_after_min <= 24 * 60:
+            raise ConfigError("[messages] away_after_min must be more than 0")
+        if not 10 <= self.question_timeout_s <= 3600:
+            raise ConfigError("[messages] question_timeout_s must be from 10 to 3600")
+        if not 0 < self.max_file_mb <= 50:
+            raise ConfigError("[messages] max_file_mb must be more than 0 and at most 50")
+        try:
+            brief_time(str(self.brief_at))
+        except ValueError:
+            raise ConfigError('[messages] brief_at must be a time like "07:30", or "" for no brief') from None
+
+
+def brief_time(text: str) -> time | None:
+    """"07:30" as a time, "" as None. Raises ValueError for anything else."""
+    if not text:
+        return None
+    match = re.fullmatch(r"([01]?\d|2[0-3]):([0-5]\d)", text.strip())
+    if match is None:
+        raise ValueError(text)
+    return time(int(match[1]), int(match[2]))
+
+
+@dataclass(frozen=True)
 class LoggingSettings:
     content: bool = False
     """Put what was said, replies, facts and reminder texts in brain.log. For debugging only."""
@@ -155,6 +198,7 @@ class AudioSettings:
 _PLUGGABLE_SETTINGS: dict[str, type] = {
     "chat": ChatSettings, "harness": HarnessSettings, "stt": SttSettings, "tts": TtsSettings,
     "audio": AudioSettings, "dictation": DictationSettings, "connections": ConnectionSettings,
+    "messages": MessagesSettings,
 }
 
 
@@ -174,6 +218,7 @@ class Config:
         self.tts: TtsSettings = settings["tts"]
         self.dictation: DictationSettings = settings["dictation"]
         self.connections: ConnectionSettings = settings["connections"]
+        self.messages: MessagesSettings = settings["messages"]
         approvals = raw.get("approvals", {})
         self.approvals = _pluggable_settings(ApprovalSettings, approvals, "approvals")
         if not isinstance(approvals.get("levels", {}), dict):
