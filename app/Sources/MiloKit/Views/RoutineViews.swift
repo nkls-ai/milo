@@ -19,7 +19,7 @@ struct RoutinesPanel: View {
                     Text(routines.count == 1 ? "1 routine" : "\(routines.count) routines")
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
                     if !open, let next = Self.nextUp(routines) {
-                        Text("· \(next.name) \(Self.when(next.nextRun!))")
+                        Text("· next: \(next.name), \(Self.when(next.nextRun!))")
                             .font(.system(size: 11))
                             .lineLimit(1)
                     }
@@ -134,8 +134,19 @@ struct RoutineRow: View {
             parts.append(routine.schedule.prefix(1).uppercased() + routine.schedule.dropFirst()
                          + (routine.paused ? ", paused" : ""))
         }
-        if !routine.lastRun.isEmpty { parts.append("last run \(routine.lastRun)") }
+        if !routine.lastRun.isEmpty { parts.append("last run \(lastRun(routine.lastRun))") }
         return parts.joined(separator: " · ")
+    }
+
+    /// "2026-10-26 09:00, done" as "Oct 26 at 09:00, done" in the user's locale; anything else as it is.
+    static func lastRun(_ text: String) -> String {
+        let parts = text.split(separator: ",", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd HH:mm"
+        guard let date = f.date(from: parts[0]) else { return text }
+        let when = date.formatted(.dateTime.day().month(.abbreviated).hour().minute())
+        return parts.count > 1 ? "\(when), \(parts[1])" : when
     }
 }
 
@@ -147,6 +158,8 @@ struct DraftCard: View {
     let save: () -> Void
     let change: () -> Void
     let drop: () -> Void
+    /// Shows the file exactly as Save writes it, front matter and all.
+    @State private var whole = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -169,26 +182,44 @@ struct DraftCard: View {
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 6) {
-                    if !draft.inputs.isEmpty {
-                        Text("Asks each time: " + draft.inputs.joined(separator: "; "))
+                    if whole {
+                        Text(draft.recipe)
+                            .font(.system(size: 11, design: .monospaced))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    if !whole && !draft.inputs.isEmpty {
+                        Text("Each time: " + draft.inputs.joined(separator: "; "))
                             .font(.system(size: 11.5, weight: .medium))
                             .foregroundStyle(WindowColors.accent)
                     }
-                    Text(draft.steps)
-                        .font(.system(size: 12))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if !whole && !draft.apps.isEmpty {
+                        Text("Uses the screen with " + draft.apps.joined(separator: ", "))
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundStyle(WindowColors.accent)
+                    }
+                    if !whole { ForEach(Array(Self.lines(draft.steps).enumerated()), id: \.offset) { _, line in
+                        Text(line.text)
+                            .font(.system(size: line.heading ? 12.5 : 12, weight: line.heading ? .semibold : .regular,
+                                          design: line.heading ? .rounded : .default))
+                            .padding(.top, line.heading ? 4 : 0)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } }
                 }
                 .padding(10)
             }
             .frame(maxHeight: 190)
             .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(WindowColors.field))
             HStack(spacing: 8) {
-                Text("Or hold \(talkKey) and say what to change.")
+                Button(whole ? "Show the steps" : "Show the whole file") { whole.toggle() }
+                    .buttonStyle(.plain)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
+                    .help("The file exactly as Save keeps it")
                 Spacer()
                 Button("Change it", action: change)
+                    .help("Type what to change, or hold \(talkKey) and say it")
                     .buttonStyle(.plain)
                     .font(.system(size: 12, weight: .medium))
                     .padding(.horizontal, 10)
@@ -211,5 +242,17 @@ struct DraftCard: View {
         .overlay(alignment: .top) { Rectangle().fill(WindowColors.rule).frame(height: 1) }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Milo wrote down \(draft.name)")
+    }
+
+    /// The recipe's lines for reading: "## Steps" becomes a heading, blank lines go.
+    static func lines(_ text: String) -> [(text: String, heading: Bool)] {
+        text.components(separatedBy: "\n").compactMap { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { return nil }
+            if trimmed.hasPrefix("#") {
+                return (trimmed.drop(while: { $0 == "#" }).trimmingCharacters(in: .whitespaces), true)
+            }
+            return (line.hasPrefix("   ") ? "    " + trimmed : trimmed, false)
+        }
     }
 }

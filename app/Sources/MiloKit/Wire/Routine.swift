@@ -94,14 +94,14 @@ public struct RoutineDraft: Equatable, Sendable, Identifiable, Decodable {
         return lines[(end + 1)...].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// The input lines of the front matter, as "month: Which month? (last month)".
+    /// The inputs of the front matter, every part the worker gets: "month: Which month? (usually last month)".
     public var inputs: [String] {
         var out: [String] = []
         var current: (name: String, ask: String, fallback: String)?
         var inInputs = false
         func flush() {
             if let c = current {
-                out.append(c.name + (c.ask.isEmpty ? "" : ": \(c.ask)") + (c.fallback.isEmpty ? "" : " (\(c.fallback))"))
+                out.append(c.name + (c.ask.isEmpty ? "" : ": \(c.ask)") + (c.fallback.isEmpty ? "" : " (usually \(c.fallback))"))
             }
             current = nil
         }
@@ -121,6 +121,17 @@ public struct RoutineDraft: Equatable, Sendable, Identifiable, Decodable {
         }
         flush()
         return out
+    }
+
+    /// The apps line of the front matter, "[Finder, Numbers]" as ["Finder", "Numbers"]: a run with apps uses the screen.
+    public var apps: [String] {
+        for line in recipe.components(separatedBy: "\n").dropFirst() {
+            if line.trimmingCharacters(in: .whitespaces) == "---" { break }
+            guard line.hasPrefix("apps:") else { continue }
+            let list = line.dropFirst(5).trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+            return list.split(separator: ",").map { Self.value($0) }.filter { !$0.isEmpty }
+        }
+        return []
     }
 
     private static func value(_ text: Substring) -> String {

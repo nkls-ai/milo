@@ -14,6 +14,7 @@ import Testing
             default: last month
           - name: folder
         schedule: every Monday at 09:00
+        apps: [Numbers]
         ---
 
         ## Steps
@@ -51,12 +52,17 @@ import Testing
 
     @Test func aDraftShowsItsStepsAndWhatItAsksEachTime() {
         #expect(Self.draft.steps.hasPrefix("## Steps\n\n1. Read the sales for {month}."))
-        #expect(Self.draft.inputs == ["month: Which month? (last month)", "folder"])
+        #expect(Self.draft.inputs == ["month: Which month? (usually last month)", "folder"])
+        #expect(Self.draft.apps == ["Numbers"])
+        #expect(DraftCard.lines(Self.draft.steps).map(\.heading) == [true, false, false])
         #expect(RoutineDraft(id: "x", name: "X", recipe: "just words").steps == "just words")
     }
 
     @Test func rowsSayWhenTheyRunAndHowTheLastRunWent() {
-        #expect(RoutineRow.summary(Self.report) == "Every Monday at 09:00 · last run 2026-10-26 09:00, done")
+        #expect(RoutineRow.summary(Self.report).hasPrefix("Every Monday at 09:00 · last run "))
+        #expect(!RoutineRow.summary(Self.report).contains("2026-10-26"))
+        #expect(RoutineRow.summary(Self.report).hasSuffix(", done"))
+        #expect(RoutineRow.lastRun("soon") == "soon")
         #expect(RoutineRow.summary(RoutineInfo(id: "t", name: "Tidy")) == "Only when you ask")
         #expect(RoutineRow.summary(RoutineInfo(id: "t", name: "T", schedule: "every day at 08:00", paused: true))
                 == "Every day at 08:00, paused")
