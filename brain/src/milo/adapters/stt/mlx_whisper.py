@@ -17,6 +17,9 @@ log = logging.getLogger(__name__)
 
 MIN_SECONDS = 0.3
 MIN_RMS = 0.004
+CACHE_LIMIT = 256 * 2**20
+"""MLX keeps freed GPU buffers for reuse, about 1 GB after a few passes. Capping that saves 800 MB of RAM
+for a pass 1-2% slower, which matters on 16 GB next to OmniVoice."""
 
 # Whisper invents these on silence or noise. Drop a transcript that is only one of them.
 _HALLUCINATIONS = {
@@ -108,6 +111,7 @@ class _Whisper:
         if self._model is None:
             from mlx_whisper.load_models import load_model
 
+            mx.set_cache_limit(CACHE_LIMIT)
             self._model = load_model(self.repo, dtype=mx.float16)
             self._model.encoder = _LastEncoding(self._model.encoder)
         # mlx_whisper keeps one model in a class attribute and reloads it whenever the repo changes.
