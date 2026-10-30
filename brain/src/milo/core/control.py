@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -119,8 +120,13 @@ _STEERING_FOLDED = frozenset(name.casefold() for name in STEERING)
 _FOLDER = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 
 
-def _sweep(folder: int, where: str, left: list[str]) -> None:
-    """Remove the STEERING entries in the open `folder` (`where` below the work folder) and below it."""
+MAX_DEPTH = 32
+"""Folders deeper than this in the worker's folder aren't looked through: no helper runs until they're gone."""
+
+
+def _sweep(folder: int, where: str, left: list[str], depth: int = 0) -> None:
+    """Remove the STEERING entries in the open `folder` (`where` below the work folder) and below it. Whatever
+    can't be checked counts as still there."""
     try:
         entries = [(e.name, e.is_dir(follow_symlinks=False)) for e in os.scandir(folder)]
     except OSError:
@@ -134,20 +140,46 @@ def _sweep(folder: int, where: str, left: list[str]) -> None:
                     _delete(folder, name)
                 else:
                     os.unlink(name, dir_fd=folder)  # a link is removed itself
-                log.warning("removed %s a helper left in its folder", rel)
-            except FileNotFoundError:
-                pass
             except OSError as e:
-                log.warning("could not remove %s from the worker's folder: %s", rel, e)
+                if not isinstance(e, FileNotFoundError):
+                    log.warning("could not remove %s from the worker's folder: %s", rel, e)
+            if _exists(folder, name):
                 left.append(rel)
+            else:
+                log.warning("removed %s a helper left in its folder", rel)
         elif is_folder:
+            if depth >= MAX_DEPTH:
+                left.append(rel + " (too deep to look through)")
+                continue
             child = _open_folder(folder, name)
             if child is None:
+                if _is_folder(folder, name):
+                    left.append(rel)  # a real folder that can't be opened: can't tell what's inside
                 continue  # gone, or a link by now: links aren't followed
             try:
-                _sweep(child, rel + "/", left)
+                _sweep(child, rel + "/", left, depth + 1)
             finally:
                 os.close(child)
+
+
+def _exists(folder: int, name: str) -> bool:
+    """Only "not found" counts as gone: a name that can't be looked at may well still be there."""
+    try:
+        os.stat(name, dir_fd=folder, follow_symlinks=False)
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    return True
+
+
+def _is_folder(folder: int, name: str) -> bool:
+    try:
+        return stat.S_ISDIR(os.stat(name, dir_fd=folder, follow_symlinks=False).st_mode)
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
 
 
 def _open_folder(parent: int, name: str) -> int | None:
@@ -170,10 +202,13 @@ def _delete(parent: int, name: str) -> None:
         return
     try:
         for entry in list(os.scandir(child)):
-            if entry.is_dir(follow_symlinks=False):
-                _delete(child, entry.name)
-            else:
-                os.unlink(entry.name, dir_fd=child)
+            try:
+                if entry.is_dir(follow_symlinks=False):
+                    _delete(child, entry.name)
+                else:
+                    os.unlink(entry.name, dir_fd=child)
+            except FileNotFoundError:
+                continue  # someone else removed it meanwhile; the rmdir below says if anything is left
     finally:
         os.close(child)
     os.rmdir(name, dir_fd=parent)

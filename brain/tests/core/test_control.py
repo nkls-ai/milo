@@ -1,5 +1,7 @@
 """Milo's control files (ADR 0020): which paths count, however they are written."""
 
+import pytest
+
 from milo.core.control import CONTROL_FILES, CONTROL_FOLDERS, Protected
 
 
@@ -127,3 +129,41 @@ def test_a_folder_swapped_for_a_link_during_the_sweep_isnt_followed(tmp_path, mo
     control.clear_steering(work)
     assert (home / "CLAUDE.md").read_text() == "@AGENTS.md"
     assert (work / "a").is_symlink(), "the link is left alone: it isn't a steering name"
+
+
+def test_what_the_sweep_cant_check_counts_as_still_there(tmp_path, monkeypatch):
+    from milo.core import control
+
+    work = tmp_path / "Milo" / "work"
+    (work / ".claude" / "skills").mkdir(parents=True)
+    (work / ".claude" / "skills" / "x.md").write_text("")
+    (work / ".claude" / "settings.json").write_text("{}")
+    real_unlink = control.os.unlink
+
+    def vanishing(name, *, dir_fd=None):
+        # Another helper removes settings.json just before we do; the folder must still be emptied.
+        if name == "settings.json":
+            real_unlink(name, dir_fd=dir_fd)
+            raise FileNotFoundError(name)
+        return real_unlink(name, dir_fd=dir_fd)
+
+    monkeypatch.setattr(control.os, "unlink", vanishing)
+    control.clear_steering(work)
+    assert not (work / ".claude").exists()
+    monkeypatch.undo()
+
+    (work / "deep").mkdir()
+    deep = work / "deep"
+    for _ in range(control.MAX_DEPTH + 1):
+        deep = deep / "d"
+    deep.mkdir(parents=True)
+    (deep / "CLAUDE.md").write_text("hidden far down")
+    with pytest.raises(OSError, match="too deep"):
+        control.clear_steering(work)
+    import shutil
+
+    shutil.rmtree(work / "deep")
+    (work / "box").mkdir()
+    monkeypatch.setattr(control, "_open_folder", lambda parent, name: None)  # a real folder that won't open
+    with pytest.raises(OSError, match="box"):
+        control.clear_steering(work)
