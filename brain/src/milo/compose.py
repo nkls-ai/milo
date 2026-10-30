@@ -30,6 +30,7 @@ from .services.task_runner import TaskRunner
 from .services.tool_requests import ToolRequests
 from .services.transcript import Transcript
 from .services.ui_state import UiState
+from .settings import Settings
 from .transport.hands_socket import HandsSocketServer
 from .transport.tool_socket import ToolSocketServer
 from .transport.unix_socket import UnixSocketServer
@@ -58,6 +59,7 @@ class Runtime:
 def build(home: Path) -> Runtime:
     # Lazy, so importing compose neither registers adapters nor touches the workspace.
     from . import adapters
+    from .memory.config_file import TomlConfigFile
     from .memory.history import JsonlDictationHistory
     from .memory.ledger import JsonlUsageLedger
     from .memory.profile import MarkdownProfile
@@ -100,6 +102,7 @@ def build(home: Path) -> Runtime:
     idle_reset_s = config.chat.conversation_idle_reset_s
     conversation = Conversation(harness, ledger, clock, idle_reset_s)
     speaker = Speaker(voice, output, ui, tts_executor)
+    speaker.silent = not config.ui.voice
     transcript = Transcript(ui, JsonlTranscript(workspace.transcript_path), clock)
     approvals = Approvals(ui, speaker, ActionPolicy(config.approval_levels), timeout_s=config.approvals.timeout_s,
                           speak=config.approvals.speak, quiet=lambda: live_talk.busy or mic.active,
@@ -130,8 +133,20 @@ def build(home: Path) -> Runtime:
         heartbeat = HeartbeatRunner(engine, context, conversation, speaker, ui, mic, clock,
                                     busy=lambda: live_talk.busy)
 
+    def use_ui(changed: Config) -> None:
+        brain.use_ui(changed.ui)
+
+    def use_voice(changed: Config) -> None:
+        speaker.silent = not changed.ui.voice
+
+    def use_stream(changed: Config) -> None:
+        listening.live_mode = LiveMode(changed.dictation.stream)
+
+    live = {("ui", "character"): use_ui, ("ui", "dictate_key"): use_ui, ("ui", "talk_key"): use_ui,
+            ("ui", "whats_this_key"): use_ui, ("ui", "voice"): use_voice, ("dictation", "stream"): use_stream}
+    settings = Settings(TomlConfigFile(workspace.config_path), config, ui, live)
     brain = Brain(ui, listening, live_talk, context, heartbeat, config.ui, transcript, approvals=approvals,
-                  bridge=bridge, hands=hands, screens=workspace.screens_dir)
+                  bridge=bridge, hands=hands, screens=workspace.screens_dir, settings=settings)
     return Runtime(brain, server, heartbeat, transcriber, voice, stt_executor, tts_executor, harness,
                    live_model, live_talk, tool_server, hands_server)
 

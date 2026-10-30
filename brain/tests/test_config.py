@@ -134,6 +134,8 @@ def test_an_unknown_section_names_it():
     ("[hands]\nenabled = \"yes\"\n", "enabled"),
     ("[hands]\nconfirm = 3\n", "confirm"),
     ("[ui]\ncharacter = \"robot\"\n", "character"),
+    ("[ui]\nvoice = \"loud\"\n", "voice"),
+    ("[chat]\nupdates = \"often\"\n", "updates"),
 ])
 def test_bad_values_are_errors(extra, key):
     with pytest.raises(ConfigError, match=key):

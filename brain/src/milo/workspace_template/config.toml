@@ -1,4 +1,5 @@
 # Milo configuration. Restart Milo after editing (menu bar > Restart brain).
+# Milo's Settings window changes some of these for you and keeps your comments.
 #
 # Every swappable part has `use = "<name>"` and a table `[<part>.<name>]` with that
 # implementation's options. Unknown keys are an error, so typos fail loudly.
@@ -8,6 +9,8 @@
 use = "claude_live"
 # Start a fresh conversation after this many seconds without talking (also reloads memory).
 conversation_idle_reset_s = 600
+# How often Milo tells you what he's doing during a longer task: quiet | bubble | chatty
+updates = "bubble"
 
 [chat.claude_live]
 binary = ""                       # empty: PATH, then ~/.local/bin
@@ -144,7 +147,8 @@ grace_hours = 12
 dictate_key = "fn"                # fn | right_option | right_command | right_control
 talk_key = "right_option"
 hands_free_max_s = 300            # double-tap a key for hands-free; it stops by itself after this
-character = "pip"                 # pip (the bird) | classic (the purple robot)
+character = "pip"                 # pip (the bird) | classic (the robot) | dragon | kit (the fox) | glow (the firefly)
+voice = true                      # false: answers show in the bubble without being said out loud
 # Ask Milo about the selection, or the front window if nothing is selected. "" turns it off.
 whats_this_key = "ctrl+option+m"
 

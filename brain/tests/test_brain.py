@@ -9,8 +9,9 @@ import pytest
 from milo.brain import Brain
 from milo.config import UiSettings
 from milo.core.events import (Bubble, Dictation, EmotionChanged, HandsSession, Heard, Level, ListenStart, ListenStop,
-                              Looking, Mute, StateChanged, Status, TextInput, UiConfig, parse_command)
-from milo.core.types import Emotion, HandsError, ListenMode, MiloState, Nudge, ScreenCapture
+                              Looking, Mute, SetSetting, SettingsReport, StateChanged, Status, TextInput, UiConfig,
+                              parse_command)
+from milo.core.types import Emotion, HandsError, ListenMode, LiveMode, MiloState, Nudge, ScreenCapture
 from milo.services.app_bridge import AppEyes, AppHands
 from tests.fakes import FakeEyes, FakeHands, FakeLiveModel, FakeTranscriber
 from tests.services.stack import Stack, settle
@@ -164,7 +165,28 @@ def check_app_response(s: Stack, msg: dict) -> None:
     assert asyncio.run(go()) == (msg["result"] if msg["ok"] else msg["error"])
 
 
+def check_get_settings(s: Stack, msg: dict) -> None:
+    run(s, parse_command(msg))
+    [report] = s.sink.of(SettingsReport)
+    assert {(r["section"], r["key"]) for r in report.settings} >= {("ui", "character"), ("chat", "updates"),
+                                                                    ("dictation", "stream"), ("ui", "voice")}
+    assert not report.restart and not report.error
+
+
+def check_set_setting(s: Stack, msg: dict) -> None:
+    run(s, parse_command(msg))
+    assert s.config_file.raw["ui"][msg["key"]] == msg["value"]
+    [report] = s.sink.of(SettingsReport)
+    assert not report.error
+    if msg["key"] == "character":
+        assert s.sink.of(UiConfig)[-1].character == msg["value"]
+    else:
+        assert s.speaker.silent is not msg["value"]
+
+
 CHECKS = {
+    "get_settings": check_get_settings,
+    "set_setting": check_set_setting,
     "look_result": check_look_result,
     "whats_this": check_whats_this,
     "hands_result": check_hands_result,
@@ -190,6 +212,13 @@ def test_every_fixture_command_has_a_routing_check():
                          ids=lambda m: f"{m['type']}-{m.get('mode', '')}{m.get('id', '')}")
 def test_every_fixture_command_routes_to_its_service(msg):
     CHECKS[msg["type"]](Stack(transcriber=FakeTranscriber("something")), msg)
+
+
+def test_settings_changes_reach_listening_and_every_later_greeting():
+    s = Stack()
+    run(s, SetSetting("dictation", "stream", "type"), SetSetting("ui", "dictate_key", "right_control"))
+    assert s.listening.live_mode is LiveMode.TYPE
+    assert s.brain.greeting()[2].dictate_key == "right_control"
 
 
 def test_mute_without_a_heartbeat_is_harmless():

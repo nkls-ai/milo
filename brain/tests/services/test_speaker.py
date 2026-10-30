@@ -27,6 +27,22 @@ def test_say_speaks_chunk_by_chunk_on_one_stream_with_a_growing_bubble():
     assert not s.ui.speaking and not s.speaker.active
 
 
+def test_with_the_voice_off_the_bubble_still_grows_at_speaking_pace_in_silence():
+    s = Stack()
+    s.speaker.silent = True
+
+    async def run():
+        assert await s.speaker.say("Hello there, my good old friend. How are you?", Emotion.HAPPY)
+        await settle()
+
+    asyncio.run(run())
+    assert s.voice.spoken == []
+    assert s.bubbles() == ["Hello there, my good old friend.", "Hello there, my good old friend. How are you?"]
+    assert s.states() == [MiloState.SPEAKING, MiloState.IDLE]
+    rate = FakeVoice.sample_rate * SECONDS_PER_CHAR_WITHOUT_AUDIO
+    assert s.output.fed == [int(rate * len("Hello there, my good old friend.")), int(rate * len("How are you?"))]
+
+
 def test_an_utterance_speaks_text_as_it_arrives():
     s = Stack(output=FakeAudioOutput(block=True))
 

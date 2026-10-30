@@ -8,7 +8,7 @@ from pathlib import Path
 from .config import UiSettings
 from .core.events import (AppResponse, Command, ConfirmAnswer, ContextUpdate, EmotionChanged, Event, GetHistory,
                           HandsResult, HandsStop, ListenCancel, ListenConfirm, ListenStart, ListenStop, LookResult,
-                          Mute, StateChanged, TextInput, UiConfig, WhatsThis)
+                          GetSettings, Mute, SetSetting, StateChanged, TextInput, UiConfig, WhatsThis)
 from .services.app_bridge import AppBridge
 from .services.approvals import Approvals
 from .services.context import UserContext
@@ -19,6 +19,7 @@ from .services.live_talk import LiveTalk
 from .services.screen import checked, inside
 from .services.transcript import Transcript
 from .services.ui_state import UiState
+from .settings import Settings
 
 log = logging.getLogger("milo.brain")
 
@@ -32,7 +33,8 @@ class Brain:
     def __init__(self, ui: UiState, listening: Listening, live_talk: LiveTalk, context: UserContext,
                  heartbeat: HeartbeatRunner | None, ui_settings: UiSettings, transcript: Transcript | None = None,
                  *, approvals: Approvals | None = None, bridge: AppBridge | None = None,
-                 hands: HandsService | None = None, screens: Path | None = None):
+                 hands: HandsService | None = None, screens: Path | None = None, settings: Settings | None = None):
+        self._settings = settings
         self._hands = hands
         self._screens = screens
         self._ui = ui
@@ -47,11 +49,16 @@ class Brain:
 
     def greeting(self) -> list[Event]:
         """What a newly connected app needs to draw Milo as he is right now."""
-        return [StateChanged(self._ui.state), EmotionChanged(self._ui.emotion),
-                UiConfig(self._ui_settings.dictate_key, self._ui_settings.talk_key,
-                         self._ui_settings.hands_free_max_s, self._ui_settings.whats_this_key,
-                         self._ui_settings.character),
-                *self._history()]
+        return [StateChanged(self._ui.state), EmotionChanged(self._ui.emotion), self._ui_config(), *self._history()]
+
+    def use_ui(self, ui_settings: UiSettings) -> None:
+        """Keys or look changed in the Settings window: tell the app now and on every later connect."""
+        self._ui_settings = ui_settings
+        self._ui.emit(self._ui_config())
+
+    def _ui_config(self) -> UiConfig:
+        ui = self._ui_settings
+        return UiConfig(ui.dictate_key, ui.talk_key, ui.hands_free_max_s, ui.whats_this_key, ui.character)
 
     def _history(self) -> list[Event]:
         return [self._transcript.history()] if self._transcript is not None else []
@@ -94,6 +101,12 @@ class Brain:
             case AppResponse():
                 if self._bridge is not None:
                     self._bridge.resolve(command)
+            case GetSettings():
+                if self._settings is not None:
+                    self._settings.send()
+            case SetSetting(section, key, value):
+                if self._settings is not None:
+                    self._settings.change(section, key, value)
             case _:
                 log.warning("no handler for %s", command.type)
 

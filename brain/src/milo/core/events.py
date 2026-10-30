@@ -216,6 +216,21 @@ class AppRequest(Event):
     args: dict
 
 
+@dataclass(frozen=True)
+class SettingsReport(Event):
+    """What the Settings window shows. Sent on `get_settings` and after every `set_setting`.
+
+    Each setting is {section, key, value, options, labels, live}: `options` lists the allowed values (empty
+    for free text or a switch) and `labels` names them in plain words. `live` false: a change applies after
+    a restart. `restart`: a saved change is waiting for one. `error`: why the last change was not saved.
+    """
+
+    type: ClassVar[str] = "settings"
+    settings: list[dict]
+    restart: bool = False
+    error: str = ""
+
+
 # ---- app -> brain
 
 
@@ -340,6 +355,23 @@ class AppResponse(Command):
     error: str = ""
 
 
+@dataclass(frozen=True)
+class GetSettings(Command):
+    """The Settings window opened: send `settings`."""
+
+    type: ClassVar[str] = "get_settings"
+
+
+@dataclass(frozen=True)
+class SetSetting(Command):
+    """Change one setting in config.toml, e.g. section "ui", key "character", value "dragon"."""
+
+    type: ClassVar[str] = "set_setting"
+    section: str
+    key: str
+    value: Any
+
+
 def parse_command(raw: object) -> Command:
     if not isinstance(raw, dict):
         raise ProtocolError("message must be a JSON object")
@@ -384,6 +416,13 @@ def parse_command(raw: object) -> Command:
                 return ConfirmAnswer(str(raw["id"]), raw["yes"])
             case "app_response":
                 return AppResponse(str(raw["id"]), raw["ok"] is True, raw.get("result"), str(raw.get("error") or ""))
+            case "get_settings":
+                return GetSettings()
+            case "set_setting":
+                value = raw["value"]
+                if not isinstance(value, str | bool | int | float):
+                    raise ProtocolError("value must be text, a number or true/false")
+                return SetSetting(str(raw["section"]), str(raw["key"]), value)
     except (KeyError, TypeError, ValueError) as e:
         raise ProtocolError(f"bad {kind} message: {e}") from None
     raise ProtocolError(f"unknown message type {kind!r}")

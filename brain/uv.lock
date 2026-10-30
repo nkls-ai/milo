@@ -1014,6 +1014,7 @@ dependencies = [
     { name = "mlx-whisper" },
     { name = "numpy" },
     { name = "sounddevice" },
+    { name = "tomlkit" },
 ]
 
 [package.optional-dependencies]
@@ -1034,6 +1035,7 @@ requires-dist = [
     { name = "omnivoice", marker = "extra == 'omnivoice'", specifier = ">=0.2.1" },
     { name = "sounddevice", specifier = ">=0.5.6" },
     { name = "soundfile", marker = "extra == 'omnivoice'", specifier = ">=0.14.0" },
+    { name = "tomlkit", specifier = ">=0.14.0" },
 ]
 provides-extras = ["omnivoice"]
 

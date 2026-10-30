@@ -44,6 +44,15 @@ class Listening:
         self._shown = False
         self._live: LiveTranscript | None = None
 
+    @property
+    def live_mode(self) -> LiveMode:
+        return self._live_mode
+
+    @live_mode.setter
+    def live_mode(self, mode: LiveMode) -> None:
+        """The Settings window changed [dictation] stream. A recording already showing keeps its mode."""
+        self._live_mode = mode
+
     def start(self, mode: ListenMode, tentative: bool = False) -> None:
         if self._mic.active:
             return

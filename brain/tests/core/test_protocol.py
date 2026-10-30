@@ -35,6 +35,7 @@ OUTBOUND = {
     "confirm": lambda m: ev.Confirm(m["id"], m["question"]),
     "confirm_done": lambda m: ev.ConfirmDone(m["id"], m["answer"]),
     "app_request": lambda m: ev.AppRequest(m["id"], m["op"], m["args"]),
+    "settings": lambda m: ev.SettingsReport(m["settings"], m["restart"], m["error"]),
 }
 
 
@@ -76,6 +77,8 @@ def test_parsed_values():
     assert ev.parse_command({"type": "app_response", "id": "a1", "ok": True, "result": [1]}) == \
         ev.AppResponse("a1", True, [1])
     assert ev.parse_command({"type": "app_response", "id": "a1", "ok": "yes"}).ok is False
+    assert ev.parse_command({"type": "set_setting", "section": "ui", "key": "voice", "value": False}) == \
+        ev.SetSetting("ui", "voice", False)
 
 
 @pytest.mark.parametrize("raw", [
@@ -85,6 +88,8 @@ def test_parsed_values():
     {"type": "hands_result", "id": "h", "ok": True, "result": []},
     {"type": "confirm_answer", "id": "q1", "yes": "no"}, {"type": "confirm_answer", "yes": True},
     {"type": "app_response", "ok": True},
+    {"type": "set_setting", "section": "ui", "key": "character"},
+    {"type": "set_setting", "section": "ui", "key": "character", "value": ["pip"]},
 ])
 def test_bad_commands_raise_protocol_error(raw):
     with pytest.raises(ev.ProtocolError):

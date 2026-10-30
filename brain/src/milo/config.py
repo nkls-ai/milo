@@ -17,7 +17,8 @@ from .core.types import LiveMode
 log = logging.getLogger("milo.config")
 
 KEY_NAMES = ("fn", "right_option", "right_command", "right_control")
-CHARACTERS = ("pip", "classic")
+CHARACTERS = ("pip", "classic", "dragon", "kit", "glow")
+UPDATES = ("quiet", "bubble", "chatty")
 PLUGGABLE = ("chat", "harness", "stt", "tts", "audio", "dictation", "connections")
 SECTIONS = (*PLUGGABLE, "ui", "heartbeat", "hands", "approvals", "logging")
 _COMBO = re.compile(r"^((ctrl|control|option|alt|shift|cmd|command)\+)+[a-z0-9]+$|^f([1-9]|1[0-9])$")
@@ -33,6 +34,12 @@ RETIRED = {("harness", "conversation_idle_reset_s"): "it moved to [chat]",
 @dataclass(frozen=True)
 class ChatSettings:
     conversation_idle_reset_s: float = 600.0
+    updates: str = "bubble"
+    """How often Milo says what he's doing during a task: "quiet", "bubble" (short notes in the bubble) or "chatty"."""
+
+    def __post_init__(self):
+        if self.updates not in UPDATES:
+            raise ConfigError(f"[chat] updates must be one of {', '.join(UPDATES)}")
 
 
 @dataclass(frozen=True)
@@ -66,7 +73,10 @@ class UiSettings:
     hands_free_max_s: float = 300.0
     """A recording locked on by a double tap stops by itself after this long."""
     character: str = "pip"
-    """How Milo looks: "pip" (the bird) or "classic" (the purple robot)."""
+    """How Milo looks: "pip" (the bird), "classic" (the purple robot), "dragon", "kit" (the paper fox) or "glow"
+    (the lantern firefly)."""
+    voice: bool = True
+    """Say answers out loud. False: the bubble and the window only."""
 
     def __post_init__(self):
         if self.whats_this_key and not _COMBO.match(str(self.whats_this_key).lower().replace(" ", "")):

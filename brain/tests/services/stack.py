@@ -10,7 +10,7 @@ from pathlib import Path
 from milo.brain import Brain
 from milo.config import UiSettings
 from milo.core.events import Bubble, StateChanged
-from milo.core.types import MiloState
+from milo.core.types import LiveMode, MiloState
 from milo.services.app_bridge import AppBridge
 from milo.services.approvals import Approvals
 from milo.services.context import UserContext
@@ -23,8 +23,9 @@ from milo.services.live_talk import LiveTalk
 from milo.services.speaker import Speaker
 from milo.services.task_runner import TaskRunner
 from milo.services.ui_state import UiState
+from milo.settings import Settings
 from tests.fakes import (FakeAudioInput, FakeAudioOutput, FakeClock, FakeEyes, FakeHands, FakeHarness,
-                         FakeLiveModel, FakeTranscriber, FakeVoice, ListReminders, MemoryHistory, MemoryLedger,
+                         FakeLiveModel, FakeTranscriber, FakeVoice, ListReminders, MemoryConfigFile, MemoryHistory, MemoryLedger,
                          MemoryProfile, RecordingSink, ScriptedEngine, UpperCleaner)
 
 PERSONA = "You are Milo, a test persona."
@@ -64,6 +65,7 @@ class Stack:
     hands_port: FakeHands = field(default_factory=FakeHands)
     screens: Path | None = None
     confirm_timeout_s: float = 1.0
+    config_file: MemoryConfigFile = field(default_factory=MemoryConfigFile)
 
     def __post_init__(self):
         executor = InlineExecutor()
@@ -88,8 +90,14 @@ class Stack:
         self.heartbeat = HeartbeatRunner(self.engine, self.context, self.conversation, self.speaker, self.ui,
                                          self.mic, self.clock, busy=lambda: self.live_talk.busy,
                                          wait_s=self.wait_s, poll_s=0.005)
+        use_ui = lambda c: self.brain.use_ui(c.ui)  # noqa: E731
+        live = {("ui", "character"): use_ui, ("ui", "dictate_key"): use_ui, ("ui", "talk_key"): use_ui,
+                ("ui", "whats_this_key"): use_ui, ("ui", "voice"): lambda c: setattr(self.speaker, "silent", not c.ui.voice),
+                ("dictation", "stream"): lambda c: setattr(self.listening, "live_mode", LiveMode(c.dictation.stream))}
+        self.settings = Settings(self.config_file, self.config_file.read(), self.ui, live)
         self.brain = Brain(self.ui, self.listening, self.live_talk, self.context, self.heartbeat, UiSettings(),
-                           approvals=self.approvals, bridge=self.bridge, hands=self.hands, screens=self.screens)
+                           approvals=self.approvals, bridge=self.bridge, hands=self.hands, screens=self.screens,
+                           settings=self.settings)
 
     def states(self) -> list[MiloState]:
         return [e.state for e in self.sink.of(StateChanged)]
