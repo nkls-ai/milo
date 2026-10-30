@@ -74,12 +74,11 @@ struct KnowledgeRenderTests {
             ("knowledge-empty", KnowledgeModel(facts: [], loaded: true)),
             ("knowledge-asking", KnowledgeModel()),
         ]
-        // The window takes the skin's colours: the default bird, and the fox for one more look.
+        // The window takes Milo's colours, light and dark.
         for (name, model) in cases {
-            for (dark, style) in [(false, CharacterStyle.pip), (true, .pip), (false, .kit)] {
+            for dark in [false, true] {
                 let size = CGSize(width: 440, height: 520)
                 let skin = MiloModel(scheduler: ManualScheduler())
-                skin.character = style
                 let host = NSHostingView(rootView: KnowledgeView(knowledge: model, forget: { _ in }, edit: { _, _ in })
                     .frame(width: size.width, height: size.height)
                     .themed(by: skin))
@@ -92,8 +91,7 @@ struct KnowledgeRenderTests {
                 let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
                 host.cacheDisplay(in: host.bounds, to: rep)
                 let png = try #require(rep.representation(using: .png, properties: [:]))
-                let suffix = style == .pip ? "" : "-\(style.rawValue)"
-                try png.write(to: dir.appendingPathComponent("\(name)-\(dark ? "dark" : "light")\(suffix).png"))
+                try png.write(to: dir.appendingPathComponent("\(name)-\(dark ? "dark" : "light").png"))
             }
         }
     }

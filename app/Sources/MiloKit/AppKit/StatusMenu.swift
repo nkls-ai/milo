@@ -42,7 +42,7 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
         hintItem = NSMenuItem(title: controller.bindings.hint, action: nil, keyEquivalent: "")
         super.init()
 
-        // A small sign of the skin he wears, drawn like every menu bar icon (it follows the menu bar's colour),
+        // Milo's silhouette, drawn like every menu bar icon (it follows the menu bar's colour),
         // and a red dot instead while he records a meeting.
         restyle = controller.model.$character.combineLatest(controller.model.$recording.removeDuplicates())
             .sink { [weak self] style, recording in self?.showIcon(style, recording: recording) }
@@ -112,17 +112,7 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
             image?.isTemplate = false
             button.image = image
         } else {
-            button.image = NSImage(systemSymbolName: Self.symbol(for: style), accessibilityDescription: "Milo")
-        }
-    }
-
-    static func symbol(for style: CharacterStyle) -> String {
-        switch style {
-        case .pip: "bird"
-        case .classic: "face.smiling"
-        case .dragon: "flame"
-        case .kit: "pawprint"
-        case .glow: "sparkle"
+            button.image = WrenIcon.menuBar
         }
     }
 

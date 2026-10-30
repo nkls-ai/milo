@@ -14,7 +14,7 @@
     {"type": "dictation", "text": "Sounds good, ship it."},
     {"type": "status", "text": "Mic unavailable: no input device"},
     {"type": "partial", "text": "Sounds good, sh"},
-    {"type": "ui_config", "dictate_key": "fn", "talk_key": "right_option", "hands_free_max_s": 300.0, "whats_this_key": "ctrl+option+m", "character": "pip"},
+    {"type": "ui_config", "dictate_key": "fn", "talk_key": "right_option", "hands_free_max_s": 300.0, "whats_this_key": "ctrl+option+m", "character": "milo"},
     {"type": "history", "entries": [
       {"id": "5f2a9c1e04b7", "ts": "2026-10-30T09:12:03", "kind": "user", "text": "rename the photos from Friday", "via": "voice", "conversation": "c-5f2a9c1e04b7"},
       {"id": "8d41e0a7c2f3", "ts": "2026-10-30T09:12:05", "kind": "milo", "text": "On it, I'll sort them by date.", "emotion": "happy", "done": true, "conversation": "c-5f2a9c1e04b7"},
@@ -41,7 +41,7 @@
       {"id": "01JBF7A1B2C3D4E5F6G7H8J9KM", "text": "Anna is the user's sister. Her birthday is March 3.", "topic": "people", "since": "2026-10-30T18:05:41", "pinned": false}
     ]},
     {"type": "routines", "routines": [{"id": "monday-report", "name": "Monday report", "description": "Sums last week's sales into a one-page report.", "schedule": "every Monday at 09:00", "paused": false, "last_run": "2026-10-26 09:00, done", "next_run": "2026-11-02T09:00", "inputs": ["month"]}, {"id": "tidy-downloads", "name": "Tidy downloads", "description": "", "schedule": "", "paused": true, "last_run": "", "inputs": []}, {"id": "broken", "name": "broken", "problem": "it must start with a line of three dashes (---)"}], "drafts": [{"id": "d4e5f6a7", "name": "Invoice folder", "recipe": "---\nname: Invoice folder\nschedule:\npaused: no\nversion: 1\n---\n\n## Steps\n\n1. Move this month's invoices from Downloads into Invoices.\n   Check: Downloads has no invoice left.\n", "schedule": ""}]},
-    {"type": "settings", "settings": [{"section": "ui", "key": "character", "value": "dragon", "options": ["pip", "classic", "dragon", "kit", "glow"], "labels": ["Pip", "Robot", "Dragon", "Kit", "Glow"], "live": true}, {"section": "ui", "key": "voice", "value": true, "options": [], "labels": [], "live": true}, {"section": "chat", "key": "updates", "value": "bubble", "options": ["quiet", "bubble", "chatty"], "labels": ["Only the answer", "Short notes in his bubble", "Tells you each step"], "live": true}, {"section": "dictation", "key": "stream", "value": "preview", "options": ["off", "preview", "type"], "labels": ["When you let go", "Show the words as you speak", "Type as you speak"], "live": true}], "restart": false, "error": ""},
+    {"type": "settings", "settings": [{"section": "ui", "key": "voice", "value": true, "options": [], "labels": [], "live": true}, {"section": "chat", "key": "updates", "value": "bubble", "options": ["quiet", "bubble", "chatty"], "labels": ["Only the answer", "Short notes in his bubble", "Tells you each step"], "live": true}, {"section": "dictation", "key": "stream", "value": "preview", "options": ["off", "preview", "type"], "labels": ["When you let go", "Show the words as you speak", "Type as you speak"], "live": true}], "restart": false, "error": ""},
     {"type": "settings", "settings": [], "restart": false, "error": "The dictate key and the talk key need to be different keys."},
     {"type": "remote", "channel": "telegram", "label": "Telegram", "state": "paired", "paused": false, "detail": "Niklas (@niklas)"},
     {"type": "remote", "channel": "telegram", "label": "Telegram", "state": "unpaired", "paused": false, "detail": "Message @milo_mac_bot from your phone to connect."},
@@ -96,7 +96,7 @@
     {"type": "routine", "id": "tidy-downloads", "action": "resume"},
     {"type": "routine_draft_answer", "id": "d4e5f6a7", "save": true},
     {"type": "get_settings"},
-    {"type": "set_setting", "section": "ui", "key": "character", "value": "dragon"},
+    {"type": "set_setting", "section": "ui", "key": "voice", "value": true},
     {"type": "set_setting", "section": "ui", "key": "voice", "value": false},
     {"type": "remote_pause", "on": true},
     {"type": "remote_forget"},

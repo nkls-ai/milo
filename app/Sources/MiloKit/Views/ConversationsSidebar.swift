@@ -412,7 +412,7 @@ struct SearchRow: View {
         .padding(.horizontal, 10)
     }
 
-    /// The snippet with the words searched for in the skin's colour.
+    /// The snippet with the words searched for in Milo's colour.
     static func highlighted(_ text: String, _ query: String, _ theme: Theme) -> Text {
         var attributed = AttributedString(text)
         attributed.foregroundColor = theme.ink.opacity(0.6)

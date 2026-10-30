@@ -14,8 +14,6 @@ struct SettingsRenderTests {
 
     /// What the brain reports, as in brain/src/milo/settings.py.
     static let report = SettingsReport(settings: [
-        Setting(section: "ui", key: "character", value: "dragon", options: ["pip", "classic", "dragon", "kit", "glow"],
-                labels: ["Pip", "Robot", "Dragon", "Kit", "Glow"]),
         Setting(section: "chat", key: "updates", value: "bubble", options: ["quiet", "bubble", "chatty"],
                 labels: ["Only the answer", "Short notes in his bubble", "Tells you each step"], live: false),
         Setting(section: "dictation", key: "stream", value: "preview", options: ["off", "preview", "type"],
@@ -47,9 +45,9 @@ struct SettingsRenderTests {
                            dark: dark)
             }
         }
-        try render(SettingsModel(report: waiting), .dragon, name: "settings-restart-light", dark: false)
-        try render(SettingsModel(report: refused), .kit, name: "settings-error-light", dark: false)
-        try render(SettingsModel(report: nil), .glow, name: "settings-starting-dark", dark: true)
+        try render(SettingsModel(report: waiting), .milo, name: "settings-restart-light", dark: false)
+        try render(SettingsModel(report: refused), .milo, name: "settings-error-light", dark: false)
+        try render(SettingsModel(report: nil), .milo, name: "settings-starting-dark", dark: true)
     }
 
     private var skins: [CharacterStyle] {
@@ -78,19 +76,19 @@ struct SettingsRenderTests {
         stuck.startWatching()
         stuck.fix(.accessibility)
         scheduler.advance(by: SetupModel.patience)
-        try render(SetupView(setup: stuck, done: {}).environment(\.miloTheme, Theme.for(.pip)), size: size,
+        try render(SetupView(setup: stuck, done: {}).environment(\.miloTheme, Theme.for(.milo)), size: size,
                    name: "setup-stuck-light", dark: false)
         let (ready, _) = Self.setup([:])
         ready.startWatching()
         ready.noticed(.dictating)
         ready.stopWatching()
-        try render(SetupView(setup: ready, done: {}).environment(\.miloTheme, Theme.for(.kit)), size: size,
+        try render(SetupView(setup: ready, done: {}).environment(\.miloTheme, Theme.for(.milo)), size: size,
                    name: "setup-done-light", dark: false)
-        for (style, dark) in [(CharacterStyle.pip, false), (.dragon, true)] {
+        for (style, dark) in [(CharacterStyle.milo, false), (.milo, true)] {
             try render(DragHelperView(appURL: URL(fileURLWithPath: "/Applications/Calculator.app"),
                                       icon: NSWorkspace.shared.icon(forFile: "/System/Applications/Calculator.app"),
                                       close: {}).environment(\.miloTheme, Theme.for(style)),
-                       size: CGSize(width: 210, height: 230), name: "drag-helper-\(style.rawValue)", dark: dark)
+                       size: CGSize(width: 210, height: 230), name: "drag-helper-\(dark ? "dark" : "light")", dark: dark)
         }
     }
 

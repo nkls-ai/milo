@@ -30,13 +30,12 @@ struct HelperRenderTests {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         for dark in [false, true] {
             let tag = dark ? "dark" : "light"
-            try renderCorner(helpers: Self.three, character: .pip, name: "helpers-corner-\(tag)", dark: dark)
-            try renderCorner(helpers: Self.finishing, character: .pip, name: "helpers-corner-finishing-\(tag)",
+            try renderCorner(helpers: Self.three, character: .milo, name: "helpers-corner-\(tag)", dark: dark)
+            try renderCorner(helpers: Self.finishing, character: .milo, name: "helpers-corner-finishing-\(tag)",
                              dark: dark)
             try renderWindow(helpers: Self.three, name: "helpers-window-\(tag)", dark: dark)
         }
-        try renderCorner(helpers: Self.three, character: .classic, name: "helpers-corner-classic", dark: false)
-        try renderCorner(helpers: [Self.three[0]], character: .pip, name: "helpers-corner-one", dark: false,
+        try renderCorner(helpers: [Self.three[0]], character: .milo, name: "helpers-corner-one", dark: false,
                          bubble: "Budget table in Excel: Opening Microsoft Excel")
     }
 
@@ -48,7 +47,7 @@ struct HelperRenderTests {
         model.apply(.helpers(helpers))
         if let bubble { model.show(bubble) }
         let view = ZStack {
-            SkinRenderTests.Wallpaper(dark: dark)
+            Wallpaper(dark: dark)
             OverlayView(model: model)
         }
         .frame(width: OverlayPanel.size.width, height: OverlayPanel.size.height)
@@ -85,7 +84,8 @@ struct HelperRenderTests {
         window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         window.contentView = host
         host.layoutSubtreeIfNeeded()
-        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        RunLoop.main.run(until: Date().addingTimeInterval(1.0))  // the new helpers have landed
+        host.layoutSubtreeIfNeeded()
         let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
         host.cacheDisplay(in: host.bounds, to: rep)
         let png = try #require(rep.representation(using: .png, properties: [:]))

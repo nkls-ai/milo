@@ -1,7 +1,9 @@
+import AppKit
 import SwiftUI
 
-/// The small birds next to Milo, one per helper at work, each with its title and how far it is.
-/// A click opens that helper in the Milo window. Still figures: they redraw only when a helper changes.
+/// The mini wrens next to Milo, one per helper at work, each carrying its task's name and how far it is.
+/// A new one flies out from Milo and lands; a finished one flies off. A click opens that helper in the
+/// Milo window. Their only steady motion is breathing on Core Animation's clock.
 struct HelperFlock: View {
     @Environment(\.miloTheme) private var theme
     @ObservedObject var model: MiloModel
@@ -22,13 +24,13 @@ struct HelperFlock: View {
             HStack(alignment: .bottom, spacing: 0) {
                 ForEach(birds) { helper in
                     Button { model.openHelper(helper.id) } label: {
-                        HelperBird(helper: helper, character: model.character)
+                        HelperBird(helper: helper)
                     }
                     .buttonStyle(.plain)
                     .help(helper.step.isEmpty ? helper.title : "\(helper.title): \(helper.step)")
                     .accessibilityLabel("Helper: \(helper.title), \(HelperBird.statusWords(helper.status))")
                     .accessibilityHint("Shows it in the Milo window")
-                    .transition(.scale(scale: 0.4, anchor: .bottom).combined(with: .opacity))
+                    .transition(HelperBird.flight)
                 }
             }
             .overlay(alignment: .topLeading) {
@@ -48,31 +50,33 @@ struct HelperFlock: View {
     }
 }
 
-/// One helper: Milo's own figure (whatever `character` draws, so skins carry over), small and still,
-/// with a mark for how it is doing, its title, and a thin bar for how far through its plan it is.
+/// One helper: a mini Milo with a mark for how it is doing, the name of its task, and a thin bar for how
+/// far through its plan it is.
 struct HelperBird: View {
     @Environment(\.miloTheme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let helper: HelperInfo
-    let character: CharacterStyle
-    @StateObject private var figure: MiloModel
+    /// Still in the air: it lands a moment after it appears.
+    @State private var arriving = true
 
     static let size: CGFloat = 40
     static let width: CGFloat = 52
+    static let labelFont = NSFont.systemFont(ofSize: 9, weight: .semibold)
 
-    init(helper: HelperInfo, character: CharacterStyle) {
-        self.helper = helper
-        self.character = character
-        _figure = StateObject(wrappedValue: Self.figureModel(for: helper, character: character))
-    }
+    /// Out of Milo's side and up into the row; away over the top when it is done.
+    static let flight = AnyTransition.asymmetric(
+        insertion: .offset(x: 70, y: 10).combined(with: .scale(scale: 0.5, anchor: .bottom)).combined(with: .opacity),
+        removal: .offset(x: -10, y: -60).combined(with: .scale(scale: 0.6)).combined(with: .opacity))
 
     var body: some View {
         VStack(spacing: 2) {
-            HelperFigure(model: figure, size: Self.size)
+            HelperFigure(input: Self.input(for: helper, arriving: arriving && !reduceMotion), size: Self.size, live: true)
                 .overlay(alignment: .topTrailing) { HelperMark(status: helper.status).offset(x: 2, y: 2) }
                 .opacity(helper.status == .stopped || helper.status == .queued ? 0.6 : 1)
-            Text(helper.title)
+            Text(Self.label(helper.title, width: Self.width - 8))
                 .font(.system(size: 9, weight: .semibold, design: .rounded))
                 .lineLimit(2)
+                .minimumScaleFactor(0.8)
                 .multilineTextAlignment(.center)
                 .frame(width: Self.width - 4, height: 24)
                 .padding(.horizontal, 2)
@@ -83,32 +87,50 @@ struct HelperBird: View {
         }
         .frame(width: Self.width)
         .contentShape(Rectangle())
-        .onChange(of: helper) { Self.update(figure, for: helper, character: character) }
-        .onChange(of: character) { Self.update(figure, for: helper, character: character) }
-    }
-
-    static func figureModel(for helper: HelperInfo, character: CharacterStyle) -> MiloModel {
-        let model = MiloModel(scheduler: MainQueueScheduler())
-        model.connected = true
-        update(model, for: helper, character: character)
-        return model
-    }
-
-    /// How a helper looks for each status: dozing in the queue, thinking at work, worried when it needs you.
-    static func update(_ model: MiloModel, for helper: HelperInfo, character: CharacterStyle) {
-        let (state, emotion): (MiloState, Emotion) = switch helper.status {
-        case .queued: (.idle, .neutral)
-        case .working: (.thinking, .thinking)
-        case .needsYou: (.idle, .concerned)
-        case .done: (.idle, .happy)
-        case .failed: (.idle, .confused)
-        case .stopped: (.idle, .neutral)
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) { arriving = false }
         }
-        if model.character != character { model.character = character }
-        if model.state != state { model.state = state }
-        if model.emotion != emotion { model.emotion = emotion }
-        let dozing = helper.status == .queued
-        if model.drowsy != dozing { model.drowsy = dozing }
+    }
+
+    /// How a helper looks for each status: dozing in the queue, thinking at work (tapping its tail), asking
+    /// when it needs you, pleased when done, worried when it couldn't finish.
+    static func input(for helper: HelperInfo, arriving: Bool = false) -> FigureInput {
+        var input = FigureInput()
+        switch helper.status {
+        case .queued: input.asleep = true
+        case .working: input.state = .thinking; input.emotion = .thinking
+        case .needsYou: input.asking = true
+        case .done: input.emotion = .happy
+        case .failed: input.emotion = .concerned
+        case .stopped: break
+        }
+        if arriving { input.flight = .flying(heading: CGVector(dx: -0.8, dy: -0.6)) }
+        return input
+    }
+
+    /// The task's name in at most two lines of `width` points, cut between words: "Sort downloads by
+    /// month" becomes "Sort downloads…", never "Sort downloa…". A single word too long for a line is left
+    /// for the text to shrink.
+    static func label(_ title: String, width: CGFloat, lines: Int = 2,
+                      measure: (String) -> CGFloat = { ($0 as NSString).size(withAttributes: [.font: labelFont]).width }) -> String {
+        let words = title.split(whereSeparator: \.isWhitespace).map(String.init)
+        var rows: [String] = []
+        var index = 0
+        while index < words.count && rows.count < lines {
+            var row = words[index]
+            index += 1
+            while index < words.count, measure(row + " " + words[index]) <= width {
+                row += " " + words[index]
+                index += 1
+            }
+            rows.append(row)
+        }
+        guard index < words.count, var last = rows.popLast() else { return rows.joined(separator: " ") }
+        // More words than room: end the last line on a whole word with an ellipsis.
+        var kept = last.split(separator: " ").map(String.init)
+        while kept.count > 1, measure(kept.joined(separator: " ") + "…") > width { kept.removeLast() }
+        last = kept.joined(separator: " ")
+        return (rows + [last + "…"]).joined(separator: " ")
     }
 
     static func statusWords(_ status: HelperInfo.Status) -> String {
@@ -123,16 +145,15 @@ struct HelperBird: View {
     }
 }
 
-/// Milo's figure view, scaled down and still. It is the same view the big Milo uses, so the character
-/// setting (and every skin it can pick) shows on the helpers too.
+/// A mini wren: Milo's own rig at helper size, with bolder lines. `live` gives it springs, its moves and
+/// breathing; otherwise it is a still drawing (rows in the Milo window).
 struct HelperFigure: View {
-    @ObservedObject var model: MiloModel
+    var input: FigureInput
     var size: CGFloat
+    var live = false
 
     var body: some View {
-        CharacterView(model: model, still: true)
-            .frame(width: 132, height: 132)
-            .scaleEffect(size / 132)
+        CharacterFigure(input: input, size: size, time: live ? nil : 0)
             .frame(width: size, height: size)
             .allowsHitTesting(false)
     }
@@ -216,7 +237,6 @@ struct ProgressLine: View {
 struct HelperRow: View {
     let helper: HelperInfo
     let steps: [ActivityStep]
-    let character: CharacterStyle
     let open: () -> Void
     let stop: () -> Void
 
@@ -224,7 +244,7 @@ struct HelperRow: View {
         HStack(alignment: .top, spacing: 10) {
             Button(action: open) {
                 HStack(alignment: .top, spacing: 10) {
-                    HelperBird.Mini(helper: helper, character: character)
+                    HelperBird.Mini(helper: helper)
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: 6) {
                             Text(helper.title)
@@ -282,23 +302,13 @@ struct HelperRow: View {
 }
 
 extension HelperBird {
-    /// The figure alone, for rows in the Milo window.
+    /// The figure alone, still, for rows in the Milo window.
     struct Mini: View {
         let helper: HelperInfo
-        let character: CharacterStyle
-        @StateObject private var figure: MiloModel
-
-        init(helper: HelperInfo, character: CharacterStyle) {
-            self.helper = helper
-            self.character = character
-            _figure = StateObject(wrappedValue: HelperBird.figureModel(for: helper, character: character))
-        }
 
         var body: some View {
-            HelperFigure(model: figure, size: 30)
+            HelperFigure(input: HelperBird.input(for: helper), size: 30)
                 .overlay(alignment: .topTrailing) { HelperMark(status: helper.status).scaleEffect(0.8).offset(x: 3, y: -1) }
-                .onChange(of: helper) { HelperBird.update(figure, for: helper, character: character) }
-                .onChange(of: character) { HelperBird.update(figure, for: helper, character: character) }
         }
     }
 }

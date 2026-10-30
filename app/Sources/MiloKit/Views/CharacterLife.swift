@@ -30,6 +30,24 @@ struct LifePose: Equatable {
     var hovered = false
     /// A short smile when the cursor first arrives.
     var pleased = false
+    /// A small idle habit playing now; the figure performs it.
+    var habit: Habit?
+    /// -1 when the middle of the screen is to his left, 1 to his right: the way he faces.
+    var side = -1.0
+
+    /// Little things a wren does when nothing is going on, each a second or less.
+    enum Habit: Equatable {
+        /// The tail flicks up and settles.
+        case tailFlick
+        /// The quick knee-dip wrens do.
+        case bob
+        /// A wing tugs the scarf straight.
+        case scarfTug
+        /// A shake that puffs and smooths his feathers.
+        case ruffle
+        /// One wing stretched out and folded again.
+        case wingStretch
+    }
 }
 
 /// Decides Milo's idle life: gaze, blinks, glances, stretches, yawns, fidgets and squash on state changes.
@@ -41,7 +59,7 @@ struct CharacterLife {
     static let attention: TimeInterval = 2.5
 
     private enum Action: Equatable {
-        case glance(CGVector), stretch, yawn, fidget
+        case glance(CGVector), stretch, yawn, fidget, habit(LifePose.Habit)
 
         var duration: TimeInterval {
             switch self {
@@ -49,6 +67,7 @@ struct CharacterLife {
             case .stretch: 1.3
             case .yawn: 1.9
             case .fidget: 0.6
+            case let .habit(habit): habit == .wingStretch || habit == .scarfTug ? 1.2 : 0.6
             }
         }
 
@@ -59,6 +78,7 @@ struct CharacterLife {
             case .stretch: [0.6]
             case .yawn: [0.25, 1.5]
             case .fidget: [0.15, 0.3, 0.45]
+            case .habit: []
             }
         }
     }
@@ -160,7 +180,7 @@ struct CharacterLife {
 
         if let action, now >= actionStart + action.duration {
             self.action = nil
-            nextAction = now + rng.next(in: 3.5...9)
+            nextAction = now + rng.next(in: 5...12)
         }
         guard action == nil, input.state == .idle, !input.asleep, now >= nextAction else { return }
         if hovered || following(at: now) {
@@ -184,8 +204,13 @@ struct CharacterLife {
         let roll = rng.next(in: 0...1)
         let yawn = late ? 0.25 : 0.03
         if roll < yawn { return .yawn }
-        if roll < yawn + 0.12 { return .stretch }
-        if roll < yawn + 0.18 { return .fidget }
+        if roll < yawn + 0.08 { return .stretch }
+        if roll < yawn + 0.14 { return .fidget }
+        if roll < yawn + 0.24 { return .habit(.bob) }
+        if roll < yawn + 0.32 { return .habit(.tailFlick) }
+        if roll < yawn + 0.37 { return .habit(.scarfTug) }
+        if roll < yawn + 0.42 { return .habit(.ruffle) }
+        if roll < yawn + 0.47 { return .habit(.wingStretch) }
         let angle = rng.next(in: 0...(2 * .pi))
         let reach = rng.next(in: 0.5...1)
         return .glance(Self.quantized(CGVector(dx: cos(angle) * reach, dy: sin(angle) * reach * 0.6)))
@@ -213,6 +238,7 @@ struct CharacterLife {
         pose.blink = now < blinkEnd
         pose.squash = bounce.first?.squash ?? 0
         let side = input.towardCentre
+        pose.side = side
 
         switch input.state {
         case .listening:
@@ -256,6 +282,8 @@ struct CharacterLife {
                 }
             case .fidget:
                 pose.tilt = [6, -5, 3, 0][min(3, Int(t / 0.15))]
+            case let .habit(habit):
+                pose.habit = habit
             }
         }
         return pose

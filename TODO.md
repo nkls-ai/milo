@@ -11,10 +11,9 @@
 - Thumbs up/down on unprompted nudges, stored in memory, so rules learn what you care about.
 - Context-aware dictation formatting by frontmost app (casual in Slack, formal in Mail), via a local model `TextCleaner`.
 
-- Idle CPU awake is still above 1%: about 1.8 to 3% for a release build with nobody touching the Mac (2026-10-30, on a busy machine; asleep 0.04%, before the skin system 7.2%). Repeating motion is in Core Animation now; what's left is each pose change (blinks, glances, the eyes following the cursor) redrawing the whole figure and every looping part's own hosting view, plus the springs' frames. Next: draw the eyes in their own small layer so a blink or a glance redraws only them.
+- Milo's CPU while he talks or listens is 4 to 6% of a core on a busy machine (2026-10-30, release; idle about 1%, asleep 0.02%). Drawing is under 0.1 ms a frame; the rest is the 60 fps display link and Core Animation commits. Next: drive speaking at 30 fps, and let the voice capsule's meter share his display link.
 - Setup window: Automation is checked against Mail only, and macOS can only say while Mail is open. Check Notes too.
-- Pip pointing near the left screen edge: the bubble hangs to his left and can be cut off. Move the bubble to his right when he perches there.
-- Pip: a fold or flap animation when he takes off and lands, instead of starting mid-flap.
+- Milo pointing near the left screen edge: the bubble hangs to his left and can be cut off. Move the bubble to his right when he perches there.
 
 - Milo window: show heartbeat nudges and reminders in the transcript too (only turns and tasks are recorded now).
 - Helpers: a warm Claude worker process (like the chat model's) to save its start-up on every task. Codex can't be warmed, `codex exec` reads the whole prompt first.

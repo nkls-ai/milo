@@ -50,7 +50,7 @@ public enum BrainCommand: Equatable, Sendable {
     case routineDraftAnswer(id: String, save: Bool)
     /// The Settings window opened: send the settings.
     case getSettings
-    /// Change one setting, e.g. section "ui", key "character", value "dragon".
+    /// Change one setting, e.g. section "ui", key "voice", value false.
     case setSetting(section: String, key: String, value: JSONValue)
     /// The menu's "Pause messages from your phone".
     case remotePause(Bool)

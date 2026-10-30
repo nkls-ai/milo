@@ -182,7 +182,7 @@ See [ADR 6](adr/0006-looking-at-the-screen.md) and [ADR 7](adr/0007-computer-use
 - **Computer use.** Workers get the milo-mac tools (`core/hands.py`) through `AdapterContext.mac_tools`, which compose.py fills when `[hands] enabled`. Codex and Claude start `python -m milo.mcp_server`, next to the app connections server, and it sends each call to `~/Milo/run/hands.sock`. `HandsService` validates it, asks the app to describe the target, classifies it with `services/risk.py`, asks through the `Confirmer` port (`Approvals`, see below) when needed, logs a step, and then has the app run it (`hands_request`, `hands_result`). It only answers while a screen helper runs, and only one does at a time.
 - **Background delivery.** `MacHands` works on apps without the real cursor or keyboard where macOS allows it, deciding the route per app family with the pure planner `Screen/Delivery`: `AXPress` for buttons, `AXFocused` plus a caret for a click into a field, `AXSelectedText` (read back) for typing, `AXShowMenu` for a right-click, the scroll bar's value for scrolling. What can't be done that way (a plain keystroke, a double-click, web content, Office documents) returns `HandsFailure(borrow:)`; `HandsService` asks "Can I borrow your mouse for a moment?" through the `Confirmer`, and on a yes sends `hands_borrow`. The app lends that one device on a 15 s sliding clock and warps the real pointer back afterwards. See [ADR 12](adr/0012-background-delivery.md).
 - **Scripts Milo writes.** `sheet_write`, `sheet_read` (Excel, Numbers), `write_document` (TextEdit, Pages) and `ax_find` are composed in the brain: `services/sheets.py` and `services/documents.py` turn plain arguments into AppleScript with every value as an escaped literal, and run it through the app's `run_applescript` action, which works in the background. They need no question unless `sheet_write` would replace filled cells. The tool descriptions put them first, then `run_applescript` (always asks), then the accessibility tree, then screenshots. See [ADR 14](adr/0014-scripts-milo-writes-and-short-questions.md).
-- **On screen.** Milo's own cursor in his skin's colours (`AppKit/CursorOverlay`, a click-through overlay, never the system cursor) glides to each spot before the action, ripples on a click and shows a caret while typing. The window he works in gets a soft outline with a "Milo is working here" tag and a Stop button (`AppKit/WorkingOutline`, `MiloModel.workingWindow`), followed by `Adapters/MacWindowWatcher`. Pip perches on its corner (`FlightDriver`). The whole-screen frame (`AppKit/WorkingFrame`) shows only while the real mouse or keyboard are borrowed. `describe` returns the target's `window` and `pid` for the outline.
+- **On screen.** Milo's own cursor in his theme's colours (`AppKit/CursorOverlay`, a click-through overlay, never the system cursor) glides to each spot before the action, ripples on a click and shows a caret while typing. The window he works in gets a soft outline with a "Milo is working here" tag and a Stop button (`AppKit/WorkingOutline`, `MiloModel.workingWindow`), followed by `Adapters/MacWindowWatcher`. Milo flies to its corner and perches there (`FlightDriver`). The whole-screen frame (`AppKit/WorkingFrame`) shows only while the real mouse or keyboard are borrowed. `describe` returns the target's `window` and `pid` for the outline.
 - **Stopping.** `Screen/ScreenController` watches real input during a session through `UserInputSource`. `TakeoverDetector` is pure and has two modes: in `background` the user's own mouse and keyboard never stop Milo (that's the point), only `esc` or the Stop button does; while a device is `borrowed` any real touch stops him, as before. Input doesn't count while a question waits (`confirm` until `confirm_done`). On a stop the app sends `hands_stop` and the brain fails every later call in that task.
 
 ## App connections
@@ -265,11 +265,11 @@ The Settings window changes a few keys of `~/Milo/config.toml` through the brain
 - **Granting.** The row's button first puts Milo in that permission's list (`register`: `AXIsProcessTrustedWithOptions` with the prompt, `CGRequestScreenCaptureAccess`, `AVCaptureDevice.requestAccess`, EventKit's request, an Apple Event question to Mail). Where macOS hasn't asked yet and asks in a dialog, that's all; otherwise it then opens the exact page (`x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_…`). For Accessibility and Screen Recording a small floating panel shows Milo as a tile to drag into the list.
 - **Stale entries.** After a rebuild macOS can show Milo switched on while the check says no. A permission that was granted before (remembered in UserDefaults) or is still off 8 s after its page opened gets a Fix it button: `tccutil reset Accessibility|ScreenCapture <Milo's bundle id>` for Milo's own entry only, then register and open the page again.
 - **Screen Recording** only counts after a restart, so once its page was opened the row offers Restart Milo, which relaunches the app.
-- **Scenes.** Each row plays a short loop of what Milo does with the permission, drawn with the active skin (`Views/SetupScenes.swift`), only while the window is open; with Reduce Motion each shows its last step still.
+- **Scenes.** Each row plays a short loop of what Milo does with the permission, drawn with Milo himself (`Views/SetupScenes.swift`), only while the window is open; with Reduce Motion each shows its last step still.
 
 ## The overlay, moment to moment
 
-The overlay reacts to the keys before the brain does. `MiloController` shows each push-to-talk output on the model in the same call that sends it (`MiloModel.press`, `hold`, `release`, `cancelPress`), so the view commits within about 2 ms of the key (`ResponseLatencyTests`), a round trip and the 80 ms `showAfter` ahead of the brain's own state. One capsule over Milo (`Views/VoiceCapsule`, its look picked by `VoicePhase.of`) changes shape from step to step: a small light at key down (only a light, since it may still be a tap or a right-Option shortcut), the level meter and the words so far once the key has been down 80 ms, "Got it" for 0.6 s at key up, dots while the words are worked out and while he thinks ("Still on it" after 6 s), and "Pasted" for 1.4 s after dictation lands. It springs in with the skin's motion and leaves in 0.12 s.
+The overlay reacts to the keys before the brain does. `MiloController` shows each push-to-talk output on the model in the same call that sends it (`MiloModel.press`, `hold`, `release`, `cancelPress`), so the view commits within about 2 ms of the key (`ResponseLatencyTests`), a round trip and the 80 ms `showAfter` ahead of the brain's own state. One capsule over Milo (`Views/VoiceCapsule`, its look picked by `VoicePhase.of`) changes shape from step to step: a small light at key down (only a light, since it may still be a tap or a right-Option shortcut), the level meter and the words so far once the key has been down 80 ms, "Got it" for 0.6 s at key up, dots while the words are worked out and while he thinks ("Still on it" after 6 s), and "Pasted" for 1.4 s after dictation lands. It springs in with the theme's motion and leaves in 0.12 s.
 
 The bubble (`Views/BubbleView`) holds his answer, a question with Yes and No, or a note with a button that fixes what it is about (`BubbleAction`, "Fix it" opens the permissions window). It hugs short text. While he speaks, `SpeechReveal` lays out each piece the brain sends, hidden, and shows its words at the speed he talks, learned from how long each piece took, so lines never reflow. The mic and voice level live in their own `MiloModel.live`, which only the figure and the meter watch.
 
@@ -277,22 +277,22 @@ Shared sizes (radii, text width, edge, shadow) are in `Views/Surface.swift`. Inc
 
 ## Themes
 
-Every skin brings a theme, and every surface around Milo uses it: the bubble, the live words, the Milo window, the Settings and setup windows, the menu bar sign. Other overlays (the cursor, the working outline, helpers) should use it too.
+Milo has one theme, and every surface around him uses it: the bubble, the live words, the Milo window, the Settings and setup windows, the menu bar sign. Other overlays (the cursor, the working outline, helpers) should use it too.
 
 ```swift
-let theme = Theme.for(.dragon)       // or model.theme, from MiloModel.character
+let theme = Theme.for(.milo)        // or model.theme, from MiloModel.character
 theme.primary  theme.tint  theme.accent  theme.ink  theme.glow   // SwiftUI Colors, light and dark built in
 theme.onPrimary  theme.card  theme.rule                          // text on primary, cards on tint, hairlines
 theme.appKit.primary                                             // the same colours as NSColor, for AppKit
-theme.motion.spring  theme.motion.gentle                         // the skin's springs; never linear tweens
+theme.motion.spring  theme.motion.gentle                         // his springs; never linear tweens
 theme.motion.animation(reduced: reduceMotion)                    // a short fade under Reduce Motion
-theme.motion.bob                                                 // how far decorative things float, Pip = 1
+theme.motion.bob                                                 // how far decorative things float
 
-someView.themed(by: model)                     // puts model.theme in the environment, follows the skin live
+someView.themed(by: model)                     // puts model.theme in the environment
 @Environment(\.miloTheme) private var theme    // inside any view below it
 ```
 
-`primary` is the skin's main colour (buttons, selection, the thread of a task), `tint` a soft wash of it (window paper), `accent` a second colour that pops, `ink` text on `tint`, `glow` halos and highlights. Pip is lavender and airy, the robot purple, the dragon teal with ember sparks and bouncy springs, Kit paper and fox orange and crisp, Glow lantern amber on night blue and floaty. The API lives in `app/Sources/MiloKit/Theme.swift`; add a colour there rather than in a view. Windows use `.themed(by:)`; the always-there overlay panels (the cursor, the working outline, the borrowed-mouse frame) subscribe to `model.$character` instead and pass the theme into their view, so they redraw only when the skin changes. Task status colours (running, done, failed, needs you) stay the same under every skin.
+`primary` is his lavender (buttons, selection, the thread of a task), `tint` a soft wash of it (window paper), `accent` the marigold of his scarf, `ink` text on `tint`, `glow` halos and highlights. The API lives in `app/Sources/MiloKit/Theme.swift`; add a colour there rather than in a view. Windows use `.themed(by:)`; the always-there overlay panels (the cursor, the working outline, the borrowed-mouse frame) subscribe to `model.$character` instead and pass the theme into their view, so they redraw only when it changes. Task status colours (running, done, failed, needs you) are their own. The theme mechanism stays so a future look can bring its own; `[ui] character` accepts only `milo` today, and the retired names (`pip`, `classic`, `dragon`, `kit`, `glow`) fall back to him.
 
 ## Meeting notes
 
@@ -330,15 +330,16 @@ app/
                      app_request for Calendar and Reminders), SystemPermissions (the setup window's checks).
                      Milo's cursor and the window outline: AppKit/CursorOverlay + Views/CursorView,
                      AppKit/WorkingOutline + Views/WorkingOutlineView, Screen/Delivery + Screen/CursorGlide.
-                     The character: Views/Skin.swift defines a skin (one SwiftUI view that gets the same
-                     state, emotion, life pose and flight as every other) and CharacterFigure(for: style, …),
-                     the one way to draw Milo at any size. Skins: PipFigure (the bird, default), RobotFigure
-                     ("classic"), DragonFigure, KitFigure (the paper fox), GlowFigure (the lantern firefly).
-                     CharacterLife poses them; repeating motion (breathing, wings, tails, smoke) runs as Core
-                     Animation keyframes through Views/Looping.swift, so a still Milo costs the app nothing.
-                     Theme.swift: each skin's colours and springs; every window and overlay (the bubble, the
+                     The character, a lavender wren (docs/CHARACTER.md): Views/CharacterFigure.swift is
+                     CharacterFigure(input:, size:, live:), the one way to draw Milo at any size. Views/Wren/:
+                     WrenPose (every number the rig reads, one spring each), WrenRig (builds the parts from
+                     a pose), WrenMotion (springs, clips, blinks, flaps, follow-through), WrenDirector (the
+                     pose and the moves for each state), WrenView (a CALayer per part, redrawn only when
+                     its shape changes, stepped by a display link that stops when he is still), WrenIcon
+                     (menu bar and app icon, drawn from the rig). CharacterLife picks his idle habits.
+                     Theme.swift: his colours and springs; every window and overlay (the bubble, the
                      Milo window, the helper birds, the cursor, the working outline and frame, What Milo
-                     knows) takes them from MiloModel.theme and follows a skin change at once.
+                     knows) takes them from MiloModel.theme.
                      SettingsModel + Views/SettingsView + AppKit/SettingsWindow; SetupModel + Views/SetupView
                      + SetupScenes + AppKit/SetupWindow. Flight.swift + AppKit/FlightDriver fly the overlay
                      panel to MiloModel.flyTarget (AppKit global screen coordinates) and back. Meetings/: MeetingController,
@@ -347,11 +348,12 @@ app/
   Tests/MiloKitTests Swift Testing; decodes protocol/messages.json, drives the controller with fakes.
                      MILO_RENDER_DIR=/tmp/milo-render swift test --filter ConversationRender renders the
                      narrow window offscreen into PNGs, --filter WindowRender the whole window: Today, a
-                     conversation, an older one, task pages, search, empty states, light, dark and skins.
-                     MILO_RENDER_DIR=... --filter SkinRender renders every skin in every state
-                     (MILO_SKINS=dragon,kit to pick), --filter OverlayRender the bubble and the voice capsule in
-                     every moment, --filter SettingsRender the Settings and setup windows in every skin,
-                     --filter HelperRender the birds and their task cards;
+                     conversation, an older one, task pages, search, empty states, light and dark.
+                     MILO_RENDER_DIR=... --filter WrenState renders Milo in every state (and the icons),
+                     --filter WrenFilm records his scenes as GIFs and strips, --filter OverlayRender the
+                     bubble and the voice capsule in every moment, --filter SettingsRender the Settings and
+                     setup windows, --filter HelperRender the birds and their task cards;
+                     MILO_COMPARE_DIR=... --filter CompareRender a few states for design comparisons;
                      MILO_PROBE_DIR=... --filter OverlayProbe puts the overlay on screen, measures its CPU
-                     and what a pose change costs per skin, and flies him to a point and back
+                     and what a pose change costs, and flies him to a point and back
 ```

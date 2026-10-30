@@ -324,7 +324,7 @@ def build(home: Path) -> Runtime:
     def use_updates(changed: Config) -> None:
         live_settings.use(changed.chat.updates, changed.harness.max_helpers)
 
-    live = {("ui", "character"): use_ui, ("ui", "dictate_key"): use_ui, ("ui", "talk_key"): use_ui,
+    live = {("ui", "dictate_key"): use_ui, ("ui", "talk_key"): use_ui,
             ("ui", "whats_this_key"): use_ui, ("ui", "voice"): use_voice, ("dictation", "stream"): use_stream,
             ("chat", "updates"): use_updates}
     settings = Settings(TomlConfigFile(workspace.config_path), config, ui, live)

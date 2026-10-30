@@ -38,7 +38,7 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .status("Mic unavailable: no input device"),
             .partial("Sounds good, sh"),
             .uiConfig(dictateKey: "fn", talkKey: "right_option", handsFreeMaxSeconds: 300, whatsThisKey: "ctrl+option+m",
-                      character: .pip),
+                      character: .milo),
             .history([
                 TranscriptEntry(id: "5f2a9c1e04b7", date: try day("2026-10-30T09:12:03"), kind: .user,
                                 text: "rename the photos from Friday", via: .voice, conversation: "c-5f2a9c1e04b7"),
@@ -107,9 +107,6 @@ private func entries(_ key: String) throws -> [[String: Any]] {
                     """),
             ]),
             .settings(SettingsReport(settings: [
-                Setting(section: "ui", key: "character", value: "dragon",
-                        options: ["pip", "classic", "dragon", "kit", "glow"],
-                        labels: ["Pip", "Robot", "Dragon", "Kit", "Glow"]),
                 Setting(section: "ui", key: "voice", value: true),
                 Setting(section: "chat", key: "updates", value: "bubble", options: ["quiet", "bubble", "chatty"],
                         labels: ["Only the answer", "Short notes in his bubble", "Tells you each step"]),
@@ -203,7 +200,7 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .routine(id: "tidy-downloads", action: .resume),
             .routineDraftAnswer(id: "d4e5f6a7", save: true),
             .getSettings,
-            .setSetting(section: "ui", key: "character", value: "dragon"),
+            .setSetting(section: "ui", key: "voice", value: true),
             .setSetting(section: "ui", key: "voice", value: false),
             .remotePause(true), .remoteForget,
             .callStarted(app: "Zoom", bundle: "us.zoom.xos", title: "Zoom Meeting"),
@@ -243,6 +240,14 @@ private func entries(_ key: String) throws -> [[String: Any]] {
         let json = #"{"type":"ui_config","dictate_key":"fn","talk_key":"right_option","character":"unicorn"}"#
         #expect(try JSONDecoder().decode(BrainEvent.self, from: Data(json.utf8))
                 == .uiConfig(dictateKey: "fn", talkKey: "right_option", character: nil))
+    }
+
+    @Test func aRetiredLookFromAnOldConfigMeansMilo() throws {
+        for name in ["pip", "classic", "dragon", "kit", "glow", "milo"] {
+            let json = #"{"type":"ui_config","dictate_key":"fn","talk_key":"right_option","character":"\#(name)"}"#
+            #expect(try JSONDecoder().decode(BrainEvent.self, from: Data(json.utf8))
+                    == .uiConfig(dictateKey: "fn", talkKey: "right_option", character: .milo))
+        }
     }
 
     @Test func uiConfigWithoutHandsFreeCapKeepsTheDefault() throws {

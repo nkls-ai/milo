@@ -109,7 +109,7 @@ extension BrainEvent: Decodable {
                              handsFreeMaxSeconds: try c.decodeIfPresent(Double.self, forKey: .handsFreeMaxSeconds),
                              whatsThisKey: try c.decodeIfPresent(String.self, forKey: .whatsThisKey),
                              character: try c.decodeIfPresent(String.self, forKey: .character)
-                                .flatMap(CharacterStyle.init(rawValue:)))
+                                .flatMap(CharacterStyle.init(wire:)))
         case "history": self = .history(try c.decode([TranscriptEntry].self, forKey: .entries))
         case "entry": self = .entry(try c.decode(TranscriptEntry.self, forKey: .entry))
         case "reply_delta": self = .replyDelta(id: try c.decode(String.self, forKey: .id), text: try text())

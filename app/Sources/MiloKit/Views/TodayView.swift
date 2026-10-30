@@ -134,7 +134,7 @@ struct TodayView: View {
         TodayCard(title: working.count == 1 ? "Milo is working on" : "Milo is working on \(working.count) things",
                   icon: "sparkles", tint: WindowColors.running) {
             ForEach(working) { helper in
-                HelperRow(helper: helper, steps: [], character: model.character,
+                HelperRow(helper: helper, steps: [],
                           open: { route.go(.task(helper.id)) }, stop: { model.stopHelper(helper.id) })
             }
             if working.count > 1 {

@@ -8,7 +8,7 @@ public final class WorkingFrame {
     private var windows: [NSWindow] = []
     private var subscription: AnyCancellable?
     private var restyle: AnyCancellable?
-    private var theme = Theme.for(.pip)
+    private var theme = Theme.for(.milo)
 
     public init(model: MiloModel) {
         // Only while Milo borrows the real mouse or keyboard: then any touch stops him, so the whole screen
@@ -48,7 +48,7 @@ public final class WorkingFrame {
 
 struct WorkingFrameView: View {
     static let label = "Milo is using your mouse. Move it or press esc to take over."
-    var theme = Theme.for(.pip)
+    var theme = Theme.for(.milo)
 
     var body: some View {
         ZStack(alignment: .top) {

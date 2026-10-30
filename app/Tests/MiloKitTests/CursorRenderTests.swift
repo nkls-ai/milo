@@ -15,7 +15,7 @@ struct CursorRenderTests {
             try save(Scene { MiloCursorView(gesture: gesture, presence: 1, clickTick: 1) }, name: "cursor-\(name)")
         }
         // Every skin dresses the cursor in its own colours.
-        for style in CharacterStyle.allCases where style != .pip {
+        for style in CharacterStyle.allCases where style != .milo {
             try save(Scene { MiloCursorView(gesture: .typing, presence: 1, clickTick: 1, theme: .for(style)) },
                      name: "cursor-typing-\(style.rawValue)")
         }
@@ -26,7 +26,7 @@ struct CursorRenderTests {
             try save(ZStack {
                 Mock()
                 WorkingOutlineView(onStop: {}, theme: .for(style)).frame(width: 360, height: 240)
-            }.frame(width: 440, height: 320), name: style == .pip ? "outline" : "outline-\(style.rawValue)")
+            }.frame(width: 440, height: 320), name: style == .milo ? "outline" : "outline-\(style.rawValue)")
             try save(WorkingFrameView(theme: .for(style)).frame(width: 440, height: 280).background(Mock()),
                      name: "frame-\(style.rawValue)")
         }

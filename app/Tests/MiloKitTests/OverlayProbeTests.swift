@@ -3,8 +3,8 @@ import SwiftUI
 import Testing
 @testable import MiloKit
 
-/// Puts the real overlay on screen, measures its idle CPU for Pip and the robot, and flies Pip to a point
-/// and back: `MILO_PROBE_DIR=/tmp/milo-pip swift test --filter OverlayProbe`. Takes about 80 s.
+/// Puts the real overlay on screen, measures Milo's CPU at rest, asleep, listening and speaking, and flies him
+/// to a point and back: `MILO_PROBE_DIR=/tmp/milo-probe swift test --filter OverlayProbe`. Takes about 2 minutes.
 @Suite(.enabled(if: ProcessInfo.processInfo.environment["MILO_PROBE_DIR"] != nil))
 @MainActor
 struct OverlayProbeTests {
@@ -25,19 +25,41 @@ struct OverlayProbeTests {
         pump(1)
         report.append("visible: \(panel.occlusionState.contains(.visible))")
 
-        for style in CharacterStyle.allCases + [.pip] {
-            model.character = style
-            pump(3)
-            report.append("\(style) idle cpu: \(String(format: "%.2f", cpu(over: 20)))%")
-        }
+        pump(3)
+        report.append("idle cpu: \(String(format: "%.2f", cpu(over: 30)))%")
         model.drowsy = true
-        for style in CharacterStyle.allCases {
-            model.character = style
-            pump(3)
-            report.append("\(style) asleep cpu: \(String(format: "%.2f", cpu(over: 15)))%")
-        }
+        pump(4)
+        report.append("asleep cpu: \(String(format: "%.2f", cpu(over: 20)))%")
         model.drowsy = false
-        model.character = .pip
+        pump(2)
+        // The brain sends the level about 20 times a second while he listens or speaks. First the whole
+        // overlay (with the voice capsule's meter), then the figure alone in a window of its own.
+        let alone = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 132, height: 132), styleMask: [.borderless],
+                             backing: .buffered, defer: false)
+        let figureModel = MiloModel(scheduler: MainQueueScheduler())
+        figureModel.connected = true
+        alone.contentView = NSHostingView(rootView: CharacterView(model: figureModel))
+        alone.backgroundColor = .clear
+        for (label, model, window) in [("overlay", model, panel as NSWindow), ("figure alone", figureModel, alone)] {
+          window.orderFrontRegardless()
+          for state in [MiloState.listening, .speaking] {
+            model.apply(.state(state))
+            var t = 0.0
+            let voice = Timer(timeInterval: 0.05, repeats: true) { _ in
+                t += 0.05
+                let syllable = max(0, sin(t * 2 * .pi * 4.7) * 0.6 + sin(t * 2 * .pi * 2.3 + 1) * 0.4)
+                MainActor.assumeIsolated { model.apply(.level(min(1, syllable * 0.9))) }
+            }
+            RunLoop.main.add(voice, forMode: .common)
+            pump(1)
+            if state == .speaking && window === panel { try snapshot(panel, "probe-speaking") }
+            report.append("\(label) \(state) cpu: \(String(format: "%.2f", cpu(over: 15)))%")
+            voice.invalidate()
+          }
+          model.apply(.state(.idle))
+          if window !== panel { window.orderOut(nil) }
+          pump(2)
+        }
 
         let home = panel.frame.origin
         let primary = NSScreen.screens[0].frame
@@ -57,7 +79,7 @@ struct OverlayProbeTests {
         let center = CGPoint(x: panel.frame.minX + OverlayPanel.characterCenter.x,
                              y: panel.frame.minY + OverlayPanel.characterCenter.y)
         let wanted = target
-        report.append("target \(wanted), Pip centre \(center), flight \(describe(model.flight))")
+        report.append("target \(wanted), Milo's centre \(center), flight \(describe(model.flight))")
         report.append("path: " + origins.enumerated().filter { $0.offset % 5 == 0 }
             .map { "(\(Int($0.element.x)),\(Int($0.element.y)))" }.joined(separator: " "))
         report.append("phases: " + flights.reduce(into: [String]()) { if $0.last != $1 { $0.append($1) } }.joined(separator: " > "))
@@ -70,49 +92,31 @@ struct OverlayProbeTests {
         #expect(panel.frame.origin == home)
     }
 
-    /// Milliseconds to lay out and draw one frame of each figure, with something changing every frame.
+    /// Milliseconds for one frame of the live rig while he moves, and how many part images it redrew.
     @Test func frameCost() throws {
         _ = NSApplication.shared
-        func measure(_ make: (Int) -> AnyView) -> Double {
-            let host = NSHostingView(rootView: make(0))
-            host.frame = NSRect(x: 0, y: 0, width: 132, height: 132)
-            let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-            window.contentView = host
-            let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds)!
-            for i in 0..<20 { host.rootView = make(i); host.cacheDisplay(in: host.bounds, to: rep) }
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 132, height: 132), styleMask: [.borderless],
+                              backing: .buffered, defer: false)
+        let view = WrenView(frame: NSRect(x: 0, y: 0, width: 132, height: 132))
+        window.contentView = view
+        view.layoutSubtreeIfNeeded()
+        var lines: [String] = []
+        for (name, make) in [("blink", { (i: Int) in FigureInput(pose: LifePose(blink: i % 2 == 0)) }),
+                             ("speaking", { (i: Int) in FigureInput(state: .speaking, level: Double(i % 7) / 7) }),
+                             ("turning", { (i: Int) in FigureInput(pose: LifePose(side: i % 2 == 0 ? -1 : 1)) })] {
+            view.update(make(0))
+            let redraws = view.redraws
             let began = Date()
-            for i in 0..<300 { host.rootView = make(i); host.cacheDisplay(in: host.bounds, to: rep) }
-            return Date().timeIntervalSince(began) / 300 * 1000
-        }
-        let costs = CharacterStyle.allCases.map { style in
-            let ms = measure { i in AnyView(CharacterFigure(for: style, pose: LifePose(lean: i % 2 == 0 ? 0 : 0.01), time: 0)) }
-            return String(format: "%@ %.2f ms", style.rawValue, ms)
-        }
-        // Live: loops in their own hosting views, as on screen. A pose change re-lays out and redraws.
-        func live(_ make: (Int) -> AnyView) -> Double {
-            let host = NSHostingView(rootView: make(0))
-            host.frame = NSRect(x: 0, y: 0, width: 132, height: 132)
-            let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-            window.contentView = host
-            window.orderFrontRegardless()
-            defer { window.orderOut(nil) }
-            func step(_ i: Int) {
-                host.rootView = make(i)
-                host.layoutSubtreeIfNeeded()
-                host.display()
+            for i in 0..<300 {
+                view.update(make(i / 10))
+                view.step(1.0 / 60)
                 CATransaction.flush()
             }
-            for i in 0..<20 { step(i) }
-            let began = Date()
-            for i in 0..<300 { step(i) }
-            return Date().timeIntervalSince(began) / 300 * 1000
+            let ms = Date().timeIntervalSince(began) / 300 * 1000
+            lines.append(String(format: "%@: %.3f ms a frame, %.1f part images a frame", name, ms,
+                                Double(view.redraws - redraws) / 300))
         }
-        let liveCosts = CharacterStyle.allCases.map { style in
-            let ms = live { i in AnyView(CharacterFigure(for: style, pose: LifePose(blink: i % 2 == 0), size: 120)) }
-            return String(format: "%@ %.2f ms", style.rawValue, ms)
-        }
-        let line = "frame cost: " + costs.joined(separator: ", ") + "\nlive blink cost: " + liveCosts.joined(separator: ", ")
-        try line.write(to: dir.appendingPathComponent("frame-cost.txt"), atomically: true, encoding: .utf8)
+        try lines.joined(separator: "\n").write(to: dir.appendingPathComponent("frame-cost.txt"), atomically: true, encoding: .utf8)
     }
 
     private func pump(_ seconds: TimeInterval) {

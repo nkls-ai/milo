@@ -45,6 +45,6 @@ import Testing
 
     @Test func modelStartsPerchedWithNoTarget() {
         let model = MiloModel(scheduler: ManualScheduler())
-        #expect(model.flyTarget == nil && model.flight == .perched && model.character == .pip)
+        #expect(model.flyTarget == nil && model.flight == .perched && model.character == .milo)
     }
 }

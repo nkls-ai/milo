@@ -9,7 +9,7 @@ from tests.fakes import MemoryConfigFile, RecordingSink
 
 def make(raw: dict | None = None):
     file, sink, applied = MemoryConfigFile(raw), RecordingSink(), []
-    live = {("ui", "character"): lambda c: applied.append(c.ui.character)}
+    live = {("ui", "talk_key"): lambda c: applied.append(c.ui.talk_key)}
     return Settings(file, file.read(), UiState(sink), live), file, sink, applied
 
 
@@ -18,12 +18,13 @@ def rows(report: SettingsReport) -> dict:
 
 
 def test_the_report_has_every_setting_with_its_value_options_and_labels():
-    settings, _, sink, _ = make({"ui": {"character": "kit"}})
+    settings, _, sink, _ = make({"ui": {"talk_key": "right_command"}})
     settings.send()
     [report] = sink.of(SettingsReport)
     table = rows(report)
     assert set(table) == {(s.section, s.key) for s in SETTINGS}
-    assert table["ui", "character"]["value"] == "kit" and "dragon" in table["ui", "character"]["options"]
+    assert table["ui", "talk_key"]["value"] == "right_command" and "fn" in table["ui", "talk_key"]["options"]
+    assert ("ui", "character") not in table
     assert table["dictation", "stream"]["options"] == ["off", "preview", "type"]
     assert table["chat", "updates"]["value"] == "bubble" and table["chat", "updates"]["live"] is False
     assert table["ui", "voice"] == {"section": "ui", "key": "voice", "value": True, "options": [], "labels": [],
@@ -33,10 +34,10 @@ def test_the_report_has_every_setting_with_its_value_options_and_labels():
 
 def test_a_live_change_is_saved_and_applied_without_a_restart():
     settings, file, sink, applied = make()
-    settings.change("ui", "character", "glow")
-    assert file.raw["ui"]["character"] == "glow" and applied == ["glow"]
+    settings.change("ui", "talk_key", "right_control")
+    assert file.raw["ui"]["talk_key"] == "right_control" and applied == ["right_control"]
     [report] = sink.of(SettingsReport)
-    assert rows(report)["ui", "character"]["value"] == "glow" and not report.restart
+    assert rows(report)["ui", "talk_key"]["value"] == "right_control" and not report.restart
 
 
 def test_any_other_change_waits_for_a_restart_until_it_is_changed_back():
@@ -50,7 +51,7 @@ def test_any_other_change_waits_for_a_restart_until_it_is_changed_back():
 def test_a_bad_value_is_not_saved_and_the_error_is_in_plain_words():
     settings, file, sink, applied = make()
     settings.change("ui", "talk_key", "fn")
-    settings.change("ui", "character", "unicorn")
+    settings.change("ui", "talk_key", "caps_lock")
     first, second = sink.of(SettingsReport)
     assert first.error == "The dictate key and the talk key need to be different keys."
     assert second.error == "Milo couldn't use that. Try one of the choices."

@@ -14,11 +14,11 @@ def file(tmp_path):
 
 def test_a_change_keeps_every_comment_and_the_column_of_the_one_on_its_line(file):
     before = file.path.read_text()
-    config = file.write("ui", "character", "dragon")
+    config = file.write("ui", "dictate_key", "right_command")
     after = file.path.read_text()
-    assert config.ui.character == "dragon" and file.read().ui.character == "dragon"
-    old_line = next(line for line in before.splitlines() if line.startswith("character ="))
-    new_line = next(line for line in after.splitlines() if line.startswith("character ="))
+    assert config.ui.dictate_key == "right_command" and file.read().ui.dictate_key == "right_command"
+    old_line = next(line for line in before.splitlines() if line.startswith("dictate_key ="))
+    new_line = next(line for line in after.splitlines() if line.startswith("dictate_key ="))
     assert new_line.index("#") == old_line.index("#")
     assert before.replace(old_line, new_line) == after
 

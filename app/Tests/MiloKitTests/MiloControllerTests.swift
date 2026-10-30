@@ -286,11 +286,11 @@ private final class Harness {
 
     @Test func uiConfigPicksTheCharacter() {
         let h = Harness()
-        #expect(h.model.character == .pip)
-        h.brain.emit(.uiConfig(dictateKey: "fn", talkKey: "right_option", character: .classic))
-        #expect(h.model.character == .classic)
+        #expect(h.model.character == .milo)
+        h.brain.emit(.uiConfig(dictateKey: "fn", talkKey: "right_option", character: .milo))
+        #expect(h.model.character == .milo)
         h.brain.emit(.uiConfig(dictateKey: "fn", talkKey: "right_option"))
-        #expect(h.model.character == .classic, "a missing or unknown character keeps the current one")
+        #expect(h.model.character == .milo, "a missing or unknown character keeps the current one")
     }
 
     @Test func uiConfigWithTheCurrentKeysChangesNothing() {

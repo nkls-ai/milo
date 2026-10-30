@@ -5,7 +5,7 @@ import Testing
 @testable import MiloKit
 
 /// Renders the Milo window with its sidebar offscreen into PNGs: Today, a conversation, an older one, a task's page,
-/// search, the narrow window and the empty states, light and dark and in other skins:
+/// search, the narrow window and the empty states, light and dark:
 /// `MILO_RENDER_DIR=/tmp/milo-window swift test --filter WindowRender`.
 @Suite(.enabled(if: ProcessInfo.processInfo.environment["MILO_RENDER_DIR"] != nil), .serialized)
 @MainActor
@@ -35,17 +35,11 @@ struct WindowRenderTests {
             try render(.live, name: "narrow-sidebar-\(mode)", dark: dark, size: CGSize(width: 440, height: 580),
                        sidebar: true)
         }
-        for style in [CharacterStyle.dragon, .kit, .glow] {
-            try render(.today, name: "today-\(style.rawValue)", dark: style == .glow, busy: true, style: style)
-            try render(.live, name: "conversation-\(style.rawValue)", dark: style == .glow, style: style)
-        }
     }
 
     private func render(_ page: WindowPage, name: String, dark: Bool, busy: Bool = false, empty: Bool = false,
-                        search: String = "", size: CGSize = CGSize(width: 780, height: 580), sidebar: Bool = false,
-                        style: CharacterStyle = .pip) throws {
+                        search: String = "", size: CGSize = CGSize(width: 780, height: 580), sidebar: Bool = false) throws {
         let model = MiloModel(scheduler: ManualScheduler())
-        model.character = style
         model.connected = true
         let transcript = empty ? TranscriptModel() : Day.transcript()
         if busy {

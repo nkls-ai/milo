@@ -7,7 +7,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
-from .config import CHARACTERS, KEY_NAMES, UPDATES, Config
+from .config import KEY_NAMES, UPDATES, Config
 from .core.events import SettingsReport
 from .core.ports import EventSink
 from .core.registry import ConfigError
@@ -32,7 +32,6 @@ KEY_LABELS = {"fn": "fn", "right_option": "Right Option", "right_command": "Righ
               "right_control": "Right Control"}
 
 SETTINGS = (
-    Setting("ui", "character", CHARACTERS, ("Pip", "Robot", "Dragon", "Kit", "Glow")),
     Setting("chat", "updates", UPDATES, ("Only the answer", "Short notes in his bubble", "Tells you each step")),
     Setting("dictation", "stream", tuple(m.value for m in LiveMode),
             ("When you let go", "Show the words as you speak", "Type as you speak")),

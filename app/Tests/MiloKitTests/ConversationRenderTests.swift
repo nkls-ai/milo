@@ -23,13 +23,6 @@ struct ConversationRenderTests {
                            question: name == "asking" ? Samples.question : nil)
             }
         }
-        // The window takes the skin's colours.
-        for style in [CharacterStyle.dragon, .kit, .glow] {
-            for (name, entries, state) in Samples.all where name == "empty" || name == "asking" {
-                try render(entries: entries, state: state, name: "\(name)-\(style.rawValue)", dark: style == .glow,
-                           question: name == "asking" ? Samples.question : nil, style: style)
-            }
-        }
     }
 
     @Test func renderRoutines() throws {
@@ -44,15 +37,11 @@ struct ConversationRenderTests {
                            name: "routines-\(open ? "open" : "closed")-\(dark ? "dark" : "light")", dark: dark,
                            routines: .routines(Samples.routines, drafts: open ? [] : [Samples.draft]))
             }
-            // The section and the draft card follow the skin.
-            try render(entries: Samples.oneTurn, state: .idle, name: "routines-\(open ? "open" : "closed")-dragon",
-                       dark: false, routines: .routines(Samples.routines, drafts: open ? [] : [Samples.draft]),
-                       style: .dragon)
         }
     }
 
     private func render(entries: [TranscriptEntry], state: MiloState, name: String, dark: Bool,
-                        question: String? = nil, routines: BrainEvent? = nil, style: CharacterStyle = .pip) throws {
+                        question: String? = nil, routines: BrainEvent? = nil, style: CharacterStyle = .milo) throws {
         let model = MiloModel(scheduler: ManualScheduler())
         model.character = style
         model.state = state

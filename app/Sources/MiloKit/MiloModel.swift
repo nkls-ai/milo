@@ -43,7 +43,7 @@ public final class MiloModel: ObservableObject {
     /// The window Milo works in, in AppKit global coordinates: outlined, and Pip perches on its corner.
     @Published public var workingWindow: CGRect?
     /// How Milo looks, from the brain's `ui_config`.
-    @Published public var character: CharacterStyle = .pip
+    @Published public var character: CharacterStyle = .milo
     /// Milo by message, for the menu. nil while messages are off.
     @Published public var remote: RemoteStatus?
     /// A point on screen Milo should fly to and point at, in AppKit global screen coordinates (points,
