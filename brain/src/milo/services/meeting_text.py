@@ -314,7 +314,7 @@ def summary_prompt(info: MeetingInfo, entries: Sequence[tuple[float, str, str]],
     if len(text) > limit:
         half = limit // 2
         text = text[:half] + "\n[…]\n" + text[-half:]
-    people = f"\nInvited: {', '.join(info.attendees)}" if info.attendees else ""
+    people = f"\nInvited: {inert(', '.join(info.attendees))}" if info.attendees else ""
     return (f"Meeting: {inert(info.title)}\nStarted: {info.started:%Y-%m-%d %H:%M}{people}\n\n"
             f"<meeting_transcript>\n{text}\n</meeting_transcript>\n\nWrite the notes as JSON.")
 

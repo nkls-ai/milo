@@ -165,7 +165,8 @@ def build(home: Path) -> Runtime:
             summarizer=lambda: LIVE_MODELS.create(chat_name, chat_options, ctx),
             calendar=calendar if "calendar" in enabled else None,
             add_reminder=add_reminder if "reminders" in enabled else None,
-            draft_mail=(lambda task: helpers.submit(task, title="Follow-up mail", screen=False))
+            # careful: the draft comes from other people's words, so the helper's tools ask before changes too
+            draft_mail=(lambda task: helpers.submit(task, title="Follow-up mail", screen=False, careful=True))
             if switches.enabled and switches.mail else None,
             options=MeetingOptions(m.auto, m.keep_audio, m.offer_reminders, m.offer_mail, m.end_after_s),
             connected=server.connected, private=lambda: mic.active or speaker.active,
