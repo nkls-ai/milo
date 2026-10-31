@@ -45,7 +45,8 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
         super.init()
 
         // Milo's silhouette, drawn like every menu bar icon (it follows the menu bar's colour),
-        // and a red dot instead while he records a meeting. "auto" next to it while he acts without asking.
+        // and a red dot instead while he records a meeting. Auto is the default (ADR 23), so it gets no badge: the
+        // menu only says so.
         let auto = controller.settingsModel.$report
             .map { $0?["approvals", "ask"]?.value.string == "auto" }
             .removeDuplicates()
@@ -55,10 +56,10 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
         let menu = NSMenu()
         hintItem.isEnabled = false
         menu.addItem(hintItem)
-        let autoStatus = menu.addItem(withTitle: "Auto mode: Milo doesn't ask first", action: nil, keyEquivalent: "")
+        let autoStatus = menu.addItem(withTitle: "Auto mode: Milo asks only when it matters", action: nil, keyEquivalent: "")
         autoStatus.isEnabled = false
-        autoStatus.toolTip = "He still asks before he sends, deletes or buys, and never touches passwords, money or "
-            + "security settings."
+        autoStatus.toolTip = "He still asks before anything that can't be undone, sending, buying and money, and "
+            + "never touches passwords or security settings."
         autoItems = [autoStatus, add(menu, "Turn off auto mode", #selector(endAutoMode))]
         menu.addItem(.separator())
         add(menu, "Open conversation", #selector(toggleWindow))
@@ -119,12 +120,6 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
         notesItem?.title = recording ? "Stop taking notes" : "Take meeting notes"
         autoItems.forEach { $0.isHidden = !auto }
         guard let button = statusItem.button else { return }
-        statusItem.length = auto ? NSStatusItem.variableLength : NSStatusItem.squareLength
-        button.imagePosition = auto ? .imageLeading : .imageOnly
-        button.attributedTitle = NSAttributedString(string: auto ? "auto" : "", attributes: [
-            .font: NSFont.systemFont(ofSize: 10, weight: .semibold), .baselineOffset: 1,
-        ])
-        button.toolTip = auto ? "Milo: auto mode is on, he doesn't ask first" : nil
         if recording {
             let config = NSImage.SymbolConfiguration(paletteColors: [.white, .systemRed])
             let image = NSImage(systemSymbolName: "record.circle.fill", accessibilityDescription: "Milo is taking notes")?

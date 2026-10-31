@@ -60,4 +60,4 @@ In auto mode, ADR 22's rules for `user_asked` are unchanged. A task from the rep
 - Mail's Trash mailbox and Notes' Recently Deleted folder are the exceptions the word list can't see: there "Delete" deletes for good, but the label is the same, so Milo treats it as undoable. Milo doesn't see which mailbox or folder is open.
 - ⌘D is Don't Save in an unsaved-changes sheet and Fill Down in Excel. It isn't treated as risky, so the Don't Save it can trigger doesn't ask. Clicking the button asks.
 - The money check is a word list too. A script that mentions "order" asks as a money question and can only be answered with a click. A bank page whose button says "Confirm" asks, but not as money. The worker's instructions (`connect/tools.py`, `AGENTS.md`) tell it to stop before buying. That only reaches new workspaces: an existing `~/Milo/AGENTS.md` keeps its old line ("Never move money"), which is stricter.
-- With auto as the default, the menu bar's "auto" badge is on for everyone who hasn't chosen another mode.
+- With auto as the default, the menu bar's "auto" badge (ADR 22) is gone: it would show for everyone. The menu still says auto mode is on and can turn it off.
