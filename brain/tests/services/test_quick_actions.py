@@ -487,21 +487,31 @@ def test_a_todo_with_no_date_is_ticked_by_its_handle_in_any_language(tmp_path):
     assert world(s)["reminders"][0]["done"] is True and not s.sink.of(Confirm)
 
 
-def test_undo_that_as_a_cancel_of_milos_own_event_doesnt_ask_but_the_users_own_does(tmp_path):
+def test_undo_that_as_a_cancel_of_milos_own_event_doesnt_ask(tmp_path):
     """Live (2026-10-31): "undo that" right after Milo put the dentist in came back as <event do="cancel">, and with
-    an invite in <today> it asked "Delete “Dentist”…?". Milo's own event goes; one the user had still asks."""
+    an invite in <today> it asked "Delete “Dentist”…?". Milo's own event goes without a question."""
     s = stack(tmp_path, ['[happy] <event title="Gym" start="2026-10-30T18:00"/>'],
-              ['[happy] <event do="cancel" title="Gym" on="2026-10-30"/>'],
-              ['[happy] <event do="cancel" id="e1"/>'], world={"events": [DENTIST, INVITE]})
+              ['[happy] <event do="cancel" title="Gym" on="2026-10-30"/>'], world={"events": [DENTIST, INVITE]})
+    asyncio.run(say(s, "put gym on my calendar tomorrow at six", "undo that"))
+    assert not s.sink.of(Confirm) and [e["title"] for e in world(s)["events"]] == ["Dentist", INVITE["title"]]
+
+
+def test_the_users_own_event_after_an_invite_asks_in_once_per_task_mode(tmp_path):
+    s = strict(tmp_path, ['[happy] <event do="cancel" id="e1"/>'], world={"events": [DENTIST, INVITE]})
 
     async def run():
-        await say(s, "put gym on my calendar tomorrow at six", "undo that")
-        assert not s.sink.of(Confirm) and [e["title"] for e in world(s)["events"]] == ["Dentist", INVITE["title"]]
-        s.live_talk.start("undo that")  # the model picks the user's own dentist instead
+        s.live_talk.start("undo that")  # the model picks the user's own dentist
         await until(lambda: s.approvals.pending)
 
     asyncio.run(run())
     assert s.sink.of(Confirm), "not Milo's: outside text in the conversation still asks"
+
+
+def test_in_auto_mode_the_users_own_event_goes_after_an_invite_with_an_undo(tmp_path):
+    s = stack(tmp_path, ['[happy] <event do="cancel" id="e1"/>'], world={"events": [DENTIST, INVITE]})
+    asyncio.run(say(s, "undo that"))
+    assert s.sink.of(Confirm) == [] and [e["id"] for e in world(s)["events"]] == ["x2"]
+    assert [card.detail for card in cards(s) if card.undo] == ["Deleted"]
 
 
 def test_a_tick_on_a_shared_list_still_asks_after_an_invite(tmp_path):
@@ -854,14 +864,48 @@ def test_a_reminder_the_user_asked_for_doesnt_ask_on_a_day_with_shared_entries(t
     asyncio.run(say(s, "Remind me to call Anna tomorrow at 9"))
     assert s.sink.of(Confirm) == [] and [r.text for r in s.reminders.items] == ["Call Anna"]
 
-    async def run():  # "okay" asks for nothing: a reminder in its reply could come from the shared entry
+    # Since ADR 35 any reminder at the Mac in auto mode goes in with its card, even after "okay"; it asked before.
+    asyncio.run(say(s, "okay"))
+    assert s.sink.of(Confirm) == [] and len(s.reminders.items) == 2
+
+
+def test_a_reminder_after_shared_entries_still_asks_in_once_per_task_mode(tmp_path):
+    """The phone keeps the same rule (test_tag_policy)."""
+    s = strict(tmp_path, ["[happy] Got it. <reminder>2026-10-30 10:00 Read the offsite plan</reminder>"],
+               world={"events": [HALLOWEEN]})
+
+    async def run():
         s.live_talk.start("okay")
         await until(lambda: s.approvals.pending)
-        s.approvals.answer(s.sink.of(Confirm)[0].id, False)
-        await settle()
 
     asyncio.run(run())
-    assert len(s.reminders.items) == 1
+    assert s.sink.of(Confirm) and s.reminders.items == []
+
+
+HALLOWEEN = {**DENTIST, "id": "x3", "title": "Halloween", "shared": True}
+
+
+def test_answering_milos_question_goes_on_with_the_request_it_answers(tmp_path):
+    """Replayed from the real Milo (2026-10-31), on a day with a shared entry: "can you put in a reminder for 10 to go
+    to Nick for getting" got a question back, and the answer "10 in the morning, we'll go to the city" has no
+    "remind" in it, so the reminder asked for a yes the user had already given."""
+    s = stack(tmp_path, ["[concerned] Is 10 tonight or tomorrow morning?"],
+              ["[happy] Tomorrow at 10. <reminder>2026-10-30 10:00 Go to the city with Nick</reminder>"],
+              world={"events": [HALLOWEEN]})
+    asyncio.run(say(s, "Can you put in a reminder for 10 to go to Nick for getting",
+                    "10 in the morning and just that we will go to the city"))
+    assert s.sink.of(Confirm) == []
+    assert [r.text for r in s.reminders.items] == ["Go to the city with Nick"]
+
+
+def test_an_event_after_milos_question_just_happens_too(tmp_path):
+    s = stack(tmp_path, ["[thinking] What time?"],
+              ['[happy] <event title="Lunch with Anna" start="2026-10-30T13:00"/>'],
+              world={"events": [HALLOWEEN]})
+    asyncio.run(say(s, "Put lunch with Anna in my calendar tomorrow", "at one"))
+    assert s.sink.of(Confirm) == []
+    assert [e["title"] for e in world(s)["events"]] == ["Halloween", "Lunch with Anna"]
+
 
 class Notes:
     recording = True

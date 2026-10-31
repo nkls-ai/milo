@@ -464,6 +464,34 @@ def test_auto_mode_the_users_own_words_are_the_yes_even_after_milo_read_somethin
     assert helper.user_asked and not helper.careful
 
 
+def _after_milos_question(milo_asks: str) -> Stack:
+    s = Stack(ask="auto", model=FakeLiveModel([f"[thinking] {milo_asks}"],
+                                              ['[happy] On it. <task>Make the header of the budget sheet bold</task>']))
+    s.live_talk.note("read the mail", "The budget is attached.")
+
+    async def run():
+        await s.live_talk.start("Can you make the header bold?")
+        await settle()
+        await s.live_talk.start("the budget one")
+        await settle()
+
+    asyncio.run(run())
+    return s
+
+
+def test_auto_mode_an_answer_to_milos_question_goes_on_with_the_users_request():
+    # Live (2026-10-31): "can you put in a reminder for 10…", Milo asked "tonight or tomorrow?", and the answer had
+    # no work in its words, so what came of it counted as nobody's request.
+    s = _after_milos_question("Which sheet?")
+    assert s.sink.of(Confirm) == []
+    assert s.tasks.helpers[0].user_asked and not s.tasks.helpers[0].careful
+
+
+def test_auto_mode_without_milos_question_a_bare_answer_asks_for_nothing():
+    s = _after_milos_question("Okay.")
+    assert s.tasks.helpers[0].careful, "\"the budget one\" alone asks for no work"
+
+
 def test_auto_mode_a_question_that_needs_a_helper_to_read_asks_nothing():
     # "What's on my calendar?" in a conversation that already read something: the helper only reads.
     s = Stack(ask="auto", model=FakeLiveModel(['[happy] Ich schaue nach. <task>Read the calendar for today</task>']))

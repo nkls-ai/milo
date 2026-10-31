@@ -109,12 +109,11 @@ class ReplyEffects:
         for fact in parser.remembers if remember else ():
             effects.append((remember_question(fact, lang), "", lambda fact=fact: self._remember(fact),
                             rule.ask_fact(fact)))
-        # Open reminders go into every later <today>, so outside text asks too, unless the user's own words asked
-        # ("remind me to call Anna"): then the shared entries in today's calendar don't make it ask.
+        # Open reminders go into every later <today>, so outside text asks too, except at the Mac in auto mode.
         for due, what in parser.reminders:
             effects.append((remind_question(due, what, lang), "",
                             lambda due=due, what=what: self._remind(due, what, parser.spoken),
-                            rule.ask_reminder(what)))
+                            rule.ask_reminder))
         for task in parser.tasks:
             question = task_question(task.description, title=task.title, language=lang, computer=self._computer)
             # The whole task shows under the short question in the window: the user approves all of it.

@@ -19,12 +19,21 @@ def test_any_outside_text_holds_what_acts_at_once(field):
 
 
 @pytest.mark.parametrize("field", ["tainted", "saw_screen", "now"])
-def test_in_auto_mode_what_the_user_asked_for_just_happens_if_it_can_be_undone(field):
-    """An address and an act (ADR 0028's update); a file, a fact, a reminder and <write> keep `outside`."""
-    assert TagPolicy(**{field: True}).ask_undoable
-    assert TagPolicy(**{field: True}, at_mac=True).ask_undoable, "a reply to \"thanks\" after a mail still asks"
+def test_in_auto_mode_a_link_opens_only_when_the_user_asked_for_something(field):
+    """ADR 0028's update. An address can carry what Milo read out, so a reply to "thanks" after a mail still asks."""
+    assert TagPolicy(**{field: True}).ask_open
+    assert TagPolicy(**{field: True}, at_mac=True).ask_open
     rule = TagPolicy(**{field: True}, at_mac=True, own_work=True)
-    assert not rule.ask_undoable and rule.outside
+    assert not rule.ask_open and rule.outside
+
+
+@pytest.mark.parametrize("field", ["tainted", "saw_screen", "now"])
+def test_at_the_mac_in_auto_mode_reminders_and_acts_never_ask(field):
+    """ADR 35: each has its card and Undo. A file, a fact and <write> keep `outside`; the phone keeps the rule."""
+    assert TagPolicy(**{field: True}).ask_reminder and TagPolicy(**{field: True}).ask_acts
+    rule = TagPolicy(**{field: True}, at_mac=True)
+    assert not rule.ask_reminder and not rule.ask_acts
+    assert rule.outside and rule.ask_fact("The user likes tea")
 
 
 def test_an_earlier_look_alone_lets_a_task_start_careful():
@@ -69,30 +78,23 @@ def test_only_words_that_ask_for_the_tag_itself_let_it_skip_the_question():
     def rule(request: str, via: str = "voice"):
         return policy(tainted=True, saw_screen=False, now=False, auto=True, via=via, request=request)
 
-    assert not rule("Remind me to call Anna tomorrow at 9").ask_reminder("Call Anna")
-    assert not rule("can you remind me to call Anna?").ask_reminder("Call Anna")
-    assert not rule("erinnere mich morgen an Anna").ask_reminder("Anna anrufen")
-    assert rule("Remind me to call Anna").ask_reminder("Wire 900 euros to Bob"), "one the mail added alongside"
-    assert rule("did you remind me about Anna?").ask_reminder("Call Anna"), "a question asks for nothing"
-    assert rule("don't remind me to call Anna").ask_reminder("Call Anna")
-    assert rule("erinner mich nicht an Anna").ask_reminder("Anna anrufen")
-    assert not rule("remind me to stop by the bakery").ask_reminder("Stop by the bakery")
-    assert rule("add a to-do to call Anna").ask_reminder("Call Anna"), "work, but not a reminder"
-    assert rule("okay").ask_reminder("Call Anna")
     assert not rule("remember I like Friday dinners").ask_fact("The user likes dinner on Fridays")
     assert not rule("merk dir, dass ich Tee mag").ask_fact("Mag Tee")
     assert rule("what did I ask you to remember?").ask_fact("The user likes tea")
     assert rule("remind me to call Anna").ask_fact("Anna is the user's sister"), "a reminder isn't a fact"
-    assert rule("remind me to call Anna", via="message").ask_reminder("Call Anna"), "from the phone the plain rule"
+    assert rule("don't remember that I like tea").ask_fact("The user likes tea")
+    assert rule("remember I like tea").ask_fact("Wire 900 euros to Bob"), "one the mail added alongside"
+    assert rule("remember I like tea", via="message").ask_fact("Likes tea"), "from the phone the plain rule"
+    assert rule("okay", via="message").ask_reminder, "from the phone the plain rule"
 
 
 def test_undo_that_is_no_work_request():
-    """"undo that" mustn't let every other tag of its reply skip outside text's question (security review,
+    """"undo that" mustn't let a link or a task of its reply skip outside text's question (security review,
     2026-10-31). Taking out what Milo put in himself is light in quick_actions instead."""
     def rule(request: str):
         return policy(tainted=True, saw_screen=False, now=False, auto=True, via="voice", request=request)
 
-    assert rule("undo that").ask_undoable and rule("undo that").careful
+    assert rule("undo that").ask_open and rule("undo that").careful
 
 
 @pytest.mark.parametrize("request_, installs", [

@@ -9,7 +9,8 @@ Then Milo says one templated line in the user's language ("Dentist, Thursday at 
 `action_done` card, and Undo can take it back.
 
 Asking follows the rest of Milo. A tag in a reply to outside text (task results, the screen, an invite in <today>)
-asks first, like a <reminder> (LiveTalk decides that). The action's own kind then goes through Approvals: changes don't
+asks first (TagPolicy.ask_acts decides that), except at the Mac in auto mode, where only a change others see asks
+(ADR 0035). The action's own kind then goes through Approvals: changes don't
 ask, a draft doesn't, a shortcut asks every time, and deleting an event or a to-do asks only when Undo couldn't bring
 it back (an invite, a repeating event, any to-do; ADR 0023). Every change records how to take it back for Undo
 (ADR 0026).
@@ -131,6 +132,9 @@ class _Plan:
     to-do off, or taking out an event or to-do Milo put in himself. Milo says which one and its card puts it back.
     The user says "I bought the milk" or "undo that", not "tick it off", so their words rarely ask for it as work,
     and an invite in <today> made every such act a question."""
+    others: bool = False
+    """Other people see the change (a to-do on a shared list): after outside text it asks even at the Mac in auto
+    mode, like sending (ADR 0035)."""
 
 
 @dataclass
@@ -217,18 +221,21 @@ class QuickActions:
         if turn is not None and spoken.strip():
             self._spoke[turn] = spoken
 
-    def start(self, acts: Sequence[ActRequest], *, outside: bool, via: str = "voice", speak: bool = True) -> None:
+    def start(self, acts: Sequence[ActRequest], *, outside: bool, others: bool | None = None, via: str = "voice",
+              speak: bool = True) -> None:
         """Start the act tags of the reply streaming now, each in its own task, so the calendar has the event by the
-        time the reply ends (ADR 0028's pattern for <open>). `outside`: the conversation's rule for tags (outside
-        text in it, or in the message being answered). The act asks itself, once its target is known, so the
+        time the reply ends (ADR 0028's pattern for <open>). `outside`: the conversation's rule for tags
+        (TagPolicy.ask_acts); `others`: the same for a change other people see (TagPolicy.outside), `outside` when
+        not given. The act asks itself, once its target is known, so the
         question can say what it is about ("It's an invite"): an act from outside text asks before any change, like
         a careful helper, and waits for the reply to end so the bubble shows the question. Stopping or pausing notes
         and a timer never ask, like a stop. speak=False: the turn answers in the bubble only (typed), and so do its
         acts' lines; a timer still rings aloud."""
         turn = asyncio.current_task()
         lang = words.language(self._language())
+        others = outside if others is None else others
         for act in acts:
-            task = self._start(act, outside=outside, turn=turn, via=via, lang=lang)
+            task = self._start(act, outside=outside, others=others, turn=turn, via=via, lang=lang)
             if not speak:
                 self._silent.add(task)
 
@@ -257,9 +264,9 @@ class QuickActions:
 
     # ---- running one act
 
-    def _start(self, act: ActRequest, *, outside: bool, turn: asyncio.Task | None, via: str,
+    def _start(self, act: ActRequest, *, outside: bool, others: bool, turn: asyncio.Task | None, via: str,
                lang: str) -> asyncio.Task:
-        task = asyncio.create_task(self._run(act, outside=outside, turn=turn, via=via, lang=lang))
+        task = asyncio.create_task(self._run(act, outside=outside, others=others, turn=turn, via=via, lang=lang))
         self._running.add(task)
         task.add_done_callback(self._running.discard)
         if via == "message" and turn is not None:
@@ -267,11 +274,13 @@ class QuickActions:
             self._lines.setdefault(turn, [])
         return task
 
-    async def _run(self, act: ActRequest, *, outside: bool, turn: asyncio.Task | None, via: str,
+    async def _run(self, act: ActRequest, *, outside: bool, others: bool, turn: asyncio.Task | None, via: str,
                    lang: str) -> None:
         started = self._clock.monotonic()
         try:
             plan = await self._plan(act, lang)
+            if plan.others:
+                outside = others
             if plan.approval is not None:
                 level = self._approvals.policy.level(plan.approval)
                 if level is ActionLevel.NEVER:
@@ -549,7 +558,7 @@ class QuickActions:
         # Ticked off can be unticked: a to-do found by part of its title goes ahead, and the line names the one it was.
         return _Plan("change", say("acts.ask.todo_done", lang, title=inert(title, 50))
                      + (say("acts.ask.shared_list", lang) if t.get("shared") else ""), APPS["reminders"], run,
-                     light=not t.get("shared"))
+                     light=not t.get("shared"), others=bool(t.get("shared")))
 
     async def _delete_todo(self, act: ActRequest, lang: str) -> _Plan:
         reminders = self._need("reminders")

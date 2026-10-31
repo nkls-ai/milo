@@ -4,6 +4,11 @@ Text from outside (a task result, a page on the screen, an invite in <today>) co
 tag. So LiveTalk works out one `TagPolicy` per reply, from what its conversation has read, and every tag of that
 reply follows it: an <open> of an address or a file, the act tags, <write>, <remember>, <reminder>, <task>,
 <steer> and <routine>.
+
+In auto mode at the Mac the small, plain-to-see things never ask because of outside text (ADR 0035): a reminder, a
+calendar entry, a to-do, each with its card and Undo. What reaches other people or can't be undone asks anyway, further
+down (Approvals, QuickActions). A link Milo would open and work for a helper still need the user's own words, since
+an address can carry data out and a page shouldn't be able to start work.
 """
 
 from __future__ import annotations
@@ -29,7 +34,6 @@ _QUESTION = re.compile(r"^\s*(what|why|how|who|whom|whose|where|when|which|is|ar
 
 
 # The user's own words ask for this very tag: only then may it skip outside text's question.
-_REMIND = re.compile(r"\b(remind(s|ed|er)?|erinner(e|n|st|t|ung)?)\b", re.IGNORECASE)
 _INSTALL = re.compile(r"\b((re)?install(s|ed|ing)?|upgrade[sd]?|upgrading|installier\w*)\b",
                       re.IGNORECASE)
 _REMEMBER = re.compile(r"\b(remember|keep in mind|merk(e|en|st)? (dir|euch|Ihnen))\b", re.IGNORECASE)
@@ -50,8 +54,8 @@ def _asks(verb: re.Pattern, text: str) -> bool:
 
 
 def _from_request(item: str, request: str) -> bool:
-    """The reminder or fact carries a word of the user's own request ("Call Anna" for "remind me to call Anna"), so
-    outside text can't add one of its own next to the one asked for."""
+    """The fact carries a word of the user's own request ("Likes tea" for "remember I like tea"), so outside text
+    can't add one of its own next to the one asked for."""
     def stems(text: str) -> set[str]:  # "Fridays" and "Friday" alike
         return {w[:5] for w in re.findall(r"[^\W_]{3,}", text.lower())}
 
@@ -83,27 +87,35 @@ class TagPolicy:
     """Auto mode (ADR 0022) and the turn came from the Mac, by voice or typed."""
     own_work: bool = False
     """At the Mac in auto mode, the user's own words this turn asked for work (`asks_for_work`)."""
-    own_reminder: bool = False
-    """At the Mac in auto mode, the user's own words asked for a reminder ("remind me", "erinnere mich")."""
     own_install: bool = False
     """At the Mac in auto mode, the user's own words asked Milo to install something ("install the codex cli",
     "installier mir tree")."""
     own_fact: bool = False
     """At the Mac in auto mode, the user's own words asked Milo to remember something ("remember", "merk dir")."""
     request: str = ""
-    """The user's own words this turn."""
+    """The user's own words this turn, after the request they answer when Milo's last reply asked them something
+    ("put lunch with Anna in tomorrow", "What time?", "at one")."""
 
     @property
     def outside(self) -> bool:
         """The conversation has read outside text: every tag that takes effect at once waits for a yes. An <open> of
         a file always, and <write> goes in only when the user's own words asked for writing (Writer decides); the
-        others as `ask_undoable`, `ask_reminder()` and `ask_fact()` say."""
+        others as `ask_open`, `ask_acts`, `ask_reminder` and `ask_fact()` say."""
         return self.tainted or self.now or self.saw_screen
 
-    def ask_reminder(self, what: str) -> bool:
-        """A <reminder> after outside text asks, since open reminders go into every later <today>; unless the user's
-        own words asked for this one ("remind me to call Anna" on a day with shared calendar entries)."""
-        return self.outside and not (self.own_reminder and _from_request(what, self.request))
+    @property
+    def ask_reminder(self) -> bool:
+        """A <reminder> after outside text asks, since open reminders go into every later <today> (as data). Never at
+        the Mac in auto mode (ADR 0035): its card has Undo, and "10 in the morning", the answer to Milo's question
+        about a reminder, has no "remind" to tell it apart."""
+        return self.outside and not self.at_mac
+
+    @property
+    def ask_acts(self) -> bool:
+        """An act tag (a calendar entry, a to-do, a note, a timer…) runs as a careful action after outside text.
+        Never at the Mac in auto mode (ADR 0035): each has its card and Undo, and what can't be undone or reaches
+        other people (an invite, a shared list, a shortcut) asks in QuickActions anyway."""
+        return self.outside and not self.at_mac
 
     def ask_fact(self, fact: str) -> bool:
         """A <remember> after outside text asks, since facts steer every later conversation; unless the user's own
@@ -111,12 +123,11 @@ class TagPolicy:
         return self.outside and not (self.own_fact and _from_request(fact, self.request))
 
     @property
-    def ask_undoable(self) -> bool:
-        """An <open> of an address the user's words didn't name and an act tag (as a careful action). Each can be
-        closed or undone, so in auto mode at the Mac, when the user's own message asks for something (`own_work`:
-        "open the link", "add that to my calendar"), it just happens even after outside text (ADR 0022, 0028):
-        sending, deleting for good and paying still ask (Approvals). A reply to "thanks" after a mail still asks:
-        only the mail could have put an action there."""
+    def ask_open(self) -> bool:
+        """An <open> of an address the user's words didn't name. A tab can be closed, so in auto mode at the Mac,
+        when the user's own message asks for something (`own_work`: "open the link"), it just happens even after
+        outside text (ADR 0022, 0028). A reply to "thanks" after a mail still asks: only the mail could have put the
+        link there, and an address can carry what Milo read out to whoever wrote it."""
         return self.outside and not self.own_work
 
     @property
@@ -168,6 +179,5 @@ def policy(*, tainted: bool, saw_screen: bool, now: bool, auto: bool, via: str, 
     at_mac = auto and via in ("voice", "typed")
     return TagPolicy(tainted=tainted, saw_screen=saw_screen, now=now, at_mac=at_mac,
                      own_work=at_mac and asks_for_work(request),
-                     own_reminder=at_mac and _asks(_REMIND, request),
                      own_install=at_mac and _asks(_INSTALL, request) and not POINTS_OUTSIDE.search(request),
                      own_fact=at_mac and _asks(_REMEMBER, request), request=request)

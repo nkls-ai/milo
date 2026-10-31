@@ -1,6 +1,6 @@
 # 29. Quick actions from the talker, and the day at hand
 
-Date: 2026-10-31. Status: accepted. Builds on [ADR 28](0028-open-at-once-and-answer-in-the-users-language.md) and [ADR 9](0009-approvals-and-action-levels.md), [ADR 22](0022-one-question-per-piece-of-work.md), [ADR 23](0023-stop-for-what-cant-be-undone.md) and [ADR 26](0026-undo-what-a-task-did.md). Changes [ADR 11](0011-helpers-and-the-orchestrator.md): the user's calendar, reminders, notes, mail drafts and shortcuts no longer always go to a helper.
+Date: 2026-10-31. Status: accepted. Builds on [ADR 28](0028-open-at-once-and-answer-in-the-users-language.md) and [ADR 9](0009-approvals-and-action-levels.md), [ADR 22](0022-one-question-per-piece-of-work.md), [ADR 23](0023-stop-for-what-cant-be-undone.md) and [ADR 26](0026-undo-what-a-task-did.md). Changes [ADR 11](0011-helpers-and-the-orchestrator.md): the user's calendar, reminders, notes, mail drafts and shortcuts no longer always go to a helper. Changed by [ADR 35](0035-small-things-just-happen.md): at the Mac in auto mode outside text no longer makes an act or a reminder ask.
 
 ## Context
 

@@ -126,7 +126,10 @@ class LiveTalk:
         self._tainted = False
         """Task results entered the running conversation, so outside text can steer every later reply in it."""
         self._request = ""
-        """The user's own words in the turn being answered (auto mode reads them, ADR 0022)."""
+        """The user's own words in the turn being answered (auto mode reads them, ADR 0022), after the request they
+        answer when Milo's last reply was a question ("put lunch with Anna in", "What time?", "at one")."""
+        self._asked_about = ""
+        """Milo's last reply asked the user something: the request it was about. "" otherwise."""
         self._recent: list[str] = []
         """The user's own words in this conversation's last few turns: "open YouTube", then "search for cats" names
         YouTube for the search."""
@@ -282,8 +285,7 @@ class LiveTalk:
         self._transcript.user(text, "message")
         self._heard_at = self._clock.monotonic()
         await self._settle_interrupt()
-        self._request = text
-        self._recent = [*self._recent[-2:], text]
+        self._take_request(text)
         self._via = "message"
         self._language.hear(text)
         self._notes.extend(data)
@@ -339,8 +341,7 @@ class LiveTalk:
         self._transcript.user(text, via)
         self._heard_at = self._clock.monotonic()
         await self._settle_interrupt()
-        self._request = text
-        self._recent = [*self._recent[-2:], text]
+        self._take_request(text)
         self._via = via
         self._language.hear(text, language)
         looking = None
@@ -474,6 +475,7 @@ class LiveTalk:
             if parser.title:
                 self._transcript.titled(parser.title)
             self._apply(parser, rule, held=held, remember=not screen)
+            self._asked_about = self._request if parser.spoken.rstrip().endswith("?") else ""
         if not speak:
             if parser.spoken.strip():
                 await self._speaker.say(parser.spoken, parser.emotion, speak=False)
@@ -555,6 +557,7 @@ class LiveTalk:
                 self._saw_screen = False
                 self._tainted = False
                 self._recent = self._recent[-1:]  # the turn that started it
+                self._request = self._recent[-1] if self._recent else ""  # the model forgot its question
                 if self._memory is not None:
                     self._memory.new_conversation()
                 if self._today is not None:
@@ -568,6 +571,13 @@ class LiveTalk:
             memory=self._memory.rules if self._memory is not None else "",
             routines=self._routines.rules() if self._routines is not None else "",
             profile=self._profile.read()))
+
+    def _take_request(self, text: str) -> None:
+        """The user's words for a new turn. An answer to Milo's question goes on with the request it answers, so
+        "at one" after "What time?" asks for the work that request asked for (TagPolicy)."""
+        self._request = f"{self._asked_about} {text}" if self._asked_about else text
+        self._asked_about = ""
+        self._recent = [*self._recent[-2:], text]
 
     def _prompt(self, text: str, notes: list[str], *, name: bool = False) -> str:
         helpers = self._tasks.board()
@@ -597,7 +607,7 @@ class LiveTalk:
         """Open what the reply's <open> tags name, while the reply still streams, so the page is up by the time
         Milo has said "Opening YouTube in Chrome". An app always opens: that changes nothing. An address or a file
         opens at once when the user's own words named it ("go on YouTube") or the conversation read no outside
-        text, or in auto mode at the Mac for an address (`TagPolicy.ask_undoable`); otherwise outside text may have
+        text, or in auto mode at the Mac for an address (`TagPolicy.ask_open`); otherwise outside text may have
         put it there (a link on a page, in a mail), so it waits for a yes after the reply. Returns those."""
         if self._opener is None:
             if requests:
@@ -609,7 +619,7 @@ class LiveTalk:
             folder = _plain_folder(request.path) if request.path else ""
             if folder:
                 request = dataclasses.replace(request, path=folder)
-            ask = rule.outside if request.path and not folder else rule.ask_undoable
+            ask = rule.outside if request.path and not folder else rule.ask_open
             if (request.url or request.path) and ask and not named_by(request, " ".join(self._recent)):
                 held.append(request)
                 continue
@@ -622,7 +632,7 @@ class LiveTalk:
         if self._quick is None:
             log.info("ignoring %d act tag(s): quick actions are off", len(acts))
             return
-        self._quick.start(acts, outside=rule.ask_undoable, via=self._via, speak=self._speak)
+        self._quick.start(acts, outside=rule.ask_acts, others=rule.outside, via=self._via, speak=self._speak)
 
     def _write_now(self, texts: Sequence[str], rule: TagPolicy) -> None:
         """Paste what <write> wrote the moment its tag closes (ADR 0033). After outside text it goes in only when the

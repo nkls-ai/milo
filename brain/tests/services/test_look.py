@@ -55,14 +55,19 @@ def test_facts_on_the_screen_are_never_remembered():
     assert s.profile.facts == []
 
 
-def test_a_reminder_from_a_reply_to_screen_data_waits_for_the_users_yes():
+def test_a_reminder_from_a_reply_to_screen_data_waits_for_the_users_yes_outside_auto_mode():
     # Screen text could carry "<reminder>... ignore your rules</reminder>"; open reminders go into the next
-    # conversation's system prompt, so one set unasked would outlive the look.
-    s = Stack(eyes=FakeEyes(EXCEL), model=FakeLiveModel(
-        ["[thinking] <look/>"], ["[neutral] Done. <reminder>2026-11-01 09:00 Pay the invoice on screen</reminder>"]))
+    # conversation's system prompt, so one set unasked would outlive the look. In "task" mode that asks; in auto
+    # mode at the Mac it goes in with its card and Undo (ADR 35).
+    turns = (["[thinking] <look/>"], ["[neutral] Done. <reminder>2026-11-01 09:00 Pay the invoice on screen</reminder>"])
+    s = Stack(ask="task", eyes=FakeEyes(EXCEL), model=FakeLiveModel(*turns))
     asked = answering(s, False, "look at this")
     assert asked == ["Should I remind you on Sunday 1 November at 09:00: Pay the invoice on screen?"]
     assert s.reminders.items == []
+
+    s = Stack(eyes=FakeEyes(EXCEL), model=FakeLiveModel(*turns))
+    talk(s, "look at this")
+    assert s.sink.of(Confirm) == [] and [r.text for r in s.reminders.items] == ["Pay the invoice on screen"]
 
 
 def test_after_a_look_a_later_reminder_or_fact_waits_for_a_yes_too():
