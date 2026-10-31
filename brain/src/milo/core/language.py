@@ -72,9 +72,10 @@ class SpokenLanguage:
         self.code = normalize(code)
 
     def hear(self, text: str, reported: str = "") -> str:
-        """A new message: the language its transcriber reported, else a guess from its words, else the one before
-        (a short "okay" or "yes" keeps the conversation's language). Returns the code."""
-        self.code = normalize(reported) or detect(text) or self.code
+        """A new message: the language its words clearly are, else the one its transcriber reported, else the one
+        before (a short "okay" or "yes" keeps the conversation's language). Returns the code. The words go first:
+        the reply should match them, and a transcriber hears English with a German accent as German now and then."""
+        self.code = detect(text) or normalize(reported) or self.code
         return self.code
 
     def get(self) -> str:

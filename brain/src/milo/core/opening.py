@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from urllib.parse import urlsplit
+from urllib.parse import unquote_plus, urlsplit
 
 SITES = {
     "youtube": "https://www.youtube.com", "google": "https://www.google.com", "gmail": "https://mail.google.com",
@@ -27,6 +27,11 @@ SITES = {
 
 _BARE = re.compile(r"^[a-z0-9][a-z0-9 -]{0,40}$", re.IGNORECASE)
 _HOST = re.compile(r"^[a-z0-9.-]+(?::\d+)?$", re.IGNORECASE)
+_SEARCH_ENGINES = ("google", "duckduckgo", "bing")
+_SEARCH_WORDS = frozenset({"search", "google", "find", "look", "such", "suche", "suchen", "googel", "googeln", "finde"})
+_STRUCTURE = frozenset({"wiki", "search", "results", "result", "watch", "web", "html", "htm", "php", "index",
+                        "query", "search_query", "special", "spezial", "suche", "page", "the", "www"})
+"""Words every address of its kind has (`/wiki/`, `/search?q=`), so they needn't come from the user."""
 _PLAIN_HOST = re.compile(r"[a-z0-9][a-z0-9.-]*", re.IGNORECASE)
 """A host and nothing else: no user, password, port, backslash or other character a browser may read differently."""
 
@@ -79,23 +84,38 @@ def named_by(request: OpenRequest, words: str) -> bool:
     outside text. An app alone always counts: opening an app changes nothing. A file or folder never does: a name in
     passing can't tell which file outside text put there.
 
-    A page counts only as a site's front page at its own address: the SITES address of a name the user said ("go on
-    YouTube") or the address the user said ("open bbc.co.uk"). Outside text could have written the rest: youtube.evil
-    under the word "YouTube", a path or query carrying what Milo read out to someone's server, or an address a
-    browser reads differently from Python (a user part, a backslash), so the address part must be a plain host."""
+    A page counts when its site is one the user named and every word in its address is theirs. The site: a SITES
+    name they said, at its own address or a subdomain of it ("Wikipedia" for de.wikipedia.org), a search engine when
+    they asked to search, or the address they said ("open bbc.co.uk"). The words: what the path and query say, but
+    for the parts every such address has (`wiki`, `search`, `q`), so "search for Wikipedia" opens
+    google.com/search?q=wikipedia. Outside text could have written the rest: youtube.evil under the word "YouTube", a
+    word in the query carrying what Milo read out, or an address a browser reads differently from Python (a user
+    part, a port, a backslash), so the address part must be a plain host."""
     if request.path:
         return False
     if not request.url:
         return bool(request.app)
     parts = urlsplit(request.url)
-    if parts.path not in ("", "/") or parts.query or parts.fragment or not _PLAIN_HOST.fullmatch(parts.netloc):
+    if parts.fragment or not _PLAIN_HOST.fullmatch(parts.netloc):
         return False
     host = parts.netloc.lower().rstrip(".")
     text = (words or "").lower()
-    said = set(re.findall(r"[\w-]+", text))
+    said = set(re.findall(r"[^\W_]+", text))
+    if not _site_named(host, text, said):
+        return False
+    rest = unquote_plus(f"{parts.path} {parts.query}").lower()
+    return all(word in said or word in _STRUCTURE or len(word) <= 2 for word in re.findall(r"[^\W_]+", rest))
+
+
+def _site_named(host: str, text: str, said: set[str]) -> bool:
     for site, address in SITES.items():
         own = (urlsplit(address).hostname or "").removeprefix("www.")
-        if host in (own, f"www.{own}") and all(word in said for word in site.split()):
+        if all(word in said for word in site.split()) and (host == own or host.endswith(f".{own}")):
             return True
+    if said & _SEARCH_WORDS:
+        for engine in _SEARCH_ENGINES:
+            own = (urlsplit(SITES[engine]).hostname or "").removeprefix("www.")
+            if host in (own, f"www.{own}"):
+                return True
     bare = host.removeprefix("www.")
     return "." in bare and re.search(rf"(?<![\w.-]){re.escape(bare)}(?![\w-])", text) is not None
