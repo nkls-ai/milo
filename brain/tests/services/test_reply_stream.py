@@ -251,3 +251,16 @@ def test_an_empty_write_tag_writes_nothing():
 def test_a_space_after_the_write_tag_is_not_an_indent_but_a_line_of_its_own_keeps_it():
     assert stream("[happy] <write> Hi Anna</write>")[0].writes == ["Hi Anna"]
     assert stream("[happy] <write>\n    indented\n</write>")[0].writes == ["    indented"]
+
+
+def test_a_self_closing_tag_split_before_its_last_character_is_never_spoken():
+    """On the real Milo "undo that" said "<undo/>Okay, …": the stream cut the tag right before its ">"."""
+    for reply in ("<undo/>Okay, removing it.", "<Undo/>Okay.", " <undo/>Okay.", "[neutral] <undo/> Okay.",
+                  '<stop helper="all"/>Stopped.', '<open app="Notes"/>Opening Notes.'):
+        for cut in range(1, len(reply)):
+            p = ReplyParser()
+            out = p.feed(reply[:cut]) + p.feed(reply[cut:]) + p.finish()
+            assert "<" not in out and ">" not in out, (reply, cut, out)
+        p = ReplyParser()
+        out = "".join(p.feed(ch) for ch in reply) + p.finish()
+        assert "<" not in out and ">" not in out, (reply, out)

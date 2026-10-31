@@ -22,7 +22,8 @@ _MARKERS = tuple(f"<{name}>" for name in TAGS) + tuple(f"</{name}>" for name in 
 _WITH_ATTRS = "|".join(("task", "steer", "stop", "undo", "routine", "open", "write", *ACTS))
 _OPENER = re.compile(rf"<({_WITH_ATTRS})((?:\s+[a-z_]+\s*=\s*(?:\"[^\"<>]*\"|'[^'<>]*'|[^\s<>/\"']+))*)\s*(/?)>",
                      re.IGNORECASE)
-_OPENING = re.compile(rf"<({_WITH_ATTRS})\s[^<>]*$", re.IGNORECASE)
+# A tag not closed yet: "<open url=..." with attributes, or "<undo/" whose ">" comes in the next chunk.
+_OPENING = re.compile(rf"<({_WITH_ATTRS})(\s[^<>]*|/)$", re.IGNORECASE)
 _ATTR = re.compile(r"([a-z_]+)\s*=\s*(?:\"([^\"]*)\"|'([^']*)'|([^\s>/]+))", re.IGNORECASE)
 _MAX_OPENER = 1000  # an <open> may carry a long address
 _LONGEST_MARKER = max(map(len, _MARKERS))

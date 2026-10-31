@@ -43,6 +43,13 @@ log = logging.getLogger("milo.live")
 HICCUP = "My brain hiccuped. Check ~/Milo/logs/brain.log."
 HOLD_MAX_S = 330.0  # a held reply is dropped after this: longer than the longest hands-free recording
 
+def _plain_folder(path: str) -> bool:
+    """A folder with no extension: opening it only shows it. A bundle (Mail.app, a .workflow) is a folder too, but
+    opening it runs something, and every bundle has an extension."""
+    where = Path(path).expanduser()
+    return where.is_dir() and not where.suffix
+
+
 class LiveTalk:
     """A user turn, typed or spoken, answered by the streaming live model and spoken as it arrives.
 
@@ -577,7 +584,8 @@ class LiveTalk:
             return []
         held = []
         for request in requests:
-            ask = rule.outside if request.path else rule.ask_undoable  # a file from a mail could be a program
+            # A file from a mail could be a program; a plain folder can't ("show me my downloads").
+            ask = rule.outside if request.path and not _plain_folder(request.path) else rule.ask_undoable
             if (request.url or request.path) and ask and not named_by(request, " ".join(self._recent)):
                 held.append(request)
                 continue
