@@ -205,10 +205,16 @@ def test_a_helpers_update_never_writes(tmp_path):
 
 def test_what_counts_as_asking_for_writing():
     for text in ("write Anna that I'm late", "answer this email politely", "reply to Tom", "make it shorter",
-                 "a short summary for Slack", "schreib Anna", "beantworte die Mail", "fass das kurz zusammen",
+                 "write a short summary of what we discussed for Slack", "a short summary for Slack", "schreib Anna", "beantworte die Mail", "fass das kurz zusammen",
                  "übersetz das ins Englische"):
         assert asks_to_write(text), text
-    for text in ("what does this email say?", "okay thanks", "who is Tom?", "was steht da?"):
+    for text in ("can you answer this email?", "could you write Tom back", "kannst du ihm antworten?",
+                 "make it a bit more polite", "mach es kürzer"):
+        assert asks_to_write(text), text
+    for text in ("what does this email say?", "okay thanks", "who is Tom?", "was steht da?",
+                 "what does the reply say?", "what type of email is this?", "is this a good answer?",
+                 "was hat er geantwortet?", "a longer one would be nice", "how polite is it?",
+                 "did he write back?"):
         assert not asks_to_write(text), text
 
 

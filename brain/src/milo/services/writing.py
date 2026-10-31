@@ -84,20 +84,30 @@ LINES: dict[str, dict[str, str]] = {
 }
 """The line after a <write>, by what happened: "pasted", or why it is only in the window (the app's `why`)."""
 
-# The user's own words ask for something written: then outside text read before can't be what started it.
+# The user's own words ask for something written: then outside text read before can't be what started it. Verbs only
+# ("type", "summary" and "the reply" alone are too easy to say in passing), and never in a plain question.
 _WRITE = re.compile(
-    r"\b(writ(e|es|ing|ten)|wrote|answer|repl(y|ies|ied)|respond|draft|compose|summar(y|i[sz]e)|rephrase|reword|"
-    r"rewrite|translate|type|formulate|shorter|longer|polite|nicer|friendlier|"
-    r"schreib\w*|antwort\w*|beantwort\w*|formulier\w*|zusammenfass\w*|fass\w* .{0,40}zusammen|übersetz\w*|"
-    r"entwirf|entwurf|verfass\w*|tipp\w*|kürzer|länger|höflicher|netter|freundlicher)\b", re.IGNORECASE)
+    r"\b(writ(e|es|ing)|answer|repl(y|ies)|respond|draft|compose|summari[sz]e|rephrase|reword|rewrite|translate|"
+    r"formulate|schreib\w*|antworte\w*|beantworte\w*|formulier\w*|fass\w* .{0,40}zusammen|übersetz\w*|entwirf|"
+    r"verfass\w*)\b|\b(make|mach)\b.{0,20}\b(shorter|longer|more polite|nicer|friendlier|kürzer|länger|"
+    r"höflicher|netter|freundlicher)\b|"
+    r"^\s*(a|an|eine?n?)\s+(\w+\s+){0,2}(summary|reply|answer|e-?mail|mail|message|post|zusammenfassung|antwort|"
+    r"nachricht)\b", re.IGNORECASE)
+_QUESTION = re.compile(r"^\s*(what|why|how|who|whom|whose|where|when|which|is|are|was|were|does|did|do|has|have|"
+                       r"warum|wieso|weshalb|wie|wer|wo|wann|welche\w*|ist|sind|hat|haben|hast|was)\b", re.IGNORECASE)
+_PLEASE = re.compile(r"^\s*(?:(?:yes|yeah|ok|okay|please|so|and|now|ja|bitte|also|und|jetzt)\b[\s,.!]*)*"
+                     r"(?:(?:can|could|would|will) you|(?:kannst|könntest|würdest) du)\b", re.IGNORECASE)
 
 _HIDDEN = re.compile("[​-‏‪-‮⁠-⁤⁦-⁩﻿\U000e0000-\U000e007f]")
 
 
 def asks_to_write(text: str) -> bool:
     """Whether the user's own words ask for text to be written: "write Anna", "answer this email", "make it shorter",
-    "schreib ihr", "fass das zusammen"."""
-    return bool(_WRITE.search(text))
+    "can you reply to Tom", "schreib ihr", "fass das zusammen". A question about the text ("what does the reply say?",
+    "what type of mail is this?", "was hat er geantwortet?") never is, so outside text can't ride on one."""
+    if not _WRITE.search(text):
+        return False
+    return bool(_PLEASE.search(text)) or not _QUESTION.search(text)
 
 
 def clean(text: str) -> str:
