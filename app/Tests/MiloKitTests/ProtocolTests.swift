@@ -111,6 +111,9 @@ private func entries(_ key: String) throws -> [[String: Any]] {
                 "end": .string("2026-11-06T11:00"),
             ])),
             .appRequest(id: "a44f", op: "media.pause", args: .object([:])),
+            .appRequest(id: "a45f", op: "reminders.complete", args: .object([
+                "id": .string("R7C1-02"), "done": .bool(false),
+            ])),
             .appRequest(id: "a51f", op: "access.check", args: .object([
                 "need": .string("control"), "app": .string("Microsoft Excel"), "bundle": .string(""), "launch": .bool(true),
             ])),

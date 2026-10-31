@@ -13,11 +13,12 @@ from dataclasses import dataclass
 
 _WORK = re.compile(r"\b((fix|fill|put|add|make|change|update|correct|write|enter|insert|sort|format|create|build|"
                    r"finish|complete|edit|move|rename|copy|paste|replace|open|go|show|play|send|remind|check|find|"
-                   r"summari[sz]e|start|stop|set|take|search|google|look up|delete|remove|cancel|schedule|save|archive)"
+                   r"summari[sz]e|start|stop|set|take|search|google|look up|delete|remove|cancel|schedule|save|archive|"
+                   r"tick|cross|mark)"
                    r"(es|s|ed|d|ing)?|"
                    r"(mach|füll|änder|korrigier|trag|schreib|erstell|sortier|formatier|bearbeit|füg|erledig|"
                    r"kopier|ersetz|verschieb|benenn|öffne|zeig|spiel|schick|erinner|stell|such|lösch|entfern|absag|"
-                   r"speicher|notier|plan)\w*)\b", re.IGNORECASE)
+                   r"speicher|notier|plan|streich|hak|stopp)\w*)\b", re.IGNORECASE)
 _QUESTION = re.compile(r"^\s*(what|why|how|who|whom|whose|where|when|which|is|are|was|were|does|did|do|has|have|"
                        r"was|warum|wieso|weshalb|wie|wer|wo|wann|welche\w*|ist|sind|hat|haben)\b", re.IGNORECASE)
 

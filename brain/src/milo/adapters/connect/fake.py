@@ -128,11 +128,11 @@ class FakeReminders:
         self._world.save(world)
         return reminder
 
-    def complete(self, id: str) -> dict:
+    def complete(self, id: str, done: bool = True) -> dict:
         world = self._world.load()
         for r in world["reminders"]:
             if r["id"] == id:
-                r["done"] = True
+                r["done"] = done
                 self._world.save(world)
                 return r
         raise ToolError("I couldn't find that reminder.")

@@ -2,15 +2,17 @@
 
 "Dentist, Thursday at 3" used to start a helper: a 12 to 60 s worker turn and tens of thousands of tokens for one
 calendar entry. Now the talker writes one tag (`<event>`, `<todo>`, `<note>`, `<timer>`, `<draft>`, `<shortcut>`,
-`<music>`, `<meeting>`) and this service does it in-process, on the brain's connections (services/connections.py:
-Calendar, Reminders and the player through the app, about 100 ms), with a timer on the event loop.
+`<music>`, `<meeting>`, and `<reminder do="cancel">` for one of Milo's own) and this service does it in-process, on
+the brain's connections (services/connections.py: Calendar, Reminders and the player through the app, about 100 ms),
+with a timer on the event loop.
 Then Milo says one templated line in the user's language ("Dentist, Thursday at 3 pm. It's in."), the window shows an
 `action_done` card, and Undo can take it back.
 
 Asking follows the rest of Milo. A tag in a reply to outside text (task results, the screen, an invite in <today>)
 asks first, like a <reminder> (LiveTalk decides that). The action's own kind then goes through Approvals: changes don't
-ask, a draft doesn't, a shortcut asks every time, and deleting an event asks only when Undo couldn't bring it back
-(an invite, a repeating event; ADR 0023). Every change records how to take it back for Undo (ADR 0026).
+ask, a draft doesn't, a shortcut asks every time, and deleting an event or a to-do asks only when Undo couldn't bring
+it back (an invite, a repeating event, a shared list; ADR 0023). Every change records how to take it back for Undo
+(ADR 0026).
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ import asyncio
 import json
 import re
 import logging
+import re
 import uuid
 import weakref
 from collections.abc import Awaitable, Callable, Sequence
@@ -30,7 +33,7 @@ from milo.core import words
 from milo.core.events import ActionDone
 from milo.core.logtext import private
 from milo.core.ports import Clock, Connections, EventSink, ReminderBook
-from milo.core.times import local
+from milo.core.times import local, parse_local
 from milo.core.types import ActionLevel, AppRef, Emotion, Reminder, ToolError
 from milo.core.wording import first_name
 from milo.core.words import dates, say
@@ -75,8 +78,13 @@ an hour later if left out; all_day="yes" for a whole day; location="..." if the 
 and the day instead: <event do="cancel" title="Dentist" on="2026-11-12"/>.
 - <todo due="2026-11-05T18:00">Buy milk</todo> adds a to-do to the user's Reminders, on their phone too. due is \
 optional; list="..." if they named a list. Use <reminder> only when the user wants you to remind them yourself.
+- <todo do="done" id="t1"/> ticks a to-do off: "I bought the oat milk", "take it off my list", "streich \
+Hafermilch von der Liste". <todo do="delete" id="t1"/> only when they say delete. id is its handle from <today>; \
+for one not there give its title as they said it: <todo do="done" title="oat milk"/>.
 - <note title="Packing list">the text</note> writes a new note in Notes.
-- <timer minutes="10">Pasta</timer> sets a timer (seconds="90" or hours="1" work too). Milo rings when it's up.
+- <timer minutes="10">Pasta</timer> sets a timer (seconds="90" or hours="1" work too). Milo rings when it's up. \
+<timer do="cancel" title="Pasta"/> stops one ("mach den Timer aus"); without title, the only one running.
+- <reminder do="cancel" id="r1"/> takes back one of your own reminders (its handle under "Milo's reminders").
 - <draft to="Anna" subject="Sunday">the mail, in the user's voice</draft> writes a mail draft and opens it. Milo \
 never sends it; the user does.
 - <shortcut name="exact name">input, if any</shortcut> runs one of the user's shortcuts.
@@ -101,6 +109,11 @@ def _names(spoken: str, title: str) -> bool:
 
 class Problem(Exception):
     """An act that can't be done, in plain words."""
+
+
+class Answer(Problem):
+    """No failure: what Milo says instead of doing it, a whole line in the user's language ("Which one: “Buy oat
+    milk” or “Buy milk”?", "No timer is running.")."""
 
 
 @dataclass
@@ -260,6 +273,8 @@ class QuickActions:
                     if not allowed:
                         return await self._say(say("acts.declined", lang), via, turn, Emotion.NEUTRAL)
             done = await plan.run()
+        except Answer as e:
+            return await self._say(str(e), via, turn, Emotion.NEUTRAL)
         except (Problem, ToolError) as e:
             log.info("a quick %s didn't work: %s", act.kind, e)
             return await self._say(say("acts.failed", lang, why=str(e).rstrip(".") + "."), via, turn,
@@ -325,11 +340,21 @@ class QuickActions:
                     return await self._cancel(act, lang)
                 return self._add_event(act, lang)
             case "todo":
+                do = act.get("do", "add").lower()
+                if do in ("done", "complete", "tick", "check"):
+                    return await self._tick(act, lang)
+                if do in ("delete", "remove"):
+                    return await self._delete_todo(act, lang)
                 return self._todo(act, lang)
             case "note":
                 return self._note(act, lang)
             case "timer":
+                if act.get("do").lower() in ("cancel", "stop", "delete", "off"):
+                    return self._stop_timer(act, lang)
                 return self._timer(act, lang)
+            case "reminder":
+                if act.get("do").lower() in ("cancel", "delete", "remove"):
+                    return self._cancel_reminder(act, lang)
             case "draft":
                 return self._draft(act, lang)
             case "shortcut":
@@ -469,6 +494,91 @@ class QuickActions:
 
         return _Plan("change", say("acts.ask.todo", lang, title=inert(title, 50)), APPS["reminders"], run)
 
+    async def _find_todo(self, act: ActRequest, lang: str) -> tuple[dict, bool]:
+        """The open to-do a tick or a delete means: its handle from <today>, else its title, looked for on every
+        list (most to-dos have no due date and aren't in <today>). False with it when no title matched exactly.
+        Several that only contain the words: Milo asks which (`Answer`)."""
+        ref = act.get("id")
+        found = self.today.todo(ref) if ref else None
+        if found is not None:
+            return found, True
+        title = act.get("title") or act.text or ref
+        if not title:
+            raise Problem("I don't know which to-do you mean")
+        todos = [r for r in await reach(self._need("reminders").list, "", False) or []
+                 if isinstance(r, dict) and not r.get("done")]
+        hits, exact = _matching(todos, title, lambda r: str(r.get("title", "")))
+        if not hits:
+            raise Problem(f"I couldn't find “{inert(title, 50)}” on your list")
+        _one(hits, lambda r: str(r.get("title", "")), "acts.which_todo", lang)
+        return hits[0], exact
+
+    async def _tick(self, act: ActRequest, lang: str) -> _Plan:
+        reminders = self._need("reminders")
+        t, _ = await self._find_todo(act, lang)
+        title = str(t.get("title") or "the to-do")
+        due = parse_local(t.get("due"))
+
+        async def run() -> _Done:
+            await reach(reminders.complete, t["id"])
+            self.today.changed()
+            return _Done("todo", title, say("acts.todo_done", lang, title=title), detail=say("acts.card_done", lang),
+                         when=_iso(due), app="Reminders", reverse=[{"op": "todo.reopen", "id": t["id"]}])
+
+        # Ticked off can be unticked: a to-do found by part of its title goes ahead, and the line names the one it was.
+        return _Plan("change", say("acts.ask.todo_done", lang, title=inert(title, 50))
+                     + (say("acts.ask.shared_list", lang) if t.get("shared") else ""), APPS["reminders"], run)
+
+    async def _delete_todo(self, act: ActRequest, lang: str) -> _Plan:
+        reminders = self._need("reminders")
+        t, sure = await self._find_todo(act, lang)
+        title = str(t.get("title") or "the to-do")
+        due = parse_local(t.get("due"))
+        # Undo makes it again from what Reminders gave back, so it is like the Trash; on someone else's list it isn't.
+        restorable = not t.get("shared")
+
+        async def run() -> _Done:
+            gone = await reach(reminders.delete, t["id"]) or t
+            self.today.changed()
+            return _Done("todo", title, say("acts.todo_deleted", lang, title=title),
+                         detail=say("acts.card_deleted", lang), when=_iso(due), app="Reminders",
+                         reverse=[{"op": "todo.add", **{k: str(gone.get(k, t.get(k)) or "")
+                                                        for k in ("title", "due", "notes", "list")}}]
+                         if restorable else [])
+
+        return _Plan("trash" if restorable else "delete", say("acts.ask.todo_delete", lang, title=inert(title, 50))
+                     + ("" if restorable else say("acts.ask.shared_list", lang)), APPS["reminders"], run, sure)
+
+    def _cancel_reminder(self, act: ActRequest, lang: str) -> _Plan:
+        """One of Milo's own reminders (reminders.md): its handle from <today>, else its text."""
+        book = self._reminders
+        if book is None:
+            raise Problem("Milo's own reminders are switched off")
+        ref = act.get("id")
+        found = self.today.reminder(ref) if ref else None
+        if found is None:
+            title = act.get("title") or act.text or ref
+            if not title:
+                raise Problem("I don't know which reminder you mean")
+            hits, _ = _matching([r for r in book.all() if not r.done], title, lambda r: r.text)
+            if not hits:
+                raise Problem(f"I have no reminder “{inert(title, 50)}”")
+            _one(hits, lambda r: r.text, "acts.which_reminder", lang)
+            found = hits[0]
+        reminder = found
+
+        async def run() -> _Done:
+            if not book.remove(reminder.id):
+                raise Problem("that reminder is gone already")
+            self.today.changed()
+            return _Done("reminder", reminder.text, say("acts.reminder_cancelled", lang, title=reminder.text),
+                         detail=say("acts.card_cancelled", lang), when=_iso(reminder.due),
+                         reverse=[{"op": "reminder.add", "due": _iso(reminder.due), "text": reminder.text}])
+
+        when = dates.when(reminder.due, self._clock.now().date(), lang)
+        return _Plan("change", say("acts.ask.reminder_cancel", lang, title=inert(reminder.text, 50), when=when),
+                     None, run)
+
     def _note(self, act: ActRequest, lang: str) -> _Plan:
         notes = self._connections.notes
         if notes is None:
@@ -509,6 +619,30 @@ class QuickActions:
             line = say("acts.timer_named" if title else "acts.timer", lang, title=title, span=spoken)
             return _Done("timer", title or spoken, line, detail=spoken, when=_iso(timer.rings, seconds=True),
                          app="Milo", reverse=[{"op": "timer.cancel", "id": timer.id}])
+
+        return _Plan(None, "", None, run)
+
+    def _stop_timer(self, act: ActRequest, lang: str) -> _Plan:
+        """Stop a timer by its title, or the only one running. Milo's own business, like setting one: never asked."""
+        running = sorted(self._timers.values(), key=lambda t: t.rings)
+        if not running:
+            raise Answer(say("acts.timer_none", lang))
+        title = act.get("title") or act.text
+        hits = _matching(running, title, lambda t: t.title)[0] if title else running
+        if not hits:
+            raise Problem(f"no timer “{inert(title, 50)}” is running")
+        _one(hits, lambda t: t.title or dates.span((t.rings - self._clock.now()).total_seconds(), lang),
+             "acts.which_timer", lang)
+        timer = hits[0]
+
+        async def run() -> _Done:
+            self._drop_timer(timer.id)
+            line = say("acts.timer_off_named" if timer.title else "acts.timer_off", lang, title=timer.title)
+            # No `when`: the card's ring would run down to a time that won't ring.
+            return _Done("timer", timer.title or say("acts.card_stopped", lang), line,
+                         detail=say("acts.card_stopped", lang) if timer.title else "", app="Milo",
+                         reverse=[{"op": "timer.set", "title": timer.title, "lang": timer.lang,
+                                   "rings": _iso(timer.rings, seconds=True)}])
 
         return _Plan(None, "", None, run)
 
@@ -619,6 +753,11 @@ class QuickActions:
         self.today.changed()
         return timer
 
+    def _drop_timer(self, id: str) -> None:
+        timer = self._timers.pop(id, None)
+        if timer is not None and timer.handle is not None:
+            timer.handle.cancel()
+
     def _ring(self, id: str) -> None:
         timer = self._timers.pop(id, None)
         if timer is None:
@@ -679,6 +818,11 @@ class QuickActions:
                             all_day=bool(step.get("all_day")))
             case "todo.delete":
                 await reach(self._need_to_undo("reminders").delete, step["id"])
+            case "todo.reopen":
+                await reach(self._need_to_undo("reminders").complete, step["id"], False)
+            case "todo.add":
+                await reach(self._need_to_undo("reminders").add, str(step.get("title", "")), _at(step.get("due")),
+                            str(step.get("notes") or ""), str(step.get("list") or ""))
             case "note.delete":
                 notes = self._connections.notes
                 if notes is None:
@@ -696,10 +840,17 @@ class QuickActions:
             case "reminder.remove":
                 if self._reminders is not None:
                     self._reminders.remove(step["id"])
+            case "reminder.add":
+                if self._reminders is None:
+                    raise ValueError("Milo's own reminders are switched off")
+                self._reminders.add(_at(step["due"]), str(step["text"]))
             case "timer.cancel":
-                timer = self._timers.pop(step["id"], None)
-                if timer is not None and timer.handle is not None:
-                    timer.handle.cancel()
+                self._drop_timer(step["id"])
+            case "timer.set":
+                left = (_at(step["rings"]) - self._clock.now()).total_seconds()
+                if left <= 0:
+                    raise ValueError("it would have rung already")
+                self._set_timer(left, str(step.get("title") or ""), str(step.get("lang") or "en"))
             case "media":
                 await reach(self._need_to_undo("media").control, step["do"])
             case _:
@@ -734,6 +885,29 @@ def _iso(t: datetime | None, *, seconds: bool = False) -> str:
 
 def _people(value: str) -> list[str]:
     return [p.strip() for p in value.replace(";", ",").split(",") if p.strip()][:10]
+
+
+def _matching(items: Sequence[Any], wanted: str, title: Callable[[Any], str]) -> tuple[list, bool]:
+    """The items whose title is `wanted`, and True; else those whose title contains it, or is in it, word for word
+    ("oat milk" and "Buy oat milk", "Hafermilch kaufen" and "Hafermilch"), and False."""
+    exact = [i for i in items if title(i).casefold().strip() == wanted.casefold().strip()]
+    if exact:
+        return exact, True
+    want = _words(wanted)
+    return [i for i in items if (have := _words(title(i))) and want and (have <= want or want <= have)], False
+
+
+def _words(text: str) -> set[str]:
+    return set(re.findall(r"[^\W_]+", text.casefold()))
+
+
+def _one(hits: Sequence[Any], name: Callable[[Any], str], ask: str, lang: str) -> None:
+    """Several different ones match: Milo asks which, naming up to three. The same name twice is one thing to the
+    user (a to-do added twice, two pasta timers): the first goes."""
+    if len({name(h).casefold() for h in hits}) < 2:
+        return
+    names = [say("acts.quoted", lang, title=inert(name(h), 50)) for h in hits[:3]]
+    raise Answer(say(ask, lang, names=", ".join(names[:-1]) + say("acts.or", lang) + names[-1]))
 
 
 def _others(event: dict) -> list[str]:

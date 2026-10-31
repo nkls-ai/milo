@@ -683,7 +683,9 @@ class Reminders(Protocol):
 
     def add(self, title: str, due: datetime | None = None, notes: str = "", list_name: str = "") -> dict: ...
 
-    def complete(self, id: str) -> dict: ...
+    def complete(self, id: str, done: bool = True) -> dict:
+        """Tick a reminder off, or with `done` False untick it again (Undo of one Milo ticked off)."""
+        ...
 
     def delete(self, id: str) -> dict:
         """Remove a reminder, for Undo of one Milo just added. Returns it as it was."""

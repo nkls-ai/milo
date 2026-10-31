@@ -238,7 +238,8 @@ public final class EventKitConnections: AppConnections {
         guard let id = Self.text(args["id"]), let reminder = store.calendarItem(withIdentifier: id) as? EKReminder else {
             return .failure("I couldn't find that reminder.")
         }
-        reminder.isCompleted = true
+        // `done` false unticks it again: Undo of one Milo ticked off.
+        reminder.isCompleted = args["done"]?.bool ?? true
         do {
             try store.save(reminder, commit: true)
         } catch {
