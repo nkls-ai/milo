@@ -127,7 +127,7 @@ cloud_dictation = false           # true sends dictation there too (not with str
 
 [stt.elevenlabs]
 languages = ["de", "en"]          # the languages you speak, so it tells them apart
-keyterms = []                     # names it should get right, like ["Milo"]; costs a little more
+keyterms = ["Milo"]               # names it should get right; costs a little more
 
 [stt.mlx_whisper]
 model = "mlx-community/whisper-large-v3-turbo"

@@ -153,3 +153,10 @@ def test_learned_words_join_the_keyterms_up_to_a_cap(tmp_path):
     assert ("keyterms", "Claude Code") in parse_qsl(urlsplit(scribe._url()).query)
     scribe.use_vocabulary([])
     assert scribe.keyterms == ("Milo",)
+
+
+def test_milo_is_a_keyterm_unless_the_config_says_otherwise():
+    """"Hey, Milo" was heard as "Hey, Manuel": his own name is always worth the keyterm."""
+    from milo.adapters.stt.elevenlabs_scribe import ScribeOptions
+
+    assert ScribeOptions().keyterms == ("Milo",)
