@@ -227,7 +227,7 @@ export function watch(el: HTMLElement | null) {
 const hello = {
   hero: ['Hello.', "I'm Milo. I live down in the corner.", "Scroll down, I'll show you."],
   corner: ['Still here.', "I'm watching. Quietly.", 'Press esc and I stop. Try it in the spreadsheet.', 'This page has no cookies. I checked.'],
-  final: ["I'll be here.", 'Room for one more.', 'See you on your Mac.'],
+  final: ["I'll be here.", 'Room for one more.', 'See you on your computer.'],
 } as Record<string, string[]>;
 const helloCount: Record<string, number> = {};
 hit.addEventListener('click', () => {

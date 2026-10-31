@@ -6,8 +6,8 @@ import Replay from '../Replay.astro';
   <div class="wrap feature">
     <div class="section-head">
       <h2 id="phone-title">Message him from your phone.</h2>
-      <p>Out at the shops and need something from your Mac at home? Write to him in Telegram. He does the work on your Mac and asks you in the chat before anything risky.</p>
-      <p class="note">Pairing takes a code shown on your Mac, and only your chat counts. iMessage is being tested.</p>
+      <p>Out at the shops and need something from your computer at home? Write to him in Telegram. He does the work on your computer and asks you in the chat before anything risky.</p>
+      <p class="note">Pairing takes a code shown on your computer, and only your chat counts. iMessage is being tested.</p>
     </div>
 
     <div class="phone-wrap" data-phone>
@@ -16,7 +16,7 @@ import Replay from '../Replay.astro';
           <div class="phone-island" aria-hidden="true"></div>
           <div class="chat-head">
             <span class="chat-avatar"><Character id="phone" small /></span>
-            <span><b>Milo</b><span class="chat-sub" data-status>on your Mac</span></span>
+            <span><b>Milo</b><span class="chat-sub" data-status>at home</span></span>
           </div>
           <ol class="chat" data-chat aria-live="polite" aria-label="Chat with Milo"></ol>
         </div>
@@ -99,17 +99,17 @@ import Replay from '../Replay.astro';
     return li;
   };
   const miloTyping = async (ctx: Ctx, ms: number) => {
-    status.textContent = 'working on your Mac…';
+    status.textContent = 'working at home…';
     const t = add('milo', '<span class="typing" aria-label="Milo is typing"><i></i><i></i><i></i></span>');
     t.style.padding = '0';
     await ctx.wait(ms);
     t.remove();
-    status.textContent = 'on your Mac';
+    status.textContent = 'at home';
   };
 
   demo(root, async (ctx) => {
     await ctx.wait(500);
-    add('you', "Can you send me the car insurance letter? It's somewhere on the Mac.");
+    add('you', "Can you send me the car insurance letter? It's somewhere on the computer.");
     await ctx.wait(700);
     await miloTyping(ctx, 1800);
     const ask = add('milo', 'Found it: Car insurance 2026.pdf, in Documents. Send it here?<div class="msg-btns"><button type="button" data-y>Send it</button><button type="button" data-n>No</button></div>');
@@ -133,6 +133,6 @@ import Replay from '../Replay.astro';
     await miloTyping(ctx, 1100);
     add('milo', 'Dentist at nine, lunch with Anna at one.');
   }, {
-    reset() { chat.textContent = ''; status.textContent = 'on your Mac'; },
+    reset() { chat.textContent = ''; status.textContent = 'at home'; },
   });
 </script>

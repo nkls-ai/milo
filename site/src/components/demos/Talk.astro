@@ -5,7 +5,7 @@ import Character from '../Character.astro';
   <div class="wrap feature">
     <div class="section-head">
       <h2 id="talk-title">Hold a key and say it.</h2>
-      <p>Hold the right <kbd>⌥</kbd> key and talk to him the way you'd talk to anyone. He starts answering in about two seconds, out loud, in a warm voice that's made right on your Mac.</p>
+      <p>Hold the talk key and talk to him the way you'd talk to anyone, in your own language. He starts answering in about two seconds, out loud, in a warm voice that's made right on your computer.</p>
       <p>Ask him to open something, "YouTube in Chrome" or "my Downloads folder", and it's in front of you while he's still saying so.</p>
       <p>When nothing is going on, he flies off the screen after 15 seconds. Hold the key and he swoops back.</p>
       <p class="note">On this page he only pretends to listen. Your microphone stays off.</p>
@@ -22,10 +22,10 @@ import Character from '../Character.astro';
       </div>
       <div class="talk-controls">
         <button class="hold" type="button" data-hold aria-describedby="hold-hint">
-          <span class="hold-cap" aria-hidden="true">⌥</span>
+          <span class="hold-cap" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3.5a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0v-5a3 3 0 0 0-3-3Z"/><path d="M6 11.5a6 6 0 0 0 12 0M12 17.5V21"/></svg></span>
           <span class="hold-label">Hold to talk</span>
         </button>
-        <p id="hold-hint" class="note hold-hint">Press and hold, or hold <kbd>space</kbd> while it's selected. On a Mac keyboard the real right <kbd>⌥</kbd> works too.</p>
+        <p id="hold-hint" class="note hold-hint">Press and hold, or hold <kbd>space</kbd> while it's selected.</p>
         <div class="chips" role="group" aria-label="Or pick something to ask">
           <button type="button" class="chip" data-ask="0">A reminder</button>
           <button type="button" class="chip" data-ask="1">What "cc" means</button>
@@ -78,6 +78,7 @@ import Character from '../Character.astro';
     font-size: 1.5rem; font-weight: 500;
     box-shadow: inset 0 -2px 0 var(--rule-strong);
   }
+  .hold-cap svg { width: 1.45rem; height: 1.45rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
   .hold.is-down { transform: translateY(3px); box-shadow: 0 0 0 0.5px var(--rule-strong), 0 0 0 var(--rule-strong), 0 2px 6px -3px rgb(var(--shadow-color) / 0.3); }
   .hold.is-down .hold-cap { background: var(--lavender); color: var(--on-lavender); box-shadow: none; }
   .hold-hint { max-width: 26rem; }

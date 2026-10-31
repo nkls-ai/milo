@@ -10,17 +10,17 @@ const steps = [
 ];
 const stats = [
   { big: '½ s', text: 'from letting go of the key to your words in the app. A long dictation takes a second at most.' },
-  { big: '7×', text: 'faster than he speaks. His voice is made on your Mac, so it starts at once.' },
-  { big: '0', text: 'recordings uploaded. What you say is turned into words on your Mac.' },
-  { big: '2', text: 'languages he hears and speaks: English and German, and he answers in yours.' },
+  { big: '7×', text: 'faster than he speaks. His voice is made on your computer, so it starts at once.' },
+  { big: '0', text: 'recordings uploaded. What you say is turned into words on your computer.' },
+  { big: '~100', text: 'languages he understands. Talk to him in yours and he answers in it.' },
 ];
 ---
 <section class="section local-section" id="local" aria-labelledby="local-title">
   <div class="wrap">
     <div class="local-head">
       <div class="section-head">
-        <h2 id="local-title">Quick, because it happens on your Mac.</h2>
-        <p>Milo's ears and his voice are small programs that run on your Mac's own chip. Nothing waits for a server: your words show up while you're still talking, and he starts answering as soon as he has his first sentence.</p>
+        <h2 id="local-title">Quick, because it happens on your computer.</h2>
+        <p>Milo's ears and his voice are small programs that run right on your computer. Nothing waits for a server: your words show up while you're still talking, and he starts answering as soon as he has his first sentence.</p>
       </div>
       <div class="section-head local-side">
         <p>Your voice is never uploaded. When he has to think something through, only the words of your question go to an online model, with the bits of memory it needs.</p>
@@ -37,7 +37,7 @@ const stats = [
         </div>
 
         <div class="mac">
-          <p class="mac-label"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="11.5" rx="1.8"/><path d="M9 20h6M12 16v4"/></svg>Your Mac</p>
+          <p class="mac-label"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="11.5" rx="1.8"/><path d="M9 20h6M12 16v4"/></svg>Your computer</p>
           <ol class="flow">
             {steps.map((s, i) => (
               <li class="node" data-node={s.id} style={`--i:${i}`}>
@@ -58,7 +58,7 @@ const stats = [
           <span class="switch-track" aria-hidden="true"><i></i></span>
           <span>Turn off the internet</span>
         </label>
-        <p class="note offline-note" data-offline-note aria-live="polite">Online: he hears and speaks on your Mac, and thinks online.</p>
+        <p class="note offline-note" data-offline-note aria-live="polite">Online: he hears and speaks on your computer, and thinks online.</p>
         <Replay />
       </div>
 
@@ -286,7 +286,7 @@ const stats = [
     cloudLine.textContent = offline.checked ? 'Not reachable right now' : 'Only the words of the question';
     offlineNote.textContent = offline.checked
       ? 'Offline: dictation and his voice keep going. Questions that need thinking wait for the internet.'
-      : 'Online: he hears and speaks on your Mac, and thinks online.';
+      : 'Online: he hears and speaks on your computer, and thinks online.';
     d.play();
   });
 </script>

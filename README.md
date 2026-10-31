@@ -47,7 +47,7 @@ Click into a reply, hold right <kbd>⌥</kbd> and say *"answer Anna, Sunday work
 
 Whisper large-v3-turbo transcribes on the Apple GPU while you speak, so dictation is in your app **about half a second** after you let go (a second at most after a long one). His voice is Kyutai's **Pocket TTS** on the CPU, about **7x faster than real time**, sentence by sentence, in English and German. Dictation, his voice and reminders keep working offline.
 
-<img src="assets/readme/local.webp" alt="A diagram of Milo's voice path: you speak, he hears you, he remembers, he answers, all inside a frame labelled Your Mac; only 'thinking' sits outside, with just the words of the question.">
+<img src="assets/readme/local.webp" alt="A diagram of Milo's voice path: you speak, he hears you, he remembers, he answers, all inside a frame labelled Your computer; only 'thinking' sits outside, with just the words of the question.">
 
 ### Small things take two seconds
 

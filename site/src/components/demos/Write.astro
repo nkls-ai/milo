@@ -19,7 +19,7 @@ const apps = ['Mail', 'Gmail', 'WhatsApp', 'Messages', 'Word', 'Pages', 'Notes',
     <div class="write-head">
       <div class="section-head">
         <h2 id="write-title">He writes it where your cursor is.</h2>
-        <p>Click into a reply, hold <kbd>⌥</kbd> and say what you want to say. Milo reads the email you're looking at, writes the answer in your words and puts it right into the field.</p>
+        <p>Click into a reply, hold the talk key and say what you want to say. Milo reads the email you're looking at, writes the answer in your words and puts it right into the field.</p>
       </div>
       <div class="section-head write-side">
         <p>No copying, no pasting, no switching to a chatbot and back. It lands about a tenth of a second after he's done writing.</p>
@@ -54,7 +54,7 @@ const apps = ['Mail', 'Gmail', 'WhatsApp', 'Messages', 'Word', 'Pages', 'Notes',
         </div>
 
         <span class="eye" data-eye aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M2.8 12s3.4-6 9.2-6 9.2 6 9.2 6-3.4 6-9.2 6-9.2-6-9.2-6Z"/><circle cx="12" cy="12" r="2.6"/></svg>Looking</span>
-        <p class="words write-words" data-words aria-hidden="true"><span class="key write-key" data-key>⌥</span><span class="wave"><i></i><i></i><i></i><i></i><i></i></span><span data-heard></span></p>
+        <p class="words write-words" data-words aria-hidden="true"><span class="key write-key" data-key><svg viewBox="0 0 24 24"><path d="M12 3.5a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0v-5a3 3 0 0 0-3-3Z"/><path d="M6 11.5a6 6 0 0 0 12 0M12 17.5V21"/></svg></span><span class="wave"><i></i><i></i><i></i><i></i><i></i></span><span data-heard></span></p>
         <div class="dc dc-fly write-card" data-card aria-hidden="true"></div>
         <div class="write-milo">
           <p class="bubble write-bubble" data-said aria-live="polite"></p>
@@ -180,6 +180,7 @@ const apps = ['Mail', 'Gmail', 'WhatsApp', 'Messages', 'Word', 'Pages', 'Notes',
   }
   .write-words.is-on { opacity: 1; transform: none; }
   .write-key { font-size: 0.9rem; background: var(--lavender); color: var(--on-lavender); box-shadow: none; }
+  .write-key svg { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
   .write-milo { position: absolute; right: 0; bottom: 0; width: clamp(7rem, 13vw, 9rem); }
   .write-bubble {
