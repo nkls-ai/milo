@@ -77,11 +77,24 @@ public protocol ContextProvider: AnyObject {
     func current() -> AppContext
 }
 
-/// Work only Milo.app has permission for, asked by the brain (`app_request`): Calendar and Reminders.
+/// Work only Milo.app has permission for, asked by the brain (`app_request`): Calendar, Reminders, the music player.
 /// Ops and their arguments are listed in docs/ARCHITECTURE.md.
 public protocol AppConnections: AnyObject {
     /// `reply` must be called exactly once, on the main queue.
     func handle(op: String, args: JSONValue, reply: @escaping (AppOutcome) -> Void)
+}
+
+/// What the system's music player can be told: whatever app plays now (Music, Spotify, a browser).
+public enum MediaCommand: String, Sendable, CaseIterable {
+    case play, pause, next, previous
+}
+
+/// The system's now-playing controls, for the brain's `media.*` ops (ADR 0029). No script, so no question.
+public protocol MediaPlayer: AnyObject {
+    /// Whether something plays: calls back once with true or false, or never when the system won't say.
+    func isPlaying(_ done: @escaping (Bool) -> Void)
+    /// Send the command to whatever plays now. False if the system took none.
+    func send(_ command: MediaCommand) -> Bool
 }
 
 /// The Accessibility permission needed to see global keys and to paste.

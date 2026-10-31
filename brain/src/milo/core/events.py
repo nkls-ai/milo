@@ -246,6 +246,29 @@ class UndoPoints(Event):
 
 
 @dataclass(frozen=True)
+class ActionDone(Event):
+    """Milo did one everyday thing himself, at once (ADR 0029), for the card that shows it. `kind` is event, todo,
+    reminder, note, timer, draft, shortcut, music or opened. `title` names it ("Dentist"), `detail` says more in a
+    few words. `when` is local time (ISO) for what has one, `app` the app it happened in, and `undo` the task id an
+    `undo_task` takes it back with. Those three are left out when empty."""
+
+    type: ClassVar[str] = "action_done"
+    kind: str
+    title: str
+    detail: str = ""
+    when: str = ""
+    app: str = ""
+    undo: str = ""
+
+    def to_wire(self) -> dict[str, Any]:
+        wire = super().to_wire()
+        for key in ("when", "app", "undo"):
+            if not wire[key]:
+                del wire[key]
+        return wire
+
+
+@dataclass(frozen=True)
 class Helpers(Event):
     """The helpers working for Milo, oldest first: each {id, title, status, step, progress?}.
 

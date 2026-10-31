@@ -362,14 +362,45 @@ def _meetings(p: Parts) -> None:
         match=diarizer.match if diarizer else 0.6)
 
 
+def _quick(p: Parts):
+    """The talker's quick actions and its <today> block (ADR 0029), on the same connections the worker gets. Calendar,
+    Reminders and the music go through the app where the app holds them; the fake connections stay fake. None when
+    `[chat] quick_actions` or `[connections] enabled` is off."""
+    import dataclasses
+
+    from .core.registry import CONNECTIONS
+    from .services.app_ops import AppOps
+    from .services.quick_actions import QuickActions
+    from .services.today import Today
+
+    config, switches = p.config, p.config.connections
+    if not config.chat.quick_actions or not switches.enabled:
+        return None
+    name, options = config.pluggable("connections")
+    connections = CONNECTIONS.create(name, options, p.ctx)
+    connections = dataclasses.replace(connections, **{f.name: None for f in dataclasses.fields(connections)
+                                                      if not getattr(switches, f.name, True)})
+    # A connection that goes through the brain to the app (approves_itself) is reached on the AppBridge directly.
+    via_app = [c for c in ("calendar", "reminders") if getattr(getattr(connections, c), "approves_itself", False)]
+    if connections.music is None:
+        via_app.append("media")  # the app's player op, when this platform's connections have no player of their own
+    enabled = [c for c in ("calendar", "reminders") if getattr(switches, c)] + (["media"] if switches.music else [])
+    ops = AppOps(connections, p.bridge.call, via_app=via_app, enabled=enabled)
+    attention = p.attention
+    return QuickActions(ops, connections, p.ui, p.speaker, p.clock, approvals=p.approvals, today=Today(ops, p.clock),
+                        undo=p.undo, transcript=p.transcript, access=p.access, meetings=p.meetings,
+                        reminders=p.reminders, quiet=attention.user_speaking)
+
+
 def _talk(p: Parts) -> None:
     """The live conversation, the two keys that feed it, and barge-in."""
-    config, mem = p.config, p.mem
+    config, mem, helpers = p.config, p.mem, p.helpers
+    p.quick = _quick(p)
     p.live_talk = live_talk = LiveTalk(
         p.live_model, p.speaker, p.ui, p.context, p.clock, p.profile, p.reminders, p.ledger,
-        _persona(p.workspace.persona_path), config.chat.conversation_idle_reset_s, p.helpers, p.transcript,
+        _persona(p.workspace.persona_path), config.chat.conversation_idle_reset_s, helpers, p.transcript,
         eyes=p.eyes, approvals=p.approvals, memory=mem.turns if mem is not None else None,
-        backchannel=p.backchannel, routines=p.routines, meetings=p.meetings, undo=p.undo)
+        backchannel=p.backchannel, routines=p.routines, meetings=p.meetings, undo=p.undo, quick=p.quick)
     p.attention.attach(turn=lambda: live_talk.busy)
     p.helpers.on_result = live_talk.note
     p.updates.speak = live_talk.speak_update

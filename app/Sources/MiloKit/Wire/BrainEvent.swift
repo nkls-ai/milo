@@ -55,6 +55,8 @@ public enum BrainEvent: Equatable, Sendable {
     case helpers([HelperInfo])
     /// Tasks that can be taken back, newest first, and the ones taken back lately.
     case undoPoints([UndoPoint])
+    /// Milo did one everyday thing at once (an event, a to-do, a timer...), for its card (ADR 0029).
+    case actionDone(ActionDone)
     /// The user lent Milo one real device ("mouse" or "keyboard") for an action that can't be done in the
     /// background. The app hands it back on its own a while after the last such action, or when the session ends.
     case handsBorrow(on: Bool, what: String)
@@ -160,6 +162,7 @@ extension BrainEvent: Decodable {
                                args: try c.decodeIfPresent(JSONValue.self, forKey: .args) ?? .object([:]))
         case "helpers": self = .helpers(try c.decode([HelperInfo].self, forKey: .helpers))
         case "undo_points": self = .undoPoints(try c.decode([UndoPoint].self, forKey: .points))
+        case "action_done": self = .actionDone(try ActionDone(from: decoder))
         case "hands_borrow":
             self = .handsBorrow(on: try c.decode(Bool.self, forKey: .on),
                                 what: try c.decodeIfPresent(String.self, forKey: .what) ?? "")

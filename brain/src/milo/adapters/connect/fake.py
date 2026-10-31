@@ -23,7 +23,7 @@ from milo.core.types import ToolError
 from . import _files
 
 EMPTY_WORLD = {"events": [], "reminders": [], "mail": [], "drafts": [], "notes": [], "shortcuts": [],
-               "shortcut_runs": []}
+               "shortcut_runs": [], "music": "off"}
 
 
 @dataclass(frozen=True)
@@ -76,13 +76,37 @@ class FakeCalendar:
         return sorted(found, key=lambda e: e["start"])
 
     def add_event(self, title: str, start: datetime, end: datetime, location: str = "", notes: str = "",
-                  calendar: str = "") -> dict:
+                  calendar: str = "", all_day: bool = False) -> dict:
         world = self._world.load()
         event = {"id": _new_id(), "title": title, "start": _iso(start), "end": _iso(end), "location": location,
-                 "notes": notes, "calendar": calendar or "Home"}
+                 "notes": notes, "calendar": calendar or "Home", **({"all_day": True} if all_day else {})}
         world["events"].append(event)
         self._world.save(world)
         return event
+
+    def event(self, id: str, at: datetime | None = None) -> dict:
+        return self._find(self._world.load(), id)
+
+    def move_event(self, id: str, at: datetime | None, start: datetime, end: datetime) -> dict:
+        world = self._world.load()
+        event = self._find(world, id)
+        event["start"], event["end"] = _iso(start), _iso(end)
+        self._world.save(world)
+        return event
+
+    def delete_event(self, id: str, at: datetime | None = None) -> dict:
+        world = self._world.load()
+        event = self._find(world, id)
+        world["events"].remove(event)
+        self._world.save(world)
+        return event
+
+    @staticmethod
+    def _find(world: dict, id: str) -> dict:
+        found = next((e for e in world["events"] if e["id"] == id), None)
+        if found is None:
+            raise ToolError("I couldn't find that event any more.")
+        return found
 
 
 class FakeReminders:
@@ -109,6 +133,15 @@ class FakeReminders:
         for r in world["reminders"]:
             if r["id"] == id:
                 r["done"] = True
+                self._world.save(world)
+                return r
+        raise ToolError("I couldn't find that reminder.")
+
+    def delete(self, id: str) -> dict:
+        world = self._world.load()
+        for r in world["reminders"]:
+            if r["id"] == id:
+                world["reminders"].remove(r)
                 self._world.save(world)
                 return r
         raise ToolError("I couldn't find that reminder.")
@@ -188,6 +221,38 @@ class FakeNotes:
                 return {"id": id, "title": n["title"], "appended": True}
         raise ToolError("I couldn't find that note.")
 
+    def delete(self, id: str) -> dict:
+        world = self._world.load()
+        for n in world["notes"]:
+            if n["id"] == id:
+                world["notes"].remove(n)
+                world.setdefault("deleted_notes", []).append(n)  # like Notes' Recently Deleted
+                self._world.save(world)
+                return {"id": id, "title": n["title"], "deleted": True}
+        raise ToolError("I couldn't find that note.")
+
+
+class FakeMusic:
+    """A player whose state is `music` in world.json: "playing", "paused" or "off". Skips count in `skipped`."""
+
+    def __init__(self, world: World):
+        self._world = world
+
+    def state(self) -> str:
+        return str(self._world.load()["music"])
+
+    def control(self, do: str) -> str:
+        world = self._world.load()
+        if do in ("play", "pause"):
+            world["music"] = "playing" if do == "play" else "paused"
+        elif do in ("next", "previous"):
+            world["skipped"] = world.get("skipped", 0) + (1 if do == "next" else -1)
+            world["music"] = "playing"
+        else:
+            raise ToolError(f"The player can't {do}.")
+        self._world.save(world)
+        return world["music"]
+
 
 class FakeShortcuts:
     def __init__(self, world: World):
@@ -249,4 +314,4 @@ def _fake(options: Mapping[str, Any], ctx: AdapterContext) -> Connections:
     world = World(Path(o.dir).expanduser() if o.dir else ctx.home / "fake")
     return Connections(calendar=FakeCalendar(world), reminders=FakeReminders(world), mail=FakeMail(world),
                        notes=FakeNotes(world), shortcuts=FakeShortcuts(world),
-                       files=FakeFiles(world, Protected(ctx.home)))
+                       files=FakeFiles(world, Protected(ctx.home)), music=FakeMusic(world))

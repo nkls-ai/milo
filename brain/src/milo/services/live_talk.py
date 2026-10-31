@@ -27,6 +27,7 @@ from .ui_state import UiState
 if TYPE_CHECKING:
     from .meetings import MeetingService
     from .orchestrator import Orchestrator
+    from .quick_actions import QuickActions
     from .routines import Routines
     from .undo import Undo
 
@@ -180,8 +181,11 @@ class LiveTalk:
                  transcript: Transcript | None = None, eyes: ScreenEyes | None = None,
                  approvals: Approvals | None = None, memory: TurnMemory | None = None,
                  backchannel: Backchannel | None = None, routines: Routines | None = None,
-                 meetings: MeetingService | None = None, undo: Undo | None = None):
+                 meetings: MeetingService | None = None, undo: Undo | None = None,
+                 quick: QuickActions | None = None):
         self._model = model
+        self._quick = quick
+        """Does the everyday act tags itself and keeps the <today> block (ADR 0029). None: those tags do nothing."""
         self._undo = undo
         """Takes back what a helper did on <undo> (ADR 0026). None: the tag does nothing."""
         self._meetings = meetings
@@ -372,6 +376,9 @@ class LiveTalk:
         self._notes.extend(data)
         try:
             parser = await self._reply(prompt, (), False, screen=False)
+            if parser is not None and self._quick is not None:  # what the acts did goes along with the answer
+                done = await self._quick.lines(asyncio.current_task())
+                return " ".join(t for t in (parser.spoken.strip(), done) if t)
         finally:
             if self._look_started is not None:  # no looking at the screen from afar
                 self._look_started.cancel()
@@ -392,6 +399,8 @@ class LiveTalk:
         voice opens its connection now too.
         """
         self._speaker.prepare()
+        if self._quick is not None:
+            self._quick.prepare()
         if (self._preparing is None or self._preparing.done()) and self._needs_fresh_conversation():
             self._preparing = asyncio.create_task(self._prepare())
 
@@ -455,12 +464,13 @@ class LiveTalk:
         try:
             await self._ensure_conversation()
             meeting = await self._meeting(text) if tags and not screen else ""
+            today, outside = await self._quick.note() if self._quick is not None and tags else ("", False)
             recalled = await self._recall(text, screen,
                                           outside=self._tainted or bool(notes) or bool(meeting) or self._saw_screen)
             self._tainted = self._tainted or bool(notes) or bool(meeting) or not recalled.trusted
             self._saw_screen = self._saw_screen or screen
             self._streaming = True
-            blocks = [*earlier, *notes, recalled.block, *([meeting] if meeting else [])]
+            blocks = [*earlier, *notes, recalled.block, *([meeting] if meeting else []), today]
             async for delta in self._model.turn(self._prompt(text, blocks, name=tags and not screen), images):
                 if first_at is None:
                     first_at = self._clock.monotonic()
@@ -478,6 +488,8 @@ class LiveTalk:
         except asyncio.CancelledError:
             self._notes[:0] = notes  # the model may not have seen them: send them again next turn
             self._earlier[:0] = earlier
+            if self._quick is not None:
+                self._quick.today.unsent()
             self._end_reply(shown, parser)
             raise
         except HarnessError as e:
@@ -509,7 +521,7 @@ class LiveTalk:
         if tags:
             if parser.title:
                 self._transcript.titled(parser.title)
-            self._apply(parser, screen=screen)
+            self._apply(parser, screen=screen, outside=outside)
             self._take_back(parser)
         if not speak:
             if parser.spoken.strip():
@@ -589,12 +601,16 @@ class LiveTalk:
                 self._tainted = False
                 if self._memory is not None:
                     self._memory.new_conversation()
+                if self._quick is not None:
+                    self._quick.new_conversation()
 
     def _system_prompt(self) -> str:
         parts = [self._persona().strip() or DEFAULT_PERSONA, REPLY_RULES.strip()]
         if self._eyes is not None:
             parts.append(LOOK_RULES.strip())
         parts.append(HELPER_RULES.strip())
+        if self._quick is not None:
+            parts.append(self._quick.rules().strip())
         if self._memory is not None:
             parts.append(self._memory.rules.strip())
         if self._routines is not None:
@@ -624,7 +640,7 @@ class LiveTalk:
             return Recalled("", True)
         return await self._memory.before_turn(text, self._context.app, outside=outside)
 
-    def _apply(self, parser: ReplyParser, *, screen: bool = False) -> None:
+    def _apply(self, parser: ReplyParser, *, screen: bool = False, outside: bool = False) -> None:
         """Save facts and reminders, start tasks the reply asked for, and start a look.
 
         Some tags wait for the user's yes, because text from outside could have talked the model into them:
@@ -634,6 +650,9 @@ class LiveTalk:
         before anything that sends, deletes, buys or overwrites. Opening an app or making a new document
         never asks. Without a way to ask, tags that need a yes are dropped. A reply to screen data never
         remembers facts: those come from the user, never from the screen.
+
+        `outside`: the message carried other people's words that don't stay in the conversation's taint (an invite
+        in the <today> block). Act tags in the reply to it ask first, like a reminder from a reply to the screen.
         """
         if screen and parser.remembers:
             log.info("not remembering %d fact(s) from a turn with screen data", len(parser.remembers))
@@ -661,7 +680,11 @@ class LiveTalk:
                             self._tainted))
         for due, what in parser.reminders:  # open reminders go into later system prompts: screen text asks too
             effects.append((f"Should I remind you on {due:%A %-d %B at %H:%M}: {what}?", "",
-                            lambda due=due, what=what: self._remind(due, what), self._tainted or screen))
+                            lambda due=due, what=what: self._remind(due, what, parser.spoken),
+                            self._tainted or screen))
+        if self._quick is not None and parser.acts:  # an act is like a reminder: outside text asks first
+            effects += self._quick.effects(parser.acts, ask=self._tainted or screen or outside,
+                                           request=self._request, via=self._via)
         for task in parser.tasks:
             question = task_question(task.description, title=task.title)
             # The whole task shows under the short question in the window: the user approves all of it.
@@ -711,12 +734,15 @@ class LiveTalk:
         except Exception:
             log.exception("could not save to the profile")
 
-    def _remind(self, due: datetime, what: str) -> None:
+    def _remind(self, due: datetime, what: str, said: str = "") -> None:
         try:
-            self._reminders.add(due, what)
+            reminder = self._reminders.add(due, what)
             log.info("reminder set, %s", private(what))
         except Exception:
             log.exception("could not save the reminder")
+            return
+        if self._quick is not None:
+            self._quick.reminded(reminder, said)
 
     def _hiccup(self) -> None:
         self._system = None  # the conversation may be broken: start a fresh one next turn

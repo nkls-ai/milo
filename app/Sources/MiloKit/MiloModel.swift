@@ -212,6 +212,8 @@ public final class MiloModel: ObservableObject {
              .handsSession, .flyTo, .appRequest, .handsBorrow, .facts, .settings, .usage, .meetingRecord,
              .conversations, .conversation, .searchResults, .reminders, .unknown:
             break
+        case .actionDone:
+            break  // the done card's view plugs in here (ADR 0029)
         }
     }
 

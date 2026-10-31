@@ -11,15 +11,25 @@ public final class EventKitConnections: AppConnections {
     public func handle(op: String, args: JSONValue, reply: @escaping (AppOutcome) -> Void) {
         let done: (AppOutcome) -> Void = { outcome in DispatchQueue.main.async { reply(outcome) } }
         switch op {
-        case "calendar.events", "calendar.add_event":
+        case "calendar.events", "calendar.add_event", "calendar.event", "calendar.update_event", "calendar.delete_event":
             withAccess(to: .event) { [self] in
-                done(op == "calendar.events" ? events(args) : addEvent(args))
+                switch op {
+                case "calendar.events": done(events(args))
+                case "calendar.add_event": done(addEvent(args))
+                case "calendar.event": done(event(args))
+                case "calendar.update_event": done(updateEvent(args))
+                default: done(deleteEvent(args))
+                }
             } denied: { done(.failure(Self.denied(.event))) }
         case "reminders.list":
             withAccess(to: .reminder) { [self] in listReminders(args, done) } denied: { done(.failure(Self.denied(.reminder))) }
-        case "reminders.add", "reminders.complete":
+        case "reminders.add", "reminders.complete", "reminders.delete":
             withAccess(to: .reminder) { [self] in
-                done(op == "reminders.add" ? addReminder(args) : completeReminder(args))
+                switch op {
+                case "reminders.add": done(addReminder(args))
+                case "reminders.complete": done(completeReminder(args))
+                default: done(deleteReminder(args))
+                }
             } denied: { done(.failure(Self.denied(.reminder))) }
         default:
             done(.failure("Milo's app doesn't know how to do \(op)."))
@@ -82,8 +92,9 @@ public final class EventKitConnections: AppConnections {
         }
         let event = EKEvent(eventStore: store)
         event.title = title
+        event.isAllDay = args["all_day"]?.bool ?? false
         event.startDate = start
-        event.endDate = end
+        event.endDate = event.isAllDay ? end.addingTimeInterval(-1) : end
         event.location = Self.text(args["location"])
         event.notes = Self.text(args["notes"])
         event.calendar = calendar
@@ -93,6 +104,61 @@ public final class EventKitConnections: AppConnections {
             return .failure("The calendar didn't take the event: \(error.localizedDescription)")
         }
         return .success(Self.json(event))
+    }
+
+    /// The occurrence `args` names: the event `id` that starts at `at`, so one of a repeating series is never
+    /// mistaken for the first. Without `at`, the event the id stands for.
+    private func occurrence(_ args: JSONValue) -> EKEvent? {
+        guard let id = Self.text(args["id"]) else { return nil }
+        if let at = Self.date(args["at"]) {
+            let predicate = store.predicateForEvents(withStart: at.addingTimeInterval(-60),
+                                                     end: at.addingTimeInterval(86_400), calendars: nil)
+            if let found = store.events(matching: predicate).first(where: {
+                $0.calendarItemIdentifier == id && abs($0.startDate.timeIntervalSince(at)) < 60
+            }) {
+                return found
+            }
+        }
+        return store.calendarItem(withIdentifier: id) as? EKEvent
+    }
+
+    private func event(_ args: JSONValue) -> AppOutcome {
+        guard let event = occurrence(args) else { return .failure("I couldn't find that event any more.") }
+        return .success(Self.json(event))
+    }
+
+    /// Moves only this occurrence: the rest of a series stays where it was.
+    private func updateEvent(_ args: JSONValue) -> AppOutcome {
+        guard let event = occurrence(args) else { return .failure("I couldn't find that event any more.") }
+        guard event.calendar?.allowsContentModifications ?? false else {
+            return .failure("That calendar can't be changed from here.")
+        }
+        guard let start = Self.date(args["start"]), let end = Self.date(args["end"]), end > start else {
+            return .failure("start and end must be times like 2026-11-05T15:00, end after start.")
+        }
+        event.startDate = start
+        event.endDate = end
+        do {
+            try store.save(event, span: .thisEvent, commit: true)
+        } catch {
+            return .failure("The calendar didn't take the change: \(error.localizedDescription)")
+        }
+        return .success(Self.json(event))
+    }
+
+    /// Deletes only this occurrence, and answers with the event as it was, so the brain can make it again.
+    private func deleteEvent(_ args: JSONValue) -> AppOutcome {
+        guard let event = occurrence(args) else { return .failure("I couldn't find that event any more.") }
+        guard event.calendar?.allowsContentModifications ?? false else {
+            return .failure("That calendar can't be changed from here.")
+        }
+        let was = Self.json(event)
+        do {
+            try store.remove(event, span: .thisEvent, commit: true)
+        } catch {
+            return .failure("The calendar didn't delete it: \(error.localizedDescription)")
+        }
+        return .success(was)
     }
 
     struct Problem: Error { let text: String }
@@ -175,6 +241,19 @@ public final class EventKitConnections: AppConnections {
         return .success(Self.json(reminder))
     }
 
+    private func deleteReminder(_ args: JSONValue) -> AppOutcome {
+        guard let id = Self.text(args["id"]), let reminder = store.calendarItem(withIdentifier: id) as? EKReminder else {
+            return .failure("I couldn't find that reminder.")
+        }
+        let was = Self.json(reminder)
+        do {
+            try store.remove(reminder, commit: true)
+        } catch {
+            return .failure("Reminders didn't delete it: \(error.localizedDescription)")
+        }
+        return .success(was)
+    }
+
     // MARK: JSON
 
     static func json(_ event: EKEvent) -> JSONValue {
@@ -187,6 +266,7 @@ public final class EventKitConnections: AppConnections {
             "location": .string(event.location ?? ""),
             "notes": .string(event.notes ?? ""),
             "calendar": .string(event.calendar?.title ?? ""),
+            "recurring": .bool(event.hasRecurrenceRules),
             // The others invited, by name (or address), without the user: meeting notes name voices with them.
             "attendees": .array((event.attendees ?? []).filter { !$0.isCurrentUser }
                 .map { .string($0.name ?? $0.url.absoluteString.replacingOccurrences(of: "mailto:", with: "")) }),
