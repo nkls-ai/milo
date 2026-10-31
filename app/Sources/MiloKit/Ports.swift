@@ -66,13 +66,17 @@ public struct FocusedField: Equatable, Sendable {
     public var label: String
     /// It takes typed text: a text role, a settable value, or editable web content.
     public var editable: Bool
+    /// It positively takes typing: its value is settable, or it is editable web content. A terminal's text area has a
+    /// text role but no settable value, so text with line breaks needs this.
+    public var settable: Bool
     /// A password field, or any field in a password app. Never pasted into.
     public var secure: Bool
     /// One of Milo's own windows.
     public var milo: Bool
 
     public init(pid: Int32, app: String, bundle: String = "", field: Int, role: String = "AXTextArea",
-                label: String = "", editable: Bool = true, secure: Bool = false, milo: Bool = false) {
+                label: String = "", editable: Bool = true, settable: Bool = true, secure: Bool = false,
+                milo: Bool = false) {
         self.pid = pid
         self.app = app
         self.bundle = bundle
@@ -80,6 +84,7 @@ public struct FocusedField: Equatable, Sendable {
         self.role = role
         self.label = label
         self.editable = editable
+        self.settable = settable
         self.secure = secure
         self.milo = milo
     }

@@ -47,7 +47,7 @@ public final class AXFieldProbe: FieldProbe {
         let webEditable = (AX.attribute(element, "AXEditableAncestor") as AXUIElement?) != nil
         return FocusedField(pid: pid, app: app?.localizedName ?? "", bundle: app?.bundleIdentifier ?? "",
                             field: id(element, pid), role: role, label: label,
-                            editable: textRoles.contains(role) || canSet || webEditable,
+                            editable: textRoles.contains(role) || canSet || webEditable, settable: canSet || webEditable,
                             secure: AX.isSecure(element) || AX.isSecret(app), milo: pid == getpid())
     }
 

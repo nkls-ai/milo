@@ -101,6 +101,40 @@ import Testing
         #expect(PasteTarget.verdict(keyDown: nil, now: Self.mail) == .keep("no_field"))
     }
 
+    @Test func linesGoOnlyIntoAFieldThatPositivelyTakesTyping() {
+        // A terminal Milo doesn't know: a text area whose value Accessibility won't let anyone set.
+        let unknown = FocusedField(pid: 13, app: "NewTerm", bundle: "com.example.newterm", field: 1, settable: false)
+        #expect(PasteTarget.verdict(keyDown: unknown, now: unknown, lines: true) == .keep("no_field"))
+        #expect(PasteTarget.verdict(keyDown: unknown, now: unknown, lines: false) == .paste, "one line runs nothing")
+        #expect(PasteTarget.verdict(keyDown: Self.mail, now: Self.mail, lines: true) == .paste)
+    }
+
+    @Test func aKeyPressIsUsedOnceAndNotLongAfter() {
+        let probe = Probe()
+        var clock = Date(timeIntervalSince1970: 0)
+        let inserter = FakeTextInserter()
+        let w = WriteRequests(probe: probe, inserter: inserter, trusted: { true }, now: { clock })
+        probe.reads = [Self.mail, Self.mail, Self.mail]
+        w.capture()
+        _ = write(w)
+        #expect(write(w) == Self.kept("no_field", "Mail"), "a second text needs a new press")
+        probe.reads = [Self.mail, Self.mail]
+        w.capture()
+        clock += WriteRequests.capturedFor + 1
+        #expect(write(w) == Self.kept("no_field", "Mail"))
+        #expect(inserter.inserted.count == 1)
+    }
+
+    @Test func noLineBreakAtTheEndGoesIn() {
+        let probe = Probe()
+        probe.reads = [Self.mail, Self.mail]
+        let inserter = FakeTextInserter()
+        let w = writing(probe, inserter: inserter)
+        w.capture()
+        _ = write(w, "ls -la\n\n")
+        #expect(inserter.inserted == ["ls -la"])
+    }
+
     @Test func milosOwnWindowIsNeverTheTarget() {
         let milo = FocusedField(pid: 1, app: "Milo", field: 1, milo: true)
         #expect(PasteTarget.verdict(keyDown: milo, now: milo) == .keep("here"))

@@ -27,14 +27,17 @@ public enum PasteTarget {
     static let secretWords = ["password", "passwort", "passcode", "card number", "kartennummer", "cvv", "cvc",
                               "security code", "sicherheitscode", "prüfnummer"]
 
-    public static func verdict(keyDown: FocusedField?, now: FocusedField?) -> Verdict {
+    /// `lines`: the text has line breaks. Those go only into a field that positively takes typing, so a terminal
+    /// this list doesn't know (its text area is read-only to Accessibility) runs nothing.
+    public static func verdict(keyDown: FocusedField?, now: FocusedField?, lines: Bool = false) -> Verdict {
         if now?.milo == true { return .keep("here") }  // typed in Milo's window, or looking at it: copy from there
         guard let keyDown else { return .keep("no_field") }
         if keyDown.milo { return .keep("here") }
         guard let now, now.pid == keyDown.pid, now.field == keyDown.field else { return .keep("moved") }
         if isSecret(now) { return .keep("secure") }
         if isTerminal(now) { return .keep("terminal") }
-        return now.editable ? .paste : .keep("no_field")
+        guard now.editable, !lines || now.settable else { return .keep("no_field") }
+        return .paste
     }
 
     static func isTerminal(_ field: FocusedField) -> Bool {
