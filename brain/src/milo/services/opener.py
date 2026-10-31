@@ -20,12 +20,13 @@ log = logging.getLogger("milo.open")
 
 
 def action(request: OpenRequest) -> tuple[str, dict]:
-    """The app action that opens `request`: open_url (a page, in `app` if named), open_file (a file or folder) or
-    open_app."""
+    """The app action that opens `request`: open_url (a page, in `app` if named; the app checks it opens web
+    pages), open_file (a file or folder, always in its own app: a named one could be a terminal, which runs what it
+    opens) or open_app."""
     if request.url:
         return "open_url", {"url": request.url, **({"app": request.app} if request.app else {})}
     if request.path:
-        return "open_file", {"path": request.path, **({"app": request.app} if request.app else {})}
+        return "open_file", {"path": request.path}
     return "open_app", {"name": request.app}
 
 

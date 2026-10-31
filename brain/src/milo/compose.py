@@ -257,11 +257,11 @@ def _presence(p: Parts) -> None:
                                           memory=mem.memory.search if mem is not None else None,
                                           reminders=p.reminders)
     p.permits = Permits(config.approvals.ask, config.approvals.allowed_apps)  # saves once Settings exists
-    p.language = SpokenLanguage()  # the user's latest message's language: replies, helpers and questions follow it
+    p.language = language = SpokenLanguage()  # the latest message's language: replies, helpers, questions follow it
     p.approvals = approvals = Approvals(ui, speaker, ActionPolicy(config.approval_levels),
                                         timeout_s=config.approvals.timeout_s, speak=config.approvals.speak,
                                         quiet=attention.in_conversation, transcript=p.transcript,
-                                        permits=p.permits)
+                                        permits=p.permits, language=language.get)
     attention.attach(question=lambda: approvals.pending)
     p.bridge = AppBridge(p.server)  # each request to one app; one that hangs up fails what it owed at once
     p.server.on_client_gone.append(p.bridge.app_gone)

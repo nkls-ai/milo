@@ -27,7 +27,8 @@ SITES = {
 
 _BARE = re.compile(r"^[a-z0-9][a-z0-9 -]{0,40}$", re.IGNORECASE)
 _HOST = re.compile(r"^[a-z0-9.-]+(?::\d+)?$", re.IGNORECASE)
-_GENERIC = frozenset({"www", "com", "org", "net", "de", "co", "uk", "io", "app", "m", "mail", "open", "web"})
+_SECOND_LEVEL = frozenset({"co", "com", "org", "net", "ac", "gov", "edu", "ne", "or"})
+"""Second-level labels under a country code (co.uk, com.au): the name a person uses sits one label further left."""
 
 
 @dataclass(frozen=True)
@@ -74,22 +75,28 @@ def resolve_url(text: str) -> str | None:
 
 
 def site_names(url: str) -> list[str]:
-    """The words a person would use for a site: "youtube" for www.youtube.com, "maps" and "google" for
-    maps.google.com."""
-    host = (urlsplit(url).hostname or "").lower()
-    names = [part for part in host.split(".") if part and part not in _GENERIC and not part.isdigit()]
-    names += [site for site, address in SITES.items() if address == url.rstrip("/") and " " not in site]
+    """The words a person would use for a site: the name of the domain it belongs to ("youtube" for
+    www.youtube.com, "bbc" for www.bbc.co.uk), and the SITES name of that address ("maps" for maps.google.com).
+    Never another label of the host, so youtube.com.evil.example is "evil", not "youtube"."""
+    host = (urlsplit(url).hostname or "").lower().rstrip(".")
+    labels = [part for part in host.split(".") if part]
+    names = []
+    if len(labels) >= 2 and not labels[-1].isdigit():
+        cut = 3 if len(labels) >= 3 and len(labels[-1]) == 2 and labels[-2] in _SECOND_LEVEL else 2
+        names.append(labels[-cut])
+    origin = f"{urlsplit(url).scheme}://{host}"
+    names += [site for site, address in SITES.items() if address == origin]
     return list(dict.fromkeys(names))
 
 
 def named_by(request: OpenRequest, words: str) -> bool:
     """Whether the user's own words name what is to be opened, so opening it needs no yes even after Milo read
-    outside text: the site ("go on YouTube" for youtube.com) or the file or folder ("my Downloads folder"). An app
-    alone always counts: opening an app changes nothing."""
-    words = " ".join(re.findall(r"[\w.-]+", (words or "").lower()))
-    if request.url:
-        return any(re.search(rf"\b{re.escape(name)}\b", words) for name in site_names(request.url))
+    outside text: the site's own name ("go on YouTube" for www.youtube.com). An app alone always counts: opening an
+    app changes nothing. A file or folder never does: a name in passing can't tell which file outside text put
+    there, so after outside text a path always asks."""
     if request.path:
-        stem = request.what.rsplit(".", 1)[0].lower()
-        return bool(stem) and stem in words
+        return False
+    if request.url:
+        said = set(re.findall(r"[\w-]+", (words or "").lower()))
+        return any(name in said for name in site_names(request.url))
     return bool(request.app)

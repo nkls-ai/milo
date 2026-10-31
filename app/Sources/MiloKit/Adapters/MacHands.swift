@@ -1,4 +1,5 @@
 import AppKit
+import UniformTypeIdentifiers
 
 /// The milo-mac actions, run with Milo's own Accessibility and Screen Recording permissions.
 ///
@@ -81,6 +82,9 @@ public final class MacHands: HandsExecutor {
         case "describe": return describe(args, front: front)
         case "list_apps": return ["text": .string(listApps())]
         case "open_app": return try openApp(try text(args, "name"))
+        case "open_url": return try openURL(try text(args, "url"), app: args["app"]?.string)
+        case "open_file": return try openFile(try text(args, "path"))
+        case "focus_app": return try focusApp(try text(args, "app"))
         case "window_text":
             let (app, window) = try window(args, front: front)
             return ["text": .string(AX.text(of: window, limit: 16000)), "summary": .string(summary(app, window))]
@@ -102,7 +106,7 @@ public final class MacHands: HandsExecutor {
     /// Whether an action reads or works another app's window. Scripts, opening apps and describing those don't, so
     /// they work without Accessibility.
     static func needsAccessibility(_ tool: String, _ args: [String: JSONValue]) -> Bool {
-        let free: Set<String> = ["list_apps", "open_app", "run_applescript"]
+        let free: Set<String> = ["list_apps", "open_app", "open_url", "open_file", "focus_app", "run_applescript"]
         return !free.contains(tool == "describe" ? args["tool"]?.string ?? "" : tool)
     }
 
@@ -149,6 +153,8 @@ public final class MacHands: HandsExecutor {
             info["title"] = .string(AX.label(element))
             info["role"] = .string(AX.roleName(element))
             info["secure"] = .bool(AX.isSecure(element))
+            // Milo's own window (his bubble, his conversation): the brain refuses to act there.
+            if AX.pid(element) == getpid() { info["milo"] = true }
             // The window it sits in, for the outline and for Pip to perch on.
             if let window = Self.window(of: element), let frame = AX.frame(window) {
                 info["window"] = HandsTarget.json(frame)
@@ -157,6 +163,7 @@ public final class MacHands: HandsExecutor {
         } else {
             info["app"] = .string(front?.localizedName ?? "")
             info["bundle"] = .string(front?.bundleIdentifier ?? "")
+            if front?.processIdentifier == getpid() { info["milo"] = true }
         }
         if let point { info["point"] = .object(["x": .number(point.x), "y": .number(point.y)]) }
         return info
@@ -174,22 +181,129 @@ public final class MacHands: HandsExecutor {
             .joined(separator: "\n")
     }
 
+    /// How long opening waits for the app to be in front with a window before it answers anyway.
+    static let frontWait: TimeInterval = 2
+
+    /// Opens the app, or brings it forward if it runs: `open -a` goes through Launch Services, which activates it
+    /// even while Milo isn't the active app, and asks a running app without windows for a new one (as a click on
+    /// its Dock icon does). Then waits until it is in front with a window.
     private func openApp(_ name: String) throws -> [String: JSONValue] {
-        if let app = Self.running(name) {
+        guard try launchServices(["-a", name]) else { throw HandsFailure("There is no app called \(name).") }
+        return arrived(name: name, bundle: nil, done: "Opened \(name)")
+    }
+
+    /// Opens a web page, in `app` if named (e.g. "Google Chrome"), else in the default browser, and waits until
+    /// that browser is in front with a window.
+    private func openURL(_ text: String, app: String?) throws -> [String: JSONValue] {
+        if let refused = OpenGuard.refuses(url: text) { throw HandsFailure(refused) }
+        guard let url = URL(string: text) else { throw HandsFailure("That isn't a web address.") }
+        let site = url.host ?? text
+        if let app, !app.isEmpty {
+            // Only an app that opens web pages: handing an address to some other app (a terminal) could run it.
+            let browsers = NSWorkspace.shared.urlsForApplications(toOpen: url)
+            guard let browser = browsers.first(where: { Self.names($0, app) }) else {
+                throw HandsFailure("\(app) doesn't open web pages, or isn't installed.")
+            }
+            guard try launchServices(["-a", browser.path, text]) else { throw HandsFailure("Couldn't open \(site).") }
+            return arrived(name: app, bundle: Bundle(url: browser)?.bundleIdentifier, done: "Opened \(site) in \(app)")
+        }
+        let browser = NSWorkspace.shared.urlForApplication(toOpen: url).flatMap { Bundle(url: $0)?.bundleIdentifier }
+        guard try launchServices([text]) else { throw HandsFailure("Couldn't open \(site).") }
+        return arrived(name: nil, bundle: browser, done: "Opened \(site)")
+    }
+
+    /// Opens a document or folder in the app the system opens it with, never a named one (a terminal would run a
+    /// text file), and never a file that would run code itself (OpenGuard.refuses).
+    private func openFile(_ path: String) throws -> [String: JSONValue] {
+        let full = (path as NSString).expandingTildeInPath
+        let url = URL(fileURLWithPath: full)
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: full, isDirectory: &isDirectory) else {
+            throw HandsFailure("There is no file or folder at \(path).")
+        }
+        let type = (try? url.resourceValues(forKeys: [.contentTypeKey]))?.contentType
+        let types = type.map { [$0.identifier] + $0.supertypes.map(\.identifier) } ?? []
+        if let refused = OpenGuard.refuses(path: full, isDirectory: isDirectory.boolValue, types: types,
+                                         executable: FileManager.default.isExecutableFile(atPath: full)
+                                             && !isDirectory.boolValue) {
+            throw HandsFailure(refused)
+        }
+        let opener = NSWorkspace.shared.urlForApplication(toOpen: url).flatMap { Bundle(url: $0)?.bundleIdentifier }
+        guard try launchServices([full]) else { throw HandsFailure("Couldn't open \(url.lastPathComponent).") }
+        return arrived(name: nil, bundle: opener, done: "Opened \(url.lastPathComponent)")
+    }
+
+    /// Brings a running app to the front before a key, typing or a click goes to it, and says whether it got there.
+    /// Never Milo himself.
+    private func focusApp(_ name: String) throws -> [String: JSONValue] {
+        guard let app = Self.running(name) else { throw HandsFailure("\(name) isn't open. Use open_app first.") }
+        if app.processIdentifier == getpid() { throw HandsFailure("Milo never acts in his own window.") }
+        let pid = app.processIdentifier
+        let isFront = { NSWorkspace.shared.frontmostApplication?.processIdentifier == pid }
+        if !isFront() {
             app.unhide()
             app.activate()
-            return ["text": .string("Brought \(app.localizedName ?? name) to the front.")]
+            // macOS may ignore activate() from an app that isn't active itself; Launch Services is listened to.
+            if !OpenGuard.wait(timeout: 0.4, isFront), let bundle = app.bundleURL {
+                _ = try? launchServices(["-a", bundle.path])
+            }
         }
+        let front = OpenGuard.wait(timeout: Self.frontWait, isFront)
+        return ["app": .string(app.localizedName ?? name), "bundle": .string(app.bundleIdentifier ?? ""),
+                "front": .bool(front)]
+    }
+
+    /// Runs `open` with these arguments. False when it says it couldn't (no such app, nothing to open with).
+    private func launchServices(_ arguments: [String]) throws -> Bool {
         let open = Process()
         open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        open.arguments = ["-a", name]
+        open.arguments = arguments
         open.standardOutput = FileHandle.nullDevice
         open.standardError = FileHandle.nullDevice
         try open.run()
         open.waitUntilExit()
-        guard open.terminationStatus == 0 else { throw HandsFailure("There is no app called \(name).") }
-        Thread.sleep(forTimeInterval: 1)  // give it a moment to put up a window
-        return ["text": .string("Opened \(name).")]
+        return open.terminationStatus == 0
+    }
+
+    /// Waits (at most `frontWait`) until the app with this bundle id or name is in front with a window on screen,
+    /// and says what happened. `front` false means it opened but isn't in front yet.
+    private func arrived(name: String?, bundle: String?, done: String) -> [String: JSONValue] {
+        let wanted = name.map { $0.lowercased().replacingOccurrences(of: ".app", with: "") }
+        let matches = { (app: NSRunningApplication) -> Bool in
+            if let bundle, app.bundleIdentifier == bundle { return true }
+            guard let wanted else { return false }
+            return app.localizedName?.lowercased() == wanted || app.bundleIdentifier?.lowercased() == wanted
+        }
+        var found: NSRunningApplication?
+        let front = OpenGuard.wait(timeout: Self.frontWait) {
+            guard let app = NSWorkspace.shared.frontmostApplication, matches(app) else { return false }
+            found = app
+            return Self.hasWindow(app.processIdentifier)
+        }
+        let app = found ?? NSWorkspace.shared.runningApplications.first(where: matches)
+        let label = app?.localizedName ?? name ?? ""
+        return ["text": .string(front ? "\(done)." : "\(done), but it isn't in front yet."),
+                "app": .string(label), "bundle": .string(app?.bundleIdentifier ?? bundle ?? ""), "front": .bool(front)]
+    }
+
+    /// Milo never presses, fills in or types into his own windows (his Yes and Allow buttons among them), whoever
+    /// asks: the brain refuses first, and this is the second lock.
+    static func notMilo(_ element: AXUIElement) throws {
+        if AX.pid(element) == getpid() { throw HandsFailure("Milo never acts in his own window.") }
+    }
+
+    /// Whether the app at `url` is the one called `name` (its file name or its bundle id), any case.
+    static func names(_ url: URL, _ name: String) -> Bool {
+        let wanted = name.lowercased().replacingOccurrences(of: ".app", with: "")
+        let file = url.deletingPathExtension().lastPathComponent.lowercased()
+        return file == wanted || Bundle(url: url)?.bundleIdentifier?.lowercased() == wanted
+    }
+
+    /// Whether the process has a normal window on screen. The window list says that without Screen Recording.
+    static func hasWindow(_ pid: pid_t) -> Bool {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+                as? [[String: Any]] else { return false }
+        return list.contains { $0[kCGWindowOwnerPID as String] as? pid_t == pid && $0[kCGWindowLayer as String] as? Int == 0 }
     }
 
     private func window(_ args: [String: JSONValue], front: NSRunningApplication?) throws -> (NSRunningApplication, AXUIElement) {
@@ -240,6 +354,7 @@ public final class MacHands: HandsExecutor {
     }
 
     private func press(_ element: AXUIElement) throws -> [String: JSONValue] {
+        try Self.notMilo(element)
         for action in [kAXPressAction, kAXPickAction, kAXConfirmAction, kAXShowMenuAction] {
             if AXUIElementPerformAction(element, action as CFString) == .success {
                 return ["text": .string("Pressed “\(AX.label(element))”.")]
@@ -249,6 +364,7 @@ public final class MacHands: HandsExecutor {
     }
 
     private func setValue(_ element: AXUIElement, _ value: String) throws -> [String: JSONValue] {
+        try Self.notMilo(element)
         guard !AX.isSecure(element) else { throw HandsFailure("Milo never fills in password fields.") }
         AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
         guard AXUIElementSetAttributeValue(element, kAXValueAttribute as CFString, value as CFString) == .success else {
@@ -387,6 +503,7 @@ public final class MacHands: HandsExecutor {
     @discardableResult
     private func checkFocus(allowSecure: Bool = false) throws -> AXUIElement? {
         let focused = AX.focused()
+        if let focused { try Self.notMilo(focused) }
         if let checked = checkedFocus, focused.map(AX.pid) != checked {
             throw HandsFailure("The keyboard focus moved to another app since I checked. Look again first.")
         }

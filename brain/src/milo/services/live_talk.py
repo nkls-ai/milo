@@ -146,18 +146,26 @@ mention them to the user.
 QUESTION_CHARS = 80
 _FIRST_SENTENCE = re.compile(r"(?<=[.!?;:])\s")
 _WORK = re.compile(r"\b((fix|fill|put|add|make|change|update|correct|write|enter|insert|sort|format|create|build|"
-                   r"finish|complete|edit|move|rename|copy|paste|replace)(es|s|ed|d|ing)?|"
+                   r"finish|complete|edit|move|rename|copy|paste|replace|open|go|show|play|send|remind|check|find|"
+                   r"summari[sz]e|start|stop|set|take)(es|s|ed|d|ing)?|"
                    r"(mach|füll|änder|korrigier|trag|schreib|erstell|sortier|formatier|bearbeit|füg|erledig|"
-                   r"kopier|ersetz|verschieb|benenn)\w*)\b", re.IGNORECASE)
+                   r"kopier|ersetz|verschieb|benenn|öffne|zeig|spiel|schick|erinner|stell)\w*)\b", re.IGNORECASE)
 _QUESTION = re.compile(r"^\s*(what|why|how|who|whom|whose|where|when|which|is|are|was|were|does|did|do|has|have|"
                        r"was|warum|wieso|weshalb|wie|wer|wo|wann|welche\w*|ist|sind|hat|haben)\b", re.IGNORECASE)
 
 
+_PLEASE = re.compile(r"^\s*(?:(?:yes|yeah|ok|okay|please|so|and|ja|bitte|also|und)\b[\s,.!]*)*"
+                     r"(?:(?:can|could|would|will) you|(?:kannst|könntest|würdest) du)\b", re.IGNORECASE)
+
+
 def asks_for_work(text: str) -> bool:
     """Whether the user's own words ask Milo to do something, not only to look or explain: "fix this sheet",
-    "can you fill this in", "füll das aus". A question ("what is this?", "why is it red?") never does. In auto
+    "yes, open Chrome", "can you summarize the PDF", "füll das aus". "Can you …" and "kannst du …" with such a
+    verb are requests. A question ("what is this?", "why is it red?", "can you see my screen?") never is. In auto
     mode only then may a task from the reply to what he saw start without a question."""
-    return not _QUESTION.search(text) and bool(_WORK.search(text))
+    if not _WORK.search(text):
+        return False
+    return bool(_PLEASE.search(text)) or not _QUESTION.search(text)
 _PLAIN = ((re.compile(r"\s+(on|in) the user's (Mac|computer)\b", re.I), ""),
           (re.compile(r"\s+for the user\b", re.I), ""),
           (re.compile(r"\bthe user's\b", re.I), "your"),
@@ -755,7 +763,7 @@ class LiveTalk:
                 task.description, title=task.title, screen=task.screen, careful=careful, user_asked=user_asked,
                 language=lang), ask_tasks))
         for ref, change in parser.steers:  # a change to a task is a task: same rule
-            question = task_question(f"Change the task to {change}")
+            question = task_question(f"Aufgabe ändern: {change}" if lang == "de" else f"Change the task to {change}")
             detail = change if question.endswith("…?") else ""
             effects.append((question, detail, lambda ref=ref, change=change: self._tasks.steer(
                 ref, change, careful=careful, user_asked=user_asked), ask_tasks))

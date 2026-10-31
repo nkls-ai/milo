@@ -122,8 +122,9 @@ class Stack:
                                 "approvals": {**self.config_file.raw.get("approvals", {}), **approvals}}
         settings = self.config_file.read().approvals
         self.permits = Permits(settings.ask, settings.allowed_apps)
+        self.language = SpokenLanguage()
         self.approvals = Approvals(self.ui, self.speaker, timeout_s=self.confirm_timeout_s,
-                                   quiet=lambda: self.live_talk.busy, permits=self.permits)
+                                   quiet=lambda: self.live_talk.busy, permits=self.permits, language=self.language.get)
         self.bridge = AppBridge(self.sink, timeout_s=self.confirm_timeout_s)
         self.gate = AccessGate(self.access, self.sink, pause_s=0) if self.access is not None else None
         self.undo = None
@@ -132,7 +133,6 @@ class Stack:
                                            protected=Protected(self.home / "Milo")), self.hands_port, self.ui,
                              self.clock, confirm=self.approvals, speaker=self.speaker, helpers=lambda: self.tasks,
                              quiet=lambda: self.live_talk.busy, wait_s=self.wait_s, poll_s=0.005)
-        self.language = SpokenLanguage()
         self.hands = HandsService(self.hands_port, self.approvals, self.ui, access=self.gate,
                                   before_change=self.undo.before_change if self.undo is not None else None,
                                   language=self.language.get)

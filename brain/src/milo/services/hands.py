@@ -50,6 +50,8 @@ _AIMED = ("click", "type", "key")
 NO_APP = ("Say which app this is for: pass `app`, or open it first with open_app or open_url. Keys, typing and "
           "clicks never go to whatever happens to be in front.")
 NOT_WEB = "open_url opens web pages only: an address starting with http:// or https://."
+OWN_WINDOW = ("That is Milo's own window (his bubble, his buttons, his conversation). Milo never acts there, so the user "
+              "is never asked about it. Look again in the app the task is about.")
 MAX_ASKS = 3
 """Questions for one action whose target keeps changing under the user's answers, before Milo gives up."""
 
@@ -172,6 +174,8 @@ class HandsService:
             self._check()
             if aimed:
                 self._check_aim(tool, aimed, target)
+            if target.get("milo"):
+                raise HandsError(OWN_WINDOW)
             step = Step(f"hands_{next(self._ids)}", "app" if spec.acts else "read", title(tool, args, target),
                         _detail(tool, args), StepStatus.RUNNING)
             verdict, app = self._judge(tool, spec.acts, args, target)
@@ -208,6 +212,9 @@ class HandsService:
                                  "again (screenshot or ax_tree) before you try.")
             if aimed:  # what it touches may have changed while the user answered
                 self._check_aim(tool, aimed, target)
+            if target.get("milo"):
+                self._step(task_id, step, StepStatus.FAILED)
+                raise HandsError(OWN_WINDOW)
             if self._access is not None:  # after Milo's own yes, so a refused action never starts the app
                 named = script_apps(str(args["script"])) if tool == "run_applescript" else None
                 try:
@@ -298,8 +305,8 @@ class HandsService:
         None for anything else: sending, deleting, code, settings, files, clicks on something unnamed, and scripts
         that don't say which apps they talk to or reach outside them. What can be undone (UNDO) gets one too, so Allow
         always for an app covers it in "Every step" mode; in the other modes it doesn't ask at all (ADR 0023)."""
-        if verdict.reason not in WORK and verdict.risk is not Risk.UNDO:
-            return None
+        if verdict.reason not in WORK and verdict.risk is not Risk.UNDO or target.get("milo"):
+            return None  # (Milo's own window never gets this far: call() refuses it)
         if tool == "run_applescript":
             script = str(args.get("script", ""))
             apps = script_apps(script) if coverable_script(script) else None
@@ -484,14 +491,12 @@ def title(tool: str, args: dict, target: dict) -> str:
 
 def confirm_question(tool: str, args: dict, target: dict, reason: str, language: str = "") -> str:
     """A yes-or-no question naming the thing, like "I'm about to click “Send” in Mail. Go ahead?". In the user's
-    language where Milo has the words (German), else English."""
+    language: German or English."""
     app = str(target.get("app") or args.get("app") or "")
     in_app = f" in {app}" if app else ""
     what = " ".join(str(target.get("title") or "").split())  # never shortened: the user approves all of it
     if language == "de":
-        german = _german_question(tool, args, target, reason, app, what)
-        if german:
-            return german
+        return _german_question(tool, args, target, reason, app, what)
     if tool == "open_url":
         return f"Open {urlsplit(str(args['url'])).hostname or args['url']}{in_app}?"
     if reason == "use":
@@ -503,12 +508,12 @@ def confirm_question(tool: str, args: dict, target: dict, reason: str, language:
     if tool == "key":
         return f"I'm about to press {_pretty_combo(str(args['combo']))}{in_app}, which may {reason}. Go ahead?"
     if tool == "run_applescript":
-        # Short enough to answer at a glance. The step above the question in the Milo window already shows
-        # the whole script, so the user can read what they approve.
-        apps = list(dict.fromkeys(_TELL.findall(str(args["script"]))))
-        where = f" in {_clip(', '.join(apps), 30)}" if apps else ""
-        can = "" if reason == "run a script" else f" that can {reason}"
-        return f"Run a script{where}{can}? It's in my window."
+        # Short enough to answer at a glance, in words for someone who never wrote a script. The step above the
+        # question in the Milo window shows the whole script, so the user can read what they approve.
+        apps = _script_app_names(args)
+        where = f"in {apps} directly" if apps else "in your apps directly"
+        could = "" if reason == "run a script" else f" It could {reason}."
+        return f"May I work {where}?{could} You can read the steps in my window."
     if tool == "sheet_write":
         doc = _clip(str(target.get("document") or "the front document"), 30)
         n = int(target.get("filled") or 0)
@@ -516,8 +521,38 @@ def confirm_question(tool: str, args: dict, target: dict, reason: str, language:
     return f"I'm about to {reason}{in_app}. Go ahead?"
 
 
+_REASONS_DE = {
+    "send": "etwas senden", "send now": "etwas senden", "submit": "etwas absenden", "publish": "etwas veröffentlichen",
+    "post": "etwas posten", "share": "etwas teilen", "confirm": "etwas bestätigen", "delete": "etwas löschen",
+    "remove": "etwas entfernen", "trash": "etwas löschen", "erase": "etwas löschen", "delete a note": "eine Notiz löschen",
+    "move to the Trash": "etwas in den Papierkorb legen", "empty the Trash": "den Papierkorb leeren",
+    "delete it for good": "etwas endgültig löschen", "delete immediately": "etwas endgültig löschen",
+    "delete permanently": "etwas endgültig löschen", "don't save": "Änderungen verwerfen",
+    "don’t save": "Änderungen verwerfen", "discard": "Änderungen verwerfen", "overwrite": "etwas überschreiben",
+    "replace": "etwas ersetzen", "replace cells": "Zellen ersetzen", "change the document": "das Dokument ändern",
+    "change a system setting": "eine Systemeinstellung ändern",
+    "click something I can't name": "auf etwas klicken, das ich nicht benennen kann",
+    "open a program that runs commands": "ein Programm öffnen, das Befehle ausführt", "run a command": "einen Befehl ausführen",
+    "run a script": "ein Skript ausführen", "run other programs or type for you": "andere Programme starten oder für dich tippen",
+    "uninstall": "etwas deinstallieren", "unsubscribe": "etwas abbestellen", "buy": "etwas kaufen", "buy now": "etwas kaufen",
+    "purchase": "etwas kaufen", "pay": "bezahlen", "pay now": "bezahlen", "checkout": "bezahlen", "check out": "bezahlen",
+    "order": "etwas bestellen", "place order": "etwas bestellen", "transfer": "Geld überweisen", "sell": "etwas verkaufen",
+    "withdraw": "Geld abheben", "cancel subscription": "ein Abo kündigen", "close account": "ein Konto schließen",
+    "delete account": "ein Konto löschen",
+}
+"""Risk reasons (services/risk.py) as German phrases for a question. A German word from the lists is quoted."""
+
+
+def _reason_de(reason: str) -> str:
+    return _REASONS_DE.get(reason) or _REASONS_DE.get(reason.lower()) or f"„{reason}“ auslösen"
+
+
+def _script_app_names(args: dict) -> str:
+    return _clip(", ".join(dict.fromkeys(_TELL.findall(str(args["script"])))), 30)
+
+
 def _german_question(tool: str, args: dict, target: dict, reason: str, app: str, what: str) -> str:
-    """confirm_question in German, for the questions asked most; "" where it has no words (the English is used)."""
+    """confirm_question in German."""
     in_app = f" in {app}" if app else ""
     if tool == "open_url":
         return f"{urlsplit(str(args['url'])).hostname or args['url']}{in_app} öffnen?"
@@ -525,15 +560,20 @@ def _german_question(tool: str, args: dict, target: dict, reason: str, app: str,
         return f"Darf ich dafür {app or 'diese App'} benutzen? Du siehst jeden Schritt."
     if tool in ("click", "ax_press") and what:
         return f"Ich klicke gleich auf „{what}“{in_app}. Okay?"
-    if tool == "run_applescript" and reason == "run a script":
-        apps = list(dict.fromkeys(_TELL.findall(str(args["script"]))))
-        where = f" in {_clip(', '.join(apps), 30)}" if apps else ""
-        return f"Ein Skript{where} ausführen? Es steht in meinem Fenster."
+    if tool == "type":
+        return f"Ich tippe gleich „{args['text']}“{in_app}. Das kann {_reason_de(reason)}. Okay?"
+    if tool == "key":
+        return f"Ich drücke gleich {_pretty_combo(str(args['combo']))}{in_app}. Das kann {_reason_de(reason)}. Okay?"
+    if tool == "run_applescript":
+        apps = _script_app_names(args)
+        where = f"direkt in {apps}" if apps else "direkt in deinen Apps"
+        could = "" if reason == "run a script" else f" Das könnte {_reason_de(reason)}."
+        return f"Darf ich {where} arbeiten?{could} Die Schritte stehen in meinem Fenster."
     if tool == "sheet_write":
         doc = _clip(str(target.get("document") or "dem vorderen Dokument"), 30)
         n = int(target.get("filled") or 0)
         return f"{n} gefüllte Zelle{'n' if n != 1 else ''} in „{doc}“ ersetzen?"
-    return ""
+    return f"Darf ich{in_app} {_reason_de(reason)}?"
 
 
 def borrow_question(tool: str, target: dict, what: str, language: str = "") -> str:

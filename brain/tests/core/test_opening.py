@@ -27,9 +27,11 @@ def test_only_web_pages_open_as_addresses(text):
     assert resolve_url(text) is None
 
 
-def test_the_words_for_a_site_are_its_name_not_www_or_com():
+def test_the_words_for_a_site_are_its_domains_name_not_any_label():
     assert site_names("https://www.youtube.com") == ["youtube"]
-    assert "maps" in site_names("https://maps.google.com") and "google" in site_names("https://maps.google.com")
+    assert site_names("https://www.bbc.co.uk/news") == ["bbc"]
+    assert set(site_names("https://maps.google.com")) == {"google", "maps", "google maps"}
+    assert site_names("https://youtube.com.evil.example/") == ["evil"], "a lookalike host isn't YouTube"
 
 
 def test_the_users_words_name_the_site_the_file_or_any_app():
@@ -37,7 +39,8 @@ def test_the_users_words_name_the_site_the_file_or_any_app():
     assert named_by(youtube, "So can you open, um, Chrome for me and go on YouTube?")
     assert not named_by(youtube, "open the link from the mail")
     assert not named_by(OpenRequest(url="https://evil.example/?q=secret"), "open the link from the mail")
-    assert named_by(OpenRequest(path="~/Downloads"), "open my downloads folder")
+    assert not named_by(OpenRequest(url="https://youtube.com.evil.example"), "go on YouTube")
+    assert not named_by(OpenRequest(path="~/Downloads"), "open my downloads folder"), "after outside text a path asks"
     assert named_by(OpenRequest(app="Notes"), "anything")
 
 

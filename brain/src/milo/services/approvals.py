@@ -22,6 +22,7 @@ log = logging.getLogger("milo.approvals")
 
 DEFAULT_TIMEOUT_S = 60.0
 NO_ANSWER = "No answer, so I left it."
+NO_ANSWER_DE = "Keine Antwort, also habe ich es gelassen."
 ALLOWED = ("yes", "always", "allowed")
 """Answers that let the action go ahead: "allowed" is work the user allowed before, so nobody was asked."""
 REMOTE = "message"
@@ -55,6 +56,7 @@ UNDOABLE_KINDS = ("trash",)
 mode."""
 _STRICTNESS = (ActionLevel.READ, ActionLevel.CHANGE, ActionLevel.ASK_FIRST, ActionLevel.NEVER)
 MONEY_YES = "That one involves money, so only a click on Yes counts."
+MONEY_YES_DE = "Da geht es um Geld, deshalb zählt nur ein Klick auf Ja."
 
 _YES = ("yes", "yeah", "yep", "yup", "sure", "ok", "okay", "go ahead", "do it", "please do", "of course",
         "send it", "ja", "jawohl", "klar", "gerne", "genau", "mach das", "mach es", "mach")
@@ -116,6 +118,7 @@ BUBBLE_LINES = 8
 LINE_CHARS = 32
 """Fewer characters than a bubble line holds, so the estimate of the lines a question needs errs high."""
 SEE_WINDOW = " (all of it is in the Milo window)"
+SEE_WINDOW_DE = " (alles steht im Milo-Fenster)"
 
 
 def bubble_lines(text: str) -> int:
@@ -128,19 +131,20 @@ def _width(line: str) -> int:
     return sum(2 if unicodedata.east_asian_width(c) in "WF" or ord(c) > 0xFFFF else 1 for c in line)
 
 
-def fit_bubble(question: str, detail: str) -> tuple[str, str]:
+def fit_bubble(question: str, detail: str, language: str = "") -> tuple[str, str]:
     """A question the bubble can show whole. A longer one, in characters or in lines, is cut where everyone can
     see it was cut, and the whole of it goes into the detail the Milo window shows: Yes must never sit under a
     hidden end."""
     if len(question) <= QUESTION_MAX and bubble_lines(question) <= BUBBLE_LINES:
         return question, detail
     whole = f"{question}\n\n{detail}" if detail else question
-    room = QUESTION_MAX - len(SEE_WINDOW) - 1
+    see = SEE_WINDOW_DE if language == "de" else SEE_WINDOW
+    room = QUESTION_MAX - len(see) - 1
     short = " ".join(question.split())[:room]
-    while short and bubble_lines(short + "…" + SEE_WINDOW) > BUBBLE_LINES:
+    while short and bubble_lines(short + "…" + see) > BUBBLE_LINES:
         short = short[:-LINE_CHARS]
     short = short.rsplit(" ", 1)[0].rstrip(",;: ") if " " in short else short
-    return short + "…" + SEE_WINDOW, whole
+    return short + "…" + see, whole
 
 
 class Approvals:
@@ -170,8 +174,11 @@ class Approvals:
 
     def __init__(self, ui: UiState, speaker: Speaker, policy: ActionPolicy | None = None, *,
                  timeout_s: float = DEFAULT_TIMEOUT_S, speak: bool = True, quiet: Callable[[], bool] = lambda: False,
-                 transcript: Transcript | None = None, permits: Permits | None = None):
+                 transcript: Transcript | None = None, permits: Permits | None = None,
+                 language: Callable[[], str] = lambda: ""):
         self._ui = ui
+        self._language = language
+        """The code of the language the user last spoke in: Milo's own lines here follow it (German or English)."""
         self._speaker = speaker
         self.policy = policy or ActionPolicy()
         self._timeout_s = timeout_s
@@ -284,8 +291,9 @@ class Approvals:
             return False
         if yes and self._money:
             # Taken as the answer so it isn't a turn of its own, but it doesn't say yes: the button has to.
-            self._transcript.say(MONEY_YES, Emotion.NEUTRAL)
-            self._speaker.say(MONEY_YES, Emotion.NEUTRAL, speak=self._speak and via == "voice")
+            money_yes = MONEY_YES_DE if self._language() == "de" else MONEY_YES
+            self._transcript.say(money_yes, Emotion.NEUTRAL)
+            self._speaker.say(money_yes, Emotion.NEUTRAL, speak=self._speak and via == "voice")
             return True
         return self.answer(self._pending[0], yes, via=via)
 
@@ -333,7 +341,7 @@ class Approvals:
                 relayed = self._relay(id, question, detail)
             self._remote_only = any(r.only for r in relayed)
             timeout_s = max([self._timeout_s, *(r.wait_s for r in relayed)])
-            question, detail = fit_bubble(question, detail)
+            question, detail = fit_bubble(question, detail, self._language())
             text = f"{question}\n\n{detail}" if detail else question
             if self._remote_only:
                 # The user is away: the Mac only shows that a question went to the phone, without buttons.
@@ -349,7 +357,7 @@ class Approvals:
                 answer = await asyncio.wait_for(future, timeout_s)
             except TimeoutError:
                 answer = "timeout"
-                self._transcript.say(NO_ANSWER, Emotion.NEUTRAL)
+                self._transcript.say(NO_ANSWER_DE if self._language() == "de" else NO_ANSWER, Emotion.NEUTRAL)
             finally:
                 self._pending = None
                 self._money = False

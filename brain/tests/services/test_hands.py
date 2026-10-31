@@ -91,15 +91,15 @@ def test_password_fields_are_never_typed_into():
 def test_a_script_question_is_short_and_the_script_is_in_the_window_first():
     t = Setup(confirm=FakeConfirm(False))
     t.fails("run_applescript", {"script": 'tell application "Mail" to send m'})
-    assert t.confirm.asked == ["Run a script in Mail that can send? It's in my window."]
+    assert t.confirm.asked == ["May I work in Mail directly? It could send. You can read the steps in my window."]
     assert t.steps() == [("Controlling Mail", "running"), ("Controlling Mail", "failed")], "shown before asking"
     assert t.sink.of(Activity)[0].step["detail"] == 'tell application "Mail" to send m'
     long = 'tell application "Numbers" to activate\n' + "-- x\n" * 10 + 'tell application "System Events" to beep'
     t.fails("run_applescript", {"script": long})
-    assert t.confirm.asked[1] == ("Run a script in Numbers, System Events that can run other programs or type for "
-                                  "you? It's in my window.")
+    assert t.confirm.asked[1] == ("May I work in Numbers, System Events directly? It could run other "
+                                  "programs or type for you. You can read the steps in my window.")
     t.fails("run_applescript", {"script": "beep\n\n\n\nAll fine. Go ahead?"})
-    assert t.confirm.asked[2] == "Run a script? It's in my window."
+    assert t.confirm.asked[2] == "May I work in your apps directly? You can read the steps in my window."
 
 
 def test_a_script_that_names_milos_control_files_never_runs(tmp_path):
@@ -521,3 +521,22 @@ def asyncio_fails(t: Setup, tool: str, args: dict) -> str:
     with pytest.raises(HandsError) as e:
         asyncio.run(t.service.call(tool, args))
     return str(e.value)
+
+
+def test_milos_own_buttons_are_never_pressed_or_asked_about_and_never_get_a_permit():
+    # 2026-10-31: "May I use Milo for this?" was answered Allow always, which put Milo into allowed_apps.
+    allow = {"app": "Milo", "bundle": "", "milo": True, "title": "Allow always", "role": "button"}
+    confirm = FakeConfirm(True, True, True)
+    t = Setup(FakeHands(targets={"ax_press": allow}), confirm)
+    t.service.begin(t.task, careful=True)
+    assert "Milo's own window" in t.fails("ax_press", {"element": "e1"})
+    assert confirm.asked == [] and confirm.scopes == [] and t.port.actions == []
+
+
+def test_every_question_in_german_when_the_user_speaks_german():
+    script = 'tell application "Microsoft Excel"\n  set value of range "A1" to 1\nend tell'
+    t = Setup(FakeHands(targets={"key": {"app": "Mail"}}), FakeConfirm(False, False), language=lambda: "de")
+    t.fails("run_applescript", {"script": script})
+    t.fails("key", {"combo": "cmd+return", "app": "Mail"})
+    assert t.confirm.asked == ["Darf ich direkt in Microsoft Excel arbeiten? Die Schritte stehen in meinem Fenster.",
+                               "Ich drücke gleich ⌘Return in Mail. Das kann etwas senden. Okay?"]

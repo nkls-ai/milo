@@ -178,3 +178,27 @@ def test_the_local_transcribers_language_reaches_the_turn():
 
     asyncio.run(run())
     assert ", language: German]" in s.model.turns[0]
+
+
+def test_milos_own_lines_around_a_question_follow_the_language():
+    from milo.services.approvals import SEE_WINDOW_DE, fit_bubble
+
+    question, _ = fit_bubble("Soll ich das wirklich machen " * 20, "", "de")
+    assert question.endswith(SEE_WINDOW_DE)
+    s = Stack(confirm_timeout_s=0.01)
+    s.language.hear("Kannst du das bitte machen?")
+    said = []
+    s.approvals._transcript.say = lambda text, emotion, **kw: said.append(text)
+    assert not asyncio.run(s.approvals.confirm("Darf ich?"))
+    assert "Keine Antwort, also habe ich es gelassen." in said
+
+
+def test_remember_and_remind_questions_follow_the_language():
+    from datetime import datetime
+
+    from milo.services.live_talk import remember_question, remind_question, task_question
+
+    assert remember_question("Mag Tee", "de") == "Soll ich mir das merken: Mag Tee?"
+    assert remind_question(datetime(2026, 11, 2, 9, 0), "Anna anrufen", "de") == \
+        "Soll ich dich am Montag, 2. November um 09:00 erinnern: Anna anrufen?"
+    assert task_question("x " * 60, title="Budget in Excel", language="de") == "„Budget in Excel“ starten?"
