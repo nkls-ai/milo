@@ -622,7 +622,8 @@ class LiveTalk:
             if self._memory is not None:
                 self._memory.outside = True  # the reply may quote the screen
             return Recalled("", True)
-        return await self._memory.before_turn(text, self._context.app, outside=outside)
+        return await self._memory.before_turn(text, self._context.app, outside=outside,
+                                              at_mac=self._via in ("voice", "typed"))
 
     def _apply(self, parser: ReplyParser, *, screen: bool = False) -> None:
         """Save facts and reminders, start tasks the reply asked for, and start a look.
