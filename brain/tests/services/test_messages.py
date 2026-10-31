@@ -5,7 +5,6 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, time
-from pathlib import Path
 
 import pytest
 
@@ -13,7 +12,6 @@ from milo.core.app_connections import AppCalendar, AppReminders
 from milo.core.events import Bubble, Confirm, Heard, Remote
 from milo.core.ports import Connections
 from milo.core.types import ChannelError, HarnessError, Inbound, Reminder
-from milo.services.approvals import REMOTE
 from milo.services.messages import (CANT_READ, HICCUP, INTERRUPTED, PAUSED, TOO_MANY, MessageSettings,
                                     message_prompt)
 from milo.services.pairing import Pairing

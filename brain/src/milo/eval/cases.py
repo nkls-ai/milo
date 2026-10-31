@@ -72,10 +72,6 @@ def _event_at(o: Outcome, weekday: int, hm: str, *words: str) -> bool:
     return any(e["start"] == start and any(w in e["title"].lower() for w in words) for e in o.new("events", SEED_EVENTS))
 
 
-def _note_has(o: Outcome, *words: str) -> bool:
-    return any(all(w in (n["title"] + " " + n["body"]).lower() for w in words) for n in o.new("notes", SEED_NOTES))
-
-
 def _shopping(o: Outcome) -> str:
     return next(n["body"] for n in o.world["notes"] if n["id"] == "n1").lower()
 

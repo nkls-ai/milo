@@ -23,9 +23,9 @@ from milo.core.events import Confirm, UndoPoints, UndoTask, parse_command
 from milo.memory.undo_shelf import FileUndoShelf
 from milo.services import snapshots
 from milo.services.reply_stream import ReplyParser
-from tests.fakes import FakeHarness, FakeLiveModel
+from tests.fakes import FakeHarness
 from tests.services.stack import Stack, settle
-from tests.services.test_permits import EXCEL, ExcelApp, Worker, user
+from tests.services.test_permits import ExcelApp, Worker, user
 
 RED_SCRIPT = ('tell application "Microsoft Excel"\n'
               'set targetSheet to worksheet "Sheet1" of workbook "Book2"\n'
@@ -112,7 +112,7 @@ def test_the_red_sheet_comes_back_with_undo(tmp_path):
         await s.undo.undo(helper.id)
         return helper
 
-    helper = asyncio.run(run())
+    asyncio.run(run())
     assert excel.books["Book2"] == RECIPE, "the sheet is back the way it was"
     assert excel.books["Book1"] == {"A1": ("Rezept", "white")}, "the other workbook was never touched"
     assert s.sink.of(Confirm) == [], "nothing changed since, so undo asks nothing in auto mode"
@@ -560,7 +560,7 @@ def test_what_milo_cant_copy_is_undone_by_a_helper_with_the_record(tmp_path):
         await s.tasks.idle()
         return helper
 
-    helper = asyncio.run(run())
+    asyncio.run(run())
     undoer = s.tasks.helpers[-1]
     assert undoer.title == "Undo: Letter to Anna"
     assert "The letter in TextEdit was empty before." in undoer.instructions

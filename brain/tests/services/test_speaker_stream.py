@@ -5,7 +5,6 @@ import asyncio
 
 import numpy as np
 
-from milo.core.events import Bubble
 from milo.core.types import Emotion, MiloState
 from milo.services.fallback_voice import NOTICE, RETRY_S, FallbackVoice, VoiceNotice
 from milo.services.speech_audio import END_PAD_S, PauseLimiter, SILENCE_DB

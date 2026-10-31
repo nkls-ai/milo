@@ -7,7 +7,6 @@ import fcntl
 import os
 import signal
 import socket
-import stat
 import struct
 import subprocess
 import sys

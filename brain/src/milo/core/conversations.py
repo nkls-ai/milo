@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from .memory import estimate_tokens
@@ -342,11 +342,3 @@ def files_in(texts: Iterable[str], limit: int = 12) -> list[str]:
             if len(seen) >= limit:
                 return list(seen)
     return list(seen)
-
-
-@dataclass
-class Draft:
-    """Scratch for building conversations from a list of entries (the migration)."""
-
-    info: ConversationInfo
-    entries: list[dict] = field(default_factory=list)

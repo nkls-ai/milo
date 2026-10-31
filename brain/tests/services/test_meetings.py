@@ -17,9 +17,9 @@ from pathlib import Path
 
 import pytest
 
-from milo.core.events import (CallEnded, CallStarted, Confirm, MeetingChunk, MeetingLines, MeetingMail,
-                              MeetingNotesReady, MeetingPause, MeetingRecord, MeetingRecording, MeetingStatus,
-                              MeetingTodo, MeetingToggle, OpenMeeting, Status)
+from milo.core.events import (CallEnded, CallStarted, Confirm, MeetingChunk, MeetingMail,
+                              MeetingNotesReady, MeetingRecord, MeetingRecording, MeetingStatus,
+                              MeetingTodo, Status)
 from milo.core.meetings import Track
 from milo.core.memory import Episode
 from milo.core.types import Interrupted, ListenMode, MiloState

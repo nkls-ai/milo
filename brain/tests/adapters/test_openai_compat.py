@@ -154,7 +154,7 @@ def test_interrupt_ends_the_reply_and_the_conversation_goes_on():
             assert await say(model, "go on") == "next"
             return model
 
-    model = asyncio.run(run())
+    asyncio.run(run())
     assert fake.requests[1]["messages"][-2]["role"] == "assistant", "what was said before the stop stays"
 
 

@@ -18,7 +18,6 @@ import asyncio
 import json
 import logging
 import os
-import re
 import sys
 from dataclasses import replace
 from datetime import date, datetime, time, timedelta

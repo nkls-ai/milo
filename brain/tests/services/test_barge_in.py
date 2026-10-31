@@ -12,8 +12,8 @@ from milo.adapters.audio.wav_file import WavPlayer
 from milo.core.types import STT_SAMPLE_RATE, Emotion, MiloState
 from milo.services.barge_in import BargeIn, reference_for
 from milo.services.echo import BLOCK, EchoCanceller, TalkDetector
-from tests.fakes import FakeAudioInput, FakeTranscriber
-from tests.services.stack import Stack, settle
+from tests.fakes import FakeTranscriber
+from tests.services.stack import Stack
 
 RATE = STT_SAMPLE_RATE
 

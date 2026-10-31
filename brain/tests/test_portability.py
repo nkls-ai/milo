@@ -166,7 +166,6 @@ ALLOWED: dict[tuple[str, str], str] = {
     ("connect/tools.py", "mac-keys"): "the worker's undo instructions say Excel's ⌘Z can't undo a script",
     ("services/sheets.py", "applescript"): "sheet_write/sheet_read compose AppleScript; moves behind a per-platform script builder",
     ("services/sheets.py", "mac-app"): "Excel and Numbers by their Mac names",
-    ("services/sheets.py", "mac-path"): "app_name strips \".app\" from a path",
     ("services/documents.py", "applescript"): "write_document composes AppleScript for TextEdit and Pages",
     ("services/documents.py", "mac-app"): "TextEdit and Pages are the document apps",
     # Risk: the word lists know Mac apps, bundle ids and shortcuts.
@@ -210,7 +209,7 @@ ALLOWED: dict[tuple[str, str], str] = {
 }
 
 
-CEILING = 55
+CEILING = 54
 """How many ALLOWED lines there were at the last count (2026-10-31: 57, less the one in GROWN). It only goes down:
 when a coupling moves out and its line goes, lower it too. It never goes up."""
 

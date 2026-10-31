@@ -43,7 +43,7 @@ from .pairing import Pairing, as_code, spaced
 from .quiet import wait_while
 from .settings_guard import SettingsGuard
 from . import sharing
-from .sharing import NotShareable, Outgoing, size_text
+from .sharing import Outgoing, size_text
 from .speaker import Speaker
 from .talk_prompt import untrusted
 from .today import Today
@@ -588,8 +588,3 @@ class MessageService:
 class _NoReminders:
     def all(self) -> list:
         return []
-
-
-def file_error(e: Exception) -> str:
-    """Plain words for the worker when a file can't be sent."""
-    return str(e) if isinstance(e, (NotShareable, ChannelError)) else "Milo couldn't send the file."

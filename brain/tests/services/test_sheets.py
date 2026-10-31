@@ -66,12 +66,6 @@ def test_read_and_parse():
     assert table_text(parse("first\tA1\nrow\t")) == "The sheet is empty."
 
 
-def test_app_names():
-    assert sheets.app_name("excel") == EXCEL and sheets.app_name("com.apple.iWork.Numbers") == NUMBERS
-    with pytest.raises(HandsError):
-        sheets.app_name("Pages")
-
-
 @pytest.mark.parametrize("locale, money", [
     ("en_US@rg=dezzzz", '#,##0.00 "€"'), ("de_DE", '#,##0.00 "€"'), ("en_US", '"$"#,##0.00'),
     ("en_GB", '"£"#,##0.00'), ("de_CH", '"CHF" #,##0.00'), ("en_DE@currency=USD", '"$"#,##0.00'),

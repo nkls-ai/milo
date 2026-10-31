@@ -37,16 +37,6 @@ class Block:
         return self.first if self.first == self.last else f"{self.first}:{self.last}"
 
 
-def app_name(app: str) -> str:
-    """"excel", "Microsoft Excel", "com.microsoft.Excel" -> "Microsoft Excel"; same for Numbers."""
-    key = app.strip().lower().removesuffix(".app")
-    if "excel" in key:
-        return EXCEL
-    if "numbers" in key:
-        return NUMBERS
-    raise HandsError(f"sheet tools work in Microsoft Excel and Numbers, not {app!r}.")
-
-
 def column_number(letters: str) -> int:
     n = 0
     for ch in letters.upper():

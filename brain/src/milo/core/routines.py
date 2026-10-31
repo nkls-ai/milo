@@ -86,10 +86,6 @@ class Routine:
         data = json.dumps([self.body.strip(), [(i.name, i.ask, i.default) for i in self.inputs], list(self.apps)])
         return hashlib.sha256(data.encode()).hexdigest()[:16]
 
-    def input(self, name: str) -> RoutineInput | None:
-        key = name.strip().lower()
-        return next((i for i in self.inputs if i.name == key), None)
-
 
 # ---- the file format
 
