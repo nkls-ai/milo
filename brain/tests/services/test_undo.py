@@ -11,7 +11,9 @@ so and asks first, so it never throws away the user's own later edits without a 
 
 import asyncio
 import json
+import os
 import re
+import stat
 from pathlib import Path
 
 import pytest
@@ -382,6 +384,43 @@ def test_putting_a_file_back_never_writes_through_a_link_left_next_to_it(tmp_pat
     asyncio.run(run())
     assert config.read_text() == "[ui]\n"
     assert budget.read_text() == "rent,900\n" and not budget.is_symlink()
+
+
+def test_an_undo_point_for_a_pipe_is_refused_without_waiting(tmp_path):
+    """Opening a named pipe would wait for a writer forever: anything but a plain file is refused first."""
+    pipe = tmp_path / "feed"
+    os.mkfifo(pipe)
+    s = Stack(home=tmp_path)
+
+    async def run():
+        helper = s.tasks.submit("tidy the feed", title="Feed", screen=False, user_asked=True)
+        with pytest.raises(ValueError, match="isn't a plain file"):
+            s.undo.keep_file(helper.id, str(pipe))
+        await s.tasks.idle()
+
+    asyncio.run(run())
+
+
+def test_a_private_file_stays_private_in_its_copy_and_when_put_back(tmp_path):
+    budget = tmp_path / "budget.csv"
+    budget.write_text("rent,900\n")
+    budget.chmod(0o600)
+    s = Stack(home=tmp_path)
+
+    async def run():
+        helper = s.tasks.submit("raise the rent", title="Rent", screen=False, user_asked=True)
+        s.undo.keep_file(helper.id, str(budget))
+        budget.write_text("rent,950\n")
+        budget.chmod(0o644)
+        await s.tasks.idle()
+        await s.undo.idle()
+        copies = [p for p in (tmp_path / "Milo" / "state" / "undo").rglob("files/*")]
+        await s.undo.undo(helper.id)
+        return copies
+
+    copies = asyncio.run(run())
+    assert [stat.S_IMODE(c.stat().st_mode) for c in copies] == [0o600]
+    assert budget.read_text() == "rent,900\n" and stat.S_IMODE(budget.stat().st_mode) == 0o600
 
 
 def test_the_workers_notes_reach_the_undo_helper_as_inert_text(tmp_path):
