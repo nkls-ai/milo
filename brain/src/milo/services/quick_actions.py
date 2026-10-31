@@ -201,8 +201,9 @@ class QuickActions:
 
     def reminded(self, reminder: Reminder, said: str) -> None:
         """A <reminder> tag set one of Milo's own reminders: give it an Undo and a card."""
-        done = _Done("reminder", reminder.text, said, detail=words.when(reminder.due, self._clock.now().date(), self._lang()),
-                     when=_iso(reminder.due), app="Milo", reverse=[{"op": "reminder.remove", "id": reminder.id}])
+        # No app: Milo's own, so a click shows Today. The card writes the day and time from `when` (ADR 0030).
+        done = _Done("reminder", reminder.text, said, when=_iso(reminder.due),
+                     reverse=[{"op": "reminder.remove", "id": reminder.id}])
         self._card(done, self._record(done))
 
     async def lines(self, turn: asyncio.Task | None) -> str:

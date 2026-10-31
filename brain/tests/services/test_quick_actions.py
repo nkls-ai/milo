@@ -513,7 +513,8 @@ def test_milos_own_reminder_gets_a_card_and_an_undo(tmp_path):
               ["[happy] <undo/>"])
     asyncio.run(say(s, "remind me to call the bank tomorrow at nine"))
     [card] = cards(s)
-    assert (card.kind, card.title, card.when, card.app) == ("reminder", "Call the bank", "2026-10-30T09:00", "Milo")
+    assert (card.kind, card.title, card.detail, card.when, card.app) == (
+        "reminder", "Call the bank", "", "2026-10-30T09:00", ""), "Milo's own: a click shows Today (ADR 0030)"
     assert said(s) == "I'll remind you at nine.", "the model's own words for a reminder, as before"
     asyncio.run(say(s, "undo that"))
     assert s.reminders.items == []
