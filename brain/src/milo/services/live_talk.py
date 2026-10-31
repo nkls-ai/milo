@@ -153,9 +153,11 @@ QUESTION_CHARS = 80
 _FIRST_SENTENCE = re.compile(r"(?<=[.!?;:])\s")
 _WORK = re.compile(r"\b((fix|fill|put|add|make|change|update|correct|write|enter|insert|sort|format|create|build|"
                    r"finish|complete|edit|move|rename|copy|paste|replace|open|go|show|play|send|remind|check|find|"
-                   r"summari[sz]e|start|stop|set|take)(es|s|ed|d|ing)?|"
+                   r"summari[sz]e|start|stop|set|take|search|google|look up|delete|remove|cancel|schedule|save|archive)"
+                   r"(es|s|ed|d|ing)?|"
                    r"(mach|füll|änder|korrigier|trag|schreib|erstell|sortier|formatier|bearbeit|füg|erledig|"
-                   r"kopier|ersetz|verschieb|benenn|öffne|zeig|spiel|schick|erinner|stell)\w*)\b", re.IGNORECASE)
+                   r"kopier|ersetz|verschieb|benenn|öffne|zeig|spiel|schick|erinner|stell|such|lösch|entfern|absag|"
+                   r"speicher|notier|plan)\w*)\b", re.IGNORECASE)
 _QUESTION = re.compile(r"^\s*(what|why|how|who|whom|whose|where|when|which|is|are|was|were|does|did|do|has|have|"
                        r"was|warum|wieso|weshalb|wie|wer|wo|wann|welche\w*|ist|sind|hat|haben)\b", re.IGNORECASE)
 
@@ -296,11 +298,13 @@ class LiveTalk:
 
     @property
     def _trusting(self) -> bool:
-        """Auto mode, the default, with the user at the Mac (ADR 0022): what they asked for just happens. Pages, quick
-        actions and writing go ahead even after Milo read outside text, since each can be closed or undone; sending,
-        deleting and paying still ask (Approvals). A reminder from outside text still asks: open reminders go into
-        later system prompts. "task" and "step" mode keep outside text's questions."""
-        return self._approvals is not None and self._approvals.permits.ask == "auto" and self._via in ("voice", "typed")
+        """Auto mode, the default, with the user at the Mac, and their message asks for something ("open the link",
+        "add that to my calendar"): what they asked for just happens (ADR 0022, 0028). A page or a quick action then
+        goes ahead even after Milo read outside text, since each can be closed or undone; sending, deleting for good
+        and paying still ask (Approvals). A reply to "thanks" after a mail isn't trusted: only outside text could have
+        put an action there. "task" and "step" mode keep outside text's questions."""
+        return self._approvals is not None and self._approvals.permits.ask == "auto" \
+            and self._via in ("voice", "typed") and asks_for_work(self._request)
 
     @property
     def carries_outside(self) -> bool:
@@ -785,8 +789,7 @@ class LiveTalk:
         if self._writer is None:
             log.info("ignoring %d <write> tag(s): nothing to paste them with", len(texts))
             return
-        self._writer.start(texts, outside=(self._tainted or screen or self._saw_screen) and not self._trusting,
-                           request=self._request,
+        self._writer.start(texts, outside=self._tainted or screen or self._saw_screen, request=self._request,
                            via=self._via)
 
     def _start_open(self, request: OpenRequest) -> None:
