@@ -33,6 +33,27 @@ import Testing
         #expect(OpenGuard.refuses(path: "/Users/you/Downloads/tool", isDirectory: false, types: ["public.data"],
                                   executable: true) != nil, "a bare program")
         #expect(OpenGuard.refuses(path: "/Users/you/x.fileloc", isDirectory: false, types: [], executable: false) != nil)
+        #expect(OpenGuard.refuses(path: "/Users/you/Tool.plugin", isDirectory: true,
+                                  types: ["com.apple.plugin", "com.apple.bundle", "com.apple.package"],
+                                  executable: false) != nil, "a bundle is a folder that runs code")
+        #expect(OpenGuard.refuses(path: "/Users/you/Renamed", isDirectory: true,
+                                  types: ["com.apple.application-bundle", "com.apple.bundle"], executable: false) != nil,
+                "an app without .app in its name")
+    }
+
+    @Test func internetLocationsDontSmuggleAnAddressPastTheSchemeCheck() {
+        for name in ["Wipe.webloc", "x.inetloc", "x.url", "x.mailloc"] {
+            #expect(OpenGuard.refuses(path: "/Users/you/Downloads/\(name)", isDirectory: false, types: [],
+                                      executable: false) != nil, "\(name)")
+        }
+        #expect(OpenGuard.refuses(path: "/Users/you/Downloads/link", isDirectory: false,
+                                  types: ["com.apple.web-internet-location"], executable: false) != nil)
+    }
+
+    @Test func aDocumentPackageIsntABundle() {
+        #expect(OpenGuard.refuses(path: "/Users/you/Letter.pages", isDirectory: true,
+                                  types: ["com.apple.iwork.pages.sffpages", "com.apple.package", "public.directory"],
+                                  executable: false) == nil)
     }
 
     @Test func waitingStopsAtTheFirstYesOrAtTheLimit() {

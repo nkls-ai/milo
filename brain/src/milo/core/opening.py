@@ -75,17 +75,19 @@ def resolve_url(text: str) -> str | None:
 
 
 def site_names(url: str) -> list[str]:
-    """The words a person would use for a site: the name of the domain it belongs to ("youtube" for
-    www.youtube.com, "bbc" for www.bbc.co.uk), and the SITES name of that address ("maps" for maps.google.com).
-    Never another label of the host, so youtube.com.evil.example is "evil", not "youtube"."""
-    host = (urlsplit(url).hostname or "").lower().rstrip(".")
+    """The words a person would use for a site: the name of its domain when the host is that domain itself or its
+    www. ("youtube" for www.youtube.com, "bbc" for www.bbc.co.uk), and the SITES name when the address is exactly a
+    SITES address ("maps" for maps.google.com). Any other host has no name: youtube.com.evil.example,
+    youtube.github.io and maps.evil.google.example are pages anyone can put up under a name they don't own."""
+    parts = urlsplit(url)
+    host = (parts.hostname or "").lower().rstrip(".")
     labels = [part for part in host.split(".") if part]
-    names = []
+    names = [site for site, address in SITES.items() if address == f"{parts.scheme.lower()}://{host}"]
     if len(labels) >= 2 and not labels[-1].isdigit():
         cut = 3 if len(labels) >= 3 and len(labels[-1]) == 2 and labels[-2] in _SECOND_LEVEL else 2
-        names.append(labels[-cut])
-    origin = f"{urlsplit(url).scheme}://{host}"
-    names += [site for site, address in SITES.items() if address == origin]
+        domain = ".".join(labels[-cut:])
+        if host in (domain, f"www.{domain}"):
+            names.append(labels[-cut])
     return list(dict.fromkeys(names))
 
 

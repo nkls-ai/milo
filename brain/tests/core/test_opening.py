@@ -30,8 +30,11 @@ def test_only_web_pages_open_as_addresses(text):
 def test_the_words_for_a_site_are_its_domains_name_not_any_label():
     assert site_names("https://www.youtube.com") == ["youtube"]
     assert site_names("https://www.bbc.co.uk/news") == ["bbc"]
-    assert set(site_names("https://maps.google.com")) == {"google", "maps", "google maps"}
-    assert site_names("https://youtube.com.evil.example/") == ["evil"], "a lookalike host isn't YouTube"
+    assert set(site_names("https://maps.google.com")) == {"maps", "google maps"}
+    assert site_names("https://youtube.com.evil.example/") == [], "a lookalike host has no name"
+    assert site_names("https://youtube.github.io") == [], "anyone's page under someone else's domain has no name"
+    assert site_names("https://evil.blogspot.com") == []
+    assert site_names("https://mail.google.com") == ["gmail"], "a subdomain only by its exact SITES address"
 
 
 def test_the_users_words_name_the_site_the_file_or_any_app():
