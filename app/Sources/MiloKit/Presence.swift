@@ -71,7 +71,7 @@ public final class Presence: ObservableObject {
     /// Follows the model: any change is looked at a moment later, once it is in (`objectWillChange` fires before).
     func watch(_ model: MiloModel) {
         self.model = { [weak model] in model.map(Self.needs) ?? false }
-        let changed = model.objectWillChange.merge(with: model.meeting.objectWillChange)
+        let changed = model.objectWillChange.merge(with: model.meeting.objectWillChange, model.done.objectWillChange)
         watches = [changed.sink { [weak self] _ in self?.soon() }]
         check()
     }
@@ -84,6 +84,7 @@ public final class Presence: ObservableObject {
         if m.ear != nil || m.handsFree != nil || m.handsActive || m.handsBorrowed || m.looking { return true }
         if m.helpers.contains(where: \.status.active) { return true }
         if m.recording || m.meeting.status.live || m.meeting.status.phase == .writing { return true }
+        if !m.done.cards.isEmpty { return true }
         return m.workingWindow != nil || m.flyTarget != nil || m.flight != .perched
     }
 

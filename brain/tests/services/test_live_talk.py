@@ -2,7 +2,7 @@ import asyncio
 import logging
 from datetime import datetime
 
-from milo.core.events import Bubble, Confirm, ConfirmAnswer, ConfirmDone, EmotionChanged, Heard, Level, StateChanged
+from milo.core.events import ActionDone, Bubble, Confirm, ConfirmAnswer, ConfirmDone, EmotionChanged, Heard, Level, StateChanged
 from milo.core.logtext import log_content
 from milo.core.types import Emotion, HarnessError, MiloState, Reminder, Usage
 from milo.services.live_talk import HICCUP, task_question
@@ -166,6 +166,7 @@ def test_tags_are_applied_and_never_spoken():
     assert not any("<" in text or "Lee's" in text for text in s.voice.spoken[:1])
     assert s.profile.facts == ["Has a dentist, Dr. Lee"]
     assert [(r.due, r.text) for r in s.reminders.items] == [(datetime(2026, 10, 30, 9, 0), "Call the dentist")]
+    assert ActionDone("reminder", "Call the dentist", "", "2026-10-30T09:00") in s.sink.events, "the card shows it"
     assert without_undo_id(s.harness.calls[0][0]).endswith("\nFind Dr. Lee's phone number")
     assert s.voice.spoken[-1] == "Dr. Lee is at 555-0100.", "the task result is spoken after the turn"
     assert [src for src, _, _ in s.ledger.entries] == ["chat", "task"]

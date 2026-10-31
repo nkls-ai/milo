@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from milo.core.events import Bubble, Heard, Looking
+from milo.core.events import ActionDone, Bubble, Heard, Looking
 from milo.core.logtext import private
 from milo.core.ports import Clock, LiveModel, ProfileMemory, ReminderBook, ScreenEyes, UsageLedger
 from milo.core.types import Emotion, HarnessError, MiloState, ScreenCapture
@@ -715,6 +715,7 @@ class LiveTalk:
         try:
             self._reminders.add(due, what)
             log.info("reminder set, %s", private(what))
+            self._ui.emit(ActionDone("reminder", what, when=due.isoformat(timespec="minutes")))
         except Exception:
             log.exception("could not save the reminder")
 

@@ -25,10 +25,16 @@ public struct OverlayView: View {
             }
             .opacity(gone ? 0 : 1)
             HStack(alignment: .bottom, spacing: 0) {
-                // Left of the square DraggableHostingView keeps for Milo, so a click on a bird is the bird's.
-                HelperFlock(model: model)
+                VStack(alignment: .trailing, spacing: 8) {
+                    // What he just did, out of his side. The panel lets clicks on a card through to it, also where
+                    // the card reaches into his square (`DoneCards.area`).
+                    DoneCardStack(model: model)
+                        .padding(.trailing, 16)
+                    // Left of the square DraggableHostingView keeps for Milo, so a click on a bird is the bird's.
+                    HelperFlock(model: model)
+                        .padding(.trailing, 20)
+                }
                 .opacity(gone ? 0 : 1)
-                .padding(.trailing, 20)
                 Comings(presence: model.presence) { pose in
                     CharacterView(model: model, heading: pose.heading)
                         .frame(width: 132, height: 132)

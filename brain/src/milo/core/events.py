@@ -480,6 +480,25 @@ class RemindersList(Event):
     reminders: list[dict]
 
 
+@dataclass(frozen=True)
+class ActionDone(Event):
+    """Milo just did something small for the user: the app shows it as a card that comes out of Milo.
+
+    `kind` is event, todo, reminder, note, timer, draft, shortcut, music or opened. `title` is what it is called
+    and `detail` one plain line more (a place, a list, a song), or "". `when` is an ISO time (an event's start, a
+    reminder's or timer's end), or "". `app` names the app it lives in ("Calendar", "Reminders", "Notes", "Mail"),
+    or "" for Milo's own reminders; the app opens the item there on a click. `undo` is the task id whose Undo
+    takes it back (`undo_task`, ADR 0026), or "" when there is none."""
+
+    type: ClassVar[str] = "action_done"
+    kind: str
+    title: str
+    detail: str = ""
+    when: str = ""
+    app: str = ""
+    undo: str = ""
+
+
 # ---- app -> brain
 
 

@@ -74,6 +74,10 @@ let lifecycle = AppLifecycle(
         window.onSettings = { settingsWindow.open() }
         overlay.onClick = { window.toggle() }
         model.onOpenHelper = { window.show(helper: $0) }
+        // A click on a done card opens the item where it lives.
+        let opener = MacItemOpener(showToday: { window.showToday() })
+        model.done.onOpen = { opener.open($0) }
+        model.done.icon = { opener.icon($0) }
         let setupWindow = SetupWindow(
             setup: SetupModel(permissions: SystemPermissions(), scheduler: scheduler,
                               dictateKey: controller.bindings.dictate.displayName, defaults: defaults),

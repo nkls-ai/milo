@@ -225,7 +225,10 @@ public final class MiloController {
             guard next != bindings else { return }
             pushToTalkChanged(pushToTalk.rebind(next), at: nil)
             onBindingsChange?(next)
-        case .history, .entry, .replyDelta, .activity, .conversations, .conversation, .searchResults, .reminders:
+        case .activity:
+            transcript.apply(event)
+            model.apply(event)  // the caption under the working outline
+        case .history, .entry, .replyDelta, .conversations, .conversation, .searchResults, .reminders:
             transcript.apply(event)
         case .facts:
             knowledge.apply(event)
