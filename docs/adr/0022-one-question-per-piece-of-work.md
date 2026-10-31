@@ -1,6 +1,6 @@
 # 22. One question per piece of work, Allow always, and auto mode
 
-Date: 2026-10-31. Status: accepted. Changes [ADR 9](0009-approvals-and-action-levels.md) and [ADR 14](0014-scripts-milo-writes-and-short-questions.md). Changed by [ADR 23](0023-stop-for-what-cant-be-undone.md): auto is the default, moving to the Trash no longer asks outside "Every step", and money asks with a button only instead of being refused.
+Date: 2026-10-31. Status: accepted. Changes [ADR 9](0009-approvals-and-action-levels.md) and [ADR 14](0014-scripts-milo-writes-and-short-questions.md). Changed by [ADR 23](0023-stop-for-what-cant-be-undone.md): auto is the default, moving to the Trash no longer asks outside "Every step", and money asks with a button only instead of being refused. Changed by [ADR 31](0031-talk-as-naturally-as-dictation.md): a question stays open until it is answered, and a helper's question parks instead of counting as no.
 
 ## Context
 
