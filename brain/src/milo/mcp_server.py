@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 from typing import IO
 
-from milo.core.hands import INSTRUCTIONS, SERVER_NAME, TOOLS
+from milo.core.hands import SERVER_NAME, TOOLS
 
 PROTOCOL_VERSION = "2025-06-18"
 CALL_TIMEOUT_S = 120.0  # a confirm question alone may wait a minute
@@ -77,10 +77,11 @@ def handle(message: object, hands: HandsClient) -> dict | None:
     if id is None:
         return None
     if method == "initialize":
+        # No instructions: Codex would repeat them in front of every tool's description. The screen helper's
+        # prompt carries them once (milo.connect.brief).
         return _ok(id, {"protocolVersion": str(params.get("protocolVersion") or PROTOCOL_VERSION),
                         "capabilities": {"tools": {}},
-                        "serverInfo": {"name": SERVER_NAME, "version": "0.1.0"},
-                        "instructions": INSTRUCTIONS})
+                        "serverInfo": {"name": SERVER_NAME, "version": "0.1.0"}})
     if method == "ping":
         return _ok(id, {})
     if method == "tools/list":
