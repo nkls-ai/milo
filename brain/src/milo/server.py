@@ -175,6 +175,8 @@ async def _serve(runtime: Runtime) -> None:
         loops["the nightly consolidation"] = memory.sleep.run
     if runtime.barge_in is not None:
         loops["barge-in"] = runtime.barge_in.run
+    if runtime.alarms is not None:
+        loops["the alarms"] = runtime.alarms.run
     if runtime.messages is not None:
         loops["messages"] = runtime.messages.run
         if runtime.heartbeat is None:  # the brief and the settings guard still need their tick

@@ -33,6 +33,7 @@ BUILTIN = (
     "channel.imessage",
     "diarize.sherpa",
     "diarize.pyannote",
+    "weather.open_meteo",
 )
 
 

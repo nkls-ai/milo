@@ -35,6 +35,11 @@ class Workspace:
         return self.home / "reminders.md"
 
     @property
+    def alarms_path(self) -> Path:
+        """Milo's alarms, so they ring after a restart (ADR 0038)."""
+        return self.state_dir / "alarms.json"
+
+    @property
     def dictionary_path(self) -> Path:
         """Words dictation should get right, and the fixes learned from the user's corrections (ADR 21)."""
         return self.home / "dictionary.md"

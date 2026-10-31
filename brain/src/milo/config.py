@@ -19,7 +19,7 @@ from .core.types import LiveMode
 log = logging.getLogger("milo.config")
 
 KEY_NAMES = ("fn", "right_option", "right_command", "right_control")
-PLUGGABLE = ("chat", "harness", "stt", "tts", "audio", "dictation", "connections", "messages")
+PLUGGABLE = ("chat", "harness", "stt", "tts", "audio", "dictation", "connections", "messages", "weather")
 SECTIONS = (*PLUGGABLE, "ui", "heartbeat", "hands", "approvals", "logging", "memory", "routines", "meetings")
 _COMBO = re.compile(r"^((ctrl|control|option|alt|shift|cmd|command)\+)+[a-z0-9]+$|^f([1-9]|1[0-9])$")
 
@@ -337,10 +337,26 @@ class MemorySettings:
             raise ConfigError("[memory] consolidate_calls_per_day can't be negative")
 
 
+@dataclass(frozen=True)
+class WeatherSettings:
+    """The forecast in <today> (ADR 0038)."""
+
+    enabled: bool = True
+    place: str = ""
+    """A city ("Berlin", "Portland, Oregon") or "52.52,13.41". Empty: the city of the system's time zone."""
+    units: str = "metric"
+    """"metric" (°C, km/h) or "imperial" (°F, mph)."""
+
+    def __post_init__(self):
+        if self.units not in ("metric", "imperial"):
+            raise ConfigError('[weather] units must be "metric" or "imperial"')
+
+
 _PLUGGABLE_SETTINGS: dict[str, type] = {
     "chat": ChatSettings, "harness": HarnessSettings, "stt": SttSettings, "tts": TtsSettings,
     "audio": AudioSettings, "dictation": DictationSettings, "connections": ConnectionSettings,
     "messages": MessagesSettings,
+    "weather": WeatherSettings,
 }
 
 
@@ -367,6 +383,7 @@ class Config:
         self.dictation: DictationSettings = settings["dictation"]
         self.connections: ConnectionSettings = settings["connections"]
         self.messages: MessagesSettings = settings["messages"]
+        self.weather: WeatherSettings = settings["weather"]
         approvals = raw.get("approvals", {})
         allowed = _allowed_apps(approvals.get("allowed_apps", []))
         self.approvals = dataclasses.replace(_pluggable_settings(

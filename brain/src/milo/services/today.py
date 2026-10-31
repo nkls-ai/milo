@@ -12,6 +12,9 @@ same day (`current`).
 Each event gets a short handle (e1, e2, ...), stable for the conversation, so the model can move or cancel one by it;
 each to-do one (t1, ...) to tick off or delete, and each of Milo's reminders one (r1, ...) to cancel, when quick
 actions are on.
+Milo's alarms (services/alarms.py) are in it too, each with a handle (a1, ...), and the one ringing now or just
+rung, so "five more minutes" can snooze it. With a weather service (services/weather.py, ADR 0038) the forecast
+for where the user is closes the block: numbers from a service, so it doesn't count as other people's text.
 Titles are made inert like task results. Events with other people come from their invites, and events and to-dos on a
 subscribed or read-only calendar or list (`shared`) were written by someone else too: their titles are other people's
 text, marked as such, and a reply to a block carrying one follows the taint rule (`render` returns whether it does).
@@ -24,13 +27,17 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from milo.core.ports import Clock, Connections, ReminderBook
 from milo.core.times import parse_local
 from milo.core.types import Reminder, ToolError
 
 from .connections import reach
+
+if TYPE_CHECKING:
+    from .alarms import Alarms
+    from .weather import WeatherReport
 
 log = logging.getLogger("milo.today")
 
@@ -67,14 +74,17 @@ class Snapshot:
 
 class Today:
     """`connections` reaches Calendar, Reminders and the player (None: no day, only Milo's reminders); `timers` lists
-    Milo's running timers as (title, rings at); `reminders` is Milo's own reminders.md."""
+    Milo's running timers as (title, rings at); `reminders` is Milo's own reminders.md; `weather` the forecast
+    (None: no weather). QuickActions sets `alarms`."""
 
     def __init__(self, connections: Connections | None, clock: Clock, *,
                  timers: Callable[[], list[tuple[str, datetime]]] = list, reminders: ReminderBook | None = None,
-                 refresh_s: float = REFRESH_S):
+                 weather: WeatherReport | None = None, refresh_s: float = REFRESH_S):
         self.connections = connections
         self._clock = clock
         self.timers = timers
+        self.alarms: Alarms | None = None
+        self.weather = weather
         self._reminders = reminders
         self._refresh_s = refresh_s
         self._snap = Snapshot()
@@ -108,14 +118,18 @@ class Today:
         """Start a refresh now if it is due, without waiting: the user started talking."""
         if self._due() and (self._refreshing is None or self._refreshing.done()):
             self._refreshing = asyncio.create_task(self._refresh())
+        if self.weather is not None:
+            self.weather.soon()
 
     async def note(self, *, wait_s: float = WAIT_S) -> tuple[str, bool]:
         """The block for the next user message and whether it carries other people's text; ("", False) when the
         conversation already saw it as it is, or it failed. Waits up to `wait_s` for a refresh that is due."""
         try:
             self.soon()
-            if self._refreshing is not None and not self._refreshing.done():
-                await asyncio.wait({self._refreshing}, timeout=wait_s)
+            waiting = {t for t in (self._refreshing, self.weather.pending if self.weather else None)
+                       if t is not None and not t.done()}
+            if waiting:
+                await asyncio.wait(waiting, timeout=wait_s)
             text, outside = self.render()
         except Exception:
             log.exception("the today block failed")
@@ -144,6 +158,10 @@ class Today:
     def reminder(self, ref: str) -> Reminder | None:
         """Milo's own reminder a handle ("r1") names, as the conversation saw it."""
         return self._by(ref, "r")
+
+    def alarm(self, ref: str) -> Any:
+        """Milo's alarm a handle ("a1") names, as the conversation saw it."""
+        return self._by(ref, "a")
 
     def _by(self, ref: str, kind: str) -> Any:
         ref = ref.strip().lower()
@@ -206,9 +224,25 @@ class Today:
                                                 for title, at in timers) + ".")
         if snap.music in ("playing", "paused"):
             lines.append(f"Music: {snap.music}.")
+        if self.alarms is not None:
+            lines += self._alarm_lines(self.alarms)
+        if self.weather is not None:
+            lines += self.weather.lines()  # a service's numbers: not other people's text
         if len(lines) == 1:
             return "", False
         return "<today>\n" + "\n".join(lines) + "\n</today>", outside
+
+    def _alarm_lines(self, alarms: Alarms) -> list[str]:
+        out = []
+        if set_ := alarms.all():
+            out.append("Alarms: " + "; ".join(
+                f"{self._handle('a', (a.id,), a)} {a.at:%a %Y-%m-%d %H:%M}" + (f" {inert(a.title)}" if a.title else "")
+                for a in set_) + ".")
+        if recent := alarms.recent():
+            alarm, ringing = recent
+            what = f"{alarm.at:%H:%M}" + (f" {inert(alarm.title)}" if alarm.title else "")
+            out.append(f"Alarm ringing now: {what}." if ringing else f"Alarm that just rang: {what}, stopped.")
+        return out
 
     @staticmethod
     def on(e: dict, d: date) -> bool:

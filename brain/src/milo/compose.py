@@ -68,6 +68,8 @@ from .transport.unix_socket import UnixSocketServer
 
 if TYPE_CHECKING:
     from .memory.fact_profile import FactProfile
+    from .services.alarms import Alarms
+    from .services.weather import WeatherReport
 
 log = logging.getLogger("milo.compose")
 
@@ -99,6 +101,7 @@ class Runtime:
     diarize_executor: ThreadPoolExecutor | None = None
     attention: Attention | None = None
     background_stt: BackgroundStt | None = None
+    alarms: Alarms | None = None
 
 
 @dataclass
@@ -144,7 +147,7 @@ def build(home: Path) -> Runtime:
     return Runtime(p.brain, p.server, p.heartbeat, p.transcriber, p.voice, p.stt_executor, p.tts_executor, p.harness,
                    p.live_model, p.live_talk, p.tool_server, p.hands_server, p.helpers, p.mem, p.barge_in,
                    p.backchannel, p.messages, p.notices, meetings=p.meetings, diarize_executor=p.diarize_executor,
-                   attention=p.attention, background_stt=p.background_stt)
+                   attention=p.attention, background_stt=p.background_stt, alarms=p.alarms)
 
 
 def _workspace(p: Parts) -> None:
@@ -408,18 +411,42 @@ def _meetings(p: Parts) -> None:
 
 
 def _quick(p: Parts):
-    """The talker's quick actions and its <today> block (ADR 0029), on the brain's connections. None when
-    `[chat] quick_actions` or `[connections] enabled` is off."""
+    """The talker's quick actions and its <today> block (ADR 0029), on the brain's connections, with Milo's alarms and
+    the weather (ADR 0038). None when `[chat] quick_actions` or `[connections] enabled` is off."""
+    from .memory.routines import JsonStateFile
+    from .services.alarms import Alarms
     from .services.quick_actions import QuickActions
     from .services.today import Today
 
+    p.alarms = None
     if not p.config.chat.quick_actions or p.connections is None:
         return None
     attention = p.attention
+    p.alarms = Alarms(JsonStateFile(p.workspace.alarms_path), p.speaker, p.clock, transcript=p.transcript,
+                      quiet=attention.user_speaking, computer=p.platform.computer)
     return QuickActions(p.connections, p.ui, p.speaker, p.clock, approvals=p.approvals,
-                        today=Today(p.connections, p.clock, reminders=p.reminders), undo=p.undo,
+                        today=Today(p.connections, p.clock, reminders=p.reminders, weather=_weather(p)), undo=p.undo,
                         transcript=p.transcript, access=p.access, meetings=p.meetings, reminders=p.reminders,
-                        quiet=attention.user_speaking, language=p.language.get)
+                        alarms=p.alarms, quiet=attention.user_speaking, language=p.language.get)
+
+
+def _weather(p: Parts) -> WeatherReport | None:
+    """The forecast for <today> (ADR 0038): `[weather] place`, else the city of the system's time zone, so no
+    location permission is needed. None when it is off or no place can be told."""
+    from .adapters.timezone import zone_name
+    from .core.registry import WEATHER
+    from .core.weather import city_of_zone
+    from .services.weather import WeatherReport
+
+    settings = p.config.weather
+    if not settings.enabled:
+        return None
+    place = settings.place.strip() or city_of_zone(zone_name())
+    if not place:
+        log.info("no weather in <today>: the time zone names no city; set [weather] place")
+        return None
+    name, options = p.config.pluggable("weather")
+    return WeatherReport(WEATHER.create(name, options, p.ctx), p.clock, place=place, units=settings.units)
 
 
 def _talk(p: Parts) -> None:
@@ -586,7 +613,8 @@ def _brain(p: Parts) -> None:
                     approvals=p.approvals, bridge=p.bridge, hands=p.hands, screens=p.workspace.screens_dir,
                     helpers=p.helpers, memory=p.mem.memory if p.mem is not None else None, routines=p.routines,
                     settings=settings, messages=p.messages, meetings=p.meetings,
-                    conversations=p.conversations, usage=usage, corrections=corrections, undo=p.undo)
+                    conversations=p.conversations, usage=usage, corrections=corrections, undo=p.undo,
+                    alarms=p.alarms)
 
 
 BUILD_STEPS = (_workspace, _engines, _stores, _presence, _helpers, _meetings, _talk, _messages, _tool_socket,

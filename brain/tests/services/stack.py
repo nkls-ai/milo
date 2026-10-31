@@ -11,6 +11,7 @@ from pathlib import Path
 from milo.adapters.connect.fake import _fake
 from milo.adapters.embed.hashing import HashEmbedder
 from milo.core.registry import AdapterContext
+from milo.services.alarms import Alarms
 from milo.services.quick_actions import QuickActions
 from milo.brain import Brain
 from milo.config import UiSettings
@@ -117,6 +118,10 @@ class Stack:
     paste through it (ADR 0033). None: no Writer."""
     meetings: object | None = None
     """What <meeting> tags start and stop: a MeetingService or a stand-in with recording, toggle and pause."""
+    alarm_state: MemoryState = field(default_factory=MemoryState)
+    """Where Milo keeps his alarms (state/alarms.json), with quick actions."""
+    alarm_ring_s: float = 0.3
+    """How long an alarm nobody stops rings, in real seconds."""
     real_threads: bool = False
     """STT, TTS and memory each on a real single thread, like compose builds them, instead of inline. For tests
     that look for ordering bugs between the event loop and those threads (tests/test_races.py). close() ends them."""
@@ -175,13 +180,16 @@ class Stack:
             self.tasks.on_done.append(self.undo.finished)
         self.tasks.on_done.append(lambda helper: self.permits.end(helper.id))
         self.permits.user_asked = self.tasks.user_asked
-        self.quick = self.connections = None
+        self.quick = self.connections = self.alarms = None
         if self.world is not None:
+            self.alarms = Alarms(self.alarm_state, self.speaker, self.clock, quiet=lambda: self.mic.active,
+                                 computer="Mac", ring_s=self.alarm_ring_s, gap_s=0.01, tick_s=0.01, poll_s=0.005)
             self.connections = _fake({"dir": str(self.world)}, AdapterContext(self.world, self.world / "state",
                                                                               self.clock))
             self.quick = QuickActions(self.connections, self.ui, self.speaker, self.clock,
                                       approvals=self.approvals, undo=self.undo, reminders=self.reminders,
-                                      meetings=self.meetings, quiet=lambda: self.mic.active, wait_s=self.wait_s,
+                                      meetings=self.meetings, alarms=self.alarms, quiet=lambda: self.mic.active,
+                                      wait_s=self.wait_s,
                                       language=self.language.get, poll_s=0.005)
         self.writer = None
         if self.paste is not None:
@@ -228,7 +236,7 @@ class Stack:
         self.brain = Brain(self.ui, self.listening, self.live_talk, self.context, self.heartbeat, UiSettings(),
                            approvals=self.approvals, bridge=self.bridge, hands=self.hands, screens=self.screens,
                            helpers=self.tasks, memory=self.memory, routines=self.routines,
-                           settings=self.settings, messages=self.messages, undo=self.undo)
+                           settings=self.settings, messages=self.messages, undo=self.undo, alarms=self.alarms)
         self.tool_requests = ToolRequests(self.approvals, self.bridge, undo=self.undo)
 
     def close(self) -> None:

@@ -28,6 +28,8 @@ class Platform:
     """[chat] use: the talker's model. The Claude CLI runs everywhere."""
     messages: str = "telegram"
     """[messages] use: the phone channel. Telegram's bot API runs everywhere."""
+    weather: str = "open_meteo"
+    """[weather] use: the forecast in <today>. Open-Meteo needs no key and runs everywhere."""
     computer: str = "computer"
     """What Milo calls the machine he runs on in what he says ("while the computer was asleep")."""
     tool_dirs: tuple[str, ...] = ()
@@ -36,7 +38,7 @@ class Platform:
     def use(self, section: str) -> str | None:
         """The default `use` for a pluggable config section, None for sections that must name one."""
         return {"chat": self.chat, "stt": self.stt, "tts": self.tts, "connections": self.connections,
-                "messages": self.messages}.get(section)
+                "messages": self.messages, "weather": self.weather}.get(section)
 
 
 ANYWHERE = Platform("other", stt="elevenlabs", tts="elevenlabs", tts_fallback="", embedder="hash",

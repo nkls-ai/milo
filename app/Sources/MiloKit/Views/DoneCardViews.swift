@@ -233,6 +233,7 @@ struct DoneGlyph: View {
             case .timer: TimerRing(from: card.since, to: card.action.when)
             case .note: NoteTile()
             case .reminder: SymbolTile(symbol: "bell.fill")
+            case .alarm: SymbolTile(symbol: "alarm.fill")
             case .draft: SymbolTile(symbol: "envelope.fill")
             case .shortcut: SymbolTile(symbol: "square.2.layers.3d.fill")
             case .music: SymbolTile(symbol: "music.note")

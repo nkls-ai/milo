@@ -23,6 +23,7 @@ from .control import WORK_FOLDER
 if TYPE_CHECKING:
     from .ports import (AudioInput, AudioOutput, CallDiarizer, Channel, Clock, Connections, Diarizer, Embedder, Harness,
                         LiveModel, ProactiveRule, StreamingTranscriber, TextCleaner, Transcriber, Voice)
+    from .ports import Weather
     from .types import ToolServer
 
 T = TypeVar("T")
@@ -106,3 +107,4 @@ EMBEDDERS: Registry[Embedder] = Registry("embedder")
 CHANNELS: Registry[Channel] = Registry("message channel")
 DIARIZERS: Registry[Diarizer] = Registry("diarizer")
 CALL_DIARIZERS: Registry[CallDiarizer] = Registry("call diarizer")
+WEATHER: Registry[Weather] = Registry("weather service")

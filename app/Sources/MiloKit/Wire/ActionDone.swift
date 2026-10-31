@@ -6,6 +6,8 @@ import Foundation
 public struct ActionDone: Equatable, Sendable, Decodable {
     public enum Kind: String, Sendable, Decodable, CaseIterable {
         case event, todo, reminder, note, timer, draft, shortcut, music, opened
+        /// One of Milo's alarms (`<alarm>`, ADR 0038): `when` is when it rings.
+        case alarm
         /// Text Milo wrote (`<write>`, ADR 0033): pasted into `app`, or, with no app, waiting in his window to copy.
         case written
         /// Text Milo put on the clipboard (`<copy>`): a link, an address, a code the user asked for.
@@ -19,7 +21,7 @@ public struct ActionDone: Equatable, Sendable, Decodable {
     public let title: String
     /// One plain line more (a place, a list, a song), or "".
     public let detail: String
-    /// An event's start, a reminder's due time, a timer's end. nil when it has none.
+    /// An event's start, a reminder's due time, a timer's end, when an alarm rings. nil when it has none.
     public let when: Date?
     /// The app it lives in ("Calendar", "Reminders", "Notes", "Mail", "Safari"); "" for Milo's own reminders.
     public let app: String
