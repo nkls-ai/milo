@@ -14,6 +14,7 @@ import json
 import os
 import re
 import stat
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -283,6 +284,34 @@ def test_records_are_read_from_disk_once_and_kept_in_memory(tmp_path, monkeypatc
     asyncio.run(more())
     assert reads == [], "after that, from memory"
     assert json.loads(real(root / "q-5" / "record.json"))["title"] == "Timer 5", "and written through to disk"
+
+
+def test_after_a_crash_unfinished_records_become_ready_and_none_stays_undoing(tmp_path):
+    """Milo quit while a task worked (its record still "open") and while an Undo ran ("undoing"). An open record never
+    expired, so its Excel copies stayed on disk for good, and "undoing" left a spinner on the button."""
+    s = Stack(home=tmp_path)
+    root = tmp_path / "Milo" / "state" / "undo"
+
+    def left(task: str, minutes: int, **fields):
+        (root / task).mkdir(parents=True)
+        made = s.clock.now().replace(microsecond=0) - timedelta(minutes=minutes)
+        (root / task / "record.json").write_text(json.dumps(
+            {"task": task, "made": made.isoformat(), "state": "open", "title": "", "description": "", "said": "",
+             "docs": [], "files": [], "notes": [], "changes": [], **fields}))
+
+    left("h1", 30, title="Excel red", changes=[{"title": "Ran a script in Microsoft Excel", "app": "Microsoft Excel",
+                                                "detail": "run_applescript ...", "covered": False}])
+    left("h2", 20)  # it had changed nothing yet
+    left("h3", 10, changes=[{"title": "Typed", "app": "TextEdit", "detail": "type {}", "covered": False}])
+    left("q-4", 5, title="Dentist", state="undoing", reverse=[{"op": "event.delete", "id": "x"}])
+    s.undo.recover()
+    assert points(s) == [{"id": "q-4", "title": "Dentist", "state": "ready", "said": ""},
+                         {"id": "h3", "title": "Unfinished task", "state": "ready", "said": ""},
+                         {"id": "h1", "title": "Excel red", "state": "ready", "said": ""}]
+    assert not (root / "h2").exists(), "nothing to undo: dropped"
+    s.clock.advance(hours=25)
+    s.undo.expire()
+    assert not list(root.iterdir()), "and now they expire like any other"
 
 
 # ---- files, notes and what can't be copied

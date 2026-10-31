@@ -311,7 +311,7 @@ def _helpers(p: Parts) -> None:
     p.attention.attach(helpers=lambda: helpers.busy)
     helpers.on_done.append(lambda helper: p.permits.end(helper.id))  # an Allow lasts as long as its helper
     helpers.on_done.append(undo.finished)
-    undo.expire()
+    undo.recover()  # what the last run left half done, then expiry
     p.permits.user_asked = helpers.user_asked
     p.routines = None
     if config.routines.enabled:

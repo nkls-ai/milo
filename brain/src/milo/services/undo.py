@@ -42,6 +42,8 @@ MAX_NOTES = 50
 MAX_CHANGES = 60
 TOO_OLD = "I can't undo that any more: I keep what I need to undo a task for a day."
 NOTHING = "There's nothing of mine to undo right now."
+UNFINISHED = "Unfinished task"
+"""The title of a task Milo quit during, which never got its own."""
 WHICH = "Milo can't tell which task this is for. Pass the task id from your instructions as `task`."
 # Mac tools that change nothing already there: they open an app, make a new document or move the view.
 _NO_CHANGE = ("open_app", "open_url", "scroll", "write_document", "list_apps", "screenshot", "window_text", "ax_tree", "ax_find",
@@ -171,6 +173,31 @@ class Undo:
                 kept["after"] = await asyncio.to_thread(self._shelf.digest, kept["path"])
             self._shelf.save(task, record)
         self.expire()
+
+    def recover(self) -> None:
+        """At start-up: what a crash or a quit left half done. A task that was still working ("open") never got its
+        Undo, and an open record never expires, so its copies would stay for good: it becomes ready, or goes if it
+        changed nothing. An Undo that was running ("undoing") is ready again; a quick action's steps it finished stay
+        done. Fingerprints a crashed task never took stay empty, so its Undo asks before it overwrites anything."""
+        for task in self._shelf.tasks():
+            record = self._shelf.load(task) or {}
+            was = record.get("state")
+            if was == "undoing":
+                record["state"] = "ready"
+            elif was == "open":
+                if not (record["docs"] or record["files"] or record["notes"] or record["changes"]):
+                    self._shelf.drop(task)
+                    continue
+                # Who asked for it and what it read is unknown now: its undo helper runs careful.
+                record |= {"state": "ready", "title": record.get("title") or UNFINISHED, "careful": True,
+                           "user_asked": False,
+                           "screen": any(c["app"] and not c["covered"] for c in record["changes"])}
+            else:
+                continue
+            log.info("undo: a record the last run left %s is ready", was)
+            self._shelf.save(task, record)
+        self.expire()
+        self._changed()
 
     def expire(self) -> None:
         """Drop records older than `keep_s`, and all but the newest `keep_tasks` of the finished ones."""
@@ -381,8 +408,12 @@ class Undo:
     def _open(self, task: str) -> dict:
         record = self._shelf.load(task)
         if record is None:
+            # The helper's title now, so a record Milo quits during still says what it was (recover).
+            helper = next((h for h in self._helpers().helpers if h.id == task), None)
             record = {"task": task, "made": self._clock.now().isoformat(timespec="seconds"), "state": "open",
-                      "title": "", "description": "", "said": "", "docs": [], "files": [], "notes": [], "changes": []}
+                      "title": helper.title if helper is not None else "",
+                      "description": helper.description if helper is not None else "", "said": "", "docs": [],
+                      "files": [], "notes": [], "changes": []}
         return record
 
     def _task(self, ref: str) -> str:
