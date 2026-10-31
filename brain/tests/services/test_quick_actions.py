@@ -114,8 +114,20 @@ def test_the_today_block_comes_once_per_change_with_handles_and_inert_invites(tm
                    "done": False},
                   {"id": "r2", "title": "Someday learn Go", "due": "", "notes": "", "list": "Reminders",
                    "done": False}]})
-    asyncio.run(say(s, "when is the dentist", "anything else", "remind me to call Anna on my list tonight",
-                    "thanks"))
+    async def run():
+        await say(s, "when is the dentist", "anything else")
+        s.live_talk.start("remind me to call Anna on my list tonight")
+        for _ in range(200):
+            await asyncio.sleep(0.005)
+            if s.approvals.pending:
+                break
+        assert s.approvals.pending, "the invite's words are in the conversation: the act asks"
+        await s.brain.handle(ConfirmAnswer(s.sink.of(Confirm)[0].id, True))
+        await settle()
+        await s.quick.idle()
+        await say(s, "thanks")
+
+    asyncio.run(run())
     first, second, third, fourth = s.model.turns
     block = first.split("<today>")[1].split("</today>")[0]
     assert "- e1 15:00–16:00 Dentist" in block
@@ -183,6 +195,27 @@ def test_a_shared_calendar_is_other_peoples_text(tmp_path):
     assert "“Team offsite” (shared)" in s.model.turns[0] and "- Bring cake, due today 18:00 (shared)" in s.model.turns[0]
 
 
+def test_a_shared_line_keeps_the_conversation_outside_for_later_turns(tmp_path):
+    """The <today> block goes in once, but the model keeps it: a later turn may still follow an invite's words."""
+    shared = {**DENTIST, "id": "x3", "title": "Team offsite", "shared": True}
+    s = stack(tmp_path, ["[happy] You have the offsite today."], ["[happy] <todo>Pack</todo>"],
+              world={"events": [shared]})
+
+    async def run():
+        await s.live_talk.start("what's on today")
+        s.live_talk.start("put packing on my list")
+        for _ in range(100):
+            await asyncio.sleep(0.005)
+            if s.approvals.pending:
+                break
+        assert s.approvals.pending, "an act after a shared line still asks"
+        await s.brain.handle(ConfirmAnswer(s.sink.of(Confirm)[0].id, False))
+        await settle()
+
+    asyncio.run(run())
+    assert "(shared)" in s.model.turns[0] and "(shared)" not in s.model.turns[1], "the block went in once"
+
+
 def test_an_act_starts_while_the_reply_still_streams(tmp_path):
     gate = asyncio.Event()
     s = stack(tmp_path, ["[happy] <todo>Buy milk</todo>", " Anything else?"])
@@ -223,13 +256,6 @@ def test_a_question_comes_in_the_users_language(tmp_path):
 
     asyncio.run(run())
     assert said(s).endswith("Okay, ich lasse es.")
-
-
-def test_an_invite_taints_only_the_reply_to_the_message_that_carried_it(tmp_path):
-    s = stack(tmp_path, ["[happy] Standup at ten."], ['[happy] <todo>Book flights</todo>'],
-              world={"events": [DENTIST, INVITE]})
-    asyncio.run(say(s, "what's tomorrow", "put book flights on my list"))
-    assert not s.sink.of(Confirm) and world(s)["reminders"][0]["title"] == "Book flights"
 
 
 def test_a_cut_off_turn_sends_the_day_again(tmp_path):

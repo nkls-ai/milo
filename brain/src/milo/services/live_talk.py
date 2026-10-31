@@ -533,7 +533,8 @@ class LiveTalk:
             today, outside = await self._quick.note() if self._quick is not None and tags else ("", False)
             recalled = await self._recall(text, screen,
                                           outside=self._tainted or bool(notes) or bool(meeting) or self._saw_screen)
-            self._tainted = self._tainted or bool(notes) or bool(meeting) or not recalled.trusted
+            # Another person's line in <today> stays in the conversation, so later turns count as outside too.
+            self._tainted = self._tainted or bool(notes) or bool(meeting) or outside or not recalled.trusted
             self._saw_screen = self._saw_screen or screen
             self._streaming = True
             blocks = [*earlier, *notes, recalled.block, *([meeting] if meeting else []), today]
