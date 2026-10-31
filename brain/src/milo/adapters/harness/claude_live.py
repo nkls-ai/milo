@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import collections
 import contextlib
 import itertools
 import json
@@ -47,6 +48,9 @@ STALL_TIMEOUT_S = 30.0
 no more, and every later message waited behind it. Its first words take 1 to 5 seconds."""
 
 PRIME_TEXT = "(Nobody has said anything yet. This only opens the line. Reply with just [neutral].)"
+
+_QUIET_EVENTS = {"stream_event", "assistant", "result", "system", "rate_limit_event"}
+"""Events every reply has; any other kind is logged, so a reply that stalls says what the CLI wanted."""
 
 _EOF = object()  # the process closed stdout
 _WAKE = object()  # interrupt() wants the running turn to notice at once
@@ -185,6 +189,7 @@ class ClaudeLiveModel:
             # previous turn's numbers a second time.
             self.last_usage = Usage()
             got_result = False
+            recent: collections.deque[str] = collections.deque(maxlen=8)  # what came last, for a stall's log line
             try:
                 await session.send({"type": "user", "message": {"role": "user", "content": content(text, images)}})
                 while True:
@@ -193,10 +198,11 @@ class ClaudeLiveModel:
                             event = await session.events.get()
                     except TimeoutError:
                         got_result = True  # nothing more will come: start a fresh process for the next turn
-                        log.warning("claude_live: nothing for %.0fs in the middle of a reply; restarting",
-                                    self.stall_timeout_s)
+                        log.warning("claude_live: nothing for %.0fs in the middle of a reply (last: %s); restarting",
+                                    self.stall_timeout_s, ", ".join(recent) or "nothing")
                         await self._forget(session)
                         raise HarnessError("claude went quiet in the middle of a reply", transient=True) from None
+                    recent.append(_kind(event))
                     if event is _EOF:
                         got_result = True  # nothing more will come from this process
                         await self._forget(session)
@@ -210,6 +216,10 @@ class ClaudeLiveModel:
                         return
                     if turn.interrupted:
                         return
+                    if isinstance(event, dict) and event.get("type") not in _QUIET_EVENTS:
+                        # Something the CLI says besides the reply (a request, a tool call): no content.
+                        log.info("claude_live: %s %s", event.get("type"),
+                                 event.get("subtype") or (event.get("request") or {}).get("subtype") or "")
                     delta = _text_delta(event) if isinstance(event, dict) else ""
                     if delta:
                         yield delta
@@ -282,6 +292,16 @@ class ClaudeLiveModel:
     def _interrupt_request(self) -> dict:
         return {"type": "control_request", "request_id": f"milo-interrupt-{next(self._ids)}",
                 "request": {"subtype": "interrupt"}}
+
+
+def _kind(event: object) -> str:
+    """An event's kind without its content: "stream_event/content_block_delta/text_delta", "result"."""
+    if not isinstance(event, dict):
+        return "eof" if event is _EOF else "wake"
+    inner = event.get("event") if isinstance(event.get("event"), dict) else {}
+    delta = inner.get("delta") if isinstance(inner.get("delta"), dict) else {}
+    return "/".join(str(p) for p in (event.get("type"), event.get("subtype"), inner.get("type"), delta.get("type"))
+                    if p)
 
 
 def content(text: str, images: Sequence[Path] = ()) -> str | list[dict]:

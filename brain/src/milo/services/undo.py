@@ -214,8 +214,7 @@ class Undo:
                 self._mark(task, "")
                 dropped += 1
         if dropped:
-            log.info("undo: %d task(s) expired, %d kept, %.1f MB", dropped, len(done) - dropped,
-                     self._shelf.used() / 1e6)
+            log.info("undo: %d task(s) expired, %d kept", dropped, len(done) - dropped)
             self._changed()
 
     # ---- taking it back
@@ -280,7 +279,7 @@ class Undo:
         restored, failed = [], []
         for doc in docs:
             try:
-                folder = self._shelf.app_folder(doc["app"]) or ""
+                folder = await asyncio.to_thread(self._shelf.app_folder, doc["app"]) or ""
                 await self._hands.act("run_applescript",
                                       {"script": snapshots.excel_restore(doc["document"], doc["copy"], folder=folder)})
                 restored.append(say("undo.quote", lang, text=doc["document"]))
@@ -365,7 +364,7 @@ class Undo:
 
     async def _keep_workbook(self, record: dict, book: str) -> bool:
         """Have Excel save a copy of `book` ("" for the active one) once per task. True if a copy exists."""
-        folder = self._shelf.app_folder(snapshots.EXCEL)
+        folder = await asyncio.to_thread(self._shelf.app_folder, snapshots.EXCEL)
         if folder is None:
             return False
         if not book:

@@ -1055,7 +1055,3 @@ class UndoShelf(Protocol):
     def digest(self, path: str) -> str:
         """A hash of the file now, "" if it is missing."""
         ...
-
-    def used(self) -> int:
-        """Bytes the records and copies take."""
-        ...

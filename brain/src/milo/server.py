@@ -27,6 +27,7 @@ DEFAULT_HOME = "~/Milo"
 NOISY_LOGGERS = ("httpx", "httpx2", "huggingface_hub")
 CLOSE_TIMEOUT_S = 3.0
 MESSAGES_TICK_S = 30.0
+LOOP_STUCK_S = 5.0
 
 Warmup = tuple[Executor, Callable[[], None]] | Callable[[], Awaitable[None]]
 """A blocking warm() and the executor it must run on, or a coroutine function run on the loop."""
@@ -90,8 +91,46 @@ def _log_tasks() -> None:
     tasks = asyncio.all_tasks()
     out = io.StringIO()
     for task in sorted(tasks, key=lambda t: t.get_name()):
-        task.print_stack(limit=8, file=out)
+        out.write(f"{task.get_name()}:\n")
+        waiting = task.get_coro()
+        for _ in range(30):  # down the chain of awaits, through async generators too
+            frame = getattr(waiting, "cr_frame", None) or getattr(waiting, "ag_frame", None) \
+                or getattr(waiting, "gi_frame", None)
+            if frame is None:
+                break
+            out.write(f"  {frame.f_code.co_filename.rsplit('/', 1)[-1]}:{frame.f_lineno} {frame.f_code.co_name}\n")
+            waiting = getattr(waiting, "cr_await", None) or getattr(waiting, "ag_await", None) \
+                or getattr(waiting, "gi_yieldfrom", None)
     log.warning("%d tasks, on SIGUSR1:\n%s", len(tasks), out.getvalue())
+
+
+def _watch_loop(loop: asyncio.AbstractEventLoop, after_s: float = LOOP_STUCK_S) -> None:
+    """Log the main thread's stack when the loop hasn't turned for `after_s`: something on it blocks, so no message is
+    read and Milo seems frozen. On 2026-10-31 that was a folder scan waiting for a macOS privacy question."""
+    import threading
+    import time
+    import traceback
+
+    beat = [time.monotonic()]
+    main = threading.main_thread().ident
+
+    def tick() -> None:
+        beat[0] = time.monotonic()
+        loop.call_later(1.0, tick)
+
+    def watch() -> None:
+        told = False
+        while not loop.is_closed():
+            time.sleep(1.0)
+            stuck = time.monotonic() - beat[0]
+            if stuck > after_s and not told:
+                frame = sys._current_frames().get(main)
+                log.warning("the brain's loop has not turned for %.0fs; it is in:\n%s", stuck,
+                            "".join(traceback.format_stack(frame, limit=25)) if frame else "?")
+            told = stuck > after_s
+
+    loop.call_soon(tick)
+    threading.Thread(target=watch, name="loop-watch", daemon=True).start()
 
 
 async def _serve(runtime: Runtime) -> None:
@@ -101,6 +140,7 @@ async def _serve(runtime: Runtime) -> None:
     # which needs root on macOS. Only where the signal exists.
     if (dump := getattr(signal, "SIGUSR1", None)) is not None:  # Windows has none
         asyncio.get_running_loop().add_signal_handler(dump, _log_tasks)
+    _watch_loop(asyncio.get_running_loop())
     for notice in runtime.notices:
         notice.loop = asyncio.get_running_loop()
     if runtime.meetings is not None:

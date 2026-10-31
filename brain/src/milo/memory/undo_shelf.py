@@ -177,16 +177,6 @@ class FileUndoShelf:
         except OSError:
             return ""
 
-    def used(self) -> int:
-        total = 0
-        if self._root.is_dir():
-            total += sum(p.stat().st_size for p in self._root.rglob("*") if p.is_file())
-        for rel in APP_FOLDERS.values():
-            folder = self._home / rel
-            if folder.is_dir():
-                total += sum(p.stat().st_size for p in folder.glob(f"{COPY_PREFIX}*") if p.is_file())
-        return total
-
     def _folder(self, task: str) -> Path:
         if not _TASK.match(task):
             raise ValueError(f"not a task id: {task!r}")

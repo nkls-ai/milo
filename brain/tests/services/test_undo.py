@@ -314,6 +314,33 @@ def test_after_a_crash_unfinished_records_become_ready_and_none_stays_undoing(tm
     assert not list(root.iterdir()), "and now they expire like any other"
 
 
+def test_expiring_never_looks_into_another_apps_folder(tmp_path, monkeypatch):
+    """Expiry measured Excel's sandbox folder for a log line, on the event loop. Looking into another app's data makes
+    macOS ask the user first, and until someone answered, the brain hung: Milo froze in the middle of a timer turn."""
+    s = Stack(home=tmp_path)
+    root = tmp_path / "Milo" / "state" / "undo"
+    container = tmp_path / "Library/Containers/com.microsoft.Excel/Data/tmp"
+    container.mkdir(parents=True)
+    for task in ("q-1", "q-2"):
+        (root / task).mkdir(parents=True)
+        (root / task / "record.json").write_text(json.dumps(
+            {"task": task, "made": s.clock.now().replace(microsecond=0).isoformat(), "state": "ready", "title": "Timer",
+             "description": "", "said": "", "docs": [], "files": [], "notes": [], "changes": []}))
+    looked = []
+    for name in ("glob", "rglob", "iterdir", "is_dir", "exists", "stat"):
+        real_one = getattr(Path, name)
+
+        def spy(self, *a, _real=real_one, **k):
+            if str(self).startswith(str(tmp_path / "Library")):
+                looked.append(str(self))
+            return _real(self, *a, **k)
+        monkeypatch.setattr(Path, name, spy)
+    s.clock.advance(hours=25)
+    s.undo.expire()
+    assert not list(root.iterdir()), "both expired"
+    assert looked == []
+
+
 # ---- files, notes and what can't be copied
 
 

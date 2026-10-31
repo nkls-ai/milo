@@ -97,3 +97,23 @@ def test_a_failing_check_doesnt_end_the_every_loop(caplog):
 
     asyncio.run(main())
     assert len(calls) >= 3 and "the guard broke once" in caplog.text
+
+
+def test_a_loop_that_stops_turning_logs_where_it_is(caplog):
+    """A blocking call on the loop froze Milo with nothing in the log: no message was read until it returned."""
+    import time
+
+    from milo.server import _watch_loop
+
+    def scanning_another_apps_folder():
+        time.sleep(2.5)
+
+    async def run():
+        _watch_loop(asyncio.get_running_loop(), after_s=1.0)
+        await asyncio.sleep(0)
+        scanning_another_apps_folder()
+
+    with caplog.at_level(logging.WARNING, logger="milo"):
+        asyncio.run(run())
+    assert any("not turned" in r.getMessage() and "scanning_another_apps_folder" in r.getMessage()
+               for r in caplog.records)
