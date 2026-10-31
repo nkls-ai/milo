@@ -12,7 +12,10 @@ ANSWER_TIMEOUT_S = 3700.0  # longer than any question, even one sent to the phon
 NO_BRAIN = "Milo's brain isn't running, so I can't ask you first."
 REFUSED = {"no": "The user said no. Don't do it another way.",
            "timeout": "The user didn't answer, so it wasn't done. Don't do it another way.",
-           "refused": "Milo isn't allowed to do this, not even when asked."}
+           "refused": "Milo isn't allowed to do this, not even when asked.",
+           "parked": "The user hasn't answered yet; the question stays open for them. Don't do it another way: end "
+                     "your turn now and say in one short sentence that you're waiting for their answer. If they say "
+                     "yes, you'll be told to go on."}
 
 
 class BrainClient:

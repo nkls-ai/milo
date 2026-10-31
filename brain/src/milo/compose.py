@@ -256,7 +256,8 @@ def _presence(p: Parts) -> None:
                                           reminders=p.reminders)
     p.permits = Permits(config.approvals.ask, config.approvals.allowed_apps)  # saves once Settings exists
     p.approvals = approvals = Approvals(ui, speaker, ActionPolicy(config.approval_levels),
-                                        timeout_s=config.approvals.timeout_s, speak=config.approvals.speak,
+                                        timeout_s=config.approvals.timeout_s, reask_s=config.approvals.reask_s,
+                                        speak=config.approvals.speak,
                                         quiet=attention.in_conversation, transcript=p.transcript,
                                         permits=p.permits)
     attention.attach(question=lambda: approvals.pending)

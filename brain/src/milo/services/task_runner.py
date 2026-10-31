@@ -42,6 +42,12 @@ def steer_prompt(change: str) -> str:
             f"before you redo anything.")
 
 
+def answered_prompt(question: str) -> str:
+    """Continues a helper's session after the user said yes to the question it stopped to wait for."""
+    return (f"The user said yes to your question: {question}\nGo on with the task from where you stopped. Check "
+            f"what you already did before you redo anything.")
+
+
 def follow_up_prompt(change: str) -> str:
     """Continues the session of a helper that had finished."""
     return f"The user has a change to the task you just did: {change}"
@@ -74,12 +80,22 @@ class TaskRunner:
     def first_prompt(self, helper: Helper) -> str:
         return first_prompt(helper, no_screen=self.has_screen and not helper.screen)
 
+    def turn_left(self, helper: Helper) -> float | None:
+        """Seconds until the harness ends `helper`'s current turn, None if it sets no limit."""
+        limit = getattr(self._pick(helper), "timeout_s", None)
+        if not isinstance(limit, (int, float)) or limit <= 0 or helper.turn_started_at is None:
+            return None
+        return limit - (self._clock.monotonic() - helper.turn_started_at)
+
+    def _pick(self, helper: Helper) -> Harness:
+        return self._harness if helper.screen or self._background is None else self._background
+
     async def run(self, helper: Helper, prompt: str, session_id: str | None, *, on_step: StepCallback,
                   on_session: SessionCallback, on_plan: PlanCallback) -> Reply:
         """Raises HarnessError. Cancelling it ends the worker."""
-        harness = self._harness if helper.screen or self._background is None else self._background
+        harness = self._pick(helper)
         holds_hands = helper.screen and self._hands is not None
-        started = self._clock.monotonic()
+        started = helper.turn_started_at = self._clock.monotonic()
         if holds_hands:
             self._hands.begin(helper.id, careful=helper.careful)
         try:

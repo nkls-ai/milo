@@ -7,6 +7,8 @@ process. This module holds what a helper is and how it reads, for the app (`to_w
 
 from __future__ import annotations
 
+import asyncio
+
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -85,6 +87,12 @@ class Helper:
     description stays short, for the Milo window."""
     undo: str = ""
     """"ready" once what it changed can be taken back, "undoing", "undone"; "" for nothing to undo (ADR 0026)."""
+    turn_started_at: float | None = None
+    """When its worker's current turn began: the harness ends a turn after its timeout."""
+    waiting: asyncio.Future[str] | None = field(default=None, compare=False, repr=False)
+    """The answer to a question that outlived its turn (ADR 0031). The work goes on after a yes."""
+    waiting_for: str = ""
+    """That question."""
     on_finish: Callable[[Helper], None] | None = field(default=None, compare=False, repr=False)
     """Called once when it ends, however it ends (a routine's run log)."""
 
@@ -206,7 +214,8 @@ def _state(h: Helper, now: float) -> str:
         return "waiting for the screen" if h.screen else "waiting for a free helper"
     if h.status in (HelperStatus.WORKING, HelperStatus.NEEDS_YOU):
         took = _ago(now - (h.started_at or now))
-        what = "waiting for the user's answer to a question" if h.status is HelperStatus.NEEDS_YOU else "working"
+        what = ("waiting for the user's answer; it goes on after a yes" if h.waiting is not None else
+                "waiting for the user's answer to a question" if h.status is HelperStatus.NEEDS_YOU else "working")
         where = ", on the screen" if h.screen else ""
         plan = f", about {round(h.progress * 100)}% through its plan" if h.progress is not None else ""
         return f"{what} for {took}{where}{plan}"
