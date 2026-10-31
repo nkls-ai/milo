@@ -9,7 +9,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from milo.core.events import Bubble, Heard, Looking
+from milo.core.language import SpokenLanguage
+from milo.core.language import name as language_name
 from milo.core.logtext import private
+from milo.core.opening import OpenRequest, named_by
 from milo.core.ports import Clock, LiveModel, ProfileMemory, ReminderBook, ScreenEyes, UsageLedger
 from milo.core.types import Emotion, HarnessError, MiloState, ScreenCapture
 
@@ -26,6 +29,7 @@ from .ui_state import UiState
 
 if TYPE_CHECKING:
     from .meetings import MeetingService
+    from .opener import Opener
     from .orchestrator import Orchestrator
     from .routines import Routines
     from .undo import Undo
@@ -44,12 +48,20 @@ You talk out loud. Your reply is spoken while you are still writing it.
 - Start every reply with exactly one emotion tag: [neutral], [happy], [excited], [thinking], [concerned], \
 [sad], [sleepy] or [confused].
 - Then speak: one to three short sentences in plain spoken language. No markdown, lists, code, emoji or URLs.
-- Reply in the language the user speaks.
-- Each user message starts with [weekday date time, frontmost app]. That is context, not something the \
-user said.
+- Each user message starts with [weekday date time, frontmost app, language]. That is context, not something \
+the user said. Reply in exactly that language, every sentence, even when memories, task results, helpers or \
+earlier turns are in another one. Write a task's first sentence and its title in it too. Without a language \
+there, use the language of the user's own words.
 
 Tags are never read aloud. Put them after what you say:
 
+- <open app="Google Chrome" url="https://www.youtube.com"/> when the user wants an app, a web page, or a file \
+or folder opened ("open Chrome and go to YouTube", "open my Downloads folder"). Put it first, right after the \
+emotion tag, so it opens while you speak, then say one short line like "Opening YouTube in Chrome." `url` is \
+the full web address (a site the user names is its address: YouTube is https://www.youtube.com, a search on it \
+is its search page); `app` is the app to open it in, only when the user named one; `path` is a file or folder \
+instead of a url. <open app="Notes"/> opens just an app. Opening never needs a helper or a question, and you \
+never say you can't. When there is more to do after opening, open first and start a task for the rest.
 - <remember>one-line fact</remember> when the user tells you something about themselves worth keeping long \
 term. Never passwords or other secrets.
 - <reminder>YYYY-MM-DD HH:MM what to remind them of</reminder> to set a reminder, in the user's local time. \
@@ -152,7 +164,7 @@ _PLAIN = ((re.compile(r"\s+(on|in) the user's (Mac|computer)\b", re.I), ""),
           (re.compile(r"\bthe user\b", re.I), "you"))
 
 
-def task_question(description: str, *, title: str = "") -> str:
+def task_question(description: str, *, title: str = "", language: str = "") -> str:
     """A yes-or-no question a person can answer at a glance: the task's first sentence, short, in the second
     person. "Open Microsoft Excel on the user's Mac and make a table. Then ..." asks "Open Microsoft Excel and
     make a table?". A first sentence too long to fit asks about the task's `title` instead, if it has one."""
@@ -160,10 +172,35 @@ def task_question(description: str, *, title: str = "") -> str:
     for pattern, plain in _PLAIN:
         first = pattern.sub(plain, first)
     if len(first) > QUESTION_CHARS - 1 and title.strip():
+        if language == "de":
+            return f"„{' '.join(title.split())}“ starten?"
         return f"Start “{' '.join(title.split())}”?"
     if len(first) > QUESTION_CHARS - 1:
         first = first[:QUESTION_CHARS - 2].rsplit(" ", 1)[0].rstrip(",;: ") + "…"
-    return (first[:1].upper() + first[1:] or "Go ahead") + "?"
+    return (first[:1].upper() + first[1:] or ("Loslegen" if language == "de" else "Go ahead")) + "?"
+
+
+def open_question(request: OpenRequest, language: str = "") -> str:
+    """Asked before opening an address or a file the user didn't name, after Milo read outside text."""
+    if language == "de":
+        return f"{request.what} öffnen?"
+    return f"Open {request.what}?"
+
+
+def remember_question(fact: str, language: str = "") -> str:
+    if language == "de":
+        return f"Soll ich mir das merken: {fact}?"
+    return f"Should I remember this: {fact}?"
+
+
+def remind_question(due: datetime, what: str, language: str = "") -> str:
+    if language == "de":
+        days = ("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag")
+        months = ("Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober",
+                  "November", "Dezember")
+        return (f"Soll ich dich am {days[due.weekday()]}, {due.day}. {months[due.month - 1]} um {due:%H:%M} "
+                f"erinnern: {what}?")
+    return f"Should I remind you on {due:%A %-d %B at %H:%M}: {what}?"
 
 
 class LiveTalk:
@@ -180,8 +217,15 @@ class LiveTalk:
                  transcript: Transcript | None = None, eyes: ScreenEyes | None = None,
                  approvals: Approvals | None = None, memory: TurnMemory | None = None,
                  backchannel: Backchannel | None = None, routines: Routines | None = None,
-                 meetings: MeetingService | None = None, undo: Undo | None = None):
+                 meetings: MeetingService | None = None, undo: Undo | None = None, opener: Opener | None = None,
+                 language: SpokenLanguage | None = None):
         self._model = model
+        self._opener = opener
+        """Opens what an <open> tag names at once (ADR 0028). None: the tag does nothing."""
+        self._language = language or SpokenLanguage()
+        """The language of the message being answered; the reply, helpers and questions follow it."""
+        self._opening: set[asyncio.Task] = set()
+        self._heard_at: float | None = None
         self._undo = undo
         """Takes back what a helper did on <undo> (ADR 0026). None: the tag does nothing."""
         self._meetings = meetings
@@ -238,7 +282,7 @@ class LiveTalk:
         return self._turn is not None and not self._turn.done()
 
     def start(self, text: str, *, via: str = "voice", speak: bool = True,
-              capture: ScreenCapture | None = None) -> asyncio.Task:
+              capture: ScreenCapture | None = None, language: str = "") -> asyncio.Task:
         """Run a turn in the background so listening and dictation keep working while Milo answers.
 
         While Milo waits for a yes or no, a short "yes" or "no" answers his question instead.
@@ -249,7 +293,7 @@ class LiveTalk:
             self._ui.rest()
             self._turn = asyncio.create_task(asyncio.sleep(0))
             return self._turn
-        self._turn = asyncio.create_task(self.turn(text, via=via, speak=speak, capture=capture))
+        self._turn = asyncio.create_task(self.turn(text, via=via, speak=speak, capture=capture, language=language))
         return self._turn
 
     def interrupt(self, *, rest: bool = True) -> bool:
@@ -366,9 +410,11 @@ class LiveTalk:
     async def _message_turn(self, text: str, prompt: str, data: list[str]) -> str | None:
         self._ui.emit(Heard(text))
         self._transcript.user(text, "message")
+        self._heard_at = self._clock.monotonic()
         await self._settle_interrupt()
         self._request = text
         self._via = "message"
+        self._language.hear(text)
         self._notes.extend(data)
         try:
             parser = await self._reply(prompt, (), False, screen=False)
@@ -402,8 +448,9 @@ class LiveTalk:
             log.warning("could not start the conversation ahead of the turn: %s", e)
 
     async def turn(self, text: str, *, via: str = "voice", speak: bool = True,
-                   capture: ScreenCapture | None = None) -> None:
+                   capture: ScreenCapture | None = None, language: str = "") -> None:
         """`via` is "voice" or "typed", for the transcript. speak=False answers in the bubble without audio.
+        `language` is the code the transcriber heard ("de"); without one Milo guesses from the words.
 
         `capture` goes along with the message (the "What's this?" shortcut). Without one, the model may ask
         to look (`<look/>`): Milo captures the front window while he says his first words, then answers
@@ -411,9 +458,11 @@ class LiveTalk:
         """
         self._ui.emit(Heard(text))
         self._transcript.user(text, via)
+        self._heard_at = self._clock.monotonic()
         await self._settle_interrupt()
         self._request = text
         self._via = via
+        self._language.hear(text, language)
         looking = None
         try:
             if capture is not None:
@@ -444,10 +493,12 @@ class LiveTalk:
         self._ui.set_state(MiloState.THINKING)
         self._ui.set_emotion(Emotion.THINKING)
         parser = ReplyParser()
+        held: list[OpenRequest] = []  # <open> tags that wait for a yes (see _open_now)
         utterance: Utterance | None = None
         shown: str | None = None  # transcript id of the reply, once it has text
         started = self._clock.monotonic()
         first_at: float | None = None
+        opened = 0
         notes, self._notes = self._notes, []
         earlier, self._earlier = self._earlier, []
         if speak and self._backchannel is not None:
@@ -467,6 +518,9 @@ class LiveTalk:
                     if self._ui_looking:
                         self._looking(False)  # he has seen it and starts to answer
                 speech = parser.feed(delta)
+                if tags and len(parser.opens) > opened:
+                    held += self._open_now(parser.opens[opened:], screen=screen)
+                    opened = len(parser.opens)
                 if speak and utterance is None and parser.emotion is not None:
                     utterance = (self._backchannel.utterance(parser.emotion) if self._backchannel is not None
                                  else self._speaker.utterance(parser.emotion))
@@ -501,6 +555,8 @@ class LiveTalk:
 
         self._last_turn_at = self._clock.monotonic()
         rest = parser.finish()
+        if tags and len(parser.opens) > opened:  # an unclosed tag at the very end
+            held += self._open_now(parser.opens[opened:], screen=screen)
         if rest:
             shown = self._show(shown, parser, rest)
         self._end_reply(shown, parser)
@@ -509,7 +565,7 @@ class LiveTalk:
         if tags:
             if parser.title:
                 self._transcript.titled(parser.title)
-            self._apply(parser, screen=screen)
+            self._apply(parser, screen=screen, held=held)
             self._take_back(parser)
         if not speak:
             if parser.spoken.strip():
@@ -614,7 +670,8 @@ class LiveTalk:
         if name and self._transcript.wants_title():
             text += f"\n\n{NAME_IT}"
         lines = [*(n for n in notes if n), *([helpers] if helpers else []), *([routines] if routines else []), text]
-        return stamp("\n".join(lines), self._clock.now(), self._context.app)
+        language = language_name(self._language.code) if self._language.code else ""
+        return stamp("\n".join(lines), self._clock.now(), self._context.app, language)
 
     async def _recall(self, text: str, screen: bool, *, outside: bool) -> Recalled:
         """The <memory> block for this turn. A reply to screen data already had one with the question."""
@@ -624,7 +681,31 @@ class LiveTalk:
             return Recalled("", True)
         return await self._memory.before_turn(text, self._context.app, outside=outside)
 
-    def _apply(self, parser: ReplyParser, *, screen: bool = False) -> None:
+    def _open_now(self, requests: Sequence[OpenRequest], *, screen: bool) -> list[OpenRequest]:
+        """Open what the reply's <open> tags name, while the reply still streams, so the page is up by the time
+        Milo has said "Opening YouTube in Chrome". An app always opens: that changes nothing. An address or a file
+        opens at once when the user's own words named it ("go on YouTube") or the conversation read no outside
+        text; otherwise outside text may have put it there (a link on a page, in a mail), so it waits for a yes
+        after the reply. Returns those."""
+        if self._opener is None:
+            if requests:
+                log.info("ignoring %d <open> tag(s): nothing to open them with", len(requests))
+            return []
+        outside = self._tainted or screen or self._saw_screen
+        held = []
+        for request in requests:
+            if (request.url or request.path) and outside and not named_by(request, self._request):
+                held.append(request)
+                continue
+            self._start_open(request)
+        return held
+
+    def _start_open(self, request: OpenRequest) -> None:
+        task = asyncio.create_task(self._opener.open(request, since=self._heard_at, language=self._language.code))
+        self._opening.add(task)
+        task.add_done_callback(self._opening.discard)
+
+    def _apply(self, parser: ReplyParser, *, screen: bool = False, held: Sequence[OpenRequest] = ()) -> None:
         """Save facts and reminders, start tasks the reply asked for, and start a look.
 
         Some tags wait for the user's yes, because text from outside could have talked the model into them:
@@ -655,20 +736,24 @@ class LiveTalk:
         ask_routines = (self._tainted or screen) and not own_work
         careful = (self._saw_screen or self._tainted) and not own_work
         user_asked = own_work or (not self._tainted and not screen)
+        lang = self._language.code
         effects: list[tuple[str, str, Callable[[], None], bool]] = []
+        for request in held:  # opening asks only here, for what outside text may have named (see _open_now)
+            effects.append((open_question(request, lang), request.url or request.path,
+                            lambda request=request: self._start_open(request), True))
         for fact in () if screen else parser.remembers:
-            effects.append((f"Should I remember this: {fact}?", "", lambda fact=fact: self._remember(fact),
+            effects.append((remember_question(fact, lang), "", lambda fact=fact: self._remember(fact),
                             self._tainted))
         for due, what in parser.reminders:  # open reminders go into later system prompts: screen text asks too
-            effects.append((f"Should I remind you on {due:%A %-d %B at %H:%M}: {what}?", "",
+            effects.append((remind_question(due, what, lang), "",
                             lambda due=due, what=what: self._remind(due, what), self._tainted or screen))
         for task in parser.tasks:
-            question = task_question(task.description, title=task.title)
+            question = task_question(task.description, title=task.title, language=lang)
             # The whole task shows under the short question in the window: the user approves all of it.
             detail = "" if question.rstrip("?") == task.description.rstrip(".?") else task.description
             effects.append((question, detail, lambda task=task: self._tasks.submit(
-                task.description, title=task.title, screen=task.screen, careful=careful, user_asked=user_asked),
-                            ask_tasks))
+                task.description, title=task.title, screen=task.screen, careful=careful, user_asked=user_asked,
+                language=lang), ask_tasks))
         for ref, change in parser.steers:  # a change to a task is a task: same rule
             question = task_question(f"Change the task to {change}")
             detail = change if question.endswith("…?") else ""

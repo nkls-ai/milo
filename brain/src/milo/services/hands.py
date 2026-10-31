@@ -7,10 +7,12 @@ import logging
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 from milo.core.control import Protected
 from milo.core.events import FlyTo, HandsBorrow, HandsSession, Status
 from milo.core.hands import validate
+from milo.core.opening import resolve_url
 from milo.core.ports import AppHands, Confirmer, EventSink
 from milo.core.types import AppRef, BorrowNeeded, HandsError, Scope, Step, StepStatus
 
@@ -40,8 +42,14 @@ _APP_REF = re.compile(r'\b(?:application|app)\b(?:(\s+id)?\s*"([^"]*)")?', re.IG
 _NOT_AUTHORIZED = re.compile(r"Not authori[sz]ed to send Apple events to (.+?)\.|\(-1743\)", re.IGNORECASE)
 # Tools the brain runs as a few app actions of its own (scripts it writes, a filtered ax_tree).
 _COMPOSED = ("sheet_write", "sheet_read", "write_document", "ax_find")
-# Acting tools that never need the careful gate: they open an app or make something new.
-_NEW_THINGS = ("open_app", "write_document", "scroll")
+# Acting tools that never need the careful gate: they open an app or make something new. (A careful helper's
+# open_url asks anyway, in _judge: the address may come from text it read.)
+_NEW_THINGS = ("open_app", "open_url", "write_document", "scroll")
+# Actions that go to whatever app is in front: they name their app, which comes to the front first (_aim).
+_AIMED = ("click", "type", "key")
+NO_APP = ("Say which app this is for: pass `app`, or open it first with open_app or open_url. Keys, typing and "
+          "clicks never go to whatever happens to be in front.")
+NOT_WEB = "open_url opens web pages only: an address starting with http:// or https://."
 MAX_ASKS = 3
 """Questions for one action whose target keeps changing under the user's answers, before Milo gives up."""
 
@@ -73,11 +81,15 @@ class HandsService:
     def __init__(self, hands: AppHands, confirm: Confirmer, sink: EventSink, *,
                  transcript: Transcript | None = None, applescript: bool = True, locale: str = "",
                  protected: Protected | None = None, access: AccessGate | None = None,
-                 before_change: BeforeChange | None = None):
+                 before_change: BeforeChange | None = None, language: Callable[[], str] = lambda: ""):
         """`locale` is the Mac's region (AppleLocale, like "en_US@rg=dezzzz"): money in spreadsheets uses its
         currency. A script that names one of Milo's control files (`protected`) never runs (ADR 0020); one
         that builds the path some other way still waits for the user's yes, like every script."""
         self._protected = protected
+        self._language = language
+        """The code of the language the user last spoke in: questions are asked in it ("de" or English)."""
+        self._target = ""
+        """The app this task last opened or named: keys, typing and clicks without an `app` go there (_aim)."""
         self._access = access
         """The system's permissions, checked before the first action that needs them (ADR 0025)."""
         self._before_change = before_change
@@ -114,7 +126,7 @@ class HandsService:
         the user cleared and the documents it made."""
         self._end_session()
         if task_id != self._owner:
-            self._made, self._cleared, self._shown = set(), set(), set()
+            self._made, self._cleared, self._shown, self._target = set(), set(), set(), ""
         self._task_id, self._owner, self._stopped, self._careful = task_id, task_id, False, careful
 
     def end(self, task_id: str) -> None:
@@ -139,6 +151,11 @@ class HandsService:
         if self._task_id is None:
             raise HandsError(NO_TASK)
         spec, args = validate(tool, args)
+        if tool == "open_url":
+            url = resolve_url(str(args["url"]))
+            if url is None:
+                raise HandsError(NOT_WEB)
+            args["url"] = url
         if tool == "run_applescript" and not self._applescript:
             raise HandsError(TURNED_OFF)
         if spec.acts and getattr(self._confirm, "money_pending", False):
@@ -149,8 +166,12 @@ class HandsService:
             if self._access is not None:
                 await self._access.before(tool, args, task_id)
                 self._check()
+            aimed = await self._aim(tool, args) if tool in _AIMED else {}
+            self._check()
             target = await self._describe(tool, args) if spec.acts else {}
             self._check()
+            if aimed:
+                self._check_aim(tool, aimed, target)
             step = Step(f"hands_{next(self._ids)}", "app" if spec.acts else "read", title(tool, args, target),
                         _detail(tool, args), StepStatus.RUNNING)
             verdict, app = self._judge(tool, spec.acts, args, target)
@@ -162,7 +183,7 @@ class HandsService:
                 if verdict.risk is Risk.OK:
                     break
                 self._transcript.task_step(task_id, step)  # the user can read the whole thing before answering
-                question = confirm_question(tool, args, target, verdict.reason)
+                question = confirm_question(tool, args, target, verdict.reason, self._language())
                 if not await self._confirm.confirm(question, scope=self._scope(tool, args, target, verdict, app),
                                                    undo=verdict.risk is Risk.UNDO,
                                                    money=verdict.risk is Risk.MONEY):
@@ -185,6 +206,8 @@ class HandsService:
                 self._step(task_id, step, StepStatus.FAILED)
                 raise HandsError("What this would touch kept changing on the screen, so Milo didn't do it. Look "
                                  "again (screenshot or ax_tree) before you try.")
+            if aimed:  # what it touches may have changed while the user answered
+                self._check_aim(tool, aimed, target)
             if self._access is not None:  # after Milo's own yes, so a refused action never starts the app
                 named = script_apps(str(args["script"])) if tool == "run_applescript" else None
                 try:
@@ -208,11 +231,44 @@ class HandsService:
                 self._step(task_id, step, StepStatus.FAILED)
                 raise
             self._step(task_id, step, StepStatus.DONE)
+            if tool in ("open_app", "open_url"):
+                self._target = str(result.get("app") or args.get("app") or args.get("name") or self._target)
+            elif aimed or args.get("app"):  # the app the task works in, for the next key, typing or click
+                self._target = str(aimed.get("app") or args.get("app"))
             return output(tool, result)
+
+    async def _aim(self, tool: str, args: dict) -> dict:
+        """Bring the app a key, typing or click is for to the front, so it lands there and nowhere else: the app
+        it names, else the one this task last opened. Returns what the app found ({"app", "bundle", "front"})."""
+        app = str(args.get("app") or self._target).strip()
+        if not app:
+            raise HandsError(NO_APP)
+        found = await self._act("focus_app", {"app": app})
+        if not found.get("front"):
+            raise HandsError(f"{found.get('app') or app} didn't come to the front, so Milo didn't {_verb(tool)} "
+                             f"there. Open it with open_app first.")
+        return {**found, "app": str(found.get("app") or app)}
+
+    def _check_aim(self, tool: str, aimed: dict, target: dict) -> None:
+        """Refuse when the action would reach Milo's own window or an app other than the one it is for, instead
+        of asking the user whether Milo may use that app."""
+        app = str(aimed.get("app") or "")
+        if target.get("milo"):
+            raise HandsError(f"That would {_verb(tool)} in Milo's own window, not in {app}. Milo never does that. "
+                             f"Look again (screenshot or ax_find in {app}).")
+        landed, bundle = str(target.get("app") or ""), str(target.get("bundle") or "")
+        if not landed and not bundle:
+            return
+        same = (bundle and bundle == str(aimed.get("bundle") or "")) or landed.casefold() == app.casefold()
+        if not same:
+            raise HandsError(f"That would {_verb(tool)} in {landed or 'another app'}, not in {app}, so Milo didn't. "
+                             f"Look again (screenshot or ax_find in {app}) before you try.")
 
     def _judge(self, tool: str, acts: bool, args: dict, target: dict) -> tuple[Verdict, str]:
         """How risky the action is on `target`, and the app it acts in."""
         verdict = classify(tool, args, target)
+        if tool == "open_url" and self._careful and verdict.risk is Risk.OK:
+            verdict = Verdict(Risk.ASK, "open a web page")  # a careful helper may have read the address somewhere
         if tool == "run_applescript" and self._protected is not None and \
                 self._protected.mentioned_in(str(args.get("script", ""))):
             verdict = Verdict(Risk.NEVER, "his own settings, memory or routines from a script")
@@ -228,7 +284,7 @@ class HandsService:
         action asks again."""
         log.info("computer use needs the %s for %s", need.what, tool)
         scope = self._scope(tool, args, target, Verdict(Risk.ASK, "use"), _app_of(tool, args, target))
-        if not await self._confirm.confirm(borrow_question(tool, target, need.what), scope=scope):
+        if not await self._confirm.confirm(borrow_question(tool, target, need.what, self._language()), scope=scope):
             raise HandsError(KEEP_IT.format(what=need.what))
         self._check()
         self._sink.emit(HandsBorrow(True, need.what))
@@ -265,7 +321,7 @@ class HandsService:
         the user sees the work (`[hands] show_window`, which the app reads). Clicks and typing do it from what
         `describe` found; scripts and the sheet and document tools name their app here. A new document has no
         window yet. Failing to show never stops the work."""
-        if "window" in target or target.get("new"):
+        if "window" in target or target.get("new") or tool in _AIMED:  # _aim brought those forward already
             return
         if tool == "run_applescript":
             apps = script_apps(str(args["script"])) or []
@@ -288,6 +344,8 @@ class HandsService:
         """What an action would touch: the app describes clicks and typing; sheet_write reads its target."""
         if tool == "write_document":
             return {"app": args["app"], "new": True}
+        if tool == "open_url":
+            return {"app": str(args.get("app") or ""), "new": True}
         if tool != "sheet_write":
             return await self._act("describe", {"tool": tool, **args})
         app = args["app"]
@@ -386,6 +444,9 @@ def title(tool: str, args: dict, target: dict) -> str:
             return "Checking which apps are open"
         case "open_app":
             return f"Opening {_clip(str(args['name']), 40)}"
+        case "open_url":
+            site = urlsplit(str(args["url"])).hostname or str(args["url"])
+            return f"Opening {_clip(site, 40)}" + (f" in {_clip(str(args['app']), 30)}" if args.get("app") else "")
         case "sheet_write":
             if args.get("new_document"):
                 return f"Making a new table in {args['app']}"
@@ -421,11 +482,18 @@ def title(tool: str, args: dict, target: dict) -> str:
     return tool
 
 
-def confirm_question(tool: str, args: dict, target: dict, reason: str) -> str:
-    """A yes-or-no question naming the thing, like "I'm about to click “Send” in Mail. Go ahead?"."""
+def confirm_question(tool: str, args: dict, target: dict, reason: str, language: str = "") -> str:
+    """A yes-or-no question naming the thing, like "I'm about to click “Send” in Mail. Go ahead?". In the user's
+    language where Milo has the words (German), else English."""
     app = str(target.get("app") or args.get("app") or "")
     in_app = f" in {app}" if app else ""
     what = " ".join(str(target.get("title") or "").split())  # never shortened: the user approves all of it
+    if language == "de":
+        german = _german_question(tool, args, target, reason, app, what)
+        if german:
+            return german
+    if tool == "open_url":
+        return f"Open {urlsplit(str(args['url'])).hostname or args['url']}{in_app}?"
     if reason == "use":
         return f"May I use {app or 'that app'} for this? You'll see each step."
     if tool in ("click", "ax_press") and what:
@@ -448,10 +516,35 @@ def confirm_question(tool: str, args: dict, target: dict, reason: str) -> str:
     return f"I'm about to {reason}{in_app}. Go ahead?"
 
 
-def borrow_question(tool: str, target: dict, what: str) -> str:
+def _german_question(tool: str, args: dict, target: dict, reason: str, app: str, what: str) -> str:
+    """confirm_question in German, for the questions asked most; "" where it has no words (the English is used)."""
+    in_app = f" in {app}" if app else ""
+    if tool == "open_url":
+        return f"{urlsplit(str(args['url'])).hostname or args['url']}{in_app} öffnen?"
+    if reason == "use":
+        return f"Darf ich dafür {app or 'diese App'} benutzen? Du siehst jeden Schritt."
+    if tool in ("click", "ax_press") and what:
+        return f"Ich klicke gleich auf „{what}“{in_app}. Okay?"
+    if tool == "run_applescript" and reason == "run a script":
+        apps = list(dict.fromkeys(_TELL.findall(str(args["script"]))))
+        where = f" in {_clip(', '.join(apps), 30)}" if apps else ""
+        return f"Ein Skript{where} ausführen? Es steht in meinem Fenster."
+    if tool == "sheet_write":
+        doc = _clip(str(target.get("document") or "dem vorderen Dokument"), 30)
+        n = int(target.get("filled") or 0)
+        return f"{n} gefüllte Zelle{'n' if n != 1 else ''} in „{doc}“ ersetzen?"
+    return ""
+
+
+def borrow_question(tool: str, target: dict, what: str, language: str = "") -> str:
     """"Can I borrow your mouse for a moment, to click in Microsoft Excel?"."""
     app = str(target.get("app") or "")
     in_app = f" in {app}" if app else ""
+    if language == "de":
+        device = {"mouse": "deine Maus", "keyboard": "deine Tastatur"}.get(what, what)
+        verb = {"click": "zu klicken", "type": "zu tippen", "key": "eine Taste zu drücken",
+                "scroll": "zu scrollen"}.get(tool, "das zu machen")
+        return f"Darf ich mir kurz {device} leihen, um{in_app} {verb}?"
     verb = {"click": "click", "type": "type", "key": "press a key", "scroll": "scroll"}.get(tool, "do this")
     return f"Can I borrow your {what} for a moment, to {verb}{in_app}?"
 
@@ -481,6 +574,10 @@ def script_apps(script: str) -> list[AppRef] | None:
             return None
         apps.append(AppRef("", m.group(2)) if m.group(1) else AppRef(m.group(2)))
     return list(dict.fromkeys(apps)) or None
+
+
+def _verb(tool: str) -> str:
+    return {"click": "click", "type": "type", "key": "press keys"}.get(tool, "act")
 
 
 def _app_of(tool: str, args: dict, target: dict) -> str:

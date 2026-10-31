@@ -35,7 +35,7 @@ def test_a_turn_streams_into_speech_and_records_usage():
         StateChanged(MiloState.IDLE),
     ]
     assert s.voice.spoken == ["Sure thing, it is nine.", "Anything else?"]
-    assert s.model.turns == ["[Thursday 2026-10-29 09:00, frontmost app: Xcode]\nwhat time is it"]
+    assert s.model.turns == ["[Thursday 2026-10-29 09:00, frontmost app: Xcode, language: English]\nwhat time is it"]
     assert s.ledger.entries == [("chat", "fake-live", Usage(600, 0, 3))]
     assert not s.live_talk.busy and not s.ui.thinking
 
@@ -166,7 +166,8 @@ def test_tags_are_applied_and_never_spoken():
     assert not any("<" in text or "Lee's" in text for text in s.voice.spoken[:1])
     assert s.profile.facts == ["Has a dentist, Dr. Lee"]
     assert [(r.due, r.text) for r in s.reminders.items] == [(datetime(2026, 10, 30, 9, 0), "Call the dentist")]
-    assert without_undo_id(s.harness.calls[0][0]).endswith("\nFind Dr. Lee's phone number")
+    assert without_undo_id(s.harness.calls[0][0]).endswith(
+        "\nFind Dr. Lee's phone number\n\n(The user speaks English: write `say` in English.)")
     assert s.voice.spoken[-1] == "Dr. Lee is at 555-0100.", "the task result is spoken after the turn"
     assert [src for src, _, _ in s.ledger.entries] == ["chat", "task"]
 

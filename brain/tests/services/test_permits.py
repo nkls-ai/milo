@@ -19,7 +19,8 @@ from milo.services.hands import script_apps
 from milo.services.orchestrator import HelperQuestions
 from milo.services.permits import AppRef, Permits, Scope
 from milo.services.tool_requests import ToolRequests
-from tests.fakes import FakeEyes, FakeHands, FakeHarness, FakeLiveModel, MemoryRoutineBook, ScriptedHarness, WorkerScript
+from tests.fakes import (FakeEyes, FakeHands, FakeHarness, FakeLiveModel, MemoryRoutineBook, ScriptedHarness, WorkerScript,
+                         with_app)
 from tests.services.stack import Stack, settle
 
 EXCEL = {"app": "Microsoft Excel", "bundle": "com.microsoft.Excel"}
@@ -87,7 +88,7 @@ class Worker:
     async def reply(self, prompt, session_id, *, on_step=None, on_session=None, on_plan=None) -> Reply:
         for tool, args in self.turns.pop(0) if self.turns else []:
             try:
-                await self.hands.call(tool, args)
+                await self.hands.call(tool, with_app(self.hands._hands, tool, args))
             except HandsError as e:
                 self.errors.append(f"{tool}: {e}")
         return Reply(Emotion.HAPPY, "Done.", Usage(10, 5, 0), session_id or "s1")

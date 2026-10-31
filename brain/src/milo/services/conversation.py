@@ -9,10 +9,12 @@ from milo.core.types import HarnessError, Reply
 log = logging.getLogger("milo.conversation")
 
 
-def stamp(text: str, now: datetime, app: str | None) -> str:
-    """Prefix a turn with the time and frontmost app so the model needs no tool call for either."""
+def stamp(text: str, now: datetime, app: str | None, language: str = "") -> str:
+    """Prefix a turn with the time and frontmost app so the model needs no tool call for either, and with the
+    language the user wrote or spoke it in ("German"), when known, so the model answers in that one."""
     where = f", frontmost app: {app}" if app else ""
-    return f"[{now:%A %Y-%m-%d %H:%M}{where}]\n{text}"
+    said = f", language: {language}" if language else ""
+    return f"[{now:%A %Y-%m-%d %H:%M}{where}{said}]\n{text}"
 
 
 class Conversation:
