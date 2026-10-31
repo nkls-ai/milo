@@ -197,6 +197,23 @@ def test_the_notice_waits_until_milo_is_quiet():
     assert said == [NOTICE]
 
 
+def test_the_notice_is_said_once_per_reason():
+    """Live (2026-10-31): with the ElevenLabs quota used up, every retry two minutes later failed the same way, and
+    Milo said "I can't reach the cloud…" again each time."""
+    said = []
+
+    async def run():
+        notice = VoiceNotice(said.append, busy=lambda: False, wait_s=5)
+        notice.loop = asyncio.get_running_loop()
+        for reason in ("ElevenLabs: You have exceeded your quota.", "ElevenLabs: You have exceeded your quota.",
+                       "offline"):
+            notice(reason)
+            await asyncio.sleep(0.05)
+
+    asyncio.run(run())
+    assert said == [NOTICE, NOTICE], "the quota once, then being offline, a new reason"
+
+
 def test_a_streaming_voice_that_cannot_stream_now_speaks_piece_by_piece():
     voice = FakeStreamingVoice(available=False)
     s = Stack(voice=voice)

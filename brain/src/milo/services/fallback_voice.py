@@ -158,7 +158,8 @@ class _Watched:
 
 class VoiceNotice:
     """Says `text` (by default NOTICE) when called, after whatever Milo is saying now: the voice or the hearing
-    switched to its local fallback. The callers call it at most once per switch.
+    switched to its local fallback. The callers call it at most once per switch, and it says it once per reason:
+    a used-up quota fails the same way at every retry, and hearing it every few minutes helps nobody.
 
     It may be called from the TTS thread; the notice waits on the event loop (`loop`, set once it runs) until
     Milo is quiet."""
@@ -171,12 +172,16 @@ class VoiceNotice:
         self._busy = busy
         self._wait_s = wait_s
         self._task: asyncio.Task | None = None
+        self._told: set[str] = set()
 
     def __call__(self, reason: str) -> None:
         if self.loop is not None:
-            self.loop.call_soon_threadsafe(self._start)
+            self.loop.call_soon_threadsafe(self._start, reason)
 
-    def _start(self) -> None:
+    def _start(self, reason: str) -> None:
+        if reason in self._told:
+            return
+        self._told.add(reason)
         if self._task is None or self._task.done():
             self._task = asyncio.create_task(self._tell())
 
