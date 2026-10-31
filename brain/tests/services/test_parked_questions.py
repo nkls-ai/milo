@@ -61,7 +61,7 @@ class AskingWorker:
         self.prompts: list[str] = []
         self.decisions: list[str] = []
 
-    async def reply(self, prompt, session_id, *, on_step=None, on_session=None, on_plan=None) -> Reply:
+    async def reply(self, prompt, session_id, *, on_step=None, on_session=None, on_plan=None, scope=None) -> Reply:
         self.prompts.append(prompt)
         decision = await self.questions.approve("send", QUESTION)
         self.decisions.append(decision.answer)
