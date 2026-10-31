@@ -323,7 +323,7 @@ def _helpers(p: Parts) -> None:
             book, JsonStateFile(workspace.routine_state_path), helpers, p.speaker, p.ui, p.clock,
             transcript=p.transcript, approvals=p.approvals, quiet=p.attention.in_conversation,
             max_runs_per_day=lambda: config.routines.max_runs_per_day, grace_s=config.routines.grace_hours * 3600,
-            inert=untrusted)
+            inert=untrusted, language=p.language.get, computer=p.platform.computer)
         helpers.on_done.append(routines.seen)
         if mem is not None:  # a run's episode names the routine; the transcript's task stub skips it
             routines.on_episode = RoutineEpisodes(mem.memory.record, people=mem.memory.people_in)

@@ -32,6 +32,7 @@ from milo.core.routines import (RecipeError, Routine, find, parse, parse_schedul
                                 slugify)
 from milo.core.task_patterns import alike, shape
 from milo.core.types import Emotion, Step
+from milo.core.words import dates, has, say
 
 from .helpers import Helper, HelperStatus
 from .orchestrator import needs_screen
@@ -253,8 +254,13 @@ class Routines:
                  clock: Clock, *, transcript: Transcript | None = None, approvals=None,
                  quiet: Callable[[], bool] = lambda: False, max_runs_per_day: Callable[[], int] = lambda: 6,
                  grace_s: float = 4 * 3600, inert: Callable[[str, int], str] = lambda s, n: s[:n],
-                 wait_s: float = WAIT_FOR_QUIET_S, poll_s: float = POLL_S):
+                 wait_s: float = WAIT_FOR_QUIET_S, poll_s: float = POLL_S, language: Callable[[], str] = lambda: "",
+                 computer: str = "computer"):
         self._book = book
+        self._language = language
+        """The language of the message being answered: what Milo says about routines follows it (ADR 0028)."""
+        self._computer = computer
+        """What the platform calls the machine Milo runs on, for "while the Mac was asleep" (Platform.computer)."""
         self._state_file = state
         self._tasks = tasks
         self._speaker = speaker
@@ -324,33 +330,35 @@ class Routines:
         `ask` None follows the conversation's rule for tasks (ask once outside text is in it); False never asks:
         writing a draft down changes nothing until the user saves it after a look."""
         out = []
+        lang = self._language()
         for req in requests:
-            name = req.name or "that routine"
+            name = req.name or say("routines.that_routine", lang)
             match req.do:
                 case "create" | "remember":
-                    out.append((f"Write down how that was done as “{name}”?", "",
+                    out.append((say("routines.ask_create", lang, name=name), "",
                                 lambda req=req: self.create(req.name, req.helper, req.schedule), False))
                     # The rest are like tasks: they ask once outside text is in the conversation.
                 case "save":
-                    out.append((f"Save the routine “{name}”?", "", lambda req=req: self.save(req.name), None))
+                    out.append((say("routines.ask_save", lang, name=name), "", lambda req=req: self.save(req.name), None))
                 case "change":
-                    out.append((f"Change the routine “{name}”?", req.text,
+                    out.append((say("routines.ask_change", lang, name=name), req.text,
                                 lambda req=req: self.change(req.name, req.text), None))
                 case "run" | "do":
-                    out.append((f"Run “{name}”?", req.text,
+                    out.append((say("routines.ask_run", lang, name=name), req.text,
                                 lambda req=req: self.run(req.name, req.text, careful=careful), None))
                 case "schedule" | "unschedule":
                     when = "" if req.do == "unschedule" else (req.schedule or "")
-                    question = f"Run “{name}” {when}?" if when else f"Stop running “{name}” on a schedule?"
+                    question = (say("routines.ask_schedule", lang, name=name, when=when) if when
+                                else say("routines.ask_unschedule", lang, name=name))
                     out.append((question, "", lambda req=req, when=when: self.schedule(req.name, when), None))
                 case "rename":
-                    out.append((f"Rename “{name}” to “{req.to}”?", "",
+                    out.append((say("routines.ask_rename", lang, name=name, to=req.to), "",
                                 lambda req=req: self.rename(req.name, req.to), None))
                 case "pause" | "resume":
-                    out.append((f"{req.do.capitalize()} “{name}”?", "",
+                    out.append((say(f"routines.ask_{req.do}", lang, name=name), "",
                                 lambda req=req: self.pause(req.name, req.do == "pause"), None))
                 case "delete":
-                    out.append((f"Delete the routine “{name}”?", "", lambda req=req: self.delete(req.name), None))
+                    out.append((say("routines.ask_delete", lang, name=name), "", lambda req=req: self.delete(req.name), None))
                 case _:
                     log.info("ignoring a routine tag that says do=%r", req.do)
         return out
@@ -362,13 +370,13 @@ class Routines:
         name = " ".join(name.split())[:60]
         helper = self._source(helper_ref)
         if not name:
-            self._tell("What should I call it?", Emotion.CONFUSED)
+            self._tell(self._words("what_name"), Emotion.CONFUSED)
             return None
         if helper is None:
-            self._tell("I can't tell which work you mean. Ask me right after I've done it.", Emotion.CONFUSED)
+            self._tell(self._words("which_work"), Emotion.CONFUSED)
             return None
         if helper.active:
-            self._tell(f"Let me finish {helper.title} first, then ask me again.", Emotion.NEUTRAL)
+            self._tell(self._words("finish_first", title=helper.title), Emotion.NEUTRAL)
             return None
         entry = self._transcript.entry(helper.id)
         steps = list(entry.steps) if entry is not None else list(helper.steps)
@@ -391,11 +399,11 @@ class Routines:
         else:
             routine = find(self._book.all(), name)
             if routine is None:
-                self._tell(f"I don't have a routine called {name or 'that'}.", Emotion.CONFUSED)
+                self._tell(self._no_such(name), Emotion.CONFUSED)
                 return None
             recipe, base, schedule, title = render(routine), routine.slug, None, routine.name
         if not change:
-            self._tell(f"What should change in {title}?", Emotion.NEUTRAL)
+            self._tell(self._words("what_change", title=title), Emotion.NEUTRAL)
             return None
         draft = self._new_draft(title, schedule, base=base)
         return self._write(draft, title, change_prompt(title, str(self._book.draft_path(draft)), recipe, change))
@@ -441,7 +449,7 @@ class Routines:
         except RecipeError as e:
             log.warning("draft %s doesn't read: %s", draft_id, e)
             self._drop(draft_id)
-            self._tell(f"I couldn't write {draft['name']} down properly: {e}. Ask me again?", Emotion.CONFUSED)
+            self._tell(self._words("draft_broken", name=draft["name"], why=e), Emotion.CONFUSED)
             return
         text = render(routine)
         # Kept in Milo's state, not written back to the helper's folder (ADR 0020). Save keeps exactly this.
@@ -471,23 +479,23 @@ class Routines:
         waiting = (draft_id, self._drafts().get(draft_id)) if draft_id else self._draft_named(name)
         if waiting is None or waiting[1] is None or not waiting[1].get("ready"):
             if self._writing:
-                self._tell("I'm still writing it down. One moment.", Emotion.NEUTRAL)
+                self._tell(self._words("still_writing"), Emotion.NEUTRAL)
             else:
-                self._tell("There's no recipe waiting to be saved.", Emotion.CONFUSED)
+                self._tell(self._words("no_draft"), Emotion.CONFUSED)
             return None
         draft_id, draft = waiting
         try:
             routine = self._normalize(parse(draft.get("text") or "", draft["base"]), draft)
         except RecipeError as e:
-            self._tell(f"That recipe doesn't read any more: {e}.", Emotion.CONFUSED)
+            self._tell(self._words("unreadable", why=e), Emotion.CONFUSED)
             return None
         self._book.save(routine)
         self._approved()[routine.slug] = routine.fingerprint()
         self._drop(draft_id)
         self._scheduled(routine)
         log.info("saved routine %s", private(routine.name))
-        when = f" It runs {routine.schedule}." if routine.schedule else ""
-        self._tell(f"Saved. Say “do {routine.name}” whenever you want it.{when}", Emotion.HAPPY)
+        when = self._words("saved_runs", schedule=routine.schedule) if routine.schedule else ""
+        self._tell(self._words("saved", name=routine.name, when=when), Emotion.HAPPY)
         self.refresh()
         return routine
 
@@ -518,17 +526,17 @@ class Routines:
         input nobody gave, already running)."""
         routine = find(self._book.all(), name) if not scheduled else self._book.get(name)
         if routine is None:
-            self._tell(f"I don't have a routine called {name or 'that'}.", Emotion.CONFUSED)
+            self._tell(self._no_such(name), Emotion.CONFUSED)
             return False
         values, note = given_inputs(routine, text)
         missing = [i for i in routine.inputs if not i.default and not values.get(i.name)]
         if missing:
-            ask = missing[0].ask or f"What should {missing[0].name} be?"
-            self._tell(f"{ask} Then say “do {routine.name}” with it.", Emotion.THINKING)
+            ask = missing[0].ask or self._words("what_input", input=missing[0].name)
+            self._tell(self._words("then_say", ask=ask, name=routine.name), Emotion.THINKING)
             return False
         running = self._running.get(routine.slug)
         if running is not None and running.active:
-            self._tell(f"{routine.name} is already running.", Emotion.NEUTRAL)
+            self._tell(self._words("running", name=routine.name), Emotion.NEUTRAL)
             return False
         self._spawn(self._start(routine, values, note, careful=careful, scheduled=scheduled, missed=missed))
         return True
@@ -540,14 +548,14 @@ class Routines:
         new_schedule = scheduled and schedule.get("ask")
         if approved != routine.fingerprint() or new_schedule:
             if self._approvals is None:
-                self._tell(f"{routine.name} changed since it was saved, so I left it.", Emotion.CONCERNED)
+                self._tell(self._words("changed_left", name=routine.name), Emotion.CONCERNED)
                 return
             if approved is None:
-                question = f"Run the new routine “{routine.name}”?"
+                question = self._words("ask_new", name=routine.name)
             elif approved != routine.fingerprint():
-                question = f"“{routine.name}” changed since you saved it. Run it?"
+                question = self._words("ask_changed", name=routine.name)
             else:
-                question = f"Run “{routine.name}” now? It's set to run {routine.schedule}."
+                question = self._words("ask_first_scheduled", name=routine.name, schedule=routine.schedule)
             if not await self._approvals.confirm(question, detail=routine.body):
                 log.info("routine %s not run: changed, and no yes", routine.slug)
                 return
@@ -555,7 +563,7 @@ class Routines:
             schedule.pop("ask", None)
             self._save_state()
         if missed is not None:
-            self._tell(f"I missed {routine.name} at {missed:%H:%M} while the Mac was asleep, so I'm doing it now.",
+            self._tell(self._words("missed_now", name=routine.name, time=f"{missed:%H:%M}", computer=self._computer),
                        Emotion.NEUTRAL, speak=False)
         given = ", ".join(f"{k} {v}" for k, v in values.items())
         description = f"Do the routine “{routine.name}”" + (f" for {given}" if given else "") + "."
@@ -627,13 +635,13 @@ class Routines:
             late = now - due
             if late > self._grace:
                 log.info("routine %s missed its run at %s", routine.slug, due)
-                self._tell(f"I missed {routine.name} on {due:%A at %H:%M}, the Mac was asleep. Say “do "
-                           f"{routine.name}” if you still want it.", Emotion.CONCERNED, speak=False)
+                self._tell(self._words("missed", name=routine.name, day=dates.weekday(due, self._language()),
+                                     time=f"{due:%H:%M}", computer=self._computer), Emotion.CONCERNED, speak=False)
                 continue
             if not self._budget(now):
                 cap = self._max_runs_per_day()
-                self._tell(f"I skipped {routine.name}: I've done {cap} scheduled run{'' if cap == 1 else 's'} "
-                           f"today, my limit for a day.", Emotion.CONCERNED, speak=False)
+                self._tell(self._words("capped_one" if cap == 1 else "capped_many", name=routine.name, cap=cap),
+                           Emotion.CONCERNED, speak=False)
                 continue
             self.run(routine.slug, scheduled=True, missed=due if late > ON_TIME else None)
         if changed:
@@ -677,8 +685,8 @@ class Routines:
         if updated is None:
             return None
         self._scheduled(updated)
-        self._tell(f"{updated.name} runs {text} now." if text else f"{updated.name} doesn't run on its own any more.",
-                   Emotion.HAPPY)
+        self._tell(self._words("scheduled", name=updated.name, schedule=text) if text
+                   else self._words("unscheduled", name=updated.name), Emotion.HAPPY)
         self.refresh()
         return updated
 
@@ -688,12 +696,12 @@ class Routines:
         if routine is None:
             return None
         if not to:
-            self._tell("What should I call it?", Emotion.CONFUSED)
+            self._tell(self._words("what_name"), Emotion.CONFUSED)
             return None
         try:
             renamed = self._book.rename(routine.slug, to)
         except ValueError as e:
-            self._tell(f"I couldn't rename it: {e}.", Emotion.CONFUSED)
+            self._tell(self._words("rename_failed", why=e), Emotion.CONFUSED)
             return None
         for key in ("approved", "schedules"):
             table = self._state.setdefault(key, {})
@@ -740,14 +748,14 @@ class Routines:
     def _named(self, name: str) -> Routine | None:
         routine = self._book.get(name) or find(self._book.all(), name)
         if routine is None:
-            self._tell(f"I don't have a routine called {name or 'that'}.", Emotion.CONFUSED)
+            self._tell(self._no_such(name), Emotion.CONFUSED)
         return routine
 
     def _update(self, routine: Routine, fields: dict[str, str]) -> Routine | None:
         try:
             return self._book.update(routine.slug, fields)
         except ValueError as e:
-            self._tell(f"I couldn't change {routine.name}: {e}.", Emotion.CONFUSED)
+            self._tell(self._words("change_failed", name=routine.name, why=e), Emotion.CONFUSED)
             return None
 
     # ---- the app
@@ -764,7 +772,7 @@ class Routines:
                 if upcoming is not None:
                     data["next_run"] = upcoming.strftime("%Y-%m-%dT%H:%M")
             elif r.schedule and schedule is None:
-                data["problem"] = f"I can't read the schedule “{r.schedule}”."
+                data["problem"] = self._words("bad_schedule", schedule=r.schedule)
             routines.append(data)
         routines += [{"id": slug, "name": slug, "problem": problem} for slug, problem in self._book.problems().items()]
         drafts = [{"id": k, "name": d["name"], "recipe": d.get("text") or "", "schedule": d.get("schedule") or ""}
@@ -824,10 +832,18 @@ class Routines:
             offered.append(sorted(words))
             del offered[:-MAX_REMEMBERED]
             log.info("offering a routine after %d tasks alike", times)
-            self._tell(f"That's the {_nth(times)} time you've asked me for “{plain_name(helper.title)}”. "
-                       "Want me to keep it as a routine? Say “remember how to do this” and give it a name.",
-                       Emotion.HAPPY)
+            self._tell(self._words("offer", nth=self._nth(times), title=plain_name(helper.title)), Emotion.HAPPY)
         self._save_state()
+
+    def _words(self, key: str, **values: object) -> str:
+        """Milo's line `routines.<key>` (core/words/routines.py) in the language of the message being answered."""
+        return say(f"routines.{key}", self._language(), **values)
+
+    def _no_such(self, name: str) -> str:
+        return self._words("no_such", name=name) if name else self._words("no_such_that")
+
+    def _nth(self, n: int) -> str:
+        return self._words(f"nth.{n}") if has(f"routines.nth.{n}") else self._words("nth", n=n)
 
     def _tell(self, text: str, emotion: Emotion, *, speak: bool = True) -> None:
         """Say something about routines, after the user's turn and whatever Milo is saying."""
@@ -849,10 +865,6 @@ class Routines:
         """Wait until what this service started is done. For tests."""
         while self._tasks_running:
             await asyncio.wait(set(self._tasks_running))
-
-
-def _nth(n: int) -> str:
-    return {3: "third", 4: "fourth", 5: "fifth"}.get(n, f"{n}th")
 
 
 def _time(text: object) -> datetime:

@@ -11,7 +11,7 @@ from dataclasses import replace
 from milo.core.platform import ANYWHERE, Platform
 
 MACOS = Platform("macos", stt="mlx_whisper", tts="omnivoice", tts_fallback="say", embedder="mlx_e5",
-                 connections="mac")
+                 connections="mac", computer="Mac")
 """Everything local: Whisper and e5 on MLX, OmniVoice on the GPU with the Mac's `say` behind it, and the Mac's
 own apps as connections."""
 

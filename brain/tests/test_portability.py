@@ -196,7 +196,7 @@ ALLOWED: dict[tuple[str, str], str] = {
     ("services/live_talk.py", "mac-word"): "the persona and prompt say Milo lives on the user's Mac",
     ("services/messages.py", "mac-word"): "phone replies say \"at your Mac\"",
     ("services/routines.py", "mac-app"): "the recipe example uses apps: [Numbers]",
-    ("services/routines.py", "mac-word"): "\"while the Mac was asleep\" and the recipe prompt's \"Mac apps\"",
+    ("services/routines.py", "mac-word"): "the recipe prompt asks for \"the Mac apps\" the work used",
     ("services/settings_guard.py", "mac-word"): "PUT_BACK says \"change them at the Mac\"",
     ("services/orchestrator.py", "mac-settings"): "_SCREEN_WORDS counts \"system settings\" as screen work",
     # Private folders are where macOS keeps them.

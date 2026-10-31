@@ -168,7 +168,7 @@ class Stack:
         self.routines = Routines(self.routine_book, self.routine_state, self.tasks, self.speaker, self.ui,
                                  self.clock, approvals=self.approvals, quiet=lambda: self.live_talk.busy,
                                  max_runs_per_day=lambda: self.max_routine_runs, inert=untrusted, wait_s=self.wait_s,
-                                 poll_s=0.005)
+                                 poll_s=0.005, language=self.language.get, computer="Mac")
         self.tasks.on_done.append(self.routines.seen)
         if self.undo is not None:
             self.tasks.on_done.append(self.undo.finished)
