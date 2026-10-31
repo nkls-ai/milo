@@ -209,12 +209,14 @@ def test_what_counts_as_asking_for_writing():
                  "übersetz das ins Englische"):
         assert asks_to_write(text), text
     for text in ("can you answer this email?", "could you write Tom back", "kannst du ihm antworten?",
-                 "make it a bit more polite", "mach es kürzer"):
+                 "make it a bit more polite", "mach es kürzer", "okay, now reply that 1 works", "bitte antworte Tom",
+                 "an email to Anna saying I'm late", "please draft a reply"):
         assert asks_to_write(text), text
     for text in ("what does this email say?", "okay thanks", "who is Tom?", "was steht da?",
                  "what does the reply say?", "what type of email is this?", "is this a good answer?",
                  "was hat er geantwortet?", "a longer one would be nice", "how polite is it?",
-                 "did he write back?"):
+                 "did he write back?", "can you tell me what the reply says?", "an email from my bank, is it legit?",
+                 "show me Tom's reply", "kannst du mir sagen, was er geantwortet hat?", "a reply to Tom, is it rude?"):
         assert not asks_to_write(text), text
 
 
