@@ -51,6 +51,10 @@ def title(tool: str, args: dict) -> str | None:
             return f"Adding the reminder {_quoted(args.get('title'))}"
         case "reminders_complete":
             return "Ticking off a reminder"
+        case "undo_point":
+            return f"Keeping a copy of {_quoted(Path(str(args.get('path') or '')).name)} to undo with"
+        case "undo_note":
+            return "Noting how things were, to undo with"
         case "milo_remind":
             return f"Setting the reminder {_quoted(args.get('text'))}"
         case "mail_search":
@@ -106,7 +110,8 @@ def _folder(path: object) -> str:
 
 
 KINDS = {"calendar": "app", "reminders": "app", "mail": "app", "notes": "app", "shortcuts": "app",
-         "files": "search", "send": "app"}
+         "files": "search", "send": "app", "undo": "edit"}
+"""By the tool name's first word. Undo points read nothing back, so they don't end auto mode's trust (ADR 0022)."""
 
 
 def kind(tool: str) -> str:

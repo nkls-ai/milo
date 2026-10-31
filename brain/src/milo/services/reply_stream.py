@@ -10,14 +10,14 @@ from milo.core.types import Emotion
 
 log = logging.getLogger("milo.reply")
 
-TAGS = ("remember", "reminder", "task", "look", "steer", "stop", "routine", "title")
+TAGS = ("remember", "reminder", "task", "look", "steer", "stop", "undo", "routine", "title")
 _SELF_CLOSING = ("<look/>", "<look />")
 _MARKERS = tuple(f"<{name}>" for name in TAGS) + tuple(f"</{name}>" for name in TAGS) + _SELF_CLOSING
-# Tags that may carry attributes: <task title="..." screen="yes">, <steer helper="2">, <stop helper="all"/>,
+# Tags that may carry attributes: <task title="..." screen="yes">, <steer helper="2">, <stop helper="all"/>, <undo/>,
 # <routine do="run" name="...">.
-_OPENER = re.compile(r"<(task|steer|stop|routine)((?:\s+[a-z_]+\s*=\s*(?:\"[^\"<>]*\"|'[^'<>]*'|[^\s<>/\"']+))*)\s*(/?)>",
+_OPENER = re.compile(r"<(task|steer|stop|undo|routine)((?:\s+[a-z_]+\s*=\s*(?:\"[^\"<>]*\"|'[^'<>]*'|[^\s<>/\"']+))*)\s*(/?)>",
                      re.IGNORECASE)
-_OPENING = re.compile(r"<(task|steer|stop|routine)\s[^<>]*$", re.IGNORECASE)
+_OPENING = re.compile(r"<(task|steer|stop|undo|routine)\s[^<>]*$", re.IGNORECASE)
 _ATTR = re.compile(r"([a-z_]+)\s*=\s*(?:\"([^\"]*)\"|'([^']*)'|([^\s>/]+))", re.IGNORECASE)
 _MAX_OPENER = 300
 _LONGEST_MARKER = max(map(len, _MARKERS))
@@ -72,6 +72,8 @@ class ReplyParser:
         """(which helper, what changed) for each <steer> tag."""
         self.stops: list[str] = []
         """Which helper each <stop> tag means: a number, "all", or "" for the only one."""
+        self.undos: list[str] = []
+        """Which helper's work each <undo> tag takes back: a number, or "" for the newest that can be (ADR 0026)."""
         self.routines: list[RoutineRequest] = []
         """Each <routine> tag: save, run, schedule or manage a routine (services/routines.py)."""
         self.title = ""
@@ -216,6 +218,9 @@ class ReplyParser:
             return
         if tag == "stop":
             self.stops.append(attrs.get("helper") or content)
+            return
+        if tag == "undo":
+            self.undos.append(attrs.get("helper") or content)
             return
         if tag == "routine":
             do = attrs.get("do", "").strip().lower()

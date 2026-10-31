@@ -140,7 +140,7 @@ public struct ConversationView: View {
         case let .task(id):
             if let (entry, conversation) = transcript.task(id) {
                 TaskPage(entry: entry, conversation: conversation ?? transcript.conversation(ofTask: id),
-                         helper: model.helpers.first { $0.id == id },
+                         helper: model.helpers.first { $0.id == id }, undo: model.undoPoint(id), undoTask: model.undo,
                          openConversation: { open($0) }, stop: model.stopHelper, reveal: actions.reveal)
             } else {
                 TaskMissing(loading: transcript.conversation(ofTask: id) != nil, back: route.goBack)
@@ -266,6 +266,8 @@ struct TranscriptList: View {
     var helpers: [HelperInfo] = []
     /// Tasks show as cards that open their page; without it, as blocks with their steps.
     var openTask: ((String) -> Void)?
+    var undoPoints: [UndoPoint] = []
+    var undoTask: (String) -> Void = { _ in }
 
     var body: some View {
         LazyVStack(alignment: .leading, spacing: 0) {
@@ -275,7 +277,7 @@ struct TranscriptList: View {
                     DayHeading(text: day).padding(.top, i == 0 ? 0 : 14).padding(.bottom, 10)
                 }
                 EntryRow(entry: entry, showTime: Self.showsTime(entry, after: previous), helper: helpers.first { $0.id == entry.id },
-                         openTask: openTask)
+                         openTask: openTask, undo: undoPoints.first { $0.id == entry.id }, undoTask: undoTask)
                     .padding(.top, Self.gap(entry, after: previous))
                     .id(entry.id)
             }
@@ -305,6 +307,8 @@ struct EntryRow: View {
     let showTime: Bool
     var helper: HelperInfo?
     var openTask: ((String) -> Void)?
+    var undo: UndoPoint?
+    var undoTask: (String) -> Void = { _ in }
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -317,7 +321,8 @@ struct EntryRow: View {
             case .milo: MiloLine(text: entry.text, emotion: entry.emotion, streaming: !entry.done)
             case .task:
                 if let openTask {
-                    TaskCard(entry: entry, helper: helper, open: { openTask(entry.id) })
+                    TaskCard(entry: entry, helper: helper, undo: entry.status == .running ? nil : undo,
+                             undoTask: undoTask, open: { openTask(entry.id) })
                 } else {
                     TaskBlock(entry: entry)
                 }

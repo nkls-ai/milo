@@ -969,3 +969,44 @@ class MeetingStore(Protocol):
     def unfinished(self) -> list[str]:
         """Meetings with chunks on disk that aren't transcribed yet, for recovery after a crash."""
         ...
+
+
+class UndoShelf(Protocol):
+    """Where Milo keeps what he needs to take a task back (ADR 0026): `state/undo/<task>/` with a `record.json` and
+    copies of files, plus the copies apps saved in folders of their own."""
+
+    def load(self, task: str) -> dict | None:
+        """The task's record, None if there is none (never kept or expired)."""
+        ...
+
+    def save(self, task: str, record: dict) -> None: ...
+
+    def tasks(self) -> list[str]:
+        """Tasks with a record, oldest first."""
+        ...
+
+    def drop(self, task: str) -> None:
+        """Delete the record, its copies, and the app copies it names (`docs[].copy`)."""
+        ...
+
+    def app_folder(self, app: str) -> str | None:
+        """A folder `app` can save a copy into without asking the user (Excel's own container), None if Milo knows
+        none for it."""
+        ...
+
+    def keep_file(self, task: str, path: str) -> dict:
+        """Copy a file before a task changes it: {path, copy, existed, digest}. A file that doesn't exist yet is
+        recorded as new. Raises ValueError with plain words when it can't (a folder, too big, the disk too full)."""
+        ...
+
+    def put_back(self, task: str, kept: dict) -> None:
+        """Put a kept file back as it was; a file that was new moves to the Trash. Raises OSError."""
+        ...
+
+    def digest(self, path: str) -> str:
+        """A hash of the file now, "" if it is missing."""
+        ...
+
+    def used(self) -> int:
+        """Bytes the records and copies take."""
+        ...

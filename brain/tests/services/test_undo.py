@@ -1,0 +1,381 @@
+"""Undo what a task did (ADR 0026).
+
+The user's story: a helper made every cell of their unsaved workbook "Book2" red with a script. "I can reverse stuff
+that he did, because he changed stuff in the Excel, but I can't Command-Z to return it. That should definitely be a
+feature."
+
+AppleScript changes don't land on Excel's undo stack. So before a task first changes a workbook, Milo has Excel save a
+copy of it into Excel's own folder, and Undo copies the sheets back. If the workbook changed since the task, Undo says
+so and asks first, so it never throws away the user's own later edits without a word.
+"""
+
+import asyncio
+import json
+import re
+from pathlib import Path
+
+import pytest
+
+from milo.core.events import Confirm, UndoPoints, UndoTask, parse_command
+from milo.memory.undo_shelf import FileUndoShelf
+from milo.services import snapshots
+from milo.services.reply_stream import ReplyParser
+from tests.fakes import FakeHarness, FakeLiveModel
+from tests.services.stack import Stack, settle
+from tests.services.test_permits import EXCEL, ExcelApp, Worker, user
+
+RED_SCRIPT = ('tell application "Microsoft Excel"\n'
+              'set targetSheet to worksheet "Sheet1" of workbook "Book2"\n'
+              'set wholeSheet to range "A1:XFD1048576" of targetSheet\n'
+              'set color of interior object of wholeSheet to {255, 0, 0}\n'
+              'set color of font object of wholeSheet to {255, 0, 0}\n'
+              'end tell')
+RECIPE = {"A1": ("Magerquarkbrötchen", "white"), "A2": ("250 g Magerquark", "white"), "B2": ("Schokodrops", "yellow")}
+
+
+class Excel(ExcelApp):
+    """Excel with the user's unsaved "Book2" open. Scripts change its cells; Milo's own scripts (marked with
+    `-- milo-undo`) save a copy of a workbook, read its fingerprint and copy a saved copy back, as the real ones do."""
+
+    def __init__(self):
+        super().__init__()
+        self.books: dict[str, dict[str, tuple[str, str]]] = {"Book2": dict(RECIPE), "Book1": {"A1": ("Rezept", "white")}}
+        self.active = "Book2"
+        self.saved: dict[str, dict] = {}
+        """Copies Excel saved, by path."""
+        self.scripts: list[str] = []
+
+    def book(self, script: str) -> str:
+        named = re.search(r'workbook "([^"]+)"', script)
+        return named.group(1) if named else self.active
+
+    async def act(self, tool: str, args: dict) -> dict:
+        if tool != "run_applescript":
+            return await super().act(tool, args)
+        self.calls.append((tool, args))
+        script = args["script"]
+        self.scripts.append(script)
+        name = self.book(script)
+        if "-- milo-undo snapshot" in script:
+            path = re.search(r'filename "([^"]+)"', script).group(1)
+            self.saved[path] = dict(self.books[name])
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_text(json.dumps(self.saved[path]))
+            return {"text": f"document\t{name}\nsheets\tSheet1"}
+        if "-- milo-undo fingerprint" in script:
+            return {"text": json.dumps(self.books[name], sort_keys=True)}
+        if "-- milo-undo restore" in script:
+            path = re.search(r'file name "([^"]+)"', script).group(1)
+            self.books[name] = dict(self.saved[path])
+            return {"text": f"document\t{name}"}
+        if "set color of interior object" in script:
+            self.books[name] = {cell: (value, "red") for cell, (value, _) in self.books[name].items()}
+            return {"text": "255, 0, 0"}
+        return {"text": "document\tBook2\nsheet\tSheet1\nfilled\t3"}
+
+
+def excel_stack(*turns, tmp_path: Path, ask: str = "auto") -> tuple[Stack, Worker]:
+    (tmp_path / "Library/Containers/com.microsoft.Excel/Data/tmp").mkdir(parents=True, exist_ok=True)
+    worker = Worker(*(turns or [[("run_applescript", {"script": RED_SCRIPT})]]))
+    s = Stack(harness=worker, background=FakeHarness(), hands_port=Excel(), ask=ask, home=tmp_path)
+    worker.hands = s.hands
+    return s, worker
+
+
+async def make_it_red(s: Stack, *, answer: str = "yes"):
+    bot = asyncio.create_task(user(s, answer))
+    helper = s.tasks.submit("Make the whole Book2 red", title="Excel red", screen=True, user_asked=True)
+    await s.tasks.idle()
+    await s.undo.idle()
+    bot.cancel()
+    return helper
+
+
+def points(s: Stack) -> list[dict]:
+    return s.sink.of(UndoPoints)[-1].points
+
+
+# ---- the story
+
+
+def test_the_red_sheet_comes_back_with_undo(tmp_path):
+    s, worker = excel_stack(tmp_path=tmp_path)
+    excel = s.hands_port
+
+    async def run():
+        helper = await make_it_red(s)
+        assert all(color == "red" for _, color in excel.books["Book2"].values()), "the helper made it red"
+        assert points(s) == [{"id": helper.id, "title": "Excel red", "state": "ready", "said": "Done."}]
+        await s.undo.undo(helper.id)
+        return helper
+
+    helper = asyncio.run(run())
+    assert excel.books["Book2"] == RECIPE, "the sheet is back the way it was"
+    assert excel.books["Book1"] == {"A1": ("Rezept", "white")}, "the other workbook was never touched"
+    assert s.sink.of(Confirm) == [], "nothing changed since, so undo asks nothing in auto mode"
+    assert points(s)[0]["state"] == "undone"
+    assert "Undid “Excel red”: “Book2” is back the way it was." in s.bubbles()
+
+
+def test_the_copy_is_taken_once_before_the_first_change_and_never_after_it(tmp_path):
+    s, worker = excel_stack([("sheet_read", {"app": "Microsoft Excel"}), ("run_applescript", {"script": RED_SCRIPT}),
+                             ("run_applescript", {"script": RED_SCRIPT})], tmp_path=tmp_path)
+    excel = s.hands_port
+    asyncio.run(make_it_red(s))
+    marks = [next((m for m in ("snapshot", "fingerprint") if f"-- milo-undo {m}" in sc), "work") for sc in excel.scripts]
+    # sheet_read reads with a script of its own; the copy comes right before the first change, once.
+    assert marks[1:] == ["snapshot", "work", "work", "fingerprint"]
+    [copy] = excel.saved.values()
+    assert copy == RECIPE, "the copy is of the sheet before it went red"
+
+
+def test_excel_only_ever_saves_and_opens_milos_copies_in_its_own_folder_with_its_alerts_off(tmp_path):
+    """Excel is sandboxed: a path outside its own folder makes it show "Grant File Access", and a copy with links
+    to an unsaved workbook asks "Save with references to unsaved documents?". Milo must never cause either."""
+    s, worker = excel_stack(tmp_path=tmp_path)
+    excel = s.hands_port
+
+    async def run():
+        helper = await make_it_red(s)
+        await s.undo.undo(helper.id)
+
+    asyncio.run(run())
+    folder = str(tmp_path / "Library/Containers/com.microsoft.Excel/Data/tmp")
+    mine = [sc for sc in excel.scripts if "-- milo-undo" in sc]
+    paths = [p for sc in mine for p in re.findall(r'file ?name "([^"]+)"', sc)]
+    assert paths and all(p.startswith(folder + "/milo-undo-") for p in paths)
+    for script in mine:
+        if "snapshot" in script or "restore" in script:
+            assert "set display alerts to false" in script and "set display alerts to alertsWere" in script
+            assert "with timeout of" in script
+
+
+def test_paths_outside_excels_folder_are_refused():
+    with pytest.raises(ValueError):
+        snapshots.excel_snapshot("Book2", "/tmp/elsewhere/copy.xlsx", folder="/Users/me/Library/Containers/"
+                                                                             "com.microsoft.Excel/Data/tmp")
+    with pytest.raises(ValueError):
+        snapshots.excel_restore("Book2", "/Users/me/Library/Containers/com.microsoft.Excel/Data/tmp/../../x.xlsx",
+                                folder="/Users/me/Library/Containers/com.microsoft.Excel/Data/tmp")
+
+
+# ---- never silently over the user's own later edits
+
+
+@pytest.mark.parametrize("answer", ["yes", "no"])
+def test_undo_asks_first_when_the_workbook_changed_since(tmp_path, answer):
+    s, worker = excel_stack(tmp_path=tmp_path)
+    excel = s.hands_port
+
+    async def run():
+        helper = await make_it_red(s)
+        excel.books["Book2"]["C1"] = ("Zimt", "red")  # the user typed something after the task
+        bot = asyncio.create_task(user(s, answer))
+        await s.undo.undo(helper.id)
+        bot.cancel()
+
+    asyncio.run(run())
+    [asked] = s.sink.of(Confirm)
+    assert asked.question == "“Book2” changed since “Excel red”. Undo anyway? Your changes since would be lost."
+    assert not asked.always, "a question about losing the user's edits is never covered by Allow always"
+    if answer == "yes":
+        assert excel.books["Book2"] == RECIPE
+        assert points(s)[0]["state"] == "undone"
+    else:
+        assert "C1" in excel.books["Book2"], "the user's edit stays"
+        assert points(s)[0]["state"] == "ready", "it can still be undone later"
+        assert "Okay, I left “Book2” as it is." in s.bubbles()
+
+
+def test_undo_asks_in_every_mode_when_it_changed_even_with_allow_always(tmp_path):
+    s, worker = excel_stack(tmp_path=tmp_path, ask="auto")
+    s.permits.use([{"name": "Microsoft Excel", "bundle": ""}])
+    excel = s.hands_port
+
+    async def run():
+        helper = await make_it_red(s)
+        excel.books["Book2"]["A1"] = ("Brötchen", "red")
+        bot = asyncio.create_task(user(s, "yes"))
+        await s.undo.undo(helper.id)
+        bot.cancel()
+
+    asyncio.run(run())
+    assert len(s.sink.of(Confirm)) == 1
+
+
+# ---- what has an Undo, and for how long
+
+
+def test_a_task_that_only_reads_has_no_undo(tmp_path):
+    s, worker = excel_stack([("sheet_read", {"app": "Microsoft Excel"}), ("window_text", {"app": "Microsoft Excel"})],
+                            tmp_path=tmp_path)
+    asyncio.run(make_it_red(s))
+    assert all(e.points == [] for e in s.sink.of(UndoPoints))
+    assert not (tmp_path / "Milo/state/undo").exists() or not any((tmp_path / "Milo/state/undo").iterdir())
+
+
+def test_undo_points_expire_after_a_day_with_their_excel_copies(tmp_path):
+    s, worker = excel_stack(tmp_path=tmp_path)
+
+    async def run():
+        helper = await make_it_red(s)
+        s.clock.advance(hours=25)
+        s.undo.expire()
+        return helper
+
+    helper = asyncio.run(run())
+    assert points(s) == []
+    assert not list((tmp_path / "Library/Containers/com.microsoft.Excel/Data/tmp").glob("milo-undo-*")), \
+        "the copy in Excel's folder went too"
+
+    async def again():
+        await s.undo.undo(helper.id)
+
+    asyncio.run(again())
+    assert "I can't undo that any more: I keep what I need to undo a task for a day." in s.bubbles()
+
+
+def test_only_the_last_tasks_keep_an_undo(tmp_path):
+    s, worker = excel_stack(*[[("run_applescript", {"script": RED_SCRIPT})]] * 3, tmp_path=tmp_path)
+    s.undo.keep_tasks = 2
+
+    async def run():
+        return [await make_it_red(s) for _ in range(3)]
+
+    helpers = asyncio.run(run())
+    assert [p["id"] for p in points(s)] == [helpers[2].id, helpers[1].id]
+
+
+# ---- files, notes and what can't be copied
+
+
+def test_a_file_the_worker_kept_an_undo_point_for_is_put_back(tmp_path):
+    budget = tmp_path / "Documents" / "budget.csv"
+    budget.parent.mkdir()
+    budget.write_text("rent,900\n")
+
+    class FileWorker(Worker):
+        async def reply(self, prompt, session_id, **kw):
+            task = re.search(r"Task id for undo_point and undo_note: (\w+)", prompt).group(1)
+            assert (await s.tool_requests.handle({"op": "undo.point", "path": str(budget), "task": task}))["ok"]
+            budget.write_text("rent,950\n")
+            return await super().reply(prompt, session_id, **kw)
+
+    s = Stack(harness=FileWorker([]), home=tmp_path)
+
+    async def run():
+        helper = s.tasks.submit("raise the rent in budget.csv to 950", title="Rent 950", screen=False, user_asked=True)
+        await s.tasks.idle()
+        await s.undo.idle()
+        await s.undo.undo(helper.id)
+
+    asyncio.run(run())
+    assert budget.read_text() == "rent,900\n"
+    assert "Undid “Rent 950”: budget.csv is back the way it was." in s.bubbles()
+
+
+def test_a_file_changed_since_asks_before_it_is_put_back(tmp_path):
+    budget = tmp_path / "budget.csv"
+    budget.write_text("rent,900\n")
+    s = Stack(home=tmp_path)
+
+    async def run():
+        helper = s.tasks.submit("raise the rent", title="Rent", screen=False, user_asked=True)
+        assert s.undo.keep_file(helper.id, str(budget)).startswith("Kept a copy")
+        budget.write_text("rent,950\n")
+        await s.tasks.idle()
+        await s.undo.idle()
+        budget.write_text("rent,1000\n")  # the user changed it again
+        bot = asyncio.create_task(user(s, "no"))
+        await s.undo.undo(helper.id)
+        bot.cancel()
+
+    asyncio.run(run())
+    assert [c.question for c in s.sink.of(Confirm)] == [
+        "budget.csv changed since “Rent”. Undo anyway? Your changes since would be lost."]
+    assert budget.read_text() == "rent,1000\n"
+
+
+def test_what_milo_cant_copy_is_undone_by_a_helper_with_the_record(tmp_path):
+    """TextEdit, Notes or a calendar event have no copy Milo can put back. The worker writes down how things were
+    (undo_note), and Undo hands that record to a helper."""
+    textedit = {"app": "TextEdit", "bundle": "com.apple.TextEdit"}
+    worker = Worker([("ax_set_value", {"element": "e3", "text": "Dear Anna"})], [])
+    s = Stack(harness=worker, background=FakeHarness(), home=tmp_path,
+              hands_port=ExcelApp({"ax_set_value": {**textedit, "title": "Letter", "role": "text area"}}))
+    worker.hands = s.hands
+
+    async def run():
+        helper = s.tasks.submit("start the letter to Anna", title="Letter to Anna", screen=True, user_asked=True)
+        s.undo.note(helper.id, "The letter in TextEdit was empty before.")
+        await s.tasks.idle()
+        await s.undo.idle()
+        await s.undo.undo(helper.id)
+        await s.tasks.idle()
+        return helper
+
+    helper = asyncio.run(run())
+    undoer = s.tasks.helpers[-1]
+    assert undoer.title == "Undo: Letter to Anna"
+    assert "The letter in TextEdit was empty before." in undoer.instructions
+    assert "Filling in “Letter” in TextEdit" in undoer.instructions
+    assert undoer.screen and undoer.user_asked
+    assert points(s)[0]["state"] == "undone"
+
+
+def test_the_worker_is_told_its_task_id_for_undo_points():
+    s = Stack(harness=FakeHarness())
+
+    async def run():
+        helper = s.tasks.submit("tidy the budget", screen=False)
+        await s.tasks.idle()
+        return helper
+
+    helper = asyncio.run(run())
+    assert f"Task id for undo_point and undo_note: {helper.id}" in s.harness.calls[0][0]
+
+
+# ---- asking for it
+
+
+def test_saying_undo_that_takes_back_the_last_task(tmp_path):
+    s, worker = excel_stack(tmp_path=tmp_path)
+    s.model.script.append(["[happy] Okay, I'll put it back. <undo/>"])
+    excel = s.hands_port
+
+    async def run():
+        await make_it_red(s)
+        await s.live_talk.start("mach das rückgängig")
+        await settle()
+        await s.undo.idle()
+
+    asyncio.run(run())
+    assert excel.books["Book2"] == RECIPE
+
+
+def test_the_reply_parser_reads_undo_tags():
+    parser = ReplyParser()
+    spoken = parser.feed("[happy] Sure. <undo/> And <undo helper=\"2\"/> done.") + parser.finish()
+    assert parser.undos == ["", "2"]
+    assert "undo" not in spoken
+
+
+def test_the_board_says_which_helpers_can_be_undone(tmp_path):
+    s, worker = excel_stack(tmp_path=tmp_path)
+    asyncio.run(make_it_red(s))
+    assert "can be undone" in s.tasks.board()
+
+
+def test_the_undo_button_sends_undo_task(tmp_path):
+    assert parse_command({"type": "undo_task", "id": "c0ffee12ab34"}) == UndoTask("c0ffee12ab34")
+    s, worker = excel_stack(tmp_path=tmp_path)
+    excel = s.hands_port
+
+    async def run():
+        helper = await make_it_red(s)
+        await s.brain.handle(UndoTask(helper.id))
+        await s.undo.idle()
+
+    asyncio.run(run())
+    assert excel.books["Book2"] == RECIPE
+    assert any(isinstance(e, UndoPoints) for e in s.brain.greeting())

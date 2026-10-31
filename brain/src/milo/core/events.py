@@ -236,6 +236,16 @@ class AppRequest(Event):
 
 
 @dataclass(frozen=True)
+class UndoPoints(Event):
+    """Tasks Milo can take back, newest first: each {id, title, state, said}. `id` is the task's transcript entry,
+    `state` is ready, undoing or undone, and `said` is what Milo said when it finished, so the bubble that says it
+    can carry an Undo button. Sent on connect and whenever one changes; an expired one drops out (ADR 0026)."""
+
+    type: ClassVar[str] = "undo_points"
+    points: list[dict]
+
+
+@dataclass(frozen=True)
 class Helpers(Event):
     """The helpers working for Milo, oldest first: each {id, title, status, step, progress?}.
 
@@ -643,6 +653,14 @@ class StopHelper(Command):
     id: str
 
 
+@dataclass(frozen=True)
+class UndoTask(Command):
+    """The user clicked Undo on the task `id` (an id from `undo_points`): put back what it changed."""
+
+    type: ClassVar[str] = "undo_task"
+    id: str
+
+
 class StopAll(Command):
     """The user pressed the Stop button by Milo: stop talking, thinking, the question waiting, every helper and
     the work on screen, now."""
@@ -896,6 +914,11 @@ def parse_command(raw: object) -> Command:
                 if not id:
                     raise ProtocolError("id must not be empty")
                 return StopHelper(id)
+            case "undo_task":
+                id = str(raw["id"]).strip()
+                if not id:
+                    raise ProtocolError("id must not be empty")
+                return UndoTask(id)
             case "stop_all":
                 return StopAll()
             case "get_facts":

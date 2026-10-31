@@ -64,10 +64,17 @@ struct MessageView: View {
                 }
             }
             if let action {
-                Button(action.title, action: act)
-                    .buttonStyle(AnswerButtonStyle(prominent: true))
-                    .accessibilityHint(action.hint)
-                    .padding(.top, 4)
+                Button(action: act) {
+                    if let icon = action.icon {
+                        Label(action.title, systemImage: icon).labelStyle(TightLabel())
+                    } else {
+                        Text(action.title)
+                    }
+                }
+                // Undo sits under what Milo says about the task, quieter than a button that fixes something.
+                .buttonStyle(AnswerButtonStyle(prominent: action.icon == nil))
+                .accessibilityHint(action.hint)
+                .padding(.top, 4)
             }
         }
     }

@@ -50,7 +50,7 @@ struct ConversationPage: View {
         ScrollViewReader { proxy in
             ScrollView {
                 TranscriptList(entries: entries, state: live ? model.state : .idle, helpers: model.helpers,
-                               openTask: { route.go(.task($0)) })
+                               openTask: { route.go(.task($0)) }, undoPoints: model.undoPoints, undoTask: model.undo)
                     .padding(.horizontal, 18)
                     .padding(.top, 14)
                     .padding(.bottom, 10)

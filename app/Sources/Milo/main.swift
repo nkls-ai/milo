@@ -89,6 +89,7 @@ let lifecycle = AppLifecycle(
             // Automation has a switch per app under Milo; Accessibility and Screen Recording have the
             // permissions window, with its drag tile and restart.
             case let .access(need, app): need == .control ? access.openSettings(need, app: app) : setupWindow.open()
+            case .undo: break  // MiloModel sends it itself
             }
         }
         model.meeting.onOpen = { window.show(meeting: $0) }

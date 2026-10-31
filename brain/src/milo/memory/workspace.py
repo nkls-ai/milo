@@ -56,6 +56,11 @@ class Workspace:
         return self.home / "state"
 
     @property
+    def undo_dir(self) -> Path:
+        """What Milo keeps to take a task back, one folder per task (ADR 0026)."""
+        return self.state_dir / "undo"
+
+    @property
     def log_dir(self) -> Path:
         return self.home / "logs"
 

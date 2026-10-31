@@ -6,7 +6,7 @@ from milo.core.events import Bubble, Confirm, ConfirmAnswer, ConfirmDone, Emotio
 from milo.core.logtext import log_content
 from milo.core.types import Emotion, HarnessError, MiloState, Reminder, Usage
 from milo.services.live_talk import HICCUP, task_question
-from tests.fakes import FakeAudioOutput, FakeHarness, FakeLiveModel, ListReminders, MemoryProfile
+from tests.fakes import FakeAudioOutput, FakeHarness, FakeLiveModel, ListReminders, MemoryProfile, without_undo_id
 from tests.services.stack import Stack, settle
 
 
@@ -166,7 +166,7 @@ def test_tags_are_applied_and_never_spoken():
     assert not any("<" in text or "Lee's" in text for text in s.voice.spoken[:1])
     assert s.profile.facts == ["Has a dentist, Dr. Lee"]
     assert [(r.due, r.text) for r in s.reminders.items] == [(datetime(2026, 10, 30, 9, 0), "Call the dentist")]
-    assert s.harness.calls[0][0].endswith("\nFind Dr. Lee's phone number")
+    assert without_undo_id(s.harness.calls[0][0]).endswith("\nFind Dr. Lee's phone number")
     assert s.voice.spoken[-1] == "Dr. Lee is at 555-0100.", "the task result is spoken after the turn"
     assert [src for src, _, _ in s.ledger.entries] == ["chat", "task"]
 

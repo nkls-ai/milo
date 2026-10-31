@@ -31,6 +31,9 @@ from milo.services.orchestrator import Orchestrator
 from milo.services.permits import Permits
 from milo.services.routines import Routines
 from milo.services.task_runner import TaskRunner
+from milo.services.tool_requests import ToolRequests
+from milo.services.undo import Undo
+from milo.memory.undo_shelf import FileUndoShelf
 from milo.services.ui_state import UiState
 from milo.settings import Settings
 from tests.fakes import (FakeAudioInput, FakeAudioOutput, FakeChannel, FakeClock, FakeEyes, FakeHands, FakeHarness,
@@ -95,6 +98,9 @@ class Stack:
     """A chat app for Milo by message. None: no MessageService."""
     remote: MemoryRemoteState = field(default_factory=MemoryRemoteState)
     message_settings: MessageSettings = field(default_factory=MessageSettings)
+    home: Path | None = None
+    """The user's home for Undo (ADR 0026): Milo keeps its records in home/Milo/state/undo, and Excel's own folder is
+    under it. None: no Undo, so the Mac tools run no scripts of Milo's own around the worker's."""
     real_threads: bool = False
     """STT, TTS and memory each on a real single thread, like compose builds them, instead of inline. For tests
     that look for ordering bugs between the event loop and those threads (tests/test_races.py). close() ends them."""
@@ -117,7 +123,13 @@ class Stack:
                                    quiet=lambda: self.live_talk.busy, permits=self.permits)
         self.bridge = AppBridge(self.sink, timeout_s=self.confirm_timeout_s)
         self.gate = AccessGate(self.access, self.sink, pause_s=0) if self.access is not None else None
-        self.hands = HandsService(self.hands_port, self.approvals, self.ui, access=self.gate)
+        self.undo = None
+        if self.home is not None:
+            self.undo = Undo(FileUndoShelf(self.home / "Milo" / "state" / "undo", self.home), self.hands_port, self.ui,
+                             self.clock, confirm=self.approvals, speaker=self.speaker, helpers=lambda: self.tasks,
+                             quiet=lambda: self.live_talk.busy, wait_s=self.wait_s, poll_s=0.005)
+        self.hands = HandsService(self.hands_port, self.approvals, self.ui, access=self.gate,
+                                  before_change=self.undo.before_change if self.undo is not None else None)
         self.runner = TaskRunner(self.harness, self.ledger, self.clock, self.context, background=self.background,
                                  hands=self.hands)
         self.tasks = Orchestrator(self.runner, self.speaker, self.ui, self.clock,
@@ -138,12 +150,14 @@ class Stack:
                                  max_runs_per_day=lambda: self.max_routine_runs, inert=untrusted, wait_s=self.wait_s,
                                  poll_s=0.005)
         self.tasks.on_done.append(self.routines.seen)
+        if self.undo is not None:
+            self.tasks.on_done.append(self.undo.finished)
         self.tasks.on_done.append(lambda helper: self.permits.end(helper.id))
         self.permits.user_asked = self.tasks.user_asked
         self.live_talk = LiveTalk(self.model, self.speaker, self.ui, self.context, self.clock, self.profile,
                                   self.reminders, self.ledger, lambda: self.persona, self.idle_reset_s, self.tasks,
                                   eyes=self.eyes, approvals=self.approvals, memory=self.turn_memory,
-                                  routines=self.routines)
+                                  routines=self.routines, undo=self.undo)
         self.tasks.on_result = self.live_talk.note
         self.dictation = DictationService(UpperCleaner(), self.history, self.ui)
         self.listening = Listening(self.mic, self.transcriber, executor, self.ui, self.dictation, self.live_talk,
@@ -172,7 +186,8 @@ class Stack:
         self.brain = Brain(self.ui, self.listening, self.live_talk, self.context, self.heartbeat, UiSettings(),
                            approvals=self.approvals, bridge=self.bridge, hands=self.hands, screens=self.screens,
                            helpers=self.tasks, memory=self.memory, routines=self.routines,
-                           settings=self.settings, messages=self.messages)
+                           settings=self.settings, messages=self.messages, undo=self.undo)
+        self.tool_requests = ToolRequests(self.approvals, self.bridge, undo=self.undo)
 
     def close(self) -> None:
         for executor in self.executors.values():

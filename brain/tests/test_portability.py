@@ -160,6 +160,14 @@ ALLOWED: dict[tuple[str, str], str] = {
     ("services/hands.py", "mac-keys"): "_pretty_combo shows combos with the Mac's ⌘⌥⌃ glyphs",
     ("services/hands.py", "mac-settings"): "NOT_ALLOWED points to System Settings › Privacy & Security › Automation",
     ("services/hands.py", "mac-word"): "messages to the worker name the Mac and macOS",
+    ("services/snapshots.py", "applescript"): "Undo's Excel copy, fingerprint and restore (ADR 26); moves behind the "
+                                              "per-platform script builder with sheets.py",
+    ("services/undo.py", "applescript"): "Undo runs those scripts with run_applescript; becomes run_script (ADR 27)",
+    ("memory/undo_shelf.py", "bundle-id"): "APP_FOLDERS names Excel's sandbox container; should come from "
+                                           "AccessGate.places (ADR 25) instead",
+    ("memory/undo_shelf.py", "mac-path"): "the same container path, under ~/Library",
+    ("connect/milo_tools.py", "mac-app"): "undo_point's description names Numbers as an app without a copy",
+    ("connect/tools.py", "mac-keys"): "the worker's undo instructions say Excel's ⌘Z can't undo a script",
     ("services/sheets.py", "applescript"): "sheet_write/sheet_read compose AppleScript; moves behind a per-platform script builder",
     ("services/sheets.py", "mac-app"): "Excel and Numbers by their Mac names",
     ("services/sheets.py", "mac-path"): "app_name strips \".app\" from a path",

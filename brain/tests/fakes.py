@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from collections import deque
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -1042,3 +1043,8 @@ class FakeAccess:
     def asked(self) -> list[str]:
         """The apps the system asked the user about."""
         return [app for op, _, app in self.calls if op == "request"]
+
+
+def without_undo_id(prompt: str) -> str:
+    """A worker's prompt without the line that tells it its task id for undo points (ADR 0026)."""
+    return re.sub(r"\n\n\(Task id for undo_point and undo_note: [\w-]+\.\)$", "", prompt)
