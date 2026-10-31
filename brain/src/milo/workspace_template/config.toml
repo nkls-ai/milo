@@ -83,6 +83,18 @@ music = true                      # play, pause and skip the music
 [connections.mac]
 files_scope = "~"                 # files outside this folder are never searched or read
 
+[home]
+# Lights, plugs, scenes, heating and blinds just happen, with Undo. Locks, garage doors and the alarm ask first.
+# Setup: docs/setup/home.md.
+use = "auto"                      # auto: Home Assistant when it has a url below, else Apple Home on a Mac
+                                  # home_assistant, apple_home or none to pick one
+# [home.home_assistant]
+# url = "http://homeassistant.local:8123"
+# key_ref = "home_assistant.token" # a long-lived token, alone in ~/Milo/secrets/home_assistant.token
+
+[home.apple_home]
+folder = "Milo Home"              # the Shortcuts folder with your Home scenes and devices
+
 [approvals]
 # A question stays open until you answer it, and is said once more after reask_s. A task waiting for it
 # pauses as "waiting for your answer" and goes on after a yes. timeout_s > 0: no answer in that time means no.
@@ -114,6 +126,7 @@ overwrite_file = "ask_first"      # replacing a file on disk
 buy = "ask_first"                 # buy and money: never less than ask_first, and only a click on Yes counts
 money = "ask_first"               # payments, transfers
 shortcut = "ask_first"            # your own shortcuts can do any of the above
+lock = "ask_first"                # locks, garage doors and the alarm at home
 # password and security are always "never".
 
 [messages]

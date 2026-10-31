@@ -58,6 +58,7 @@ DEFAULT_LEVELS: dict[str, ActionLevel] = {
     "buy": ActionLevel.ASK_FIRST,
     "money": ActionLevel.ASK_FIRST,  # payments, transfers, withdrawals, selling
     "shortcut": ActionLevel.ASK_FIRST,  # a user's shortcut can do any of the above
+    "lock": ActionLevel.ASK_FIRST,  # a lock, a garage door or an alarm at home: who can get in (ADR 0037)
     "password": ActionLevel.NEVER,
     "security": ActionLevel.NEVER,  # security and privacy settings
 }

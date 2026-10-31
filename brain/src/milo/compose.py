@@ -301,7 +301,23 @@ def _brain_connections(p: Parts):
     connections = CONNECTIONS.create(name, options, p.ctx)
     connections = dataclasses.replace(connections, **{f.name: None for f in dataclasses.fields(connections)
                                                       if not getattr(switches, f.name, True)})
+    connections = _with_home(connections, p)
     return in_brain(connections, p.bridge.call, music=switches.music)
+
+
+def _with_home(connections, p: Parts):
+    """The home `[home] use` names (ADR 0037). "auto" gets every `[home.*]` table, to build the one it finds, and
+    keeps a home the connections bring (the fake one)."""
+    import dataclasses
+
+    from .core.registry import HOMES
+
+    name, options = p.config.pluggable("home")
+    if name == "auto":
+        if connections.home is not None:
+            return connections
+        options = {k: v for k, v in p.config.section("home").items() if k != "use"}
+    return dataclasses.replace(connections, home=HOMES.create(name, options, p.ctx))
 
 
 def _helpers(p: Parts) -> None:

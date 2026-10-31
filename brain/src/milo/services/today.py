@@ -9,6 +9,8 @@ stays the same and a warmed conversation isn't restarted because an event moved 
 connections (`connections` None, quick actions off) the block has only Milo's reminders. The morning brief reads the
 same day (`current`).
 
+The home's rooms, devices and scenes (ADR 0037) are listed by name only, read every 30 minutes.
+
 Each event gets a short handle (e1, e2, ...), stable for the conversation, so the model can move or cancel one by it;
 each to-do one (t1, ...) to tick off or delete, and each of Milo's reminders one (r1, ...) to cancel, when quick
 actions are on.
@@ -26,6 +28,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Any
 
+from milo.core.home import Device
 from milo.core.ports import Clock, Connections, ReminderBook
 from milo.core.times import parse_local
 from milo.core.types import Reminder, ToolError
@@ -42,6 +45,11 @@ MEDIA_S = 0.25
 MAX_EVENTS = 24
 MAX_TODOS = 12
 MAX_UNDATED = 15
+HOME_REFRESH_S = 1800.0
+"""The home's devices change rarely: their names are read again after half an hour."""
+HOME_WAIT_S = 0.25
+"""How long the block waits for the home's devices; a later answer goes into the next block."""
+MAX_HOME = 40
 TITLE_CHARS = 60
 REMINDER_CHARS = 200
 
@@ -87,6 +95,10 @@ class Today:
         self._sent = ""
         self._read = False
         """The last refresh read the day."""
+        self._home: list[Device] = []
+        """The home's devices, for their names (ADR 0037)."""
+        self._home_at: float | None = None
+        self._home_task: asyncio.Task | None = None
 
     # ---- the conversation
 
@@ -206,6 +218,7 @@ class Today:
                                                 for title, at in timers) + ".")
         if snap.music in ("playing", "paused"):
             lines.append(f"Music: {snap.music}.")
+        lines += self._home_lines()
         if len(lines) == 1:
             return "", False
         return "<today>\n" + "\n".join(lines) + "\n</today>", outside
@@ -260,7 +273,8 @@ class Today:
         snap = Snapshot(day=today, music=self._snap.music)
         self._dirty = False
         try:
-            events, todos, snap.music = await asyncio.gather(self._calendar(start), self._todos(start), self._music())
+            events, todos, snap.music, _ = await asyncio.gather(self._calendar(start), self._todos(start),
+                                                                self._music(), self._home_soon())
             snap.events = [e for e in events if isinstance(e, dict)][:MAX_EVENTS]
             horizon = start + timedelta(days=2)
             due = [r for r in todos if isinstance(r, dict) and not r.get("done")
@@ -304,3 +318,44 @@ class Today:
             return self._snap.music
         except ToolError:
             return ""
+
+    # ---- the home
+
+    def _home_lines(self) -> list[str]:
+        """The names of the home's rooms, devices and scenes, so the model writes ones that exist. No states: they
+        change all the time, and each change would send the block again."""
+        home = self.connections.home if self.connections else None
+        if home is None or not self._home:
+            return []
+        rooms: dict[str, list[str]] = {}
+        for d in self._home:
+            rooms.setdefault("Scenes" if d.kind == "scene" else d.room or "Other", []).append(inert(d.name))
+        lines, left = [f"Home ({inert(home.name)}), the names to use:"], MAX_HOME
+        for room in sorted(rooms, key=lambda r: (r == "Scenes", r == "Other", r)):
+            names = rooms[room][:left]
+            left -= len(names)
+            if names:
+                lines.append(f"- {inert(room)}: {', '.join(names)}")
+        if left <= 0 and len(self._home) > MAX_HOME:
+            lines.append(f"- and {len(self._home) - MAX_HOME} more")
+        return lines
+
+    async def _home_soon(self) -> None:
+        """Read the home's devices when that is due, waiting `HOME_WAIT_S` at most: the day doesn't wait for it."""
+        home = self.connections.home if self.connections else None
+        if home is None:
+            return
+        due = self._home_at is None or self._clock.monotonic() - self._home_at > HOME_REFRESH_S
+        if due and (self._home_task is None or self._home_task.done()):
+            self._home_task = asyncio.create_task(self._read_home(home))
+        if self._home_task is not None and not self._home_task.done():
+            await asyncio.wait({self._home_task}, timeout=HOME_WAIT_S)
+
+    async def _read_home(self, home) -> None:
+        try:
+            self._home = [d for d in await reach(home.devices) or [] if isinstance(d, Device)]
+        except ToolError as e:
+            log.info("no home for the talker: %s", e)
+        except Exception:
+            log.exception("reading the home failed")
+        self._home_at = self._clock.monotonic()

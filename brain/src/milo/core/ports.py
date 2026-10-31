@@ -19,6 +19,7 @@ from .conversations import ConversationInfo
 from .dictionary import Entries
 from .task_scope import ToolScope
 from .events import Event
+from .home import Device
 from .meetings import Chunk, MeetingInfo, MeetingNotes, TimedWord, Track, TranscriptLine, Turn
 from .memory import ConsolidationReport, Document, Episode, Fact, Hit, IndexItem, Recall, TurnContext
 from .routines import Routine
@@ -782,6 +783,40 @@ class Music(Protocol):
         ...
 
 
+@runtime_checkable
+class Home(Protocol):
+    """The user's home system: Home Assistant, Apple Home through shortcuts (ADR 0037)."""
+
+    name: str
+    """What the user calls it, for the card and the <today> block: "Home Assistant", "Apple Home"."""
+    setup: str
+    """How the user adds devices to it, for what Milo says when it has none: "home_assistant" or "shortcuts"."""
+
+    def devices(self) -> list[Device]:
+        """Every light, switch, scene, heating, blind, lock and alarm it has, with its state as far as it knows."""
+        ...
+
+    def act(self, id: str, do: str, value: str = "") -> Device | None:
+        """Do `do` (from core.home.DOES) to the device `id`; `value` is a level for "set" (percent or degrees) or an
+        alarm's mode for "arm". Returns the device as it is now, None when the home can't say."""
+        ...
+
+
+@runtime_checkable
+class Focus(Protocol):
+    """The system's Focus (Do Not Disturb and the user's other Focus modes)."""
+
+    def set(self, on: bool, name: str = "") -> None:
+        """Turn the Focus `name` ("": Do Not Disturb) on or off. Raises NotSetUp when Milo has no way to yet,
+        ToolError for the rest."""
+        ...
+
+    def offer(self, name: str = "") -> bool:
+        """Offer the user what `set` needs for `name`, to add with a click. False when Milo can't make it himself:
+        the user has to."""
+        ...
+
+
 @dataclass(frozen=True)
 class Connections:
     """One implementation of each connection. None: switched off in config.toml or not available."""
@@ -794,6 +829,8 @@ class Connections:
     files: Files | None = None
     phone: Phone | None = None
     music: Music | None = None
+    home: Home | None = None
+    focus: Focus | None = None
 
 
 # ---- memory: episodes, facts and the user's things (docs/design/memory.md)

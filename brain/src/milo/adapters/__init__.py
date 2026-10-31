@@ -31,6 +31,9 @@ BUILTIN = (
     "embed.hashing",
     "channel.telegram",
     "channel.imessage",
+    "home.home_assistant",
+    "home.apple_home",
+    "home.auto",
     "diarize.sherpa",
     "diarize.pyannote",
 )

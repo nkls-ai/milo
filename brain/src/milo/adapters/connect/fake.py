@@ -1,7 +1,7 @@
 """Made-up connections over one JSON file and a folder of files, for tests, the eval and trying Milo out.
 
-Nothing here touches the user's real apps. `world.json` holds events, reminders, mail, notes and
-shortcuts; `home/` holds the files. Every call re-reads the file, so a test can change the world between
+Nothing here touches the user's real apps. `world.json` holds events, reminders, mail, notes,
+shortcuts, a home and the Focus; `home/` holds the files. Every call re-reads the file, so a test can change the world between
 calls, and every change is written back, so a test can check what Milo did.
 """
 
@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from milo.core.control import Protected
+from milo.core.home import Device, NotSetUp
 from milo.core.ports import Connections
 from milo.core.registry import CONNECTIONS, AdapterContext, options_from
 from milo.core.types import ToolError
@@ -23,7 +24,7 @@ from milo.core.types import ToolError
 from . import _files
 
 EMPTY_WORLD = {"events": [], "reminders": [], "mail": [], "drafts": [], "notes": [], "shortcuts": [],
-               "shortcut_runs": [], "music": "off"}
+               "shortcut_runs": [], "music": "off", "home": [], "home_runs": [], "focus": {}}
 
 
 @dataclass(frozen=True)
@@ -271,6 +272,76 @@ class FakeShortcuts:
         return str(shortcut.get("output", ""))
 
 
+class FakeHome:
+    """A home whose devices are `home` in world.json, each {id, name, kind, room?, state?, level?, does?, members?}.
+    Every act goes into `home_runs` and changes the device's state as a real home would."""
+
+    name = "Fake home"
+    setup = "home_assistant"
+
+    def __init__(self, world: World):
+        self._world = world
+
+    def devices(self) -> list[Device]:
+        return [_fake_device(d) for d in self._world.load()["home"]]
+
+    def act(self, id: str, do: str, value: str = "") -> Device | None:
+        world = self._world.load()
+        found = next((d for d in world["home"] if d["id"] == id), None)
+        if found is None:
+            raise ToolError("Home Assistant doesn't know that one.")
+        world["home_runs"].append({"id": id, "do": do, "value": value})
+        state = {"on": "on", "off": "off", "open": "open", "close": "closed", "lock": "locked",
+                 "unlock": "unlocked", "disarm": "disarmed", "arm": f"armed_{value or 'away'}"}.get(do)
+        if do == "toggle":
+            state = "off" if found.get("state") == "on" else "on"
+        elif do == "set":
+            found["level"] = float(value)
+            state = "on" if found.get("kind") in ("light", "fan") else found.get("state")
+        elif do == "mode":
+            state = value
+        elif do == "run":
+            for member in world["home"]:
+                if member["id"] in found.get("members", []):
+                    member["state"] = "on"
+        if state is not None:
+            found["state"] = state
+        self._world.save(world)
+        return _fake_device(found)
+
+
+def _fake_device(d: dict) -> Device:
+    return Device(d["id"], d["name"], d.get("kind", "switch"), room=d.get("room", ""), state=d.get("state", ""),
+                  level=d.get("level"), does=tuple(d.get("does") or _FAKE_DOES.get(d.get("kind", ""), ("on", "off"))),
+                  members=tuple(d.get("members", [])))
+
+
+_FAKE_DOES = {"light": ("on", "off", "toggle", "set"), "scene": ("run",), "climate": ("on", "off", "set", "mode"),
+              "cover": ("open", "close", "set"), "garage": ("open", "close"), "lock": ("lock", "unlock"),
+              "alarm": ("arm", "disarm")}
+
+
+class FakeFocus:
+    """Focus modes as `focus` in world.json, name -> on. `focus_missing` true: no shortcut yet, so `set` raises
+    NotSetUp and `offer` counts in `focus_offers`."""
+
+    def __init__(self, world: World):
+        self._world = world
+
+    def set(self, on: bool, name: str = "") -> None:
+        world = self._world.load()
+        if world.get("focus_missing"):
+            raise NotSetUp("There's no shortcut for that Focus.")
+        world["focus"][name or "Do Not Disturb"] = on
+        self._world.save(world)
+
+    def offer(self, name: str = "") -> bool:
+        world = self._world.load()
+        world["focus_offers"] = world.get("focus_offers", 0) + 1
+        self._world.save(world)
+        return not name
+
+
 class FakeFiles:
     """Files under the fake home, found by name and by content like Spotlight would."""
 
@@ -314,4 +385,5 @@ def _fake(options: Mapping[str, Any], ctx: AdapterContext) -> Connections:
     world = World(Path(o.dir).expanduser() if o.dir else ctx.home / "fake")
     return Connections(calendar=FakeCalendar(world), reminders=FakeReminders(world), mail=FakeMail(world),
                        notes=FakeNotes(world), shortcuts=FakeShortcuts(world),
-                       files=FakeFiles(world, Protected(ctx.home)), music=FakeMusic(world))
+                       files=FakeFiles(world, Protected(ctx.home)), music=FakeMusic(world), home=FakeHome(world),
+                       focus=FakeFocus(world))
