@@ -165,11 +165,12 @@ def test_in_auto_mode_a_folder_opens_at_once_but_an_app_bundle_still_asks(tmp_pa
     """On the real Milo "show me my downloads folder" asked "Open Downloads?" on a day with shared entries."""
     (tmp_path / "Downloads").mkdir()
     (tmp_path / "Evil.app").mkdir()
+    (tmp_path / "Photos").symlink_to(tmp_path / "Evil.app")  # a plain name that is a bundle
     s = Stack(model=FakeLiveModel([f'[happy] <open path="{tmp_path / "Downloads"}"/> There.'],
-                                  [f'[happy] <open path="{tmp_path / "Evil.app"}"/> Opening it.']))
+                                  [f'[happy] <open path="{tmp_path / "Photos"}"/> Opening it.']))
     s.live_talk.note("today", "Halloween (shared)")
     talk(s, "Show me my downloads folder")
-    assert [args["path"] for _, args in opened(s)] == [str(tmp_path / "Downloads")]
+    assert [args["path"] for _, args in opened(s)] == [str((tmp_path / "Downloads").resolve())]
     assert s.sink.of(Confirm) == []
 
     async def run():

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -43,11 +44,17 @@ log = logging.getLogger("milo.live")
 HICCUP = "My brain hiccuped. Check ~/Milo/logs/brain.log."
 HOLD_MAX_S = 330.0  # a held reply is dropped after this: longer than the longest hands-free recording
 
-def _plain_folder(path: str) -> bool:
-    """A folder with no extension: opening it only shows it. A bundle (Mail.app, a .workflow) is a folder too, but
-    opening it runs something, and every bundle has an extension."""
-    where = Path(path).expanduser()
-    return where.is_dir() and not where.suffix
+def _plain_folder(path: str) -> str:
+    """The folder `path` really is (links followed), if it is a plain one: opening it only shows it. A bundle
+    (Mail.app, a .workflow) is a folder too, but opening it runs something, and every bundle has an extension, so
+    the folder and every folder above it must have none. "" otherwise; open the returned path, which was checked."""
+    try:
+        where = Path(path).expanduser().resolve(strict=True)
+    except (OSError, RuntimeError):
+        return ""
+    if not where.is_dir() or any(part.suffix for part in (where, *where.parents)):
+        return ""
+    return str(where)
 
 
 class LiveTalk:
@@ -587,7 +594,10 @@ class LiveTalk:
         held = []
         for request in requests:
             # A file from a mail could be a program; a plain folder can't ("show me my downloads").
-            ask = rule.outside if request.path and not _plain_folder(request.path) else rule.ask_undoable
+            folder = _plain_folder(request.path) if request.path else ""
+            if folder:
+                request = dataclasses.replace(request, path=folder)
+            ask = rule.outside if request.path and not folder else rule.ask_undoable
             if (request.url or request.path) and ask and not named_by(request, " ".join(self._recent)):
                 held.append(request)
                 continue
