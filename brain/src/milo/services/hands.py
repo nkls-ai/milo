@@ -15,6 +15,8 @@ from milo.core.hands import validate
 from milo.core.opening import resolve_url
 from milo.core.ports import AppHands, Confirmer, EventSink
 from milo.core.types import AppRef, BorrowNeeded, HandsError, Scope, Step, StepStatus
+from milo.core.words import has, say
+from milo.core.words.hands import REASONS_DE
 
 from . import documents, sheets
 from .access import AccessGate
@@ -492,101 +494,53 @@ def title(tool: str, args: dict, target: dict) -> str:
 def confirm_question(tool: str, args: dict, target: dict, reason: str, language: str = "") -> str:
     """A yes-or-no question naming the thing, like "I'm about to click “Send” in Mail. Go ahead?". In the user's
     language: German or English."""
+    lang = language
     app = str(target.get("app") or args.get("app") or "")
     in_app = f" in {app}" if app else ""
     what = " ".join(str(target.get("title") or "").split())  # never shortened: the user approves all of it
-    if language == "de":
-        return _german_question(tool, args, target, reason, app, what)
     if tool == "open_url":
-        return f"Open {urlsplit(str(args['url'])).hostname or args['url']}{in_app}?"
+        return say("hands.open_url", lang, host=urlsplit(str(args["url"])).hostname or args["url"], in_app=in_app)
     if reason == "use":
-        return f"May I use {app or 'that app'} for this? You'll see each step."
+        return say("hands.use", lang, app=app or say("hands.that_app", lang))
     if tool in ("click", "ax_press") and what:
-        return f"I'm about to click “{what}”{in_app}. Go ahead?"
+        return say("hands.click", lang, what=what, in_app=in_app)
     if tool == "type":
-        return f"I'm about to type “{args['text']}”{in_app}, which may {reason}. Go ahead?"
+        return say("hands.type", lang, text=args["text"], in_app=in_app, reason=_reason(reason, lang))
     if tool == "key":
-        return f"I'm about to press {_pretty_combo(str(args['combo']))}{in_app}, which may {reason}. Go ahead?"
+        return say("hands.key", lang, combo=_pretty_combo(str(args["combo"])), in_app=in_app,
+                   reason=_reason(reason, lang))
     if tool == "run_applescript":
         # Short enough to answer at a glance, in words for someone who never wrote a script. The step above the
         # question in the Milo window shows the whole script, so the user can read what they approve.
         apps = _script_app_names(args)
-        where = f"in {apps} directly" if apps else "in your apps directly"
-        could = "" if reason == "run a script" else f" It could {reason}."
-        return f"May I work {where}?{could} You can read the steps in my window."
+        where = say("hands.script_in", lang, apps=apps) if apps else say("hands.script_anywhere", lang)
+        could = "" if reason == "run a script" else say("hands.script_could", lang, reason=_reason(reason, lang))
+        return say("hands.script", lang, where=where, could=could)
     if tool == "sheet_write":
-        doc = _clip(str(target.get("document") or "the front document"), 30)
+        doc = _clip(str(target.get("document") or say("hands.front_document", lang)), 30)
         n = int(target.get("filled") or 0)
-        return f"Replace {n} filled cell{'s' if n != 1 else ''} in “{doc}”?"
-    return f"I'm about to {reason}{in_app}. Go ahead?"
+        return say("hands.sheet_one" if n == 1 else "hands.sheet_many", lang, n=n, doc=doc)
+    return say("hands.other", lang, reason=_reason(reason, lang), in_app=in_app)
 
 
-_REASONS_DE = {
-    "send": "etwas senden", "send now": "etwas senden", "submit": "etwas absenden", "publish": "etwas veröffentlichen",
-    "post": "etwas posten", "share": "etwas teilen", "confirm": "etwas bestätigen", "delete": "etwas löschen",
-    "remove": "etwas entfernen", "trash": "etwas löschen", "erase": "etwas löschen", "delete a note": "eine Notiz löschen",
-    "move to the Trash": "etwas in den Papierkorb legen", "empty the Trash": "den Papierkorb leeren",
-    "delete it for good": "etwas endgültig löschen", "delete immediately": "etwas endgültig löschen",
-    "delete permanently": "etwas endgültig löschen", "don't save": "Änderungen verwerfen",
-    "don’t save": "Änderungen verwerfen", "discard": "Änderungen verwerfen", "overwrite": "etwas überschreiben",
-    "replace": "etwas ersetzen", "replace cells": "Zellen ersetzen", "change the document": "das Dokument ändern",
-    "change a system setting": "eine Systemeinstellung ändern",
-    "click something I can't name": "auf etwas klicken, das ich nicht benennen kann",
-    "open a program that runs commands": "ein Programm öffnen, das Befehle ausführt", "run a command": "einen Befehl ausführen",
-    "run a script": "ein Skript ausführen", "run other programs or type for you": "andere Programme starten oder für dich tippen",
-    "uninstall": "etwas deinstallieren", "unsubscribe": "etwas abbestellen", "buy": "etwas kaufen", "buy now": "etwas kaufen",
-    "purchase": "etwas kaufen", "pay": "bezahlen", "pay now": "bezahlen", "checkout": "bezahlen", "check out": "bezahlen",
-    "order": "etwas bestellen", "place order": "etwas bestellen", "transfer": "Geld überweisen", "sell": "etwas verkaufen",
-    "withdraw": "Geld abheben", "cancel subscription": "ein Abo kündigen", "close account": "ein Konto schließen",
-    "delete account": "ein Konto löschen",
-}
-"""Risk reasons (services/risk.py) as German phrases for a question. A German word from the lists is quoted."""
-
-
-def _reason_de(reason: str) -> str:
-    return _REASONS_DE.get(reason) or _REASONS_DE.get(reason.lower()) or f"„{reason}“ auslösen"
+def _reason(reason: str, lang: str) -> str:
+    """A risk reason (services/risk.py) as words for a question in `lang`."""
+    if lang != "de":
+        return reason
+    return REASONS_DE.get(reason) or REASONS_DE.get(reason.lower()) or say("hands.unknown_reason", lang, reason=reason)
 
 
 def _script_app_names(args: dict) -> str:
     return _clip(", ".join(dict.fromkeys(_TELL.findall(str(args["script"])))), 30)
 
 
-def _german_question(tool: str, args: dict, target: dict, reason: str, app: str, what: str) -> str:
-    """confirm_question in German."""
-    in_app = f" in {app}" if app else ""
-    if tool == "open_url":
-        return f"{urlsplit(str(args['url'])).hostname or args['url']}{in_app} öffnen?"
-    if reason == "use":
-        return f"Darf ich dafür {app or 'diese App'} benutzen? Du siehst jeden Schritt."
-    if tool in ("click", "ax_press") and what:
-        return f"Ich klicke gleich auf „{what}“{in_app}. Okay?"
-    if tool == "type":
-        return f"Ich tippe gleich „{args['text']}“{in_app}. Das kann {_reason_de(reason)}. Okay?"
-    if tool == "key":
-        return f"Ich drücke gleich {_pretty_combo(str(args['combo']))}{in_app}. Das kann {_reason_de(reason)}. Okay?"
-    if tool == "run_applescript":
-        apps = _script_app_names(args)
-        where = f"direkt in {apps}" if apps else "direkt in deinen Apps"
-        could = "" if reason == "run a script" else f" Das könnte {_reason_de(reason)}."
-        return f"Darf ich {where} arbeiten?{could} Die Schritte stehen in meinem Fenster."
-    if tool == "sheet_write":
-        doc = _clip(str(target.get("document") or "dem vorderen Dokument"), 30)
-        n = int(target.get("filled") or 0)
-        return f"{n} gefüllte Zelle{'n' if n != 1 else ''} in „{doc}“ ersetzen?"
-    return f"Darf ich{in_app} {_reason_de(reason)}?"
-
-
 def borrow_question(tool: str, target: dict, what: str, language: str = "") -> str:
     """"Can I borrow your mouse for a moment, to click in Microsoft Excel?"."""
     app = str(target.get("app") or "")
     in_app = f" in {app}" if app else ""
-    if language == "de":
-        device = {"mouse": "deine Maus", "keyboard": "deine Tastatur"}.get(what, what)
-        verb = {"click": "zu klicken", "type": "zu tippen", "key": "eine Taste zu drücken",
-                "scroll": "zu scrollen"}.get(tool, "das zu machen")
-        return f"Darf ich mir kurz {device} leihen, um{in_app} {verb}?"
-    verb = {"click": "click", "type": "type", "key": "press a key", "scroll": "scroll"}.get(tool, "do this")
-    return f"Can I borrow your {what} for a moment, to {verb}{in_app}?"
+    device = say(f"hands.device.{what}", language) if has(f"hands.device.{what}") else what
+    verb = say(f"hands.borrow.{tool}" if has(f"hands.borrow.{tool}") else "hands.borrow.other", language)
+    return say("hands.borrow", language, device=device, verb=verb, in_app=in_app)
 
 
 def output(tool: str, result: dict) -> ToolOutput:
