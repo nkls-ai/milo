@@ -335,3 +335,29 @@ def test_a_number_or_address_too_long_to_show_whole_is_refused(tmp_path):
     asyncio.run(ask_and_answer(s, "call Odd One", None))
     assert not s.sink.of(Confirm) and world(s)["calls"] == []
     assert said(s).endswith("that number or address is too long to check.")
+
+
+def test_nothing_invisible_goes_that_the_question_doesnt_show(tmp_path):
+    """Security review, 2026-11-01: a bidi override or a zero-width space would go out in the text and the number,
+    showing in the question as something else. They are dropped from both, and the joiners emoji need stay."""
+    hidden = "Pay ‮etal‬ at 5​ ok 👨‍👩‍👧"
+    s = stack(tmp_path, [f'[happy] <message to="Anna">{hidden}</message>'])
+    [ask] = asyncio.run(ask_and_answer(s, "text Anna", True))
+    [sent] = world(s)["messages_sent"]
+    assert sent["text"] == "Pay etal at 5\nok 👨\u200d👩\u200d👧", "a line separator is a line break, shown as one"
+    assert ask.question == f"Send this to Anna Berg (+49 170 1234567)? “{sent['text']}”"
+
+
+def test_a_number_the_address_book_wraps_in_direction_marks_is_used_plain(tmp_path):
+    wrapped = {"name": "Lea Wolf", "phones": [{"label": "mobile", "value": "‪+49 170 999‬"}]}
+    s = stack(tmp_path, ['[happy] <call to="Lea"/>'], contacts=(wrapped,))
+    [ask] = asyncio.run(ask_and_answer(s, "call Lea", True))
+    assert ask.question == "Call Lea Wolf (+49 170 999)?"
+    assert world(s)["calls"] == [{"to": "+49 170 999", "how": "phone"}], "the number shown is the number called"
+
+
+def test_an_address_with_characters_that_dont_show_plainly_is_refused(tmp_path):
+    odd = {"name": "Odd One", "emails": [{"label": "home", "value": "аnna@example.com"}]}  # a Cyrillic "а"
+    s = stack(tmp_path, ['[happy] <message to="Odd One">hi</message>'], contacts=(odd,))
+    asyncio.run(ask_and_answer(s, "text Odd One hi", None))
+    assert not s.sink.of(Confirm) and world(s)["messages_sent"] == []
