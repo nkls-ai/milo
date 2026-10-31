@@ -9,7 +9,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from .dates import long_date
+from .words.dates import long_date
 
 
 def first_name(address: str) -> str:

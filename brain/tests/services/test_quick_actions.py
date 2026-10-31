@@ -17,7 +17,8 @@ from milo.adapters.connect.fake import World
 from milo.core.events import ActionDone, Confirm, ConfirmAnswer, UndoPoints
 from milo.core.types import Reminder
 from milo.memory.reminders import MarkdownReminders
-from milo.services import quick_words as words
+from milo.core import words
+from milo.core.words import dates
 from milo.services.app_ops import AppOps, OpsError
 from milo.services.reply_stream import ReplyParser
 from milo.services.today import Today
@@ -609,15 +610,15 @@ def test_act_tags_are_parsed_and_never_spoken():
                                                  (5400, "de", "1 Stunde 30 Minuten"), (60, "en", "1 minute"),
                                                  (3600, "de", "1 Stunde")])
 def test_spans_read_like_speech(seconds, lang, said):
-    assert words.span(seconds, lang) == said
+    assert dates.span(seconds, lang) == said
 
 
 def test_times_and_languages():
     today = datetime(2026, 10, 29).date()
-    assert words.when(datetime(2026, 10, 30, 9), today, "de") == "morgen um 9 Uhr"
-    assert words.when(datetime(2026, 11, 2, 14, 30), today, "en") == "Monday at 2:30 pm"
-    assert words.when(datetime(2026, 11, 2, 14, 30), today, "de") == "Montag um 14:30"
-    assert words.when(datetime(2026, 12, 24), today, "de", all_day=True) == "Donnerstag, 24. Dezember"
+    assert dates.when(datetime(2026, 10, 30, 9), today, "de") == "morgen um 9 Uhr"
+    assert dates.when(datetime(2026, 11, 2, 14, 30), today, "en") == "Monday at 2:30 pm"
+    assert dates.when(datetime(2026, 11, 2, 14, 30), today, "de") == "Montag um 14:30"
+    assert dates.when(datetime(2026, 12, 24), today, "de", all_day=True) == "Donnerstag, 24. Dezember"
     assert words.language("de") == "de" and words.language("") == "en"
     assert words.language("fr") == "en", "no French lines yet"
 

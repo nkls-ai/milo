@@ -24,7 +24,7 @@ from dataclasses import replace
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
-from milo.core.dates import long_date
+from milo.core.words.dates import long_date
 from milo.core.logtext import private
 from milo.core.memory import TOPICS, ConsolidationReport, Episode, Fact, FactChange, new_id
 from milo.core.ports import Clock, EpisodeLog, FactStore, Harness, UsageLedger

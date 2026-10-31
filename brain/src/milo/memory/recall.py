@@ -12,7 +12,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 
-from milo.core.dates import long_date
+from milo.core.words.dates import long_date
 from milo.core.memory import Episode, Fact, Hit, Recall, TurnContext, estimate_tokens
 from milo.core.ports import FactStore, MemoryIndex
 

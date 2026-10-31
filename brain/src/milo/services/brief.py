@@ -12,7 +12,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime, time, timedelta
 from typing import Any
 
-from milo.core.dates import month, weekday
+from milo.core.words.dates import month, weekday
 from milo.core.ports import ReminderSource
 
 from .helpers import Helper, HelperStatus

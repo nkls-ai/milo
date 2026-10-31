@@ -31,7 +31,7 @@ from milo.core.logtext import private
 from milo.core.ports import EventSink
 from milo.core.types import Emotion
 
-from .quick_words import language
+from milo.core.words import language
 from .speaker import Speaker
 from .transcript import Transcript, unrecorded
 

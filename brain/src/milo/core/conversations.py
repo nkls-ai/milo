@@ -9,7 +9,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 
-from .dates import long_date
+from .words.dates import long_date
 from .memory import estimate_tokens
 
 KINDS = ("chat", "routine", "meeting")

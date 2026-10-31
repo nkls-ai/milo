@@ -24,13 +24,14 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
+from milo.core import words
 from milo.core.events import ActionDone
 from milo.core.logtext import private
 from milo.core.ports import Clock, Connections, EventSink, ReminderBook
 from milo.core.types import ActionLevel, AppRef, Emotion, Reminder, ToolError
 from milo.core.wording import first_name
+from milo.core.words import dates, say
 
-from . import quick_words as words
 from .app_ops import AppOps, OpsError
 from .approvals import Approvals
 from .permits import Scope
@@ -251,15 +252,15 @@ class QuickActions:
                                                                  scope=Scope((plan.scope,)) if plan.scope else None)
                                    ).allowed
                     if not allowed:
-                        return await self._say(words.line("declined", lang), via, turn, Emotion.NEUTRAL)
+                        return await self._say(say("acts.declined", lang), via, turn, Emotion.NEUTRAL)
             done = await plan.run()
         except (Problem, OpsError, ToolError) as e:
             log.info("a quick %s didn't work: %s", act.kind, e)
-            return await self._say(words.line("failed", lang, why=str(e).rstrip(".") + "."), via, turn,
+            return await self._say(say("acts.failed", lang, why=str(e).rstrip(".") + "."), via, turn,
                                    Emotion.CONCERNED)
         except Exception:
             log.exception("a quick %s crashed", act.kind)
-            return await self._say(words.line("failed", lang, why="something went wrong inside Milo."), via, turn,
+            return await self._say(say("acts.failed", lang, why="something went wrong inside Milo."), via, turn,
                                    Emotion.CONCERNED)
         log.info("quick %s done in %.2fs: %s", act.kind, self._clock.monotonic() - started, private(done.title))
         task = self._record(done) if (done.reverse or done.changes) else ""
@@ -354,16 +355,16 @@ class QuickActions:
         async def run() -> _Done:
             made = await self._ops("calendar.add_event", args) or {}
             self.today.changed()
-            spoken = words.when(start, self._clock.now().date(), lang, all_day=all_day)
+            spoken = dates.when(start, self._clock.now().date(), lang, all_day=all_day)
             # The card shows the day and the time from `when` (ADR 0030): its detail is only the place.
-            return _Done("event", title, words.line("event", lang, title=title, when=spoken),
+            return _Done("event", title, say("acts.event", lang, title=title, when=spoken),
                          detail=act.get("location"), when=_iso(start), app="Calendar",
                          reverse=[{"op": "event.delete", "id": str(made.get("id", "")), "at": _iso(start),
                                    "title": title, "start": _iso(start), "end": _iso(end),
                                    **({"all_day": True} if all_day else {})}])
 
-        when = words.when(start, self._clock.now().date(), lang, all_day=all_day)
-        return _Plan("change", words.ask("event", lang, title=inert(title, 50), when=when), APPS["calendar"], run)
+        when = dates.when(start, self._clock.now().date(), lang, all_day=all_day)
+        return _Plan("change", say("acts.ask.event", lang, title=inert(title, 50), when=when), APPS["calendar"], run)
 
     async def _event(self, act: ActRequest) -> tuple[dict, bool]:
         """The event a move or cancel means: its handle from <today>, else its title on a day. False with it when
@@ -407,16 +408,16 @@ class QuickActions:
             await self._ops("calendar.update_event", {"id": e["id"], "at": _iso(old_start), "start": _iso(start),
                                                       "end": _iso(end)})
             self.today.changed()
-            spoken = words.when(start, self._clock.now().date(), lang)
-            return _Done("event", title, words.line("moved", lang, title=title, when=spoken),
+            spoken = dates.when(start, self._clock.now().date(), lang)
+            return _Done("event", title, say("acts.moved", lang, title=title, when=spoken),
                          detail=str(e.get("location") or ""), when=_iso(start), app="Calendar",
                          reverse=[{"op": "event.move", "id": e["id"], "at": _iso(start), "start": _iso(old_start),
                                    "end": _iso(old_end or old_start), "title": title}])
 
         # Moving an invite changes what other people see: that asks, like sharing.
-        when = words.when(start, self._clock.now().date(), lang)
-        return _Plan("share" if others else "change", words.ask("move", lang, title=inert(title, 50), when=when)
-                     + (words.ask("invite", lang) if others else ""), APPS["calendar"], run, sure)
+        when = dates.when(start, self._clock.now().date(), lang)
+        return _Plan("share" if others else "change", say("acts.ask.move", lang, title=inert(title, 50), when=when)
+                     + (say("acts.ask.invite", lang) if others else ""), APPS["calendar"], run, sure)
 
     async def _cancel(self, act: ActRequest, lang: str) -> _Plan:
         self._need("calendar")
@@ -430,16 +431,16 @@ class QuickActions:
         async def run() -> _Done:
             gone = await self._ops("calendar.delete_event", {"id": e["id"], "at": _iso(start)}) or e
             self.today.changed()
-            return _Done("event", title, words.line("cancelled", lang, title=title), detail="",
+            return _Done("event", title, say("acts.cancelled", lang, title=title), detail="",
                          when=_iso(start) if start else "", app="Calendar",
                          reverse=[{"op": "event.add", **{k: gone.get(k, e.get(k, "")) for k in
                                                          ("title", "start", "end", "location", "notes", "calendar")},
                                    "all_day": bool(gone.get("all_day", e.get("all_day")))}] if restorable else [])
 
-        why = (words.ask("invite", lang) if others else words.ask("series", lang) if e.get("recurring") else "")
-        when = words.when(start, self._clock.now().date(), lang, all_day=bool(e.get("all_day"))) if start else ""
+        why = (say("acts.ask.invite", lang) if others else say("acts.ask.series", lang) if e.get("recurring") else "")
+        when = dates.when(start, self._clock.now().date(), lang, all_day=bool(e.get("all_day"))) if start else ""
         return _Plan("trash" if restorable else "delete",
-                     words.ask("cancel", lang, title=inert(title, 50), when=when) + why, APPS["calendar"], run, sure)
+                     say("acts.ask.cancel", lang, title=inert(title, 50), when=when) + why, APPS["calendar"], run, sure)
 
     def _todo(self, act: ActRequest, lang: str) -> _Plan:
         self._need("reminders")
@@ -452,12 +453,12 @@ class QuickActions:
         async def run() -> _Done:
             made = await self._ops("reminders.add", args) or {}
             self.today.changed()
-            spoken = words.when(due, self._clock.now().date(), lang) if due else ""
-            return _Done("todo", title, words.line("todo_due" if due else "todo", lang, title=title, when=spoken),
+            spoken = dates.when(due, self._clock.now().date(), lang) if due else ""
+            return _Done("todo", title, say("acts.todo_due" if due else "acts.todo", lang, title=title, when=spoken),
                          detail=str(made.get("list") or act.get("list") or ""), when=_iso(due) if due else "",
                          app="Reminders", reverse=[{"op": "todo.delete", "id": str(made.get("id", ""))}])
 
-        return _Plan("change", words.ask("todo", lang, title=inert(title, 50)), APPS["reminders"], run)
+        return _Plan("change", say("acts.ask.todo", lang, title=inert(title, 50)), APPS["reminders"], run)
 
     def _note(self, act: ActRequest, lang: str) -> _Plan:
         notes = self._connections.notes
@@ -474,11 +475,11 @@ class QuickActions:
             await self._may_control(notes)
             made = await asyncio.to_thread(notes.create, title, body, act.get("folder"))
             first = next((line for line in body.splitlines() if line.strip()), "")
-            return _Done("note", title, words.line("note", lang, title=title), detail=first[:80], app="Notes",
+            return _Done("note", title, say("acts.note", lang, title=title), detail=first[:80], app="Notes",
                          reverse=[{"op": "note.delete", "id": str(made.get("id", "")),
                                    "text": " ".join(f"{title} {body}".split())}])
 
-        return _Plan("change", words.ask("note", lang, title=inert(title, 50)), APPROVE_APPS["Notes"], run)
+        return _Plan("change", say("acts.ask.note", lang, title=inert(title, 50)), APPROVE_APPS["Notes"], run)
 
     def _timer(self, act: ActRequest, lang: str) -> _Plan:
         seconds = 0.0
@@ -495,8 +496,8 @@ class QuickActions:
 
         async def run() -> _Done:
             timer = self._set_timer(seconds, title, lang)
-            spoken = words.span(seconds, lang)
-            line = words.line("timer_named" if title else "timer", lang, title=title, span=spoken)
+            spoken = dates.span(seconds, lang)
+            line = say("acts.timer_named" if title else "acts.timer", lang, title=title, span=spoken)
             return _Done("timer", title or spoken, line, detail=spoken, when=_iso(timer.rings, seconds=True),
                          app="Milo", reverse=[{"op": "timer.cancel", "id": timer.id}])
 
@@ -516,14 +517,14 @@ class QuickActions:
             made = await asyncio.to_thread(mail.draft, to, subject, body)
             who = " and ".join(first_name(t) or t for t in to[:2])
             # Mail keeps no id for a draft that Milo could find again: a helper takes it out of Drafts on Undo.
-            return _Done("draft", str(made.get("subject") or subject or who), words.line("draft_to", lang, who=who),
+            return _Done("draft", str(made.get("subject") or subject or who), say("acts.draft_to", lang, who=who),
                          detail=", ".join(to), app="Mail",
                          changes=[{"title": f"Wrote a mail draft to {', '.join(to)}", "app": "Mail",
                                    "detail": "mail_draft " + json.dumps({"to": to, "subject": subject},
                                                                         ensure_ascii=False)[:400],
                                    "covered": False}])
 
-        return _Plan("draft", words.ask("draft", lang, who=inert(", ".join(to), 60)), None, run)
+        return _Plan("draft", say("acts.ask.draft", lang, who=inert(", ".join(to), 60)), None, run)
 
     def _shortcut(self, act: ActRequest, lang: str) -> _Plan:
         shortcuts = self._connections.shortcuts
@@ -537,12 +538,12 @@ class QuickActions:
         async def run() -> _Done:
             output = await asyncio.to_thread(shortcuts.run, name, given)
             # Its output can be anything, written by anyone: it goes on the card, inert, not into the conversation.
-            return _Done("shortcut", name, words.line("shortcut", lang, title=name),
+            return _Done("shortcut", name, say("acts.shortcut", lang, title=name),
                          detail=inert(next((x for x in str(output).splitlines() if x.strip()), ""), 80),
                          app="Shortcuts")
 
         # A shortcut can send, delete or buy: it asks every time (ADR 0009), and nothing takes it back.
-        return _Plan("shortcut", words.ask("shortcut", lang, title=inert(name, 50)), None, run)
+        return _Plan("shortcut", say("acts.ask.shortcut", lang, title=inert(name, 50)), None, run)
 
     def _music(self, act: ActRequest, lang: str) -> _Plan:
         self._need("media")
@@ -559,12 +560,12 @@ class QuickActions:
             after = await self._ops(f"media.{do}", {}) or {}
             self.today.changed()
             back = {"next": "previous", "previous": "next"}.get(do) or ("play" if before == "playing" else "pause")
-            line = words.line(do, lang)
+            line = say(f"acts.{do}", lang)
             # The card says it as Milo did ("Paused", "Nächster"). The system's player names no app: "" unless it does.
             return _Done("music", line.rstrip("."), line, app=str(after.get("app") or ""),
                          reverse=[{"op": "media", "do": back}])
 
-        return _Plan("change", words.ask(do, lang), None, run)
+        return _Plan("change", say(f"acts.ask.{do}", lang), None, run)
 
     def _meeting(self, act: ActRequest, lang: str) -> _Plan:
         meetings = self._meetings
@@ -576,16 +577,16 @@ class QuickActions:
 
         async def run() -> _Done:
             if do in ("stop", "pause", "resume") and not meetings.recording:
-                return _Done("", "", words.line("meeting_none", lang))
+                return _Done("", "", say("acts.meeting_none", lang))
             if do in ("start", "stop"):
                 await meetings.toggle(do == "start")
             else:
                 meetings.pause(do == "pause")
-            return _Done("", "", words.line(f"meeting_{do}", lang))
+            return _Done("", "", say(f"acts.meeting_{do}", lang))
 
         # Starting to listen from outside text asks first; stopping never does.
         asks = do in ("start", "resume")
-        return _Plan("change" if asks else None, words.ask(f"meeting_{do}", lang) if asks else "", None, run)
+        return _Plan("change" if asks else None, say(f"acts.ask.meeting_{do}", lang) if asks else "", None, run)
 
     async def _may_control(self, backend: object) -> None:
         """Before the first script in an app, check the system lets Milo control it (ADR 0025)."""
@@ -615,7 +616,7 @@ class QuickActions:
             return
         self.today.changed()
         log.info("a timer rang")
-        text = words.line("ring_named" if timer.title else "ring", timer.lang, title=timer.title)
+        text = say("acts.ring_named" if timer.title else "acts.ring", timer.lang, title=timer.title)
         # A timer doesn't wait for a quiet moment: it rings now.
         self._transcript.say(text, Emotion.EXCITED)
         task = self._speaker.say(text, Emotion.EXCITED, speak=not self._quiet())
@@ -647,7 +648,7 @@ class QuickActions:
                 if op == "event.delete" and not step.get("all_day"):
                     expected, found = (*expected, step["end"]), (*found, now.get("end"))
                 if tuple(str(v)[:16] for v in found) != tuple(str(v)[:16] for v in expected):
-                    if not await self._approvals.confirm(words.ask("event_changed", self._lang(),
+                    if not await self._approvals.confirm(say("acts.ask.event_changed", self._lang(),
                                                                    title=inert(step["title"], 50))):
                         return False
                 if op == "event.delete":
@@ -671,7 +672,7 @@ class QuickActions:
                     return True  # deleted already
                 if " ".join(f"{now.get('title', '')} {now.get('text', '')}".split()) != step["text"] \
                         and " ".join(str(now.get("text", "")).split()) != step["text"]:
-                    if not await self._approvals.confirm(words.ask("note_changed", self._lang(),
+                    if not await self._approvals.confirm(say("acts.ask.note_changed", self._lang(),
                                                                    title=inert(now.get("title"), 50))):
                         return False
                 await asyncio.to_thread(notes.delete, step["id"])

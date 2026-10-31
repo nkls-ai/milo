@@ -4,7 +4,7 @@ Platform specifics belong in `milo/adapters/` (picked by name in config.toml) an
 reads every core module and fails when one imports or names something only macOS has: AppleScript, bundle ids,
 macOS paths and commands, the ⌘ key vocabulary, System Settings, Apple-only frameworks and apps, "Mac" in words
 the user or the model reads, POSIX-only calls, `%-d`-style strftime flags (Windows raises on them; use
-`milo.core.dates`), and branches on `sys.platform`.
+`milo.core.words.dates`), and branches on `sys.platform`.
 
 It reads code, not comments: imports, attribute uses and string values. Docstrings and other bare strings are
 left alone, so a comment may still say how macOS behaves.
