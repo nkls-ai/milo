@@ -287,7 +287,7 @@ def _helpers(p: Parts) -> None:
     shelf = FileUndoShelf(workspace.undo_dir, Path.home(), protected=workspace.protected)
     p.undo = undo = Undo(shelf, AppHands(p.bridge), p.ui, p.clock,
                          confirm=p.approvals, speaker=p.speaker, helpers=p.later("helpers"), transcript=p.transcript,
-                         quiet=p.attention.in_conversation)
+                         quiet=p.attention.in_conversation, language=p.language.get)
     p.hands = p.hands_server = None
     # The system's permissions, before Milo first needs one (ADR 0025). The line before the system's own question
     # is spoken unless the user is talking or answering something.

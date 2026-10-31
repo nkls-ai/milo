@@ -597,6 +597,22 @@ def test_a_task_that_only_opened_things_is_undone_with_one_line_and_no_helper(tm
     assert points(s)[0]["state"] == "undone"
 
 
+def test_undo_speaks_the_users_language(tmp_path):
+    s = Stack(harness=FakeHarness(), background=FakeHarness(), home=tmp_path)
+    s.language.hear("Mach das bitte rückgängig", "de")
+    _noted_task(s)
+    assert s.bubbles()[-1] == "Bei „Open Chrome on YouTube“ gibt es nichts rückgängig zu machen: Es hat nichts geändert."
+
+    async def again(ref: str):
+        await s.undo.undo(ref)
+        await s.undo.idle()
+
+    asyncio.run(again(points(s)[0]["id"]))
+    assert s.bubbles()[-1] == "„Open Chrome on YouTube“ ist schon rückgängig gemacht."
+    asyncio.run(again(""))
+    assert s.bubbles()[-1] == "Gerade gibt es nichts von mir, was ich rückgängig machen könnte."
+
+
 def test_a_task_with_notes_but_no_change_is_undone_with_one_line(tmp_path):
     s = Stack(harness=FakeHarness(), background=FakeHarness(), home=tmp_path)
     calls = _noted_task(s)

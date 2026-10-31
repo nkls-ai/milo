@@ -144,7 +144,8 @@ class Stack:
             self.undo = Undo(FileUndoShelf(self.home / "Milo" / "state" / "undo", self.home,
                                            protected=Protected(self.home / "Milo")), self.hands_port, self.ui,
                              self.clock, confirm=self.approvals, speaker=self.speaker, helpers=lambda: self.tasks,
-                             quiet=lambda: self.live_talk.busy, wait_s=self.wait_s, poll_s=0.005)
+                             quiet=lambda: self.live_talk.busy, wait_s=self.wait_s, poll_s=0.005,
+                             language=self.language.get)
         self.hands = HandsService(self.hands_port, self.approvals, self.ui, access=self.gate,
                                   before_change=self.undo.before_change if self.undo is not None else None,
                                   language=self.language.get)
