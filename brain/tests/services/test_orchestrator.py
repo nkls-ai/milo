@@ -549,6 +549,27 @@ def test_instructions_go_to_the_worker_and_on_finish_hears_how_it_ended_once():
     assert follow.instructions == "Follow this recipe: 1. Count." and follow.on_finish is None
 
 
+
+def test_a_found_link_goes_on_the_clipboard_but_a_routine_never_takes_it_over():
+    link = "https://github.com/NiklasDob/milo"
+    found = Reply(Emotion.HAPPY, "The link's on your clipboard.", Usage(), "s1", copy=link)
+    s = Stack(harness=ScriptedHarness(WorkerScript(found), WorkerScript(
+        Reply(Emotion.HAPPY, "Report done.", Usage(), "s2", copy="https://example.com/report"))))
+    copied = []
+    s.tasks.on_copy = copied.append
+
+    async def run():
+        s.tasks.submit("find the link to the Milo repo")
+        await s.tasks.idle()
+        s.tasks.submit("Do the routine “Report”.", instructions="Follow this recipe: 1. Count.")
+        await s.tasks.idle()
+        await settle()
+
+    asyncio.run(run())
+    assert copied == [link]
+    assert s.voice.spoken == ["The link's on your clipboard.", "Report done."], "the link itself is never read out"
+
+
 # ---- the tools a helper gets (ADR 0032)
 
 

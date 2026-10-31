@@ -79,7 +79,7 @@ def test_codex_resume_command_keeps_sandbox(tmp_path):
         assert "--sandbox" not in cmd
         assert cmd[-2] == "--"
     assert (first[-1], resumed[-1]) == ("hello", "again")
-    assert json.loads((tmp_path / "schema.json").read_text())["required"] == ["emotion", "say"]
+    assert json.loads((tmp_path / "schema.json").read_text())["required"] == ["emotion", "say", "copy"]
 
 
 def codex(ctx, binary: str, **options) -> CodexHarness:
@@ -100,7 +100,7 @@ def test_codex_adapter_against_fake_binary(tmp_path, ctx):
     assert Path(cwd).resolve() == (ctx.home / "work").resolve(), "the worker runs in its own folder (ADR 0020)"
     schema = ctx.state_dir / "reply-schema.json"
     assert args[args.index("--output-schema") + 1] == str(schema)
-    assert json.loads(schema.read_text())["required"] == ["emotion", "say"]
+    assert json.loads(schema.read_text())["required"] == ["emotion", "say", "copy"]
     assert 'model_reasoning_effort="medium"' in args and args[args.index("-m") + 1] == "gpt-x"
     assert args[-2:] == ["--", "hi there"]
 
@@ -172,7 +172,7 @@ def test_claude_resume_command(tmp_path):
     assert cmd[cmd.index("--resume") + 1] == "s1"
     assert cmd[cmd.index("--permission-mode") + 1] == "plan"
     assert cmd[cmd.index("--model") + 1] == "opus"
-    assert json.loads(cmd[cmd.index("--json-schema") + 1])["required"] == ["emotion", "say"]
+    assert json.loads(cmd[cmd.index("--json-schema") + 1])["required"] == ["emotion", "say", "copy"]
     assert cmd[-2:] == ["--", "hi"]
     assert os.path.basename(cmd[0]) == "claude"
 

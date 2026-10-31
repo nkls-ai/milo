@@ -29,7 +29,7 @@ class FakePaste:
 
     def __init__(self, **answers):
         self.answers = {"text.write": {"pasted": True, "app": "Mail", "field": "f-1"},
-                        "text.unwrite": {"removed": True}, **answers}
+                        "text.unwrite": {"removed": True}, "text.copy": {"copied": True}, **answers}
         self.calls: list[tuple[str, dict]] = []
 
     async def __call__(self, op: str, args: dict):
@@ -229,3 +229,43 @@ def test_the_rules_send_writing_here_and_mail_drafts_only_when_asked():
     assert "use <write>, not a <task> or a <draft>" in RULES
     assert "<draft> only when the user says to put it in Mail" in RULES
     assert "write only <look/> first" in RULES
+
+
+REPO = "https://github.com/NiklasDob/milo"
+
+
+def test_a_link_the_user_asks_for_goes_on_the_clipboard_with_a_card_and_is_never_read_out(tmp_path):
+    """The user (2026-10-31): "it would be nice if Milo can more proactively put stuff into your clipboard, so if I
+    ask for a url"."""
+    s = stack(tmp_path, [f"[happy] The link's on your clipboard. <copy>{REPO}</copy>"])
+    talk(s, "what's the link to the milo repo?")
+    assert ("text.copy", {"text": REPO}) in s.paste.calls
+    assert said(s) == "The link's on your clipboard.", "the reply says it; Milo adds no line and never reads the link"
+    [card] = [e for e in s.sink.of(ActionDone) if e.kind == "copied"]
+    assert card.title == REPO
+    assert REPO in written(s), "the window keeps it to copy again"
+
+
+def test_a_copy_that_cant_reach_the_clipboard_says_so_and_stays_in_the_window(tmp_path):
+    s = stack(tmp_path, [f"[happy] It's on your clipboard. <copy>{REPO}</copy>"],
+              paste=FakePaste(**{"text.copy": AppError("no pasteboard")}))
+    talk(s, "give me the repo link")
+    assert said(s).endswith("I couldn't reach the clipboard, so it's in my window to copy.")
+    assert REPO in written(s) and [e.kind for e in s.sink.of(ActionDone)] == ["written"]
+
+
+def test_from_the_phone_the_copied_text_goes_in_the_answer(tmp_path):
+    s = stack(tmp_path, [f"[happy] Here it is. <copy>{REPO}</copy>"])
+
+    async def run():
+        return await s.live_talk.message("what's the repo link?", "what's the repo link?")
+
+    answer = asyncio.run(run())
+    assert REPO in answer and not [c for c in s.paste.calls if c[0] == "text.copy"]
+
+
+def test_hidden_characters_never_reach_the_clipboard(tmp_path):
+    s = stack(tmp_path, ["[happy] Copied. <copy>rm\u202e -rf ~</copy>"])
+    talk(s, "the command please")
+    [(_, args)] = [c for c in s.paste.calls if c[0] == "text.copy"]
+    assert args["text"] == "rm -rf ~", "nothing invisible can hide what is pasted"

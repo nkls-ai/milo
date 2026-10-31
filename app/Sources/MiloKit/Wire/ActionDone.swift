@@ -8,6 +8,8 @@ public struct ActionDone: Equatable, Sendable, Decodable {
         case event, todo, reminder, note, timer, draft, shortcut, music, opened
         /// Text Milo wrote (`<write>`, ADR 0033): pasted into `app`, or, with no app, waiting in his window to copy.
         case written
+        /// Text Milo put on the clipboard (`<copy>`): a link, an address, a code the user asked for.
+        case copied
         /// A kind a newer brain invents: a plain card with a check.
         case other
     }

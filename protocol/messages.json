@@ -47,6 +47,7 @@
     {"type": "action_done", "kind": "event", "title": "Dentist", "detail": "", "when": "2026-11-05T15:00", "app": "Calendar", "undo": "q-3f9a2c7d1e04", "lang": "en"},
     {"type": "action_done", "kind": "shortcut", "title": "Lights off", "detail": "", "when": "", "app": "", "undo": "", "lang": ""},
     {"type": "action_done", "kind": "written", "title": "Hi Anna,", "detail": "", "when": "", "app": "Mail", "undo": "w-8a7b6c5d4e3f", "lang": "en"},
+    {"type": "action_done", "kind": "copied", "title": "https://github.com/NiklasDob/milo", "detail": "", "when": "", "app": "", "undo": "", "lang": "en"},
     {"type": "hands_borrow", "on": true, "what": "mouse"},
     {"type": "access", "need": "control", "state": "ask", "text": "macOS will ask once whether I may use Microsoft Excel. Click Allow.", "app": "Microsoft Excel", "bundle": "com.microsoft.Excel"},
     {"type": "access", "need": "control", "state": "no", "text": "Okay, I won't use Microsoft Excel. If you change your mind, Fix it shows the switch.", "app": "Microsoft Excel", "bundle": "com.microsoft.Excel"},
@@ -59,6 +60,7 @@
     {"type": "app_request", "id": "a53f", "op": "access.places", "args": {"app": "Microsoft Excel", "bundle": "com.microsoft.Excel"}},
     {"type": "app_request", "id": "a61f", "op": "text.write", "args": {"text": "Hi Anna,\n\nI'm running ten minutes late.\n\nNiklas", "paste": true}},
     {"type": "app_request", "id": "a62f", "op": "text.unwrite", "args": {"field": "f-3", "text": "Hi Anna,\n\nI'm running ten minutes late.\n\nNiklas"}},
+    {"type": "app_request", "id": "a63f", "op": "text.copy", "args": {"text": "https://github.com/NiklasDob/milo"}},
     {"type": "facts", "facts": [
       {"id": "01JBF6Z3Q8M2X4K7N9P0R5T6VW", "text": "The user's name is Niklas.", "topic": "basics", "since": "2026-10-30T09:12:00", "pinned": true},
       {"id": "01JBF7A1B2C3D4E5F6G7H8J9KM", "text": "Anna is the user's sister. Her birthday is March 3.", "topic": "people", "since": "2026-10-30T18:05:41", "pinned": false}

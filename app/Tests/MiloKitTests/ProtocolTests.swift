@@ -98,6 +98,7 @@ private func entries(_ key: String) throws -> [[String: Any]] {
                                    app: "Calendar", undo: "q-3f9a2c7d1e04", lang: "en")),
             .actionDone(ActionDone(kind: .shortcut, title: "Lights off")),
             .actionDone(ActionDone(kind: .written, title: "Hi Anna,", app: "Mail", undo: "w-8a7b6c5d4e3f", lang: "en")),
+            .actionDone(ActionDone(kind: .copied, title: "https://github.com/NiklasDob/milo", lang: "en")),
             .handsBorrow(on: true, what: "mouse"),
             .access(AccessNote(need: .control, state: .ask,
                                text: "macOS will ask once whether I may use Microsoft Excel. Click Allow.", app: AccessApp(name: "Microsoft Excel", bundle: "com.microsoft.Excel"))),
@@ -128,6 +129,9 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             ])),
             .appRequest(id: "a62f", op: "text.unwrite", args: .object([
                 "field": .string("f-3"), "text": .string("Hi Anna,\n\nI'm running ten minutes late.\n\nNiklas"),
+            ])),
+            .appRequest(id: "a63f", op: "text.copy", args: .object([
+                "text": .string("https://github.com/NiklasDob/milo"),
             ])),
             .facts([
                 MemoryFact(id: "01JBF6Z3Q8M2X4K7N9P0R5T6VW", text: "The user's name is Niklas.", topic: "basics",

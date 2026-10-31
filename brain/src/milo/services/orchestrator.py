@@ -109,6 +109,9 @@ class Orchestrator:
         self._sent: Helpers | None = None
         self.on_result: Callable[[str, str], None] | None = None
         """Called with (description, what Milo said) after each finished helper, e.g. LiveTalk.note."""
+        self.on_copy: Callable[[str], None] | None = None
+        """Puts a finished helper's `copy` on the clipboard (Writer.copy). Only for a task asked for in a conversation:
+        a routine, run on its schedule, never takes over the clipboard."""
         self.on_done: list[Callable[[Helper], None]] = []
         """Hear every helper that ended, after its own `on_finish` (routines look for tasks that repeat)."""
         self.watchers: list[Callable[[Helper, str], None]] = []
@@ -489,6 +492,8 @@ class Orchestrator:
         self._finish(helper, HelperStatus.DONE, reply.say)
         if self.on_result is not None:
             self.on_result(helper.description, reply.say)
+        if reply.copy and not helper.instructions and self.on_copy is not None:
+            self.on_copy(reply.copy)
         if reply.say.strip():
             self._report(reply.say, reply.emotion, speak=True)
 

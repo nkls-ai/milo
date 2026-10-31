@@ -6,6 +6,7 @@ import Foundation
 ///   wants the text kept to copy (it came after outside text the user didn't ask about). `why` is "here", "moved",
 ///   "no_field", "secure", "terminal", "held" or "blocked" (no Accessibility, so a paste would vanish).
 /// - `text.unwrite` {field, text}: {removed: true}, or a failure in plain words that names the app's own Undo.
+/// - `text.copy` {text}: {copied: true}. The text stays on the clipboard: the user asked for it ("the link?").
 ///
 /// The paste is dictation's: `TextInserter` puts it on the clipboard, presses ⌘V and puts the user's clipboard back.
 /// Text that doesn't go in is offered to copy under the next bubble (`onKept`).
@@ -47,6 +48,7 @@ public final class WriteRequests: AppConnections {
         switch op {
         case "text.write": write(args, reply)
         case "text.unwrite": unwrite(args, reply)
+        case "text.copy": copy(args, reply)
         default:
             guard let next else { return reply(.failure("Milo's app doesn't know how to do \(op).")) }
             next.handle(op: op, args: args, reply: reply)
@@ -81,6 +83,15 @@ public final class WriteRequests: AppConnections {
                 keep(text, why: why, app: now?.app ?? "", reply)
             }
         }
+    }
+
+    private func copy(_ args: JSONValue, _ reply: (AppOutcome) -> Void) {
+        let text = args["text"]?.string ?? ""
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return reply(.failure("There was nothing to copy."))
+        }
+        inserter.copy(text)
+        reply(.success(.object(["copied": .bool(true)])))
     }
 
     private func keep(_ text: String, why: String, app: String, _ reply: (AppOutcome) -> Void) {

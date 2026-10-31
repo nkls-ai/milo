@@ -433,6 +433,7 @@ def _talk(p: Parts) -> None:
         computer=p.platform.computer)
     p.attention.attach(turn=lambda: live_talk.busy)
     p.helpers.on_result = live_talk.note
+    p.helpers.on_copy = lambda text: writer.copy([text], in_turn=False)
     p.updates.speak = live_talk.speak_update
     background_stt = p.background_stt
     # The dictionary's words go to every engine that hears dictation; its fixes apply before each paste (ADR 21).

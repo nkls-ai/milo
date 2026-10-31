@@ -43,6 +43,20 @@ import Testing
         [.success(.object(["pasted": .bool(false), "why": .string(why), "app": .string(app)]))]
     }
 
+    // MARK: The clipboard
+
+    @Test func aCopyStaysOnTheClipboardWithoutAKeyPressOrAField() {
+        let inserter = FakeTextInserter()
+        let w = writing(Probe(), inserter: inserter, trusted: false)
+        let link = "https://github.com/NiklasDob/milo"
+        #expect(call(w, "text.copy", ["text": .string(link)]) == [.success(.object(["copied": .bool(true)]))])
+        #expect(inserter.copied == [link] && inserter.inserted.isEmpty, "copied, never pasted")
+        guard case .failure = call(w, "text.copy", ["text": .string("  ")]).first else {
+            Issue.record("nothing to copy is a failure")
+            return
+        }
+    }
+
     // MARK: Where it may go
 
     @Test func theFieldFromTheKeyPressGetsItThroughDictationsPaste() {

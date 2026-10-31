@@ -61,6 +61,11 @@ to put it in Mail as a draft.
 - To write about what is on the screen ("answer this email", "reply to this message"), write only <look/> first, \
 with no words. In your reply to the screen, write the <write> tag.
 - One <write> per reply. When the user wants it changed ("shorter", "more polite"), write all of it again.
+- <copy>the text</copy> puts it on the user's clipboard. Use it whenever the user asks for something they will \
+paste somewhere: a link or web address, an email address, a phone number, an address, a code, a command, a short \
+snippet ("what's the link to the Milo repo?", "give me Anna's email", "the tracking number?"). Say one short line \
+like "The link's on your clipboard." Never read a link or a long code out loud; a short number you may say too. \
+Only what the user asked for, never anything else, and only text you are sure of.
 - "Undo that" right after one is <undo/>.
 """
 
@@ -170,6 +175,36 @@ class Writer:
             task.add_done_callback(self._running.discard)
         if turn is not None:
             turn.add_done_callback(lambda t: self._pasted.pop(t, None))
+
+    def copy(self, texts: Sequence[str], *, via: str = "voice", in_turn: bool = True) -> None:
+        """Put each <copy> text on the clipboard now (`text.copy`), while the reply still streams; the window keeps it
+        to copy again and a card shows it. The reply says it's there. From the phone the text goes in the answer.
+        `in_turn`: called from a reply, whose card the copy's card follows; a helper's result has none to wait for."""
+        if via == "message":
+            return
+        turn = asyncio.current_task() if in_turn else None
+        lang = language(self._language())
+        for text in texts:
+            text = clean(text)
+            if text.strip():
+                task = asyncio.create_task(self._copy(text, turn=turn, lang=lang))
+                self._running.add(task)
+                task.add_done_callback(self._running.discard)
+
+    async def _copy(self, text: str, *, turn: asyncio.Task | None, lang: str) -> None:
+        try:
+            await self._app("text.copy", {"text": text})
+            copied = True
+        except Exception as e:  # no app connected, or it couldn't: the text still waits in the window
+            log.info("couldn't put a text on the clipboard: %s", e)
+            copied = False
+        log.info("copied %d characters%s", len(text), "" if copied else ": failed, kept in the window")
+        if turn is not None and turn is not asyncio.current_task():
+            await asyncio.wait({turn})
+        self._transcript.written(text)
+        self._ui.emit(ActionDone("copied" if copied else "written", first_words(text), "", "", "", "", lang))
+        if not copied:
+            await self._say(line("copy_failed", lang))
 
     async def idle(self) -> None:
         """Wait until every write is done and said. For tests."""

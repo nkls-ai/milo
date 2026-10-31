@@ -6,6 +6,8 @@ from __future__ import annotations
 WORDS: dict[str, dict[str, str]] = {
     "pasted": {"en": "It's in {app}, have a look.", "de": "Steht in {app}, schau mal drüber."},
     "pasted_here": {"en": "It's in, have a look.", "de": "Steht drin, schau mal drüber."},
+    "copy_failed": {"en": "I couldn't reach the clipboard, so it's in my window to copy.",
+                    "de": "An die Zwischenablage kam ich nicht ran. Es liegt zum Kopieren in meinem Fenster."},
     "here": {"en": "Here it is, ready to copy.", "de": "Hier ist es, zum Kopieren."},
     "moved": {
         "en": "You'd moved on, so I didn't paste it. It's in my window to copy.",

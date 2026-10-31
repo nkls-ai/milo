@@ -14,13 +14,14 @@ log = logging.getLogger("milo.reply")
 
 ACTS = ("event", "todo", "note", "timer", "draft", "shortcut", "music", "meeting")
 """Things the talker does at once, without a helper (services/quick_actions.py, ADR 0029)."""
-TAGS = ("remember", "reminder", "task", "look", "steer", "stop", "undo", "routine", "title", "open", "write", *ACTS)
+TAGS = ("remember", "reminder", "task", "look", "steer", "stop", "undo", "routine", "title", "open", "write", "copy",
+        *ACTS)
 _SELF_CLOSING = ("<look/>", "<look />")
 _MARKERS = tuple(f"<{name}>" for name in TAGS) + tuple(f"</{name}>" for name in TAGS) + _SELF_CLOSING
 # Tags that may carry attributes: <task title="..." screen="yes">, <steer helper="2">, <stop helper="all"/>, <undo/>,
 # <routine do="run" name="...">, <open app="..." url="..."/>, <reminder do="cancel" id="r1"/>, and every act:
 # <event title="..." start="..."/>, ...
-_WITH_ATTRS = "|".join(("task", "steer", "stop", "undo", "routine", "open", "write", "reminder", *ACTS))
+_WITH_ATTRS = "|".join(("task", "steer", "stop", "undo", "routine", "open", "write", "copy", "reminder", *ACTS))
 _OPENER = re.compile(rf"<({_WITH_ATTRS})((?:\s+[a-z_]+\s*=\s*(?:\"[^\"<>]*\"|'[^'<>]*'|[^\s<>/\"']+))*)\s*(/?)>",
                      re.IGNORECASE)
 # A tag not closed yet: "<open url=..." with attributes, or "<undo/" whose ">" comes in the next chunk.
@@ -113,6 +114,8 @@ class ReplyParser:
         self.writes: list[str] = []
         """Each <write> tag's text, its lines as written: Milo pastes it where the user is (services/writing.py).
         LiveTalk hands it on the moment the tag closes."""
+        self.copies: list[str] = []
+        """Each <copy> tag's text, as written: Milo puts it on the clipboard the moment the tag closes."""
         self.title = ""
         """A <title> tag: Milo's name for the conversation, when he was asked for one."""
         self.look: str | None = None
@@ -270,12 +273,12 @@ class ReplyParser:
     def _collect(self, tag: str, content: str) -> None:
         attrs, self._attrs = self._attrs, {}
         self.acted = self.acted or tag not in _NOT_ACTIONS
-        if tag == "write":  # pasted as it is: indents and blank lines too, only the ends trimmed
+        if tag in ("write", "copy"):  # pasted as it is: indents and blank lines too, only the ends trimmed
             text = content.replace("\r\n", "\n").replace("\r", "\n")
             # A space after <write> isn't an indent; a line of its own may be (code, a list).
             text = (text.lstrip(" \t") if not text.lstrip(" \t").startswith("\n") else text).strip("\n").rstrip()
             if text.strip():
-                self.writes.append(text)
+                (self.writes if tag == "write" else self.copies).append(text)
             return
         if tag in ACTS or (tag == "reminder" and attrs.get("do")):  # a note's or a draft's text keeps its lines
             # <reminder do="cancel"> takes back one of Milo's own reminders: an act, unlike a plain <reminder>.

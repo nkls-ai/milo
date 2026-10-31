@@ -292,14 +292,16 @@ class LiveTalk:
             if parser is not None and self._quick is not None:  # what the acts did goes along with the answer
                 done = await self._quick.lines(asyncio.current_task())
                 said = " ".join(t for t in (parser.spoken.strip(), done) if t)
-                return "\n\n".join(t for t in (said, *parser.writes) if t)  # a <write> goes as text from afar
+                # A <write> or <copy> goes as text from afar.
+                return "\n\n".join(t for t in (said, *parser.writes, *parser.copies) if t)
         finally:
             if self._look_started is not None:  # no looking at the screen from afar
                 self._look_started.cancel()
                 self._look_started = None
                 self._looking(False)
                 self._ui.thinking = False
-        return None if parser is None else "\n\n".join(t for t in (parser.spoken, *parser.writes) if t)
+        return None if parser is None else "\n\n".join(t for t in (parser.spoken, *parser.writes, *parser.copies)
+                                                       if t)
 
     async def warm(self) -> None:
         """Start the conversation ahead of the first turn. Raises HarnessError."""
@@ -381,6 +383,7 @@ class LiveTalk:
         opened = 0
         acted = 0
         wrote = 0
+        copied = 0
         notes, self._notes = self._notes, []
         earlier, self._earlier = self._earlier, []
         if speak and self._backchannel is not None:
@@ -415,6 +418,9 @@ class LiveTalk:
                 if tags and len(parser.writes) > wrote:
                     self._write_now(parser.writes[wrote:], rule)
                     wrote = len(parser.writes)
+                if tags and len(parser.copies) > copied:
+                    self._copy_now(parser.copies[copied:])
+                    copied = len(parser.copies)
                 if speak and utterance is None and parser.emotion is not None:
                     utterance = (self._backchannel.utterance(parser.emotion) if self._backchannel is not None
                                  else self._speaker.utterance(parser.emotion))
@@ -457,6 +463,8 @@ class LiveTalk:
             self._act_now(parser.acts[acted:], rule)
         if tags and len(parser.writes) > wrote:
             self._write_now(parser.writes[wrote:], rule)
+        if tags and len(parser.copies) > copied:
+            self._copy_now(parser.copies[copied:])
         if rest:
             shown = self._show(shown, parser, rest)
         self._end_reply(shown, parser)
@@ -624,6 +632,15 @@ class LiveTalk:
             return
         self._writer.start(texts, outside=rule.outside, request=self._request,
                            via=self._via)
+
+    def _copy_now(self, texts: Sequence[str]) -> None:
+        """Put what <copy> holds on the clipboard the moment its tag closes. The clipboard changes nothing by itself:
+        the user pastes it where they choose, after the card and the window showed it, so outside text in the
+        conversation doesn't hold it back. Hidden characters never go along (writing.clean)."""
+        if self._writer is None:
+            log.info("ignoring %d <copy> tag(s): no app to copy with", len(texts))
+            return
+        self._writer.copy(texts, via=self._via)
 
     def _start_open(self, request: OpenRequest) -> None:
         task = asyncio.create_task(self._opener.open(request, since=self._heard_at, language=self._language.code))

@@ -138,6 +138,7 @@ public enum DoneCardText {
         case .music: return action.app.isEmpty ? w("Music") : action.app
         case .opened: return inApp("Opened")
         case .written: return inApp("Ready to copy")
+        case .copied: return w("On your clipboard")
         case .other: return w("Done")
         }
     }
@@ -175,6 +176,7 @@ public enum DoneCardText {
         case .music: w("Music")
         case .opened: w("Opened")
         case .written: action.app.isEmpty ? w("Written, ready to copy") : w("Written")
+        case .copied: w("Copied")
         case .other: w("Done")
         }
         var said = "\(what): \(action.title), \(line(action, now: now, locale: locale))"
@@ -190,7 +192,7 @@ public enum DoneCardText {
         switch action.kind {
         case .reminder where action.app.isEmpty: return w("Shows your reminders in the Milo window")
         case .opened: return w("Shows it")
-        case .written where action.app.isEmpty: return w("Shows it in the Milo window, to copy")
+        case .written where action.app.isEmpty, .copied: return w("Shows it in the Milo window, to copy")
         default: return action.app.isEmpty ? w("Opens it") : w("Opens it in %@", action.app)
         }
     }
@@ -226,6 +228,7 @@ public enum DoneCardText {
             "Shows your reminders in the Milo window": "Zeigt deine Erinnerungen im Milo-Fenster",
             "Shows it": "Zeigt es", "Opens it": "Öffnet es", "Opens it in %@": "Öffnet es in %@",
             "Ready to copy": "Bereit zum Kopieren", "Written": "Geschrieben", "Written, ready to copy": "Geschrieben, bereit zum Kopieren",
+            "On your clipboard": "In der Zwischenablage", "Copied": "Kopiert",
             "Shows it in the Milo window, to copy": "Zeigt es im Milo-Fenster, zum Kopieren",
         ]
     }
@@ -255,6 +258,7 @@ public enum DonePlace: Equatable, Sendable {
                                    start: action.when)
         case .todo, .reminder: return .reminder(app: action.app.isEmpty ? "Reminders" : action.app, title: action.title)
         case .written: return action.app.isEmpty ? .conversation : .app(action.app)
+        case .copied: return .conversation
         case .opened:
             // Only the detail, where the brain puts the address it opened: a title may be a file's name.
             if let page = page(action.detail) { return .page(page) }

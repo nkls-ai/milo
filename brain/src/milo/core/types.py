@@ -66,10 +66,16 @@ class Usage:
 REPLY_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["emotion", "say"],
+    "required": ["emotion", "say", "copy"],
     "properties": {
         "emotion": {"type": "string", "enum": [e.value for e in Emotion]},
         "say": {"type": "string", "description": "What Milo says aloud. Plain text, no markdown."},
+        # Required, as strict schemas (codex) want every property; "" for nothing.
+        "copy": {"type": "string", "description":
+                 "Goes on the user's clipboard, exactly as they will paste it: the link, email address, phone "
+                 "number, address, code or command the task asked for. Then `say` only that it's on the clipboard "
+                 "(\"The link's on your clipboard.\"), never the link itself. \"\" when the task asked for "
+                 "nothing to paste."},
     },
 }
 
@@ -80,6 +86,8 @@ class Reply:
     say: str
     usage: Usage
     session_id: str | None
+    copy: str = ""
+    """Text for the user's clipboard (REPLY_SCHEMA); "" for none."""
 
     @staticmethod
     def from_model_text(text: str, usage: Usage, session_id: str | None) -> Reply:
@@ -87,9 +95,10 @@ class Reply:
         try:
             data = json.loads(text)
             emotion, say = data.get("emotion"), str(data.get("say", "")).strip()
+            copy = str(data.get("copy") or "").strip()
         except (json.JSONDecodeError, AttributeError):
-            emotion, say = None, text.strip()
-        return Reply(Emotion.parse(emotion), say, usage, session_id)
+            emotion, say, copy = None, text.strip(), ""
+        return Reply(Emotion.parse(emotion), say, usage, session_id, copy)
 
 
 class ToolError(Exception):

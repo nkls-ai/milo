@@ -48,3 +48,7 @@ def test_reply_parsing():
     assert (r.emotion, r.say, r.session_id) == (Emotion.EXCITED, "On it!", "s")
     assert Reply.from_model_text("plain words", Usage(), None).emotion is Emotion.NEUTRAL
     assert Reply.from_model_text('{"emotion": "furious", "say": "hi"}', Usage(), None).emotion is Emotion.NEUTRAL
+    found = Reply.from_model_text('{"emotion": "happy", "say": "It\'s on your clipboard.", "copy": " https://x.y/z "}',
+                                  Usage(), None)
+    assert (found.say, found.copy) == ("It's on your clipboard.", "https://x.y/z")
+    assert r.copy == "" and Reply.from_model_text('{"say": "hi", "copy": null}', Usage(), None).copy == ""
