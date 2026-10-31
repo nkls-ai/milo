@@ -15,9 +15,10 @@ const rows = [
   <div class="wrap feature">
     <div class="section-head">
       <h2 id="work-title">He works where you can see him.</h2>
-      <p>Ask for something on the computer and he does it in front of you, with his own pointer. The window he's in gets an outline, and he says what he's doing in plain words.</p>
-      <p>Move your mouse or press <kbd>esc</kbd>, and he stops on the spot.</p>
-      <p class="note work-try">Try it: move your mouse over the sheet while he works.</p>
+      <p>Ask for something on the computer and he does it in front of you. The window he's in gets an outline that says "Milo is working here", with the step he's on underneath, in plain words.</p>
+      <p>If it takes a while, he says once what he's on, like "Opening Excel now…", and then stays quiet until it's done.</p>
+      <p>Wherever he can, he works without your mouse, so you can keep going on the side. When he has to borrow it, any touch gives it back. <kbd>esc</kbd> stops him on the spot.</p>
+      <p class="note work-try">Try it: he has borrowed the mouse for this sheet. Move yours over it while he works.</p>
     </div>
 
     <div class="work" data-work data-has-milo>
@@ -48,7 +49,9 @@ const rows = [
             </span>
           </div>
         </div>
+        <span class="work-caption" aria-hidden="true"><i></i><span data-caption></span></span>
         <div class="work-perch">
+          <p class="bubble work-said" data-said aria-live="polite"></p>
           <Character id="work" pose="idle" label="Milo perched on the corner of the spreadsheet window" />
         </div>
         <span class="you" data-you aria-hidden="true">You</span>
@@ -83,6 +86,32 @@ const rows = [
   .work-stop { border: 0; border-radius: var(--radius-pill); padding: 0.15rem 0.6rem; font-size: 0.78rem; font-weight: 700; background: rgb(255 255 255 / 0.22); color: inherit; }
   .work-stop:hover { background: rgb(255 255 255 / 0.36); }
   .work-perch { position: absolute; right: -0.6rem; top: -3.4rem; width: clamp(5.2rem, 9vw, 6.6rem); z-index: 3; pointer-events: none; }
+  .work-said {
+    position: absolute; right: 70%; bottom: 62%;
+    width: max-content; max-width: min(16rem, 60vw);
+    font-size: 0.95rem;
+    opacity: 0; transform: translateY(0.3rem) scale(0.94); transform-origin: 92% 100%;
+    transition: opacity 180ms, transform 320ms var(--ease-spring);
+  }
+  .work-said.is-on { opacity: 1; transform: none; }
+
+  /* the step he's on, on a small paper pill half over the outline's bottom edge (WorkingOutline in the app) */
+  .work-caption {
+    position: absolute; left: 50%; bottom: -1.05rem; z-index: 3;
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    max-width: calc(100% - 2rem);
+    padding: 0.32rem 0.9rem 0.32rem 0.75rem;
+    border-radius: var(--radius-pill);
+    background: var(--card); color: var(--ink);
+    box-shadow: inset 0 0 0 1.5px var(--lavender-soft), var(--shadow-pop);
+    font-size: 0.85rem; font-weight: 650; white-space: nowrap;
+    transform: translateX(-50%);
+    opacity: 0; transition: opacity 250ms;
+    pointer-events: none;
+  }
+  .work-caption i { flex: none; width: 0.45rem; height: 0.45rem; border-radius: 50%; background: var(--lavender); }
+  .work-caption span { overflow: hidden; text-overflow: ellipsis; }
+  .work[data-running] .work-caption.has-step { opacity: 1; }
 
   .sheet { cursor: default; }
   .fx { display: flex; align-items: center; gap: 0.7rem; height: 2.1rem; padding: 0 0.8rem; border-bottom: 1px solid var(--rule); font-size: 0.85rem; }
@@ -126,7 +155,7 @@ const rows = [
   }
   .you.is-on { opacity: 1; }
 
-  .steps { list-style: none; padding: 0; margin: 1.2rem 0 0; display: grid; align-content: start; gap: 0.5rem; min-height: 7.2rem; }
+  .steps { list-style: none; padding: 0; margin: 2rem 0 0; display: grid; align-content: start; gap: 0.5rem; min-height: 7.2rem; }
   .steps :global(li) { display: flex; gap: 0.65rem; align-items: baseline; font-size: 1.02rem; animation: step-in 360ms var(--ease-out) both; }
   .steps :global(li)::before { content: ''; flex: none; width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--lavender-soft); transform: translateY(-0.05rem); }
   .steps :global(li.done)::before { background: var(--lavender); }
@@ -149,6 +178,9 @@ const rows = [
   const you = $(root, '[data-you]');
   const m = $<MiloEl>(root, 'milo-character');
   const outs = $$(root, '[data-out]');
+  const caption = $(root, '[data-caption]');
+  const said = $(root, '[data-said]');
+  const shows = (text: string) => { caption.textContent = text; caption.parentElement!.classList.toggle('has-step', !!text); };
   const eur = (n: number) => `€${n.toLocaleString('en-GB')}`;
 
   let done = 0;
@@ -175,11 +207,17 @@ const rows = [
     m.pose = 'idle';
     await ctx.wait(500);
     step('Opening your spreadsheet.');
+    shows('Opening Microsoft Excel');
     m.pose = 'busy'; // "on it": he throws his scarf back
     await ctx.wait(450);
-    chatter(m, 700);
-    await ctx.wait(500);
+    // asked by voice, and it takes a while: one short line, then quiet until it's done
+    said.textContent = 'Opening Microsoft Excel now…';
+    said.classList.add('is-on');
+    chatter(m, 900);
+    await ctx.wait(1100);
     step('Adding up each row into column D.');
+    shows('Filling in cells in “Household 2026”');
+    setTimeout(() => said.classList.remove('is-on'), ctx.instant ? 0 : 900);
     for (let i = 0; i < outs.length - 1; i++) {
       const cell = outs[i];
       const r = i + 2;
@@ -197,6 +235,7 @@ const rows = [
     goTo(sum);
     fxCell.textContent = 'D8';
     fx.textContent = '';
+    shows('Typing “=SUM(D2:D7)” in Microsoft Excel');
     await ctx.wait(650);
     await ctx.type(fx, '=SUM(D2:D7)', 16);
     await ctx.wait(200);
@@ -204,6 +243,7 @@ const rows = [
     sum.classList.add('is-new');
     done = 7;
     await ctx.wait(500);
+    shows('');
     step(`Done. The totals are in column D, ${Number(sum.dataset.out).toLocaleString('en-GB')} euros at the bottom.`);
     steps.querySelector('li:last-child')?.classList.add('done');
     m.pose = 'proud';
@@ -218,6 +258,8 @@ const rows = [
       done = 0;
       steps.textContent = '';
       fx.textContent = '';
+      shows('');
+      said.classList.remove('is-on');
       fxCell.textContent = 'D2';
       for (const o of outs) { o.textContent = ''; o.classList.remove('is-new'); }
       requestAnimationFrame(() => goTo(outs[0]));
@@ -230,6 +272,8 @@ const rows = [
     d.stop();
     const rows = Math.min(done, 6);
     step(rows === 0 ? "Stopped. I hadn't changed anything yet." : `Stopped. I'd done ${rows} of 6 rows.`, 'stopped');
+    shows('');
+    said.classList.remove('is-on');
     m.pose = 'idle';
     m.extra = {};
   }

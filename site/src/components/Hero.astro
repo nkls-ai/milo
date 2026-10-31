@@ -1,5 +1,10 @@
 ---
 import Character from './Character.astro';
+import { cardHTML } from '../scripts/done-card';
+import '../styles/done-card.css';
+
+// What the app shows after "Put the dentist in my calendar": a card with the day's page and Undo.
+const dentist = cardHTML({ kind: 'event', title: 'Dentist', line: '09:00', day: ['Thu', '5'], undo: true });
 ---
 <section class="hero" id="top" aria-labelledby="hero-title">
   <div class="wrap hero-grid">
@@ -20,10 +25,10 @@ import Character from './Character.astro';
       <div class="screen" aria-hidden="true">
         <div class="menubar">
           <span class="mb-left"><b>Calendar</b><span>File</span><span>Edit</span><span>View</span></span>
-          <span class="mb-right"><span class="mb-milo"></span><span>Thu 9:41</span></span>
+          <span class="mb-right"><span class="mb-milo"></span><span>Mon 9:41</span></span>
         </div>
         <div class="cal">
-          <div class="cal-head"><span>Mon</span><span>Tue</span><span>Wed</span><span class="today">Thu</span><span>Fri</span></div>
+          <div class="cal-head"><span class="today">Mon 2</span><span>Tue 3</span><span>Wed 4</span><span>Thu 5</span><span>Fri 6</span></div>
           <div class="cal-body">
             <i class="ev" style="--c:1;--r:2;--h:2">Team call</i>
             <i class="ev ev-alt" style="--c:2;--r:4;--h:3">Lunch with Anna</i>
@@ -33,6 +38,7 @@ import Character from './Character.astro';
           </div>
         </div>
       </div>
+      <div class="dc dc-fly hero-card" data-hero-card aria-hidden="true" set:html={dentist}></div>
       <p class="words said" data-hero-said aria-hidden="true"><span class="wave"><i></i><i></i><i></i><i></i><i></i></span><span data-text></span></p>
 
       <div class="milo-slot" data-milo-slot="hero">
@@ -47,8 +53,8 @@ import Character from './Character.astro';
     </div>
   </div>
   <p class="sr-only">
-    In the picture, someone asks Milo to put the dentist in their calendar for Thursday at nine. Milo answers: "Done.
-    Dentist, Thursday at nine."
+    In the picture, someone asks Milo to put the dentist in their calendar for Thursday at nine. Milo answers "Dentist,
+    Thursday at 9 am. It's in.", and a small card with a check and an Undo button springs out of him.
   </p>
 </section>
 
@@ -121,8 +127,12 @@ import Character from './Character.astro';
     overflow: hidden;
   }
   .ev-alt { background: light-dark(#fdf0dc, #3d2f22); color: light-dark(#8a5512, #fac98a); border-left-color: var(--marigold); }
-  .ev-new { opacity: 0; transform: scale(0.6); transform-origin: top left; transition: opacity 240ms, transform 420ms var(--ease-spring); }
-  .ev-new.is-on { opacity: 1; transform: none; }
+  .ev-new { opacity: 0; transition: opacity 400ms; }
+  .ev-new.is-on { opacity: 1; }
+
+  /* the done card, in the corner left of Milo, drawn at the size of this small screen */
+  .hero-card { --u: 0.215cqi; position: absolute; right: 43%; bottom: 7%; z-index: 41; pointer-events: none; }
+  @media (max-width: 40rem) { .hero-card { --u: 0.25cqi; right: 46%; bottom: 6%; } }
 
   .said {
     position: absolute; left: 6%; top: 60%;
@@ -156,7 +166,8 @@ import Character from './Character.astro';
   .milo-free.is-ducked .milo-bubble { opacity: 0; }
   .milo-free.is-aside .milo-hit { opacity: 0; transform: translateY(60%) scale(0.8); transition: opacity 160ms, transform 220ms var(--ease-out); }
   .milo-free.is-aside .milo-bubble { opacity: 0; }
-  :root:not([data-milo='hero']) .said { opacity: 0 !important; }
+  /* only once he has left: before the script says where he is, he is in the hero */
+  :root[data-milo]:not([data-milo='hero']) .said, :root[data-milo]:not([data-milo='hero']) .hero-card { opacity: 0 !important; }
   @media (prefers-reduced-motion: no-preference) {
     .milo-hit milo-character { animation: breathe 3.6s ease-in-out infinite; }
     .milo-free[data-state='sleeping'] .milo-hit milo-character { animation: breathe-deep 5.2s ease-in-out infinite; }
@@ -199,10 +210,11 @@ import Character from './Character.astro';
   const said = stage.querySelector<HTMLElement>('[data-hero-said]')!;
   const saidText = said.querySelector<HTMLElement>('[data-text]')!;
   const event = stage.querySelector<HTMLElement>('[data-hero-event]')!;
+  const card = stage.querySelector<HTMLElement>('[data-hero-card]')!;
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   const talks = [
-    { you: 'Put the dentist in my calendar, Thursday at nine.', milo: 'Done. Dentist, Thursday at nine.', calendar: true },
+    { you: 'Put the dentist in my calendar, Thursday at nine.', milo: "Dentist, Thursday at 9 am. It's in.", calendar: true },
     { you: 'Is this email from my bank real?', milo: "That one looks like a scam. Don't click it.", pose: 'concerned' },
     { you: 'What was the plumber called?', milo: 'Becker. You called him in March about the kitchen tap.' },
     { you: 'Send Anna the photos from Sunday.', milo: "Found 14. I'm about to send them to Anna. Send them?", pose: 'waiting' },
@@ -223,6 +235,7 @@ import Character from './Character.astro';
       saidText.textContent = talks[0].you;
       said.classList.add('is-on');
       event.classList.add('is-on');
+      card.classList.add('is-landed');
       const show = () => { if (milo.place === 'hero') milo.say(talks[0].milo, 0); };
       addEventListener('milo:place', show);
       show();
@@ -246,9 +259,15 @@ import Character from './Character.astro';
       await wait(260);
       milo.el.pose = 'thinking';
       await wait(700);
+      if (t.calendar) {
+        // the event is in before he says so: the card springs out of him, then he says the line
+        card.classList.remove('is-leaving');
+        card.classList.add('is-landed');
+        event.classList.add('is-on');
+        await wait(380);
+      }
       milo.el.pose = t.pose ?? 'speaking';
       milo.say(t.milo, 0);
-      if (t.calendar) setTimeout(() => event.classList.add('is-on'), 450);
       await wait(1400);
       if (!t.pose) milo.el.pose = 'idle';
       await until(2300);
@@ -256,7 +275,12 @@ import Character from './Character.astro';
       milo.hush();
       milo.el.pose = 'idle';
       await until(900);
-      if (t.calendar) event.classList.remove('is-on');
+      if (t.calendar) {
+        // the card tucks back into him; the event leaves the drawn calendar so the loop can add it again
+        card.classList.add('is-leaving');
+        card.classList.remove('is-landed');
+        event.classList.remove('is-on');
+      }
       i++;
     }
   }

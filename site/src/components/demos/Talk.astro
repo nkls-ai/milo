@@ -6,6 +6,8 @@ import Character from '../Character.astro';
     <div class="section-head">
       <h2 id="talk-title">Hold a key and say it.</h2>
       <p>Hold the right <kbd>⌥</kbd> key and talk to him the way you'd talk to anyone. He starts answering in about two seconds, out loud, in a voice that sounds like a person.</p>
+      <p>Ask him to open something, "YouTube in Chrome" or "my Downloads folder", and it's in front of you while he's still saying so.</p>
+      <p>When nothing is going on, he flies off the screen after 15 seconds. Hold the key and he swoops back.</p>
       <p class="note">On this page he only pretends to listen. Your microphone stays off.</p>
     </div>
 
@@ -27,7 +29,7 @@ import Character from '../Character.astro';
         <div class="chips" role="group" aria-label="Or pick something to ask">
           <button type="button" class="chip" data-ask="0">A reminder</button>
           <button type="button" class="chip" data-ask="1">What "cc" means</button>
-          <button type="button" class="chip" data-ask="2">Bigger text</button>
+          <button type="button" class="chip" data-ask="2">Open YouTube</button>
         </div>
       </div>
     </div>
@@ -105,11 +107,11 @@ import Character from '../Character.astro';
   const asks = [
     { you: 'Remind me to call the dentist tomorrow at nine.', milo: "Done. I'll remind you tomorrow at nine.", t: 1.7 },
     { you: 'What does cc mean on an email?', milo: 'It sends a copy to someone else, so they see it too.', t: 1.9 },
-    { you: 'Can you make the text on my screen bigger?', milo: 'Done. Say "smaller" if it\'s too much.', t: 2.1, pose: 'proud' },
+    { you: 'Open YouTube in Chrome.', milo: 'Opening YouTube in Chrome.', t: 1.3, pose: 'proud', opened: 'YouTube was open in Chrome 1.3 seconds after you let go.' },
   ];
   let next = 0;
   let state: 'idle' | 'listening' | 'answering' = 'idle';
-  let current = asks[0];
+  let current: { you: string; milo: string; t: number; pose?: string; opened?: string } = asks[0];
   let shown = 0;
   let timer = 0;
   let token = 0;
@@ -169,7 +171,7 @@ import Character from '../Character.astro';
       m.pose = 'speaking';
       reply.textContent = current.milo;
       reply.classList.add('is-on');
-      time.textContent = `He started answering ${current.t.toFixed(1)} seconds after you let go.`;
+      time.textContent = current.opened ?? `He started answering ${current.t.toFixed(1)} seconds after you let go.`;
       chatter(m, 1500);
       await wait(1500, me);
       m.pose = current.pose ?? 'idle';

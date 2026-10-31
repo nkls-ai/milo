@@ -1,0 +1,111 @@
+/* The done card, measured from the app (DoneCardViews.swift): 172 × 56 points, a 36-point picture,
+   a 20-point check over the top-right corner, a 24-point Undo. Every size is a multiple of --u, one
+   app point, so the hero's small Mac screen can draw the same card smaller. */
+
+.dc {
+  --u: 0.08rem;
+  --dc-tile: color-mix(in srgb, var(--lavender) 13%, var(--card));
+  position: relative;
+  display: flex; align-items: center; gap: calc(8 * var(--u));
+  width: calc(172 * var(--u)); height: calc(56 * var(--u));
+  padding: 0 calc(10 * var(--u)) 0 calc(8 * var(--u));
+  border-radius: calc(14 * var(--u));
+  background: color-mix(in srgb, var(--card) 86%, var(--lavender-wash));
+  box-shadow: inset 0 0 0 1px var(--rule), var(--shadow-pop);
+  color: var(--ink);
+  text-align: left;
+  font-family: var(--font-text);
+  line-height: 1.2;
+}
+.dc-glyph { flex: none; display: grid; place-items: center; width: calc(36 * var(--u)); height: calc(36 * var(--u)); }
+.dc-text { flex: 1; min-width: 0; display: grid; gap: calc(1 * var(--u)); }
+.dc-text b, .dc-text span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dc-text b { font-size: calc(12.5 * var(--u)); font-weight: 650; letter-spacing: -0.01em; }
+.dc-text span { font-size: calc(10.5 * var(--u)); font-weight: 550; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+
+/* a tiny tear-off page: the weekday on a marigold band, the day big below */
+.dc-cal {
+  display: grid; grid-template-rows: calc(12 * var(--u)) 1fr;
+  width: 100%; height: 100%;
+  border-radius: calc(8 * var(--u)); overflow: hidden;
+  background: var(--card); box-shadow: inset 0 0 0 1px var(--rule);
+  text-align: center;
+}
+.dc-cal b { background: var(--marigold); color: light-dark(#fff, #16132a); font-size: calc(8.5 * var(--u)); font-weight: 800; line-height: calc(12 * var(--u)); }
+.dc-cal span { display: grid; place-items: center; font-size: calc(17 * var(--u)); font-weight: 800; font-variant-numeric: tabular-nums; }
+
+/* a lavender wash with a symbol, or a checkbox row for a to-do */
+.dc-tile { display: grid; place-items: center; width: 100%; height: 100%; border-radius: calc(9 * var(--u)); background: var(--dc-tile); color: var(--lavender-deep); }
+.dc-tile svg { width: calc(18 * var(--u)); height: calc(18 * var(--u)); fill: currentColor; }
+.dc-todo { display: flex; gap: calc(4 * var(--u)); }
+.dc-todo > i { width: calc(11 * var(--u)); height: calc(11 * var(--u)); border-radius: 50%; box-shadow: inset 0 0 0 calc(1.8 * var(--u)) var(--lavender-deep); }
+.dc-todo span { display: grid; gap: calc(3 * var(--u)); }
+.dc-todo span i { display: block; height: calc(2.5 * var(--u)); border-radius: 9px; background: var(--lavender-deep); opacity: 0.55; width: calc(13 * var(--u)); }
+.dc-todo span i + i { opacity: 0.3; width: calc(9 * var(--u)); }
+
+/* a sheet with a marigold top and three ruled lines, a little askew */
+.dc-note {
+  display: grid; align-content: start; gap: calc(3.5 * var(--u));
+  width: calc(32 * var(--u)); height: 100%;
+  border-radius: calc(7 * var(--u)); overflow: hidden;
+  background: var(--card); box-shadow: inset 0 0 0 1px var(--rule);
+  border-top: calc(6 * var(--u)) solid var(--marigold);
+  padding: calc(4 * var(--u)) 0 0 calc(6 * var(--u));
+  transform: rotate(-4deg);
+}
+.dc-note i { display: block; height: calc(2 * var(--u)); border-radius: 9px; background: var(--ink); opacity: 0.28; width: calc(20 * var(--u)); }
+.dc-note i:nth-child(2) { width: calc(22 * var(--u)); }
+.dc-note i:nth-child(3) { width: calc(14 * var(--u)); }
+
+/* a ring that runs down, with the minutes left inside */
+.dc-ring { position: relative; display: grid; place-items: center; width: 100%; height: 100%; }
+.dc-ring svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); fill: none; stroke-width: 4; }
+.dc-ring circle { stroke: color-mix(in srgb, var(--lavender-deep) 18%, transparent); }
+.dc-ring .dc-ring-run { stroke: var(--lavender-deep); stroke-linecap: round; stroke-dasharray: 1 1; stroke-dashoffset: 0; }
+.dc-ring span { font-size: calc(10 * var(--u)); font-weight: 800; font-variant-numeric: tabular-nums; }
+
+/* Undo: a small round button with the undo arrow; a turning ring while it undoes; dimmed once undone */
+.dc-undo {
+  position: relative; flex: none;
+  display: grid; place-items: center;
+  width: calc(24 * var(--u)); height: calc(24 * var(--u));
+  margin-left: calc(4 * var(--u));
+  padding: 0; border: 0; border-radius: 50%;
+  background: color-mix(in srgb, var(--lavender-deep) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--lavender-deep) 28%, transparent);
+  color: var(--lavender-deep);
+  transition: background-color 150ms, transform 160ms var(--ease-spring);
+}
+button.dc-undo:hover { background: color-mix(in srgb, var(--lavender-deep) 20%, transparent); }
+button.dc-undo:active { transform: scale(0.94); }
+.dc-undo svg { width: calc(13 * var(--u)); height: calc(13 * var(--u)); fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.dc-spin { position: absolute; inset: calc(3 * var(--u)); border-radius: 50%; border: calc(2 * var(--u)) solid color-mix(in srgb, var(--lavender-deep) 25%, transparent); border-top-color: var(--lavender-deep); opacity: 0; }
+.dc[data-undo='undoing'] .dc-undo svg { opacity: 0; }
+.dc[data-undo='undoing'] .dc-spin { opacity: 1; animation: dc-spin 0.8s linear infinite; }
+.dc[data-undo='undone'] .dc-undo { background: transparent; box-shadow: inset 0 0 0 calc(1.4 * var(--u)) color-mix(in srgb, var(--ink) 30%, transparent); color: color-mix(in srgb, var(--ink) 40%, transparent); pointer-events: none; }
+@keyframes dc-spin { to { transform: rotate(1turn); } }
+
+/* the marigold check over the corner; it draws itself in a moment after the card lands */
+.dc-check {
+  position: absolute; right: calc(-5 * var(--u)); top: calc(-5 * var(--u));
+  width: calc(20 * var(--u)); height: calc(20 * var(--u));
+  border-radius: 50%;
+  background: var(--marigold);
+  box-shadow: 0 0 0 calc(2 * var(--u)) var(--paper), 0 calc(1 * var(--u)) calc(4 * var(--u)) color-mix(in srgb, var(--marigold) 45%, transparent);
+}
+.dc-check svg { width: 100%; height: 100%; fill: none; stroke: light-dark(#fff, #16132a); stroke-width: 2.3; stroke-linecap: round; stroke-linejoin: round; }
+.dc-check path { stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset 320ms ease-out 280ms; }
+.dc.is-landed .dc-check path { stroke-dashoffset: 0; }
+
+/* Out of Milo's side: it springs out small from his right and grows into place, then shrinks back into him. */
+.dc-fly {
+  transform-origin: 100% 50%;
+  transform: translate(calc(110 * var(--u)), calc(18 * var(--u))) scale(0.3);
+  opacity: 0;
+  transition: transform 520ms var(--ease-spring), opacity 200ms;
+}
+.dc-fly.is-landed { transform: none; opacity: 1; }
+.dc-fly.is-leaving { transform: translate(calc(90 * var(--u)), calc(10 * var(--u))) scale(0.35); opacity: 0; transition: transform 380ms var(--ease-out), opacity 300ms 80ms; }
+@media (prefers-reduced-motion: reduce) {
+  .dc-fly, .dc-fly.is-leaving { transform: none; }
+}

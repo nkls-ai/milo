@@ -6,7 +6,8 @@ import Replay from '../Replay.astro';
   <div class="wrap feature flip">
     <div class="section-head">
       <h2 id="meetings-title">Notes from your calls, without a bot joining.</h2>
-      <p>When a call starts, he asks once if he should take notes. A red dot shows the whole time he listens. Afterwards you get a short summary, what was decided, and your to-dos, ready for Reminders.</p>
+      <p>When a call starts, he asks once if he should take notes. Or just tell him: "take notes", and "stop taking notes" when you're done. A red dot shows the whole time he listens.</p>
+      <p>Afterwards you get a short summary, what was decided, and your to-dos, ready for Reminders.</p>
       <p class="note">The notes stay on your Mac unless you share them. Recording people needs their OK in many places, so he gives you a line to tell them.</p>
     </div>
 
@@ -152,7 +153,7 @@ import Replay from '../Replay.astro';
     lines.hidden = true;
     notes.hidden = false;
     m.pose = 'proud';
-    askText.textContent = 'Done. One to-do is yours.';
+    askText.textContent = 'Your notes are ready. One to-do is yours.';
     chatter(m, 800);
     await ctx.wait(1800);
     m.pose = 'idle';

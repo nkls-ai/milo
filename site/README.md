@@ -16,7 +16,8 @@ Astro 7 wants a newer Node than some Macs have, so the scripts run it on Bun's r
 - `src/character/element.js` is `<milo-character>`, the app's motion (`WrenMotion.swift`): every pose number on its own spring, moves laid on top as curves, the scarf, tail, head and tuft thrown about by the body's motion, blinks, wingbeats and idle habits. It redraws the SVG only while something moves.
 - `src/components/Character.astro` draws Milo on the server in one pose, so he's there before any script runs. Every Milo on the page goes through it.
 - `src/scripts/milo.ts` is the Milo who lives on the page: he flies from the hero into the bottom-right corner as you scroll, follows your pointer with his eyes, steps aside when a demo has its own Milo, notices the prices, falls asleep after 45 seconds alone, waves when you come back, and flies out to sit in the waitlist section at the end.
-- `src/components/demos/` are the eight demos. `src/scripts/demo.ts` plays each one once when you reach it, with "Play again", and with reduced motion jumps straight to the finished state.
+- `src/components/demos/` are the nine demos. `src/scripts/demo.ts` plays each one once when you reach it, with "Play again", and with reduced motion jumps straight to the finished state.
+- `src/scripts/done-card.ts` and `src/styles/done-card.css` are the card that springs out of Milo when he's done something, measured from the app's `DoneCardViews.swift` (172 × 56 points, sizes in `--u`, one app point). The hero draws it on the server, the quick-things demo builds it in the browser, both from `cardHTML`.
 - `src/site.ts` holds what changes before launch: the contact address (a placeholder, `hello@milo.example`) and the Plus price.
 - Colours come from the app's Pip theme (`app/Sources/MiloKit/Theme.swift`) and the wren's scarf. Type is Fraunces (soft) for headings and Atkinson Hyperlegible Next for text, picked for readers with weaker eyes.
 
