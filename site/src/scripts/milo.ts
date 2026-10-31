@@ -1,7 +1,7 @@
 // The Milo who lives on the page. He starts in the hero, flies into the bottom-right corner as you
-// scroll (where he lives on a Mac), watches from there, and flies out again to sit in the waitlist
-// section at the end. He follows your pointer with his eyes, falls asleep when you leave him alone,
-// waves when you come back, and notices when you reach the prices.
+// scroll (where he lives on a computer), watches from there, and flies out again to sit in the "Get
+// Milo" section at the end. He follows your pointer with his eyes, falls asleep when you leave him
+// alone, and waves when you come back.
 import '../character/element.js';
 
 type MiloEl = HTMLElement & {
@@ -288,21 +288,6 @@ document.addEventListener('visibilitychange', () => {
   }
   resetIdle();
 });
-
-// ---------------------------------------------------------------- he notices the prices
-
-const pricing = document.querySelector<HTMLElement>('#pricing [data-plans]');
-if (pricing) {
-  const io = new IntersectionObserver(([e]) => {
-    if (!e.isIntersecting || place !== 'corner' || sleeping) return;
-    io.disconnect();
-    const r = pricing.getBoundingClientRect();
-    char.lookAt(r.left + r.width / 2, r.top + r.height / 2);
-    lastPointer = performance.now();
-    setTimeout(() => { char.play('fluff'); say('Ah. The part with the numbers.', 3400); }, 350);
-  }, { threshold: 0.4 });
-  io.observe(pricing);
-}
 
 // Esc anywhere: he stops what he's doing (the demos listen too).
 addEventListener('keydown', (e) => {

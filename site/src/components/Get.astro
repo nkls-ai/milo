@@ -1,0 +1,150 @@
+---
+// The end of the page: Milo is free and open source today, and a version with nothing to set up may come later.
+import { contactEmail, installCommand, repoUrl } from '../site';
+import Character from './Character.astro';
+---
+<section class="section get" id="get" aria-labelledby="get-title">
+  <div class="wrap get-grid">
+    <div class="get-copy">
+      <h2 id="get-title">Free, and yours.</h2>
+      <p>Milo is open source. Install him with one line, read every bit of what he does, and change what you like.</p>
+
+      <div class="cmd">
+        <code data-cmd>{installCommand}</code>
+        <button class="btn btn-small cmd-copy" type="button" data-copy>Copy</button>
+      </div>
+      <p class="note">
+        Paste it into a terminal. It sets up his ears, voice and memory on your computer and connects the Claude or
+        ChatGPT subscription you already have. Mac today, Windows and Linux next.
+      </p>
+      <div class="get-links">
+        <a class="btn" href={repoUrl}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5a9.5 9.5 0 0 0-3 18.5c.5.1.7-.2.7-.5v-1.7c-2.6.6-3.2-1.2-3.2-1.2-.4-1.1-1-1.4-1-1.4-.9-.6 0-.6 0-.6.9.1 1.4 1 1.4 1 .8 1.4 2.2 1 2.7.8.1-.6.3-1 .6-1.2-2.1-.2-4.3-1-4.3-4.6 0-1 .4-1.9 1-2.6-.1-.2-.4-1.2.1-2.5 0 0 .8-.3 2.6 1a9 9 0 0 1 4.8 0c1.8-1.3 2.6-1 2.6-1 .5 1.3.2 2.3.1 2.5.6.7 1 1.6 1 2.6 0 3.6-2.2 4.4-4.3 4.6.3.3.6.9.6 1.8v2.6c0 .3.2.6.7.5A9.5 9.5 0 0 0 12 2.5Z"/></svg>
+          Get it on GitHub
+        </a>
+        <a class="link-quiet" href={`${repoUrl}#set-it-up`}>How to install</a>
+      </div>
+
+      <div class="cloud-card">
+        <p class="cloud-tag">Maybe later</p>
+        <h3>Milo, with nothing to set up.</h3>
+        <p>
+          We're thinking about a version where everything is already there: no install, no accounts to connect, the same
+          Milo on all your devices, for one monthly price. If you'd use that, tell us, and we'll write once if it happens.
+        </p>
+        <form class="wl-form" data-wl novalidate>
+          <label for="wl-email" class="sr-only">Your email</label>
+          <div class="wl-row">
+            <input id="wl-email" name="email" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com" required aria-describedby="wl-msg" />
+            <button class="btn btn-quiet" type="submit">I'd want that</button>
+          </div>
+          <p class="wl-msg" id="wl-msg" data-msg role="status" aria-live="polite"></p>
+        </form>
+      </div>
+    </div>
+    <div class="get-stage">
+      <div class="wl-perch" aria-hidden="true"></div>
+      <div class="wl-slot" data-milo-slot="final">
+        <Character id="final" pose="happy" class="wl-static" />
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .get { padding-bottom: clamp(5rem, 9vw, 8rem); }
+  /* minmax(0, …): the one-line install command must scroll inside its box, not widen the column */
+  .get-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2rem; align-items: center; }
+  @media (min-width: 60rem) { .get-grid { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); } }
+  h2 { font-size: var(--step-4); letter-spacing: -0.03em; }
+  .get-copy > p:first-of-type { margin-top: 1.3rem; font-size: var(--step-1); color: var(--ink-2); max-width: 32rem; }
+
+  /* the install line, like a terminal: one line, scrolls sideways on a phone */
+  .cmd {
+    display: flex; align-items: center; gap: 0.6rem;
+    margin-top: 2rem; max-width: 40rem;
+    padding: 0.45rem 0.45rem 0.45rem 1.1rem;
+    border-radius: 1rem;
+    background: light-dark(#2b2454, #0d0b1c); color: #edebff;
+    box-shadow: var(--shadow-window);
+  }
+  .cmd code {
+    flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap;
+    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 0.9rem;
+    scrollbar-width: none;
+  }
+  .cmd code::before { content: '$ '; color: var(--scarf); }
+  .cmd-copy { flex: none; background: var(--scarf); color: #2b2454; box-shadow: none; }
+  .cmd-copy:hover { background: #fbdb98; }
+  .get-copy > .note { margin-top: 0.8rem; max-width: 36rem; }
+  .get-links { display: flex; flex-wrap: wrap; align-items: center; gap: 0.8rem 1.6rem; margin-top: 1.8rem; }
+  .get-links .btn svg { width: 1.2em; height: 1.2em; fill: currentColor; }
+
+  .cloud-card {
+    margin-top: clamp(2.5rem, 5vw, 3.5rem); max-width: 36rem;
+    padding: 1.4rem 1.5rem 1.5rem;
+    border-radius: 1.3rem;
+    background: linear-gradient(135deg, var(--lavender-wash), var(--card) 75%);
+    box-shadow: inset 0 0 0 1px var(--rule);
+  }
+  .cloud-tag { display: inline-block; padding: 0.15rem 0.6rem; border-radius: var(--radius-pill); background: var(--card); box-shadow: inset 0 0 0 1px var(--lavender-soft); color: var(--lavender-deep); font-size: 0.82rem; font-weight: 700; }
+  .cloud-card h3 { margin-top: 0.8rem; font-size: 1.35rem; }
+  .cloud-card > p:not(.cloud-tag) { margin-top: 0.5rem; color: var(--ink-2); font-size: 1rem; line-height: 1.5; }
+  .wl-form { margin-top: 1.1rem; }
+  .wl-row { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+  input {
+    flex: 1 1 13rem; min-width: 0;
+    min-height: 3rem; padding: 0.6rem 1.1rem;
+    border: 0; border-radius: var(--radius-pill);
+    background: var(--card);
+    box-shadow: inset 0 0 0 1.5px var(--rule-strong);
+    caret-color: var(--lavender);
+    font-size: 1.05rem;
+  }
+  input::placeholder { color: var(--ink-3); }
+  input:focus-visible { outline: 3px solid var(--lavender); outline-offset: 2px; }
+  .wl-msg { margin-top: 0.8rem; font-weight: 600; font-size: 0.98rem; }
+  .wl-msg:empty { display: none; }
+
+  .get-stage { position: relative; justify-self: center; width: min(19rem, 52vw); }
+  .wl-slot { width: 100%; aspect-ratio: 1; position: relative; }
+  /* without scripts Milo sits here; with them, the flying Milo lands here instead */
+  :global(.js) .wl-slot :global(.wl-static) { visibility: hidden; }
+  .wl-perch { position: absolute; left: 8%; right: 8%; bottom: 7%; height: 9%; border-radius: 50%; background: radial-gradient(closest-side, color-mix(in srgb, var(--scarf) 30%, transparent), transparent); }
+</style>
+
+<script define:vars={{ contactEmail }}>
+  const copy = document.querySelector('[data-copy]');
+  const cmd = document.querySelector('[data-cmd]');
+  copy.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(cmd.textContent);
+      copy.textContent = 'Copied';
+    } catch {
+      getSelection().selectAllChildren(cmd);
+      copy.textContent = 'Selected';
+    }
+    setTimeout(() => { copy.textContent = 'Copy'; }, 2000);
+  });
+
+  // The list for a hosted Milo has no backend yet, so it says so and offers an email instead of pretending to sign you up.
+  const form = document.querySelector('[data-wl]');
+  const msg = form.querySelector('[data-msg]');
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const email = form.email.value.trim();
+    const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    msg.replaceChildren();
+    if (!ok) {
+      msg.textContent = 'That email looks incomplete. It needs an @ and a dot, like anna@example.com.';
+      form.email.setAttribute('aria-invalid', 'true');
+      form.email.focus();
+      return;
+    }
+    form.email.removeAttribute('aria-invalid');
+    const a = document.createElement('a');
+    a.href = `mailto:${contactEmail}?subject=${encodeURIComponent('Milo with nothing to set up')}&body=${encodeURIComponent(`I'd use Milo with nothing to set up. Write to ${email} if it happens.`)}`;
+    a.textContent = 'send us a short email';
+    msg.append('Nothing was sent: this list is still a page. To be on it, ', a, '.');
+  });
+</script>

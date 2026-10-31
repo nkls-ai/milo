@@ -15,13 +15,12 @@ import Memory from '../components/demos/Memory.astro';
 import Phone from '../components/demos/Phone.astro';
 import Meetings from '../components/demos/Meetings.astro';
 import Trust from '../components/Trust.astro';
-import Pricing from '../components/Pricing.astro';
 import Faq from '../components/Faq.astro';
-import Waitlist from '../components/Waitlist.astro';
+import Get from '../components/Get.astro';
 import Footer from '../components/Footer.astro';
 
 const title = 'Milo, a small coworker for your computer';
-const description = "Milo is a small coworker who lives in the corner of your screen. Tell him what you need, in your language. He hears you and speaks right on your computer, writes straight into the app you're in, asks before anything you can't undo, and remembers what matters.";
+const description = "Milo is a small coworker who lives in the corner of your screen. Tell him what you need, in your language. He hears you and speaks right on your computer, writes straight into the app you're in, asks before anything you can't undo, and remembers what matters. Free and open source.";
 ---
 <Base title={title} description={description}>
   <Nav />
@@ -40,9 +39,8 @@ const description = "Milo is a small coworker who lives in the corner of your sc
     <Meetings />
     <More />
     <Trust />
-    <Pricing />
     <Faq />
-    <Waitlist />
+    <Get />
   </main>
   <Footer />
 </Base>

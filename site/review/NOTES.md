@@ -65,6 +65,13 @@ Every section at 390, 1440 and 2560 px, light and dark, with reduced motion so d
 - `p5/`: brought up to date with ADRs 24 to 32 (2026-10-31): the done card in the hero and a quick-things demo, opening, undo, auto mode, the step under the outline, meeting notes by voice. 390 and 1440 only. `p5/moments/` has the hero card, the deck fanned out, an undo and the outline's caption mid-run.
 
 - `p6/`: writing where you are, the voice on the Mac and the smaller features (2026-10-31): `Write.astro`, `Local.astro`, `More.astro`, a new hero lede and pills. 390 and 1440. The README's pictures in `assets/readme/` come from the same pass.
+- `p8/`: the open-source launch (2026-10-31). Pricing went, the waitlist became `Get.astro`, the nav, hero, FAQ and footer point to GitHub. Nav, hero, Get and FAQ at 390 and 1440.
+
+### Pass 8, free and open source
+
+- Milo launches as open source first, so the Plus price and the waitlist went. The last section, "Free, and yours.", shows the one-line install with Copy, "Get it on GitHub" and how to install. A card under it, "Maybe later", asks who'd want a hosted Milo with nothing to set up, and keeps the old honest form: it sends nothing and offers an email.
+- The corner Milo's remark about the prices went with them.
+- First shots: on a phone the one-line command widened the grid's only column past the screen, so the whole section was clipped on the right. The grid's column is now `minmax(0, 1fr)` and the command scrolls inside its box.
 
 ### Pass 6, what was added and checked
 

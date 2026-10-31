@@ -5,14 +5,16 @@
 <h1 align="center">Milo</h1>
 
 <p align="center">
-  <b>A small coworker who lives in the corner of your Mac.</b><br>
-  Talk to him, dictate with him, hand him work, and watch him do it.
+  <b>A small coworker who lives in the corner of your screen.</b><br>
+  Talk to him, dictate with him, hand him work, and watch him do it.<br>
+  Free and open source. Mac today, Windows and Linux next.
 </p>
 
 <p align="center">
+  <img alt="Free and open source" src="https://img.shields.io/badge/free-open%20source-e8912e">
   <img alt="macOS 14 or later" src="https://img.shields.io/badge/macOS-14%2B-6b5cbf">
   <img alt="Apple silicon" src="https://img.shields.io/badge/Apple%20silicon-M1%20or%20newer-6b5cbf">
-  <img alt="Voice runs on your Mac" src="https://img.shields.io/badge/voice-on%20your%20Mac-e8912e">
+  <img alt="Voice runs on your computer" src="https://img.shields.io/badge/voice-runs%20locally-e8912e">
   <img alt="Swift and Python" src="https://img.shields.io/badge/Swift%20%2B%20Python-uv-2b2454">
 </p>
 
@@ -20,6 +22,7 @@
   <a href="https://nkls-ai.github.io/milo/"><b>Website</b></a> ·
   <a href="#what-he-does">What he does</a> ·
   <a href="#set-it-up">Set it up</a> ·
+  <a href="#later-milo-with-nothing-to-set-up">Later: nothing to set up</a> ·
   <a href="#keys">Keys</a> ·
   <a href="#how-its-built">How it's built</a> ·
   <a href="#develop">Develop</a> ·
@@ -31,9 +34,9 @@
   <img src="assets/readme/hero.webp" alt="Milo's homepage: 'Just tell Milo.' beside a small Mac screen, where Milo has just put the dentist in the calendar and a card with Undo springs out of him.">
 </picture>
 
-Hold a key and talk. Milo hears you **on your Mac**, answers out loud in a voice **made on your Mac**, and does the thing: a calendar entry, an email answer in the field you're typing in, a table in Excel. He asks before anything that can't be undone, and everything else comes with Undo.
+Hold a key and talk. Milo hears you **on your computer**, answers out loud in a voice **made on your computer**, and does the thing: a calendar entry, an email answer in the field you're typing in, a table in Excel. He asks before anything that can't be undone, and everything else comes with Undo.
 
-Only the thinking goes out: the words of your question go to a chat model (Claude Haiku by default, or any OpenAI-style API, local ones included), and bigger jobs go to a helper agent (Codex or Claude Code). Your recordings never leave the Mac.
+Only the thinking goes out: the words of your question go to a chat model (Claude Haiku by default, or any OpenAI-style API, local ones included), and bigger jobs go to a helper agent (Codex or Claude Code). Your recordings never leave your computer.
 
 ## What he does
 
@@ -43,7 +46,7 @@ Click into a reply, hold right <kbd>⌥</kbd> and say *"answer Anna, Sunday work
 
 <img src="assets/readme/write.webp" alt="Milo answering an email: the reply lands in Mail's reply field in one piece, while the six steps of the old copy-into-a-chatbot way are crossed out.">
 
-### Fast, because hearing and speaking happen on your Mac
+### Fast, because hearing and speaking happen on your computer
 
 Whisper large-v3-turbo transcribes on the Apple GPU while you speak, so dictation is in your app **about half a second** after you let go (a second at most after a long one). His voice is Kyutai's **Pocket TTS** on the CPU, about **7x faster than real time**, sentence by sentence, in English and German. Dictation, his voice and reminders keep working offline.
 
@@ -76,14 +79,14 @@ Calendar entries, to-dos, timers, notes, mail drafts, music and your shortcuts h
     </td>
     <td width="50%" valign="top">
       <b>A memory you can read</b><br>
-      He remembers your people, plans and how you like things, as plain files on your Mac. Fix what's wrong, or make him forget.<br><br>
+      He remembers your people, plans and how you like things, as plain files on your computer. Fix what's wrong, or make him forget.<br><br>
       <img src="assets/readme/memory.webp" alt="The list of what Milo knows, with Edit and Forget.">
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
       <b>Meeting notes without a bot</b><br>
-      When a call starts he asks once whether to take notes. Afterwards: a summary, decisions and to-dos ready for Reminders. Transcribed on your Mac.<br><br>
+      When a call starts he asks once whether to take notes. Afterwards: a summary, decisions and to-dos ready for Reminders. Transcribed on your computer.<br><br>
       <img src="assets/readme/meetings.webp" alt="Meeting notes with a summary, decisions and to-dos.">
     </td>
     <td width="50%" valign="top">
@@ -148,6 +151,10 @@ The first start downloads Whisper (about 1.8 GB with the live-words model) and t
 3. Quit Wispr Flow or any other dictation app that wants <kbd>fn</kbd>.
 
 Settings are in the menu bar item › *Settings…*, and in `~/Milo/config.toml` for everything else (restart the brain from the menu bar after editing it by hand).
+
+## Later: Milo with nothing to set up
+
+This repo is all of Milo, free: you run him on your own computer with the subscription you already have. If enough people want it, a hosted version may follow, with nothing to install and no accounts to connect, the same Milo on all your devices and every model included, for one monthly price. Nothing is built yet. If you'd use it, say so on the [website](https://nkls-ai.github.io/milo/#get) or open an issue.
 
 ## Keys
 
