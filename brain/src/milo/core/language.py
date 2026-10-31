@@ -26,12 +26,16 @@ _WORD = re.compile(r"[a-zäöüß']+")
 _EN = frozenset("""the a an and or but is are was were be been it its this that these those you your i me my we our
 they them their he she his her to of in on at for with from by as do does did not no yes can could would should
 will what why how who where when which please open go get make show tell me just so now then there here have has
-had into about up out all some any thanks thank okay hey hi hello morning bye""".split())
+had into about up out all some any thanks thank okay hey hi hello morning bye cancel set add put take back too
+also off stop play call send find search write delete remove remind check give let need want know see look today
+tomorrow tonight next last more one two three minutes hours timer calendar meeting music""".split())
 _DE = frozenset("""der die das den dem des ein eine einen einem einer und oder aber ist sind war waren sein bin bist
 es ich mich mir mein meine du dich dir dein wir uns unser ihr sie er ihm ihn sein nicht kein keine ja nein kann
 kannst könntest würde sollte wird was warum wie wer wo wann welche bitte öffne öffnen geh gehe mach mache zeig
 zeige sag sage jetzt dann dort hier habe hast hat hatte auf zu mit von für bei aus nach über auch noch mal doch
-danke schön okay hallo moin servus tschüss morgen""".split())
+danke schön okay hallo moin servus tschüss morgen abbrechen spiel spiele stell setz nimm zurück raus ruf rufe
+schick such suche schreib schreibe lösch lösche entfern gib lass brauche möchte schau sieh heute nächste
+nächsten letzte mehr eins zwei drei minuten stunden termin kalender erinnerung musik rückgängig""".split())
 
 
 def normalize(code: str) -> str:

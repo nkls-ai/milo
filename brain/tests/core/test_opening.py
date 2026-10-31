@@ -120,3 +120,13 @@ def test_a_greeting_says_its_language_and_the_last_language_outlives_a_restart(t
     language.hear("okay")
     assert kept == ["en"], "told once, when it changed"
     assert SpokenLanguage(kept[-1]).hear("mhm") == "en"
+
+
+def test_everyday_commands_say_their_language():
+    """On the real Milo "cancel the pasta timer" after a German turn got a German answer: one known word in four."""
+    from milo.core.language import detect
+
+    for text, code in [("cancel the pasta timer", "en"), ("Okay, take it back", "en"), ("spiel Musik", "de"),
+                       ("nimm das zurück", "de"), ("set a timer for 10 minutes", "en"),
+                       ("stell einen Timer auf zehn Minuten", "de"), ("Spiel the Beatles", ""), ("nice", "")]:
+        assert detect(text) == code, text
