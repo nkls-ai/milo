@@ -13,7 +13,7 @@ from milo.adapters.connect.fake import World
 from milo.core.access import Access, Need
 from milo.core.events import AccessNote, ActionDone, Confirm, ConfirmAnswer
 from milo.services import people
-from milo.services.approvals import ActionPolicy
+from milo.services.approvals import ActionPolicy, fit_bubble
 from milo.services.reply_stream import ReplyParser
 from tests.fakes import FakeAccess, FakeLiveModel
 from tests.services.stack import Stack, settle
@@ -303,3 +303,35 @@ def test_the_brain_reaches_the_apps_address_book_directly():
     person = asyncio.run(people.find(contacts, "my mum", "phone"))
     assert asked == [("contacts.find", {"name": "mum", "relation": "mother"})]
     assert (person.name, person.said, person.short) == ("Jane Doe", "mum", "Mum")
+
+
+def test_the_question_shows_exactly_the_text_that_goes_lines_and_all(tmp_path):
+    """Security review, 2026-11-01: the question cut the text at 1000 characters and folded its lines, so a yes could
+    send words the user never saw. Now it shows every character that goes, and nothing else goes."""
+    s = stack(tmp_path, ['[happy] <message to="Anna">See you at 5\n  bring the cake ->\n</message>'])
+    [ask] = asyncio.run(ask_and_answer(s, "text Anna see you at five, bring the cake", True))
+    [sent] = world(s)["messages_sent"]
+    assert sent["text"] == "See you at 5\nbring the cake -›"
+    assert ask.question == f"Send this to Anna Berg (+49 170 1234567)? “{sent['text']}”"
+
+
+def test_a_long_message_goes_whole_into_the_question_and_a_longer_one_not_at_all(tmp_path):
+    long = "word " * 150  # 750 characters: more than the bubble shows, all of it in the window's detail
+    s = stack(tmp_path, [f'[happy] <message to="Anna">{long}</message>'],
+              [f'[happy] <message to="Anna">{"x" * 1001}</message>'])
+    asyncio.run(ask_and_answer(s, "text Anna the long one", True))
+    assert world(s)["messages_sent"][0]["text"] == long.strip()
+    shown = s.sink.of(Confirm)[-1].question
+    assert shown.endswith("… (all of it is in the Milo window)"), "the bubble cuts it where everyone sees it was cut"
+    whole = f"Send this to Anna Berg (+49 170 1234567)? “{long.strip()}”"
+    assert fit_bubble(whole, "") == (shown, whole), "and the window shows every word of it"
+    asyncio.run(ask_and_answer(s, "text Anna the longer one", None))
+    assert len(world(s)["messages_sent"]) == 1 and said(s).endswith("that message is too long to send from here.")
+
+
+def test_a_number_or_address_too_long_to_show_whole_is_refused(tmp_path):
+    odd = {"name": "Odd One", "emails": [{"label": "home", "value": "a" * 90 + "@example.com"}]}
+    s = stack(tmp_path, ['[happy] <call to="Odd One"/>'], contacts=(odd,))
+    asyncio.run(ask_and_answer(s, "call Odd One", None))
+    assert not s.sink.of(Confirm) and world(s)["calls"] == []
+    assert said(s).endswith("that number or address is too long to check.")

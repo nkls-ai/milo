@@ -65,6 +65,10 @@ MESSAGE_WAIT_S = 10.0
 MAX_TIMER_S = 24 * 3600
 SEARCH_DAYS = 14
 """How far ahead an event named by its title (not a handle) is looked for, when no day is given."""
+MAX_MESSAGE_CHARS = 1000
+"""The longest text message Milo sends: its question shows every character of it (ADR 0039)."""
+MAX_ADDRESS_CHARS = 80
+"""The longest number or address a message or call goes to: its question shows all of it."""
 
 RULES = """\
 ## Doing everyday things yourself
@@ -788,9 +792,11 @@ class QuickActions:
     async def _message(self, act: ActRequest, lang: str) -> _Plan:
         """A text message to someone, in the user's words. Asks every time with who and the whole text (ADR 0039)."""
         messages = self._need("messages")
-        text = act.text.strip() or act.get("text")
+        text = _message_text(act.text or act.get("text"))
         if not text:
             raise Problem(say("acts.why_no_text", lang))
+        if len(text) > MAX_MESSAGE_CHARS:
+            raise Problem(say("acts.why_too_long", lang))
         person = await self._person(act.get("to"), "message", lang)
 
         async def run() -> _Done:
@@ -800,8 +806,8 @@ class QuickActions:
             return _Done("message", person.name, say("acts.message_sent", lang, who=person.short),
                          detail=inert(text, 300), app=str(sent.get("app") or ""))
 
-        return _Plan("send", say("acts.ask.message", lang, who=_who(person), text=inert(text, 1000)), None, run,
-                     always=True)
+        # The question shows the very text that goes, uncut: a long one moves whole into the window (fit_bubble).
+        return _Plan("send", say("acts.ask.message", lang, who=_who(person), text=text), None, run, always=True)
 
     async def _call(self, act: ActRequest, lang: str) -> _Plan:
         """A call: through the phone, or an internet audio or video call. Asks every time with who (ADR 0039)."""
@@ -828,7 +834,7 @@ class QuickActions:
             raise Problem(say("acts.why_no_recipient", lang))
         address = people.address_in(said)
         if address:
-            return people.Person(address, address, said)
+            return _shown_whole(people.Person(address, address, said), lang)
         contacts = self._need("contacts")
         name = inert(said, 40)
         if self._access is not None:
@@ -837,7 +843,7 @@ class QuickActions:
             except HandsError:
                 raise Answer(say("acts.no_contacts", lang, name=name)) from None
         try:
-            return await people.find(contacts, said, how)
+            return _shown_whole(await people.find(contacts, said, how), lang)
         except people.NoOne:
             raise Answer(say("acts.no_person", lang, name=name)) from None
         except people.Several as e:
@@ -1030,14 +1036,29 @@ def _yes(value: str) -> bool:
     return value.lower() in ("yes", "true", "1")
 
 
+def _message_text(text: str) -> str:
+    """The text of a message as it is both asked about and sent: its lines kept, each trimmed, and no tag can open
+    in it ("<" and ">" as "‹" and "›"), so the question never shows other characters than the ones that go."""
+    lines = [" ".join(line.split()) for line in str(text or "").replace("\r\n", "\n").split("\n")]
+    return "\n".join(lines).strip().replace("<", "‹").replace(">", "›")
+
+
+def _shown_whole(person: people.Person, lang: str) -> people.Person:
+    """The person, if their number or address fits its question whole; it is never cut there."""
+    if len(person.address) > MAX_ADDRESS_CHARS or any(c in person.address for c in "<>\n"):
+        raise Problem(say("acts.why_address", lang))
+    return person
+
+
 def _who(person: people.Person) -> str:
-    """Whom a message or call goes to, for its question: the name and the number or address, and what the user
-    called them when it isn't their name ("Mum (Jane Doe, +49 170 1234567)")."""
+    """Whom a message or call goes to, for its question: the name and the whole number or address, and what the
+    user called them when it isn't their name ("Mum (Jane Doe, +49 170 1234567)"). A name may be cut, visibly; the
+    number or address never is (`_shown_whole`)."""
     if person.name == person.address:
-        return inert(person.address, 60)
+        return person.address
     if person.nicknamed:
-        return f"{inert(person.said, 30)} ({inert(person.name, 50)}, {inert(person.address, 60)})"
-    return f"{inert(person.name, 50)} ({inert(person.address, 60)})"
+        return f"{inert(person.said, 30)} ({inert(person.name, 50)}, {person.address})"
+    return f"{inert(person.name, 50)} ({person.address})"
 
 
 def _others(event: dict) -> list[str]:

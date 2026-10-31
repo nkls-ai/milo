@@ -74,6 +74,9 @@ LINES: dict[str, dict[str, str]] = {
                           "Nummer geht."},
     "why_no_recipient": {"en": "say who it's for", "de": "sag, an wen"},
     "why_no_text": {"en": "say what the message should say", "de": "sag, was drinstehen soll"},
+    "why_too_long": {"en": "that message is too long to send from here",
+                     "de": "die Nachricht ist zu lang, um sie von hier zu schicken"},
+    "why_address": {"en": "that number or address is too long to check", "de": "die Nummer oder Adresse ist zu lang"},
 }
 
 QUESTIONS: dict[str, dict[str, str]] = {

@@ -16,7 +16,7 @@ Both go to another person and nothing takes them back. ADR 23 already says sendi
 
 **Which number.** A mobile number first (the label says mobile, iPhone, cell or Handy). For a message or an internet call, then an email address, which iMessage and FaceTime reach. Then any other number. A phone call to someone with only an address becomes an internet audio call, and the question says so.
 
-**Always asks** (`_Plan.always`). Every message and every call asks, every time, in every mode, at the Mac and from the phone, through `Approvals.confirm`: no Allow always, no scope, and a `send` or `call` level lowered in config.toml doesn't skip it. Only `never` for the kind refuses without a question. The question names the person, the number or address, and the whole text: "Send this to Anna Berg (+49 170 1234567)? “I'm running ten minutes late”", "Call Mum (Jane Doe, +49 160 2222222)?". A message is the `send` kind; a call is a new kind, `call` (`ask_first`), so `call = "never"` in `[approvals.levels]` turns calls off.
+**Always asks** (`_Plan.always`). Every message and every call asks, every time, in every mode, at the Mac and from the phone, through `Approvals.confirm`: no Allow always, no scope, and a `send` or `call` level lowered in config.toml doesn't skip it. Only `never` for the kind refuses without a question. The question names the person, the whole number or address, and every character of the text that goes: "Send this to Anna Berg (+49 170 1234567)? “I'm running ten minutes late”", "Call Mum (Jane Doe, +49 160 2222222)?". A message is the `send` kind; a call is a new kind, `call` (`ask_first`), so `call = "never"` in `[approvals.levels]` turns calls off.
 
 **No Undo.** The card (`action_done` kind `message` or `call`) says what went, to whom: the text or the number as its detail. It records no Undo, so the card has no Undo button and "undo that" doesn't reach it.
 
@@ -40,3 +40,7 @@ The fakes keep `contacts`, `messages_sent` and `calls` in world.json; nothing le
 - Messages' scripting can't tell beforehand whether a number has iMessage. A send to a number without it may fail only in Messages, later, with "Not Delivered", while Milo has already said "Sent to Anna." The SMS fallback only runs when the script itself fails.
 - Opening `tel:` or `facetime://` from another app may make FaceTime show its own Call button before it rings, so a call can take one more click after Milo's yes.
 - A contact found only through the relation needs a relation on the user's own card in Contacts ("mother: Jane Doe"), or a card with the nickname "Mum".
+
+## Changed after review (2026-11-01)
+
+A security review found that the question could show something other than what was sent: it cut the text at 1000 characters and the address at 60, and folded the text's lines into one. Now the text is made once (lines kept and trimmed, "<" and ">" as "‹" and "›") and that same text is both shown and sent. A message longer than 1000 characters isn't sent ("that message is too long to send from here"), and a number or address longer than 80 characters, or with "<", ">" or a line break in it, isn't used. The address is never cut in the question; a name may be, with "…". A question longer than the bubble is cut there with "(all of it is in the Milo window)", and the window and the phone get all of it (`fit_bubble`, the relay).
