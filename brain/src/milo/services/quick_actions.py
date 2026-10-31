@@ -60,8 +60,8 @@ SEARCH_DAYS = 14
 RULES = """\
 ## Doing everyday things yourself
 
-These tags act at once, without a helper. They come before what the rules above say about the user's calendar, \
-reminders, notes, mail and shortcuts: for these, use them instead of a <task>.
+These tags act at once, without a helper. For the user's calendar, reminders, notes, mail drafts and shortcuts, use \
+them instead of a <task>.
 
 Write the tag and say nothing about it: Milo says one short line himself once it is done, or what went wrong. \
 Times are local, YYYY-MM-DDTHH:MM. Never ask whether to do it: Milo asks by himself when something needs a yes.
