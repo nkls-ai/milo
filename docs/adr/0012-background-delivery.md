@@ -28,8 +28,9 @@ is a pure planner; `MacHands` runs the steps and reads the app back to check eac
    lets Milo type. While a device is lent, the old rules hold: the whole-screen frame shows and any real touch
    stops him. A borrowed click warps the real pointer back to where the user left it afterwards.
 3. **Stopping.** In the background the user's own typing and clicking must *not* stop Milo — that is the
-   point — so `TakeoverDetector` has a `background` mode in which only `esc` (or the Stop button on the window
-   outline) stops him. In `borrowed` mode it keeps today's stop-on-any-touch.
+   point — so `TakeoverDetector` has a `background` mode in which only `esc` (or the Stop button beside Milo)
+   stops him. The Stop button first sat on the outline; the outline now lets every click through, since it sat
+   above Milo and swallowed the clicks on his questions. In `borrowed` mode it keeps today's stop-on-any-touch.
 4. **On screen.** Milo's own lavender cursor (an overlay, never the system cursor) glides to each spot before
    the action, so the user sees where it will land; the window he works in gets a soft outline that follows it,
    and Pip perches on its corner. The brain tells the app the window through `describe` (it now also returns

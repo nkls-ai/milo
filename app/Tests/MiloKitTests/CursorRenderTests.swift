@@ -25,7 +25,7 @@ struct CursorRenderTests {
         for style in CharacterStyle.allCases {
             try save(ZStack {
                 Mock()
-                WorkingOutlineView(onStop: {}, theme: .for(style)).frame(width: 360, height: 240)
+                WorkingOutlineView(theme: .for(style)).frame(width: 360, height: 240)
             }.frame(width: 440, height: 320), name: style == .milo ? "outline" : "outline-\(style.rawValue)")
             try save(WorkingFrameView(theme: .for(style)).frame(width: 440, height: 280).background(Mock()),
                      name: "frame-\(style.rawValue)")

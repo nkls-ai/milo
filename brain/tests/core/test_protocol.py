@@ -94,6 +94,7 @@ def test_parsed_values():
     with pytest.raises(ev.ProtocolError):
         ev.parse_command({"type": "remote_pause", "on": "yes"})
     assert ev.parse_command({"type": "stop_helper", "id": "c0ffee12ab34"}) == ev.StopHelper("c0ffee12ab34")
+    assert ev.parse_command({"type": "stop_all"}) == ev.StopAll()
     with pytest.raises(ev.ProtocolError):
         ev.parse_command({"type": "stop_helper", "id": " "})
     assert ev.parse_command({"type": "set_setting", "section": "ui", "key": "voice", "value": False}) == \

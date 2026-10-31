@@ -547,6 +547,13 @@ class StopHelper(Command):
     id: str
 
 
+class StopAll(Command):
+    """The user pressed the Stop button by Milo: stop talking, thinking, the question waiting, every helper and
+    the work on screen, now."""
+
+    type: ClassVar[str] = "stop_all"
+
+
 class GetFacts(Command):
     """The "What Milo knows" screen opened: send `facts`."""
 
@@ -757,6 +764,8 @@ def parse_command(raw: object) -> Command:
                 if not id:
                     raise ProtocolError("id must not be empty")
                 return StopHelper(id)
+            case "stop_all":
+                return StopAll()
             case "get_facts":
                 return GetFacts()
             case "forget_fact":

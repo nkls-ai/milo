@@ -13,8 +13,8 @@ from .core.events import (AppResponse, CallEnded, CallStarted, Command, ConfirmA
                           ListenStop,
                           LookResult, MeetingChunk, MeetingRecording, MeetingToggle, Mute, NewConversation,
                           OpenConversation, RemoteForget, RemotePause, RenameConversation, RoutineAction,
-                          RoutineDraftAnswer, SearchConversations, SetSetting, StateChanged, StopHelper, TextInput,
-                          UiConfig, WhatsThis)
+                          RoutineDraftAnswer, SearchConversations, SetSetting, StateChanged, StopAll, StopHelper,
+                          TextInput, UiConfig, WhatsThis)
 from .core.types import ListenMode
 from .services.app_bridge import AppBridge
 from .services.approvals import Approvals
@@ -163,6 +163,15 @@ class Brain:
             case ConfirmAnswer(id, yes, always):
                 if self._approvals is not None and not self._approvals.answer(id, yes, always=always):
                     log.info("an answer came for a question that is over")
+            case StopAll():
+                log.info("the user pressed Stop")
+                if self._approvals is not None:
+                    self._approvals.cancel()
+                if self._helpers is not None:
+                    self._helpers.stop("all")
+                if self._hands is not None:
+                    self._hands.stop("stop")
+                self._live_talk.interrupt()
             case StopHelper(id):
                 if self._helpers is not None and not self._helpers.stop(id):
                     log.info("Stop came for a helper that isn't working")

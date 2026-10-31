@@ -31,6 +31,19 @@ import Testing
         #expect(model.helpers.isEmpty)
     }
 
+    @Test func theStopByMiloShowsWhileHeIsBusy() {
+        let model = MiloModel(scheduler: ManualScheduler())
+        #expect(!model.canStop, "nothing to stop")
+        model.apply(.state(.speaking))
+        #expect(model.canStop)
+        model.apply(.state(.idle))
+        model.apply(.helpers([Self.working]))
+        #expect(model.canStop, "a helper at work")
+        model.apply(.helpers([]))
+        model.handsActive = true
+        #expect(model.canStop, "work on screen")
+    }
+
     @Test func clickingABirdOpensItsHelper() {
         let model = MiloModel(scheduler: ManualScheduler())
         var opened: [String] = []

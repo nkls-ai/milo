@@ -265,6 +265,14 @@ class Approvals:
             return True
         return self.answer(self._pending[0], yes, via=via)
 
+    def cancel(self) -> bool:
+        """The user pressed Stop: the waiting question, wherever it was asked, is answered no."""
+        if self._pending is None or self._pending[2].done():
+            return False
+        self._transcript.user("Stop", "button")
+        self._pending[2].set_result("no")
+        return True
+
     def _still_showing(self, question: str) -> bool:
         """The bubble shows the question, or the part of it spoken so far."""
         shown = self._ui.bubble.strip()

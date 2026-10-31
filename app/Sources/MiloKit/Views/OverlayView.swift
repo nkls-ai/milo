@@ -16,9 +16,12 @@ public struct OverlayView: View {
             BubbleView(model: model)
             VoiceCapsule(model: model)
             HStack(alignment: .bottom, spacing: 0) {
-                // Left of the square DraggableHostingView keeps for Milo, so a click on a bird is the bird's.
-                HelperFlock(model: model)
-                    .padding(.trailing, 20)
+                // Left of the square DraggableHostingView keeps for Milo, so a click on a bird or on Stop is theirs.
+                HStack(alignment: .bottom, spacing: 6) {
+                    HelperFlock(model: model)
+                    StopByMilo(model: model).padding(.bottom, 50)
+                }
+                .padding(.trailing, 20)
                 CharacterView(model: model)
                     .frame(width: 132, height: 132)
                     .overlay(alignment: .topLeading) { LookingBadge(model: model) }
@@ -38,6 +41,7 @@ public struct OverlayView: View {
         .animation(motion, value: model.question)
         .animation(motion, value: model.looking)
         .animation(motion, value: model.recording)
+        .animation(motion, value: model.canStop)
         .themed(by: model)
     }
 

@@ -42,3 +42,29 @@ struct RecordingBadge: View {
         }
     }
 }
+
+/// A small Stop button by Milo while he talks, thinks or works: one click and he stops everything at once.
+struct StopByMilo: View {
+    /// Plain, simple English; localized where translations exist.
+    static let label = String(localized: "Stop Milo", comment: "Button by Milo that stops what he is doing")
+
+    @Environment(\.miloTheme) private var theme
+    @ObservedObject var model: MiloModel
+
+    var body: some View {
+        if model.canStop {
+            Button(action: model.stopAll) {
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(theme.primary)
+                    .frame(width: 30, height: 30)
+                    .floatingSurface(Circle())
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .help(Self.label)
+            .accessibilityLabel(Self.label)
+            .transition(.scale(scale: 0.4).combined(with: .opacity))
+        }
+    }
+}
