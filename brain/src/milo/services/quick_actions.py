@@ -11,7 +11,7 @@ Then Milo says one templated line in the user's language ("Dentist, Thursday at 
 Asking follows the rest of Milo. A tag in a reply to outside text (task results, the screen, an invite in <today>)
 asks first, like a <reminder> (LiveTalk decides that). The action's own kind then goes through Approvals: changes don't
 ask, a draft doesn't, a shortcut asks every time, and deleting an event or a to-do asks only when Undo couldn't bring
-it back (an invite, a repeating event, a shared list; ADR 0023). Every change records how to take it back for Undo
+it back (an invite, a repeating event, any to-do; ADR 0023). Every change records how to take it back for Undo
 (ADR 0026).
 """
 
@@ -512,7 +512,9 @@ class QuickActions:
         t, sure = await self._find_todo(act, lang)
         title = str(t.get("title") or "the to-do")
         due = parse_local(t.get("due"))
-        # Undo makes it again from what Reminders gave back, so it is like the Trash; on someone else's list it isn't.
+        # Always asks (`delete`, like the worker's reminders.delete): a copy made again loses a repeat, its alarms and
+        # subtasks, and on a list shared through iCloud, which Reminders doesn't mark, it isn't the one the others had.
+        # Undo still makes that copy, except on a list marked shared.
         restorable = not t.get("shared")
 
         async def run() -> _Done:
@@ -524,7 +526,7 @@ class QuickActions:
                                                         for k in ("title", "due", "notes", "list")}}]
                          if restorable else [])
 
-        return _Plan("trash" if restorable else "delete", say("acts.ask.todo_delete", lang, title=inert(title, 50))
+        return _Plan("delete", say("acts.ask.todo_delete", lang, title=inert(title, 50))
                      + ("" if restorable else say("acts.ask.shared_list", lang)), APPS["reminders"], run, sure)
 
     def _cancel_reminder(self, act: ActRequest, lang: str) -> _Plan:

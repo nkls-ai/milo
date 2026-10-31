@@ -433,13 +433,25 @@ def test_a_todo_without_a_due_date_is_ticked_off_by_its_title_and_undo_unticks_i
     assert said(s).endswith("Undid “Buy oat milk”.")
 
 
-def test_a_todo_in_today_is_deleted_by_its_handle_and_undo_puts_it_back(tmp_path):
+def test_a_todo_in_today_is_deleted_by_its_handle_after_a_yes_and_undo_puts_it_back(tmp_path):
     milk = _todo("r1", "Buy milk", "2026-10-29T18:00", notes="the organic one")
     s = stack(tmp_path, ["[happy] Milk, at six."], ['[happy] <todo do="delete" id="t1"/>'], ["[happy] <undo/>"],
               world={"reminders": [milk, OAT_MILK]})
-    asyncio.run(say(s, "what's on my list today", "delete the milk to-do"))
+
+    async def run():
+        await say(s, "what's on my list today")
+        s.live_talk.start("delete the milk to-do")
+        await until(lambda: s.approvals.pending)
+        [ask] = s.sink.of(Confirm)
+        assert ask.question == "Delete “Buy milk” from your Reminders?", \
+            "a copy made again would lose a repeat, alarms and subtasks: it asks, even when the user said delete"
+        await s.brain.handle(ConfirmAnswer(ask.id, True))
+        await s.quick.idle()
+        await settle()
+
+    asyncio.run(run())
     assert "- t1 Buy milk, due today 18:00" in s.model.turns[0]
-    assert world(s)["reminders"] == [OAT_MILK] and not s.sink.of(Confirm), "Undo makes it again: like the Trash"
+    assert world(s)["reminders"] == [OAT_MILK]
     assert said(s).endswith("Buy milk is off your list.")
     assert (cards(s)[0].kind, cards(s)[0].detail, cards(s)[0].when) == ("todo", "Deleted", "2026-10-29T18:00")
     asyncio.run(say(s, "undo that"))
@@ -463,8 +475,7 @@ def test_several_todos_that_fit_get_a_which_one_question_and_nothing_changes(tmp
     ({**_todo("r7", "Milk"), "shared": True},
      "Delete “Milk” from your Reminders? It's on a shared list, so others will see it.")])
 def test_deleting_a_guessed_or_shared_todo_asks_first(tmp_path, todo, question):
-    """A delete found by part of the title asks, like an event's (ADR 0029). One on a shared list asks every time:
-    a made-again copy isn't the one the others had."""
+    """A to-do delete always asks; the question names the one found, and a shared list says the others see it."""
     s = stack(tmp_path, ['[happy] <todo do="delete" title="milk"/>'], world={"reminders": [todo]})
 
     async def run():

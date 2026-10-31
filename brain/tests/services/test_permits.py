@@ -574,6 +574,10 @@ def test_scripts_that_reach_outside_the_open_sheet_ask_even_in_auto_mode(script)
     ("schick das an Anna", True), ("stell den Wecker", True), ("spiel Musik", True),
     ("what can you open?", False), ("can you see what's on my screen?", False), ("is it set up?", False),
     ("thanks", False), ("wie geht's?", False),
+    ("tick off the milk", True), ("cross it off my list", True), ("mark the milk as done", True),
+    ("hak die Milch ab", True), ("streich Hafermilch von der Liste", True), ("stopp den Timer", True),
+    ("thanks Mark", False), ("ein Haken dran", False), ("ich brauche Streichhölzer", False),
+    ("I crossed the street", False),
 ])
 def test_only_words_that_ask_for_work_let_a_task_from_a_look_start_unasked(text, work):
     from milo.services.tag_policy import asks_for_work
