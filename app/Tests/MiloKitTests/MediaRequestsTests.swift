@@ -19,14 +19,6 @@ import Testing
         }
     }
 
-    final class Next: AppConnections {
-        var ops: [String] = []
-        func handle(op: String, args: JSONValue, reply: @escaping (AppOutcome) -> Void) {
-            ops.append(op)
-            reply(.success(.null))
-        }
-    }
-
     /// Runs everything at once: "later" is now, so a test sees the timeout too.
     private func requests(_ player: Player, next: AppConnections? = nil) -> MediaRequests {
         MediaRequests(player: player, next: next, main: { $0() }, after: { _, work in work() })
@@ -62,8 +54,8 @@ import Testing
     }
 
     @Test func otherOpsGoOnToCalendarAndReminders() {
-        let next = Next()
+        let next = FakeConnections()
         _ = call(requests(Player(), next: next), "calendar.events")
-        #expect(next.ops == ["calendar.events"])
+        #expect(next.handled.map(\.op) == ["calendar.events"])
     }
 }
