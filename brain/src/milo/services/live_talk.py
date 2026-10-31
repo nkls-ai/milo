@@ -598,7 +598,7 @@ class LiveTalk:
         if self._writer is None:
             log.info("ignoring %d <write> tag(s): nothing to paste them with", len(texts))
             return
-        self._writer.start(texts, outside=rule.ask_undoable, request=self._request,
+        self._writer.start(texts, outside=rule.outside, request=self._request,
                            via=self._via)
 
     def _start_open(self, request: OpenRequest) -> None:

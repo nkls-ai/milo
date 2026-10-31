@@ -192,10 +192,11 @@ def test_a_tag_in_the_reply_to_an_invite_asks_first(tmp_path):
     assert len(world(s)["events"]) == 2, "nothing happened without a yes"
 
 
-def test_in_auto_mode_an_act_after_an_invite_just_happens_with_an_undo(tmp_path):
-    """The default (2026-10-31): only what can't be undone, sending and paying ask; the card takes the rest back."""
+def test_in_auto_mode_an_act_the_user_asked_for_after_an_invite_just_happens_with_an_undo(tmp_path):
+    """The default (2026-10-31): only what can't be undone, sending and paying ask; the card takes the rest back.
+    "What's tomorrow" asks for nothing, so the same tag in its reply still asks (the strict tests run that too)."""
     s = stack(tmp_path, ['[happy] <event do="cancel" id="e1"/>'], world={"events": [DENTIST, INVITE]})
-    asyncio.run(say(s, "what's tomorrow"))
+    asyncio.run(say(s, "cancel the dentist"))
     assert s.sink.of(Confirm) == []
     assert [e["id"] for e in world(s)["events"]] == ["x2"]
     assert [card.kind for card in cards(s) if card.undo] == ["event"], "its card can put it back"

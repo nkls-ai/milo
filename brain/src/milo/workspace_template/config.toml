@@ -90,9 +90,9 @@ timeout_s = 0
 reask_s = 20
 speak = true                      # say the question out loud, besides showing it
 # How often Milo asks before he acts (ADR 22, 23): "auto" (what you asked for needs no question), "task" (one
-# Allow covers the rest of that task in that app) or "step" (every step that would ask). In auto mode a page,
-# a calendar entry or a text at your cursor just happens even after he read a mail or the screen; "task" and "step"
-# ask first when outside text could have put it there. In every mode he stops
+# Allow covers the rest of that task in that app) or "step" (every step that would ask). In auto mode a page or a
+# calendar entry you ask for just happens even after he read a mail or the screen; "task" and "step" ask first when
+# outside text could have put it there. In every mode he stops
 # and asks for what can't be undone, for sending and sharing, and for buying or anything with money (only a
 # click on Yes counts for money). Passwords, card numbers and security settings he never touches.
 ask = "auto"

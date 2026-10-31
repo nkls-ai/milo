@@ -19,10 +19,11 @@ def test_any_outside_text_holds_what_acts_at_once(field):
 
 
 @pytest.mark.parametrize("field", ["tainted", "saw_screen", "now"])
-def test_in_auto_mode_at_the_mac_what_can_be_undone_just_happens(field):
-    """An address, an act and <write> (ADR 0028's update); a file, a fact and a reminder still ask."""
+def test_in_auto_mode_what_the_user_asked_for_just_happens_if_it_can_be_undone(field):
+    """An address and an act (ADR 0028's update); a file, a fact, a reminder and <write> keep `outside`."""
     assert TagPolicy(**{field: True}).ask_undoable
-    rule = TagPolicy(**{field: True}, at_mac=True)
+    assert TagPolicy(**{field: True}, at_mac=True).ask_undoable, "a reply to \"thanks\" after a mail still asks"
+    rule = TagPolicy(**{field: True}, at_mac=True, own_work=True)
     assert not rule.ask_undoable and rule.outside
 
 
