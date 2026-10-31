@@ -45,7 +45,12 @@ def test_after_outside_text_only_the_sites_own_address_counts_as_named():
     assert not named_by(OpenRequest(url="https://www.youtube.com/watch?v=x&d=secret"), "go on YouTube"), \
         "a path or query could carry what Milo read"
     assert named_by(OpenRequest(url="https://youtube.com/"), "go on YouTube")
-    assert named_by(OpenRequest(url="https://www.figma.com"), "open figma"), "a bare name opens as www.<name>.com"
+    assert not named_by(OpenRequest(url="https://www.attachment.com"), "open the attachment"), \
+        "a word in passing isn't an address"
+    assert named_by(OpenRequest(url="https://www.figma.com"), "open figma.com")
+    assert not named_by(OpenRequest(url="https://evil.example@www.youtube.com"), "go on YouTube"), "a user part"
+    assert not named_by(OpenRequest(url="https://www.youtube.com\\@evil.example"), "go on YouTube")
+    assert not named_by(OpenRequest(url="https://www.youtube.com:8443"), "go on YouTube"), "a port"
     assert named_by(OpenRequest(url="https://www.bbc.co.uk"), "open bbc.co.uk"), "the address the user said"
     assert not named_by(OpenRequest(url="https://www.bbc.co.uk"), "open the BBC"), "only its address names it"
     assert named_by(OpenRequest(url="https://mail.google.com"), "check my gmail")

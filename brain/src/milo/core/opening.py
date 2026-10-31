@@ -27,6 +27,8 @@ SITES = {
 
 _BARE = re.compile(r"^[a-z0-9][a-z0-9 -]{0,40}$", re.IGNORECASE)
 _HOST = re.compile(r"^[a-z0-9.-]+(?::\d+)?$", re.IGNORECASE)
+_PLAIN_HOST = re.compile(r"[a-z0-9][a-z0-9.-]*", re.IGNORECASE)
+"""A host and nothing else: no user, password, port, backslash or other character a browser may read differently."""
 
 
 @dataclass(frozen=True)
@@ -78,17 +80,17 @@ def named_by(request: OpenRequest, words: str) -> bool:
     passing can't tell which file outside text put there.
 
     A page counts only as a site's front page at its own address: the SITES address of a name the user said ("go on
-    YouTube"), the address the user said ("open bbc.co.uk"), or www.<word>.com for a word they said ("open figma").
-    Outside text could have written the rest: youtube.evil under the word "YouTube", or a path or query carrying what
-    Milo read out to someone's server."""
+    YouTube") or the address the user said ("open bbc.co.uk"). Outside text could have written the rest: youtube.evil
+    under the word "YouTube", a path or query carrying what Milo read out to someone's server, or an address a
+    browser reads differently from Python (a user part, a backslash), so the address part must be a plain host."""
     if request.path:
         return False
     if not request.url:
         return bool(request.app)
     parts = urlsplit(request.url)
-    if parts.path not in ("", "/") or parts.query or parts.fragment or parts.port or parts.username:
+    if parts.path not in ("", "/") or parts.query or parts.fragment or not _PLAIN_HOST.fullmatch(parts.netloc):
         return False
-    host = (parts.hostname or "").lower().rstrip(".")
+    host = parts.netloc.lower().rstrip(".")
     text = (words or "").lower()
     said = set(re.findall(r"[\w-]+", text))
     for site, address in SITES.items():
@@ -96,7 +98,4 @@ def named_by(request: OpenRequest, words: str) -> bool:
         if host in (own, f"www.{own}") and all(word in said for word in site.split()):
             return True
     bare = host.removeprefix("www.")
-    if "." in bare and re.search(rf"(?<![\w.-]){re.escape(bare)}(?![\w-])", text):
-        return True
-    word = re.fullmatch(r"www\.([a-z0-9-]+)\.com", host)
-    return bool(word and word.group(1) in said)
+    return "." in bare and re.search(rf"(?<![\w.-]){re.escape(bare)}(?![\w-])", text) is not None
