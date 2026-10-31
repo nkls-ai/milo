@@ -55,3 +55,5 @@ The user's bar: no slower than doing it themselves. Milo says "Opening YouTube i
 
 - `open_app`, `open_url` and `open_file` have their own queue in `MacHands`. They touch none of the hands' shared state. The front-wait and the guard against Milo's own process stay. A helper's key or click can now run while an `<open>` brings another app forward; its focus check (`checkFocus`) still refuses a keystroke whose focus moved.
 - What `<open>` opened gets a card (`action_done` kind `opened`, ADR 30): the title is what was opened, the detail the address for a page.
+
+**Update (2026-10-31): Undo and routines in German too.** Every line Milo says now comes from one catalogue, `core/words` (ADR 34), keyed by line and language with English as the fallback. Undo's lines ("Undid “Excel red”: …", "There's nothing to undo.") and what Milo says about routines (a run, a missed run, a schedule, "there's no routine called …") follow the message's language, German or English. The connection tools' own questions and the system-permission lines are still English.
