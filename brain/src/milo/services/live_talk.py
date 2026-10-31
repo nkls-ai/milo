@@ -455,7 +455,8 @@ class LiveTalk:
         notes, self._notes = self._notes, []
         earlier, self._earlier = self._earlier, []
         if speak and self._backchannel is not None:
-            self._backchannel.arm()
+            self._backchannel.arm(text, first=self._last_turn_at is None or
+                                  self._clock.monotonic() - self._last_turn_at > self._idle_reset_s)
         try:
             await self._ensure_conversation()
             meeting = await self._meeting(text) if tags and not screen else ""
