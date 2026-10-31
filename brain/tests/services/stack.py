@@ -29,13 +29,14 @@ from milo.services.hands import HandsService
 from milo.services.heartbeat_runner import HeartbeatRunner
 from milo.services.cloud_hearing import CloudHearing
 from milo.services.listening import Listening
-from milo.services.live_talk import LiveTalk, untrusted
+from milo.services.live_talk import LiveTalk
 from milo.services.memory import Memory, MemoryParts, TurnMemory
 from milo.services.messages import MessageService, MessageSettings
 from milo.services.speaker import Speaker
 from milo.services.orchestrator import Orchestrator
 from milo.services.permits import Permits
 from milo.services.routines import Routines
+from milo.services.talk_prompt import untrusted
 from milo.services.task_runner import TaskRunner
 from milo.services.tool_requests import ToolRequests
 from milo.services.undo import Undo
@@ -195,7 +196,7 @@ class Stack:
                                   eyes=self.eyes, approvals=self.approvals, memory=self.turn_memory,
                                   routines=self.routines, undo=self.undo, opener=self.opener,
                                   language=self.language, quick=self.quick, meetings=self.meetings,
-                                  writer=self.writer)
+                                  writer=self.writer, computer="Mac")
         self.tasks.on_result = self.live_talk.note
         self.dictation = DictationService(UpperCleaner(), self.history, self.ui)
         self.listening = Listening(self.mic, self.transcriber, executor, self.ui, self.dictation, self.live_talk,

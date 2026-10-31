@@ -40,7 +40,7 @@ from .services.hands import HandsService
 from .services.heartbeat_runner import HeartbeatRunner
 from .services.episode_stubs import EpisodeDictations, EpisodeEyes, EpisodeTranscript, RoutineEpisodes
 from .services.listening import Listening
-from .services.live_talk import LiveTalk, untrusted
+from .services.live_talk import LiveTalk
 from .services.meetings import MeetingOptions, MeetingService
 from .services.opener import Opener
 from .services.messages import MessageService, MessageSettings
@@ -52,6 +52,7 @@ from .services.sleep import SleepRunner
 from .services.routines import Routines
 from .services.settings_guard import SettingsGuard
 from .services.speaker import Speaker
+from .services.talk_prompt import untrusted
 from .services.task_runner import TaskRunner
 from .services.tool_requests import ToolRequests
 from .services.transcript import NO_TRANSCRIPT, Transcript
@@ -416,7 +417,8 @@ def _talk(p: Parts) -> None:
         _persona(p.workspace.persona_path), config.chat.conversation_idle_reset_s, helpers, p.transcript,
         eyes=p.eyes, approvals=p.approvals, memory=mem.turns if mem is not None else None,
         backchannel=p.backchannel, routines=p.routines, meetings=p.meetings, undo=p.undo,
-        opener=Opener(AppHands(p.bridge), p.ui, p.clock), language=p.language, quick=p.quick, writer=writer)
+        opener=Opener(AppHands(p.bridge), p.ui, p.clock), language=p.language, quick=p.quick, writer=writer,
+        computer=p.platform.computer)
     p.attention.attach(turn=lambda: live_talk.busy)
     p.helpers.on_result = live_talk.note
     p.updates.speak = live_talk.speak_update

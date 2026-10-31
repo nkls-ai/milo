@@ -38,13 +38,14 @@ from . import brief
 from .approvals import REMOTE, Approvals, yes_or_no
 from .context import UserContext
 from .helpers import Helper, HelperStatus
-from .live_talk import LiveTalk, untrusted
+from .live_talk import LiveTalk
 from .pairing import Pairing, as_code, spaced
 from .quiet import wait_while
 from .settings_guard import SettingsGuard
 from . import sharing
 from .sharing import NotShareable, Outgoing, size_text
 from .speaker import Speaker
+from .talk_prompt import untrusted
 from .transcript import Transcript, unrecorded
 
 log = logging.getLogger("milo.messages")

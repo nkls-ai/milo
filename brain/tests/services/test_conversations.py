@@ -22,7 +22,7 @@ from milo.core.types import Reminder, Step, StepStatus
 from milo.memory.conversations import JsonlConversationStore
 from milo.memory.workspace import Workspace
 from milo.services.conversations import ConversationBrowser
-from milo.services.live_talk import NAME_IT
+from milo.services.talk_prompt import NAME_IT
 from milo.services.transcript import Transcript
 from tests.fakes import FakeHarness, FakeLiveModel, MemoryConversations, MemoryRoutineBook, RecordingSink
 from tests.services.stack import Stack, settle

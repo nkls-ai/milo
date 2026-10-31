@@ -6,7 +6,7 @@ import asyncio
 from milo.core.events import Bubble, Confirm, EmotionChanged, Helpers
 from milo.core.types import Emotion, HarnessError, ListenMode, MiloState, Reply, Step, StepStatus, Usage
 from milo.services.helpers import HelperStatus, is_installed_app, plain_step
-from milo.services.live_talk import untrusted
+from milo.services.talk_prompt import untrusted
 from milo.services.orchestrator import HelperQuestions, needs_screen
 from milo.services.task_runner import NEEDS_SCREEN, NEEDS_TOOLS, NO_SCREEN, TASK_FAILED
 from tests.fakes import FakeAudioOutput, FakeHarness, FakeLiveModel, ScriptedHarness, WorkerScript, without_undo_id

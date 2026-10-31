@@ -5,7 +5,7 @@ from pathlib import Path
 
 from milo.core.events import Confirm, Level, Looking, StateChanged
 from milo.core.types import MiloState, ScreenCapture
-from milo.services.live_talk import LOOK_RULES
+from milo.services.talk_prompt import LOOK_RULES
 from milo.services.screen import NOTE, checked, look_prompt, screen_data
 from tests.fakes import FakeEyes, FakeLiveModel
 from tests.services.stack import Stack, settle
