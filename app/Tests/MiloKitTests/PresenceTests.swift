@@ -13,13 +13,14 @@ import Testing
         let scheduler = scheduler
         model = MiloModel(scheduler: scheduler, clock: { scheduler.now })
         model.connected = true
+        model.presence.hideAfter = 60  // the times below count a minute; the default is shorter
     }
 
     /// Lets the model's change reach the presence (it looks a moment later, once the change is in).
     func settle() { scheduler.advance(by: 0) }
 
     func away() {
-        scheduler.advance(by: Presence.defaultHideAfter + Presence.leaveDuration(plain: false))
+        scheduler.advance(by: 60 + Presence.leaveDuration(plain: false))
         #expect(presence.phase == .away)
     }
 

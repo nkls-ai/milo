@@ -226,7 +226,7 @@ talk_key = "right_option"
 hands_free_max_s = 300            # double-tap a key for hands-free; it stops by itself after this
 character = "milo"                # Milo the wren; the only look
 voice = true                      # false: answers show in the bubble without being said out loud
-hide_after_s = 60                 # Milo leaves the screen after this many seconds with nothing going on; 0: he stays
+hide_after_s = 15                 # Milo leaves the screen after this many seconds with nothing going on; 0: he stays
 # Ask Milo about the selection, or the front window if nothing is selected. "" turns it off.
 whats_this_key = "ctrl+option+m"
 # Start or stop meeting notes by hand, e.g. for a Discord call Milo didn't notice. "" turns it off.

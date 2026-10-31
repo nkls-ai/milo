@@ -29,8 +29,8 @@ def test_the_report_has_every_setting_with_its_value_options_and_labels():
     assert table["chat", "updates"]["value"] == "bubble" and table["chat", "updates"]["live"] is False
     assert table["ui", "voice"] == {"section": "ui", "key": "voice", "value": True, "options": [], "labels": [],
                                     "live": False}
-    assert table["ui", "hide_after_s"]["value"] == 60 and table["ui", "hide_after_s"]["options"] == [30, 60, 300, 0]
-    assert table["ui", "hide_after_s"]["labels"] == ["After 30 seconds", "After a minute", "After 5 minutes", "Never"]
+    assert table["ui", "hide_after_s"]["value"] == 15 and table["ui", "hide_after_s"]["options"] == [15, 30, 60, 300, 0]
+    assert table["ui", "hide_after_s"]["labels"] == ["After 15 seconds", "After 30 seconds", "After a minute", "After 5 minutes", "Never"]
     assert all(len(r["options"]) == len(r["labels"]) for r in report.settings)
 
 

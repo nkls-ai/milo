@@ -136,7 +136,7 @@ private final class Harness {
     @Test func howLongMiloStaysComesFromTheBrainAndAppliesAtOnce() {
         let h = Harness()
         h.brain.connect()
-        #expect(h.model.presence.hideAfter == 60, "a minute until the brain says")
+        #expect(h.model.presence.hideAfter == Presence.defaultHideAfter, "the default until the brain says")
         h.brain.emit(.settings(Self.hideAfter(300)))
         #expect(h.model.presence.hideAfter == 300)
         h.brain.emit(.settings(Self.hideAfter(0)))
@@ -144,7 +144,7 @@ private final class Harness {
         h.controller.settingsModel.change("ui", "hide_after_s", to: 30)
         #expect(h.model.presence.hideAfter == 30, "the window's choice works before the brain answers")
         h.brain.emit(.settings(SettingsReport(settings: [Self.look])))
-        #expect(h.model.presence.hideAfter == 60, "an older brain that doesn't know the setting: the default")
+        #expect(h.model.presence.hideAfter == Presence.defaultHideAfter, "an older brain that doesn't know the setting: the default")
     }
 
     @Test func theDictateKeyBringsMiloBackFromAway() {
