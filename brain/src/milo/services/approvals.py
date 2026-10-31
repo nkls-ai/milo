@@ -12,6 +12,7 @@ from milo.core.logtext import private
 from milo.core.ports import QuestionRelay, Relayed
 from milo.core.registry import ConfigError
 from milo.core.types import ActionLevel, Decision, Emotion, HandsError
+from milo.core.words import say
 
 from .permits import Permits, Scope
 from .speaker import Speaker
@@ -24,8 +25,6 @@ DEFAULT_TIMEOUT_S = 0.0
 """0: a question at the Mac waits until it is answered (ADR 0031). A number: after that long no answer means no."""
 REASK_S = 20.0
 """An unanswered question is said once more after this long."""
-NO_ANSWER = "No answer, so I left it."
-NO_ANSWER_DE = "Keine Antwort, also habe ich es gelassen."
 PARKED = ("The user hasn't answered yet; the question stays open for them. Don't do it another way: end your turn "
           "now and say in one short sentence that you're waiting for their answer. If they say yes, you'll be told "
           "to go on.")
@@ -70,8 +69,6 @@ UNDOABLE_KINDS = ("trash",)
 """Changes that remove something the user can get back. Like any change they don't ask, except in "Every step"
 mode."""
 _STRICTNESS = (ActionLevel.READ, ActionLevel.CHANGE, ActionLevel.ASK_FIRST, ActionLevel.NEVER)
-MONEY_YES = "That one involves money, so only a click on Yes counts."
-MONEY_YES_DE = "Da geht es um Geld, deshalb zählt nur ein Klick auf Ja."
 
 _YES = ("yes", "yeah", "yep", "yup", "sure", "ok", "okay", "go ahead", "do it", "please do", "of course",
         "send it", "ja", "jawohl", "klar", "gerne", "genau", "mach das", "mach es", "mach")
@@ -142,8 +139,6 @@ BUBBLE_LINES = 8
 """The lines the bubble shows (BubbleView's lineLimit)."""
 LINE_CHARS = 32
 """Fewer characters than a bubble line holds, so the estimate of the lines a question needs errs high."""
-SEE_WINDOW = " (all of it is in the Milo window)"
-SEE_WINDOW_DE = " (alles steht im Milo-Fenster)"
 
 
 def bubble_lines(text: str) -> int:
@@ -163,7 +158,7 @@ def fit_bubble(question: str, detail: str, language: str = "") -> tuple[str, str
     if len(question) <= QUESTION_MAX and bubble_lines(question) <= BUBBLE_LINES:
         return question, detail
     whole = f"{question}\n\n{detail}" if detail else question
-    see = SEE_WINDOW_DE if language == "de" else SEE_WINDOW
+    see = say("approvals.see_window", language)
     room = QUESTION_MAX - len(see) - 1
     short = " ".join(question.split())[:room]
     while short and bubble_lines(short + "…" + see) > BUBBLE_LINES:
@@ -329,7 +324,7 @@ class Approvals:
             return False
         if yes and self._money:
             # Taken as the answer so it isn't a turn of its own, but it doesn't say yes: the button has to.
-            money_yes = MONEY_YES_DE if self._language() == "de" else MONEY_YES
+            money_yes = say("approvals.money_yes", self._language())
             self._transcript.say(money_yes, Emotion.NEUTRAL)
             self._speaker.say(money_yes, Emotion.NEUTRAL, speak=self._speak and via == "voice")
             return True
@@ -429,13 +424,13 @@ class Approvals:
                 answer = await asyncio.wait_for(future, timeout_s)
             except TimeoutError:
                 answer = "timeout"
-                self._transcript.say(NO_ANSWER_DE if self._language() == "de" else NO_ANSWER, Emotion.NEUTRAL)
+                self._transcript.say(say("approvals.no_answer", self._language()), Emotion.NEUTRAL)
             except asyncio.CancelledError:
                 if asyncio.current_task() not in self._expired:
                     raise
                 self._expired.discard(asyncio.current_task())
                 answer = "timeout"
-                self._transcript.say(NO_ANSWER_DE if self._language() == "de" else NO_ANSWER, Emotion.NEUTRAL)
+                self._transcript.say(say("approvals.no_answer", self._language()), Emotion.NEUTRAL)
             finally:
                 self._pending = None
                 self._money = False

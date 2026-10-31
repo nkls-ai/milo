@@ -8,6 +8,7 @@ import asyncio
 
 from milo.core.events import ActionDone, Confirm, Status
 from milo.core.types import HandsError, ListenMode
+from milo.core.words import say
 from milo.services.cloud_hearing import CloudHearing
 from tests.fakes import FakeAudioInput, FakeHands, FakeLiveModel, FakeStreamingTranscriber, FakeTranscriber
 from tests.services.stack import Stack, settle
@@ -194,10 +195,10 @@ def test_the_local_transcribers_language_reaches_the_turn():
 
 
 def test_milos_own_lines_around_a_question_follow_the_language():
-    from milo.services.approvals import SEE_WINDOW_DE, fit_bubble
+    from milo.services.approvals import fit_bubble
 
     question, _ = fit_bubble("Soll ich das wirklich machen " * 20, "", "de")
-    assert question.endswith(SEE_WINDOW_DE)
+    assert question.endswith(say("approvals.see_window", "de"))
     s = Stack(confirm_timeout_s=0.01)
     s.language.hear("Kannst du das bitte machen?")
     said = []
