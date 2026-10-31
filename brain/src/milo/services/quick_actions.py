@@ -24,10 +24,11 @@ import json
 import re
 import logging
 import re
+import unicodedata
 import uuid
 import weakref
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -1036,29 +1037,48 @@ def _yes(value: str) -> bool:
     return value.lower() in ("yes", "true", "1")
 
 
+_KEPT_JOINERS = frozenset("\u200c\u200d")
+"""Invisible characters a message keeps: they join letters (Persian) and emoji (a family), and hide nothing."""
+_ADDRESS = re.compile(r"[A-Za-z0-9 +\-().\/@_%'&*=?^`{|}~!#$]+")
+"""What a phone number or address may be made of, all of it visible and plain ASCII."""
+
+
+def _visible(text: str, keep: str = "") -> str:
+    """`text` without what shows nothing or changes how the rest shows: control characters, line and paragraph
+    separators, and format characters (bidi overrides, zero-width spaces), except `keep` and the joiners."""
+    return "".join(c for c in text if c in keep or c in _KEPT_JOINERS
+                   or unicodedata.category(c) not in ("Cc", "Cf", "Zl", "Zp", "Co", "Cn", "Cs"))
+
+
 def _message_text(text: str) -> str:
-    """The text of a message as it is both asked about and sent: its lines kept, each trimmed, and no tag can open
-    in it ("<" and ">" as "‹" and "›"), so the question never shows other characters than the ones that go."""
-    lines = [" ".join(line.split()) for line in str(text or "").replace("\r\n", "\n").split("\n")]
+    """The text of a message as it is both asked about and sent: its lines kept, each trimmed, nothing invisible
+    that could make it read otherwise (`_visible`), and no tag can open in it ("<" and ">" as "‹" and "›"), so the
+    question never shows other characters than the ones that go."""
+    text = _visible(str(text or "").replace("\r\n", "\n").replace("\r", "\n"), keep="\n")
+    lines = [" ".join(line.split()) for line in text.split("\n")]
     return "\n".join(lines).strip().replace("<", "‹").replace(">", "›")
 
 
 def _shown_whole(person: people.Person, lang: str) -> people.Person:
-    """The person, if their number or address fits its question whole; it is never cut there."""
-    if len(person.address) > MAX_ADDRESS_CHARS or any(c in person.address for c in "<>\n"):
+    """The person, with the number or address made plain (the address book may wrap a number in invisible
+    direction marks, or space it with a no-break space), if it then fits its question whole and is made only of
+    plain visible characters. It is never cut there, and what is shown is what is used."""
+    address = " ".join(_visible(person.address).split())
+    if not address or len(address) > MAX_ADDRESS_CHARS or not _ADDRESS.fullmatch(address):
         raise Problem(say("acts.why_address", lang))
-    return person
+    return replace(person, address=address, name=address if person.name == person.address else person.name)
 
 
 def _who(person: people.Person) -> str:
     """Whom a message or call goes to, for its question: the name and the whole number or address, and what the
     user called them when it isn't their name ("Mum (Jane Doe, +49 170 1234567)"). A name may be cut, visibly; the
     number or address never is (`_shown_whole`)."""
+    name, said = inert(_visible(person.name), 50), inert(_visible(person.said), 30)
     if person.name == person.address:
         return person.address
     if person.nicknamed:
-        return f"{inert(person.said, 30)} ({inert(person.name, 50)}, {person.address})"
-    return f"{inert(person.name, 50)} ({person.address})"
+        return f"{said} ({name}, {person.address})"
+    return f"{name} ({person.address})"
 
 
 def _others(event: dict) -> list[str]:
