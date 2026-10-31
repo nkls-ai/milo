@@ -1,6 +1,8 @@
 # Milo's homepage
 
-A static page that introduces Milo to people who don't use AI yet. Astro on Bun, no tracking, no cookies, nothing loaded from anyone else (the fonts ship with the page). Nothing here is deployed.
+A static page that introduces Milo to people who don't use AI yet. Astro on Bun, no tracking, no cookies, nothing loaded from anyone else (the fonts ship with the page).
+
+Once the repo is public, every push to `main` that touches `site/` or `install.sh` puts the page on GitHub Pages at https://nkls-ai.github.io/milo/, with `install.sh` beside it (`.github/workflows/site.yml`; switch it on once under Settings › Pages › Source: GitHub Actions). `SITE_URL` and `SITE_BASE` tell the build where it lives.
 
 ```sh
 bun install

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Milo's installer: everything local in one go, then the subscription Milo thinks with.
 #
-#   curl -fsSL https://raw.githubusercontent.com/nkls-ai/milo/main/install.sh | sh
+#   curl -fsSL https://nkls-ai.github.io/milo/install.sh | sh
 #
 # or, from a checkout, ./install.sh. Run it again to update.
 #

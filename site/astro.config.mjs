@@ -5,8 +5,10 @@ import { defineConfig, fontProviders } from 'astro/config';
 const fs = (path) => `./node_modules/@fontsource-variable/${path}`;
 
 export default defineConfig({
-  // A placeholder until there is a real address; only used for the share-card URLs.
-  site: 'https://milo.example',
+  // Where the page lives. The GitHub Pages workflow sets both (https://nkls-ai.github.io and /milo); a real
+  // domain later only changes the workflow. `site` is only used for the share-card URL.
+  site: process.env.SITE_URL ?? 'https://milo.example',
+  base: process.env.SITE_BASE ?? '/',
   build: { inlineStylesheets: 'always', format: 'file' },
   devToolbar: { enabled: false },
   fonts: [

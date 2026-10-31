@@ -4,7 +4,9 @@ import { Font } from 'astro:assets';
 
 interface Props { title: string; description: string }
 const { title, description } = Astro.props;
-const og = new URL('/og.png', Astro.site).href;
+// Under GitHub Pages the site lives at /milo/, so every file it links goes through the base.
+const at = (file: string) => `${import.meta.env.BASE_URL.replace(/\/$/, '')}/${file}`;
+const og = new URL(at('og.png'), Astro.site).href;
 ---
 <!doctype html>
 <html lang="en">
@@ -16,10 +18,10 @@ const og = new URL('/og.png', Astro.site).href;
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" content="#f5f3fd" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#16132a" media="(prefers-color-scheme: dark)" />
-    <link rel="icon" href="/favicon.ico" sizes="32x32" />
-    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href={at('favicon.ico')} sizes="32x32" />
+    <link rel="icon" href={at('icon.svg')} type="image/svg+xml" />
+    <link rel="apple-touch-icon" href={at('apple-touch-icon.png')} />
+    <link rel="manifest" href={at('manifest.webmanifest')} />
     <meta property="og:type" content="website" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />

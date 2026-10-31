@@ -17,6 +17,7 @@
 </p>
 
 <p align="center">
+  <a href="https://nkls-ai.github.io/milo/"><b>Website</b></a> ·
   <a href="#what-he-does">What he does</a> ·
   <a href="#set-it-up">Set it up</a> ·
   <a href="#keys">Keys</a> ·
@@ -100,7 +101,7 @@ Also: **message him from your phone** over Telegram ([setup](docs/setup/messages
 ### One command
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/nkls-ai/milo/main/install.sh | sh
+curl -fsSL https://nkls-ai.github.io/milo/install.sh | sh
 ```
 
 Or `./install.sh` from a checkout. It takes a few minutes and asks one question:
