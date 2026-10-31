@@ -14,6 +14,7 @@ import secrets
 import shutil
 import stat
 import tempfile
+from copy import deepcopy
 from pathlib import Path
 
 from milo.core.control import Protected
@@ -39,12 +40,16 @@ class FileUndoShelf:
         self._protected = protected
         self._max_file = max_file_mb * 1024 * 1024
         self._min_free = min_free_mb * 1024 * 1024
+        self._records: dict[str, dict] | None = None
+        """Every record, as on disk, by task: read once at the first use, then written through. Only this brain
+        writes state/undo (one brain at a time), so nothing changes under it."""
+        self._born: dict[str, float] = {}
+        """Each task folder's birth time, which orders tasks made in the same second."""
 
     def load(self, task: str) -> dict | None:
-        try:
-            return json.loads((self._folder(task) / "record.json").read_text())
-        except (OSError, ValueError):
-            return None
+        self._folder(task)
+        record = self._all().get(task)
+        return deepcopy(record) if record is not None else None  # the caller changes it before it saves
 
     def save(self, task: str, record: dict) -> None:
         folder = self._folder(task)
@@ -52,18 +57,14 @@ class FileUndoShelf:
         tmp = folder / "record.json.tmp"
         tmp.write_text(json.dumps(record, ensure_ascii=False, indent=1))
         os.replace(tmp, folder / "record.json")
+        records = self._all()
+        if task not in records:
+            self._born[task] = _born(folder)
+        records[task] = deepcopy(record)
 
     def tasks(self) -> list[str]:
-        if not self._root.is_dir():
-            return []
-        found = []
-        for folder in self._root.iterdir():
-            record = self.load(folder.name) if _TASK.match(folder.name) else None
-            if record is not None:  # the folder's birth time orders tasks made in the same second
-                found.append((str(record.get("made", "")), _born(folder), folder.name))
-            elif folder.is_dir():
-                shutil.rmtree(folder, ignore_errors=True)  # half written, or from an older Milo
-        return [task for *_, task in sorted(found)]
+        records = self._all()
+        return sorted(records, key=lambda t: (str(records[t].get("made", "")), self._born.get(t, 0.0), t))
 
     def drop(self, task: str) -> None:
         record = self.load(task) or {}
@@ -72,6 +73,21 @@ class FileUndoShelf:
             if copy is not None:
                 copy.unlink(missing_ok=True)
         shutil.rmtree(self._folder(task), ignore_errors=True)
+        self._all().pop(task, None)
+        self._born.pop(task, None)
+
+    def _all(self) -> dict[str, dict]:
+        if self._records is not None:
+            return self._records
+        self._records = {}
+        for folder in self._root.iterdir() if self._root.is_dir() else ():
+            record = _read(folder / "record.json") if _TASK.match(folder.name) else None
+            if record is not None:
+                self._records[folder.name] = record
+                self._born[folder.name] = _born(folder)
+            elif folder.is_dir():
+                shutil.rmtree(folder, ignore_errors=True)  # half written, or from an older Milo
+        return self._records
 
     def app_folder(self, app: str) -> str | None:
         rel = APP_FOLDERS.get(app)
@@ -186,6 +202,14 @@ class FileUndoShelf:
             return None
         folders = {os.path.normpath(self._home / rel) for rel in APP_FOLDERS.values()}
         return p if os.path.normpath(p.parent) in folders else None
+
+
+def _read(path: Path) -> dict | None:
+    try:
+        record = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    return record if isinstance(record, dict) else None
 
 
 def _born(folder: Path) -> float:

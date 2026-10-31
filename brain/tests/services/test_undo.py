@@ -248,6 +248,43 @@ def test_only_the_last_tasks_keep_an_undo(tmp_path):
     assert [p["id"] for p in points(s)] == [helpers[2].id, helpers[1].id]
 
 
+def test_records_are_read_from_disk_once_and_kept_in_memory(tmp_path, monkeypatch):
+    """Every done() lists all records and every change sends them all to the app: from memory, not 3 × N reads."""
+    from milo.core.control import Protected
+    from milo.services.undo import Undo
+
+    s = Stack(home=tmp_path)
+
+    async def run():
+        for i in range(5):
+            s.undo.done(f"q-{i}", title=f"Timer {i}", said="ok", reverse=[{"op": "timer.cancel", "id": f"t{i}"}])
+
+    asyncio.run(run())
+    reads = []
+    real = Path.read_text
+
+    def counting(self, *a, **kw):
+        if self.name == "record.json":
+            reads.append(self.parent.name)
+        return real(self, *a, **kw)
+
+    monkeypatch.setattr(Path, "read_text", counting)
+    root = tmp_path / "Milo" / "state" / "undo"
+    later = Undo(FileUndoShelf(root, tmp_path, protected=Protected(tmp_path / "Milo")), s.hands_port, s.ui, s.clock,
+                 confirm=s.approvals, speaker=s.speaker, helpers=lambda: s.tasks)
+    assert [p["title"] for p in later.event().points] == [f"Timer {i}" for i in reversed(range(5))]
+    assert sorted(reads) == [f"q-{i}" for i in range(5)], "each record read once, when Milo starts"
+    reads.clear()
+
+    async def more():
+        later.done("q-5", title="Timer 5", said="ok", reverse=[{"op": "timer.cancel", "id": "t5"}])
+        later.expire()
+
+    asyncio.run(more())
+    assert reads == [], "after that, from memory"
+    assert json.loads(real(root / "q-5" / "record.json"))["title"] == "Timer 5", "and written through to disk"
+
+
 # ---- files, notes and what can't be copied
 
 
