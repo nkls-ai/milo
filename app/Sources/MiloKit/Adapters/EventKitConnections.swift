@@ -107,7 +107,9 @@ public final class EventKitConnections: AppConnections {
     }
 
     /// The occurrence `args` names: the event `id` that starts at `at`, so one of a repeating series is never
-    /// mistaken for the first. Without `at`, the event the id stands for.
+    /// mistaken for the first. Without `at`, the event the id stands for. When none starts at `at`, a repeating
+    /// event is not found: the id would stand for another occurrence, and moving or deleting `.thisEvent` would
+    /// hit that one. A one-off event moved since is still itself; the brain's Undo compares its start and asks.
     private func occurrence(_ args: JSONValue) -> EKEvent? {
         guard let id = Self.text(args["id"]) else { return nil }
         if let at = Self.date(args["at"]) {
@@ -118,6 +120,10 @@ public final class EventKitConnections: AppConnections {
             }) {
                 return found
             }
+            guard let event = store.calendarItem(withIdentifier: id) as? EKEvent, !event.hasRecurrenceRules else {
+                return nil
+            }
+            return event
         }
         return store.calendarItem(withIdentifier: id) as? EKEvent
     }
