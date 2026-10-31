@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from milo.adapters.home.focus import ShortcutsFocus
 from milo.core.app_connections import AppCalendar, AppReminders
 from milo.core.control import Protected
 from milo.core.ports import Connections
@@ -337,4 +338,5 @@ def _mac(options: Mapping[str, Any], ctx: AdapterContext) -> Connections:
     brain = BrainClient(Workspace(ctx.home).tools_socket_path)
     return Connections(calendar=AppCalendar(_app(brain)), reminders=AppReminders(_app(brain)), mail=AppleMail(),
                        notes=AppleNotes(), shortcuts=ShortcutsApp(),
-                       files=SpotlightFiles(Path(o.files_scope).expanduser().resolve(), Protected(ctx.home)))
+                       files=SpotlightFiles(Path(o.files_scope).expanduser().resolve(), Protected(ctx.home)),
+                       focus=ShortcutsFocus(ctx.state_dir / "shortcuts"))

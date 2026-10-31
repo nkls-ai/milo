@@ -19,7 +19,7 @@ from .core.types import LiveMode
 log = logging.getLogger("milo.config")
 
 KEY_NAMES = ("fn", "right_option", "right_command", "right_control")
-PLUGGABLE = ("chat", "harness", "stt", "tts", "audio", "dictation", "connections", "messages", "weather")
+PLUGGABLE = ("chat", "harness", "stt", "tts", "audio", "dictation", "connections", "messages", "weather", "home")
 SECTIONS = (*PLUGGABLE, "ui", "heartbeat", "hands", "approvals", "logging", "memory", "routines", "meetings")
 _COMBO = re.compile(r"^((ctrl|control|option|alt|shift|cmd|command)\+)+[a-z0-9]+$|^f([1-9]|1[0-9])$")
 
@@ -175,6 +175,11 @@ class ApprovalSettings:
             raise ConfigError(f"[approvals] ask must be one of {', '.join(ASK)}")
         if self.timeout_s < 0 or self.reask_s < 0:
             raise ConfigError("[approvals] timeout_s and reask_s can't be negative")
+
+
+@dataclass(frozen=True)
+class HomeSettings:
+    """[home] has only `use` and its adapters' tables (ADR 0037): any other key is a typo."""
 
 
 MAX_ROUTINE_RUNS = 50
@@ -357,6 +362,7 @@ _PLUGGABLE_SETTINGS: dict[str, type] = {
     "audio": AudioSettings, "dictation": DictationSettings, "connections": ConnectionSettings,
     "messages": MessagesSettings,
     "weather": WeatherSettings,
+    "home": HomeSettings,
 }
 
 

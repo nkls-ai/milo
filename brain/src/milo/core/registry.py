@@ -22,7 +22,7 @@ from .control import WORK_FOLDER
 
 if TYPE_CHECKING:
     from .ports import (AudioInput, AudioOutput, CallDiarizer, Channel, Clock, Connections, Diarizer, Embedder, Harness,
-                        LiveModel, ProactiveRule, StreamingTranscriber, TextCleaner, Transcriber, Voice)
+                        Home, LiveModel, ProactiveRule, StreamingTranscriber, TextCleaner, Transcriber, Voice)
     from .ports import Weather
     from .types import ToolServer
 
@@ -103,6 +103,7 @@ AUDIO_OUTPUTS: Registry[AudioOutput] = Registry("audio output")
 TEXT_CLEANERS: Registry[TextCleaner] = Registry("dictation cleaner")
 RULES: Registry[ProactiveRule] = Registry("heartbeat rule")
 CONNECTIONS: Registry[Connections] = Registry("connections")
+HOMES: Registry[Home] = Registry("home")
 EMBEDDERS: Registry[Embedder] = Registry("embedder")
 CHANNELS: Registry[Channel] = Registry("message channel")
 DIARIZERS: Registry[Diarizer] = Registry("diarizer")
