@@ -9,7 +9,11 @@ import logging
 import os
 import re
 import shutil
+import stat
+import tempfile
 from pathlib import Path
+
+from milo.core.control import Protected
 
 log = logging.getLogger("milo.undo")
 
@@ -21,11 +25,15 @@ _TASK = re.compile(r"^[\w-]{1,64}$")
 
 
 class FileUndoShelf:
-    """The UndoShelf on disk. `home` is the user's home, where the apps' own folders are; `root` is state/undo."""
+    """The UndoShelf on disk. `home` is the user's home, where the apps' own folders are; `root` is state/undo.
+    `protected` is Milo's workspace: nothing in its control files and folders (secrets, state, config) is kept or
+    put back, so an undo point can't hand a worker a copy of a key or write over Milo's settings."""
 
-    def __init__(self, root: Path, home: Path, *, max_file_mb: int = 200, min_free_mb: int = 2048):
+    def __init__(self, root: Path, home: Path, *, protected: Protected, max_file_mb: int = 200,
+                 min_free_mb: int = 2048):
         self._root = root
         self._home = home
+        self._protected = protected
         self._max_file = max_file_mb * 1024 * 1024
         self._min_free = min_free_mb * 1024 * 1024
 
@@ -71,27 +79,58 @@ class FileUndoShelf:
         target = Path(path).expanduser()
         if not target.is_absolute():
             raise ValueError("Give the file's full path.")
+        target = target.resolve()  # the file a link points to, so Undo later writes there and only there
+        if self._protected.covers(target):
+            raise ValueError(f"{target.name} is one of Milo's own files. Don't change it, so it needs no undo point.")
         if target.is_dir():
             raise ValueError(f"{target} is a folder. Keep an undo point for each file you change in it.")
-        if not target.exists():
+        try:  # what was checked is what is copied: no link is followed after the check
+            fd = os.open(target, os.O_RDONLY | os.O_NOFOLLOW)
+        except FileNotFoundError:
             return {"path": str(target), "copy": "", "existed": False, "digest": ""}
-        size = target.stat().st_size
-        if size > self._max_file:
-            raise ValueError(f"{target.name} is {size // (1024 * 1024)} MB, too big to keep a copy of.")
-        files = self._folder(task) / "files"
-        files.mkdir(parents=True, exist_ok=True)
-        if shutil.disk_usage(files).free - size < self._min_free:
-            raise ValueError("The disk is too full to keep a copy.")
-        copy = files / f"{len(list(files.iterdir())) + 1}-{target.name}"
-        shutil.copy2(target, copy)
+        except OSError as e:
+            raise ValueError(f"{target.name} changed into a link or can't be read.") from e
+        with os.fdopen(fd, "rb") as source:
+            info = os.fstat(source.fileno())
+            if not stat.S_ISREG(info.st_mode):
+                raise ValueError(f"{target.name} isn't a plain file.")
+            if info.st_nlink > 1:  # another name could be one of Milo's own files
+                raise ValueError(f"{target.name} has more than one name, so Milo keeps no copy of it.")
+            if info.st_size > self._max_file:
+                raise ValueError(f"{target.name} is {info.st_size // (1024 * 1024)} MB, too big to keep a copy of.")
+            files = self._folder(task) / "files"
+            files.mkdir(parents=True, exist_ok=True)
+            if shutil.disk_usage(files).free - info.st_size < self._min_free:
+                raise ValueError("The disk is too full to keep a copy.")
+            copy = files / f"{len(list(files.iterdir())) + 1}-{target.name}"
+            digest = hashlib.sha256()
+            with open(copy, "xb") as out:
+                while chunk := source.read(1 << 20):
+                    digest.update(chunk)
+                    out.write(chunk)
+            os.utime(copy, ns=(info.st_atime_ns, info.st_mtime_ns))
         return {"path": str(target), "copy": str(copy.relative_to(self._folder(task))), "existed": True,
-                "digest": self.digest(str(target))}
+                "digest": digest.hexdigest()}
 
     def put_back(self, task: str, kept: dict) -> None:
         target = Path(str(kept["path"]))
+        if target.resolve() != target or self._protected.covers(target):
+            raise OSError(f"{target} is a link now, or one of Milo's own files: not writing through it.")
         if kept.get("existed"):
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(self._folder(task) / str(kept["copy"]), target)
+            # A new file of Milo's own beside the target (mkstemp creates it, never opens what is there), then a
+            # rename, which replaces a link put at the target meanwhile instead of writing through it.
+            fd, tmp = tempfile.mkstemp(dir=target.parent, prefix=COPY_PREFIX)
+            try:
+                with os.fdopen(fd, "wb") as out, open(self._folder(task) / str(kept["copy"]), "rb") as copy:
+                    shutil.copyfileobj(copy, out)
+                shutil.copystat(self._folder(task) / str(kept["copy"]), tmp)
+                if Path(tmp).parent.resolve() != target.parent:
+                    raise OSError(f"{target.parent} changed into a link: not writing there.")
+                os.replace(tmp, target)
+            except BaseException:
+                Path(tmp).unlink(missing_ok=True)
+                raise
         elif target.exists():
             trash = self._home / ".Trash"
             trash.mkdir(exist_ok=True)
