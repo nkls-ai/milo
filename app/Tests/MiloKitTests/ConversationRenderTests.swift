@@ -41,9 +41,8 @@ struct ConversationRenderTests {
     }
 
     private func render(entries: [TranscriptEntry], state: MiloState, name: String, dark: Bool,
-                        question: String? = nil, routines: BrainEvent? = nil, style: CharacterStyle = .milo) throws {
+                        question: String? = nil, routines: BrainEvent? = nil) throws {
         let model = MiloModel(scheduler: ManualScheduler())
-        model.character = style
         model.state = state
         if let routines { model.apply(routines) }
         if let question { model.apply(.confirm(id: "q1", question: question)) }

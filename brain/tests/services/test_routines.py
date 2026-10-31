@@ -443,6 +443,17 @@ def test_a_run_the_mac_slept_through_runs_once_at_wake_within_the_grace_window()
     assert len(s.tasks.helpers) == 1
 
 
+def test_routines_speak_the_users_language():
+    s = stack(weekly(), harness=FakeHarness("Done."))
+    s.language.hear("Bitte mach das", "de")
+    tick_at(s, datetime(2026, 10, 30, 12, 0))
+    tick_at(s, datetime(2026, 11, 17, 18, 0))
+    assert s.bubbles()[-1] == ("Monday report am Montag um 09:00 habe ich verpasst, der Mac hat geschlafen. Sag „mach "
+                               "Monday report“, wenn du sie noch willst.")
+    run(s, lambda: s.routines.run("Gibt es nicht"))
+    assert s.bubbles()[-1] == "Eine Routine namens Gibt es nicht habe ich nicht."
+
+
 def test_a_run_missed_by_more_than_the_grace_window_is_reported_once():
     s = stack(weekly(), harness=FakeHarness("Done."))
     tick_at(s, datetime(2026, 10, 30, 12, 0))

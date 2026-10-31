@@ -5,16 +5,17 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, time
-from pathlib import Path
 
 import pytest
 
+from milo.core.app_connections import AppCalendar, AppReminders
 from milo.core.events import Bubble, Confirm, Heard, Remote
+from milo.core.ports import Connections
 from milo.core.types import ChannelError, HarnessError, Inbound, Reminder
-from milo.services.approvals import REMOTE
 from milo.services.messages import (CANT_READ, HICCUP, INTERRUPTED, PAUSED, TOO_MANY, MessageSettings,
                                     message_prompt)
 from milo.services.pairing import Pairing
+from milo.services.today import Today
 from milo.services.tool_requests import NO_PHONE, ToolRequests
 from tests.fakes import FakeChannel, FakeLiveModel, MemoryRemoteState, ScriptedHarness, WorkerScript
 from tests.services.stack import Stack, settle
@@ -529,10 +530,12 @@ def test_the_morning_brief_goes_once_a_day_at_its_time_with_zero_tokens():
             return [{"title": "Standup", "start": "2026-10-30T09:00", "end": "2026-10-30T09:15", "all_day": False,
                      "location": ""},
                     {"title": "Dentist", "start": "2026-10-30T14:00", "end": "2026-10-30T15:00", "all_day": False,
-                     "location": "Main St 4"}]
-        return [{"title": "Buy milk", "due": "2026-10-30T18:00", "done": False}]
+                     "location": "Main St 4"},
+                    {"title": "Tomorrow's", "start": "2026-10-31T09:00", "end": "2026-10-31T10:00"}]
+        return [{"title": "Buy milk", "due": "2026-10-30T18:00", "done": False},
+                {"title": "Not yet", "due": "2026-10-31T18:00", "done": False}]
 
-    s.messages._app = app
+    s.messages._today = today = Today(Connections(calendar=AppCalendar(app), reminders=AppReminders(app)), s.clock)
 
     async def go():
         async with running(s):
@@ -547,7 +550,9 @@ def test_the_morning_brief_goes_once_a_day_at_its_time_with_zero_tokens():
     assert brief == ("Good morning! Here's Friday, 30 October.\n\nToday:\n• 09:00–09:15 Standup\n"
                      "• 14:00–15:00 Dentist (Main St 4)\n\nTo do:\n• overdue Pay the power bill\n"
                      "• 11:00 Call Anna\n• 18:00 Buy milk")
-    assert calls[0] == ("calendar.events", {"start": "2026-10-30T00:00", "end": "2026-10-31T00:00"})
+    assert calls[0] == ("calendar.events", {"start": "2026-10-30T00:00", "end": "2026-11-01T00:00", "query": ""})
+    assert len(calls) == 2, "calendar and to-dos read once"
+    assert "Standup" in today.render()[0], "the talker's <today> has the same day, without reading it again"
     assert s.model.turns == [] and s.harness.calls == [], "zero tokens"
     assert s.remote.data["brief_on"] == "2026-10-30"
 

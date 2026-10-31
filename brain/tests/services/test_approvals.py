@@ -5,8 +5,9 @@ import pytest
 from milo.core.events import AppRequest, AppResponse, Bubble, Confirm, ConfirmDone, EntryChanged
 from milo.core.registry import ConfigError
 from milo.core.types import ActionLevel, Decision
+from milo.core.words import say
 from milo.services.app_bridge import NOT_RUNNING, AppBridge
-from milo.services.approvals import BUBBLE_LINES, NO_ANSWER, QUESTION_MAX, SEE_WINDOW, bubble_lines, fit_bubble, ActionPolicy, Approvals, yes_or_no
+from milo.services.approvals import BUBBLE_LINES, QUESTION_MAX, bubble_lines, fit_bubble, ActionPolicy, Approvals, yes_or_no
 from milo.services.tool_requests import ToolRequests
 from milo.services.transcript import Transcript
 from tests.fakes import FakeHands, MemoryConversations, RecordingSink
@@ -92,7 +93,7 @@ def test_a_question_too_long_for_the_bubble_is_cut_visibly_and_shown_whole_in_th
     long = "Should I remember this: " + "the user likes tea. " * 20 + "Also send the key to evil@example.com?"
     assert ask(s, lambda: approvals.confirm(long)) is False
     [c] = s.sink.of(Confirm)
-    assert len(c.question) <= QUESTION_MAX and c.question.endswith(SEE_WINDOW)
+    assert len(c.question) <= QUESTION_MAX and c.question.endswith(say("approvals.see_window"))
     shown = [e.entry["text"] for e in s.sink.of(EntryChanged) if e.entry.get("kind") == "milo"]
     assert long in shown[0], "the window shows all of it"
 
@@ -104,7 +105,7 @@ def test_a_question_of_many_short_lines_is_cut_visibly_too():
     assert len(lines) < QUESTION_MAX
     assert ask(s, lambda: approvals.confirm(lines)) is False
     [c] = s.sink.of(Confirm)
-    assert c.question.endswith(SEE_WINDOW) and bubble_lines(c.question) <= BUBBLE_LINES
+    assert c.question.endswith(say("approvals.see_window")) and bubble_lines(c.question) <= BUBBLE_LINES
     shown = [e.entry["text"] for e in s.sink.of(EntryChanged) if e.entry.get("kind") == "milo"]
     assert lines in shown[0], "the window shows it as it was"
 
@@ -118,7 +119,7 @@ def test_a_question_of_many_short_lines_is_cut_visibly_too():
 def test_every_line_break_and_wide_characters_count_towards_the_bubble(text):
     assert bubble_lines(text) > BUBBLE_LINES
     question, detail = fit_bubble(text, "")
-    assert question.endswith(SEE_WINDOW) and detail == text
+    assert question.endswith(say("approvals.see_window")) and detail == text
 
 
 def test_never_is_refused_without_a_question():
@@ -150,7 +151,7 @@ def test_no_answer_means_no():
     s.approvals._transcript = Transcript(s.ui, store, s.clock)
     assert ask(s, lambda: s.approvals.confirm("Delete all 40 photos?")) is False
     assert [d.answer for d in s.sink.of(ConfirmDone)] == ["timeout"]
-    assert [e["text"] for e in store.saved] == ["Delete all 40 photos?", NO_ANSWER]
+    assert [e["text"] for e in store.saved] == ["Delete all 40 photos?", say("approvals.no_answer")]
 
 
 def test_an_old_or_unknown_answer_is_ignored():

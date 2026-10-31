@@ -7,6 +7,7 @@ from datetime import datetime
 
 from milo.core.logtext import private
 from milo.core.opening import OpenRequest, resolve_url
+from milo.core.times import parse_minute
 from milo.core.types import Emotion
 
 log = logging.getLogger("milo.reply")
@@ -348,10 +349,8 @@ def parse_reminder(content: str) -> tuple[datetime, str] | None:
     if not m:
         return None
     day, clock, text = m.groups()
-    try:
-        return datetime.strptime(f"{day} {clock}", "%Y-%m-%d %H:%M"), text.strip()
-    except ValueError:
-        return None
+    due = parse_minute(f"{day} {clock}")
+    return (due, text.strip()) if due is not None else None
 
 
 def _partial_suffix(text: str, marker: str) -> int:

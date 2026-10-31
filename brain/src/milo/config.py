@@ -19,9 +19,6 @@ from .core.types import LiveMode
 log = logging.getLogger("milo.config")
 
 KEY_NAMES = ("fn", "right_option", "right_command", "right_control")
-CHARACTERS = ("milo",)
-# Looks Milo used to have. Old config files still name them; they all mean the wren now.
-RETIRED_CHARACTERS = ("pip", "classic", "dragon", "kit", "glow")
 PLUGGABLE = ("chat", "harness", "stt", "tts", "audio", "dictation", "connections", "messages")
 SECTIONS = (*PLUGGABLE, "ui", "heartbeat", "hands", "approvals", "logging", "memory", "routines", "meetings")
 _COMBO = re.compile(r"^((ctrl|control|option|alt|shift|cmd|command)\+)+[a-z0-9]+$|^f([1-9]|1[0-9])$")
@@ -30,7 +27,8 @@ _COMBO = re.compile(r"^((ctrl|control|option|alt|shift|cmd|command)\+)+[a-z0-9]+
 
 # Keys older templates had. ~/Milo/config.toml is never overwritten, so they are skipped with a warning.
 RETIRED = {("harness", "conversation_idle_reset_s"): "it moved to [chat]",
-           ("hands", "confirm_timeout_s"): "questions wait [approvals] timeout_s"}
+           ("hands", "confirm_timeout_s"): "questions wait [approvals] timeout_s",
+           ("ui", "character"): "there is one Milo, the wren"}
 
 
 UPDATES = ("quiet", "bubble", "chatty")
@@ -101,8 +99,6 @@ class UiSettings:
     """Starts or stops meeting notes by hand, for calls Milo doesn't notice himself. Same rules; "" turns it off."""
     hands_free_max_s: float = 300.0
     """A recording locked on by a double tap stops by itself after this long."""
-    character: str = "milo"
-    """How Milo looks. There is one Milo, a wren in a marigold scarf; the retired looks still load and mean him."""
     voice: bool = True
     """Say answers out loud. False: the bubble and the window only."""
     hide_after_s: float = 15.0
@@ -125,8 +121,6 @@ class UiSettings:
             raise ConfigError("[ui] hands_free_max_s must be more than 0")
         if isinstance(self.hide_after_s, int | float) and self.hide_after_s < 0:  # a string: _typed names it
             raise ConfigError("[ui] hide_after_s must be 0 (he stays on screen) or more")
-        if self.character not in CHARACTERS + RETIRED_CHARACTERS:
-            raise ConfigError('[ui] character must be "milo"')
 
 
 @dataclass(frozen=True)
@@ -379,7 +373,7 @@ class Config:
             raise ConfigError("[approvals.levels] must be a table")
         self.approval_levels: dict[str, Any] = dict(approvals.get("levels", {}))
         self.logging = _typed(options_from(LoggingSettings, raw.get("logging", {}), "logging"), "logging")
-        self.ui = _typed(options_from(UiSettings, raw.get("ui", {}), "ui"), "ui")
+        self.ui = _typed(options_from(UiSettings, _current(raw.get("ui", {}), "ui"), "ui"), "ui")
         heartbeat = {k: v for k, v in raw.get("heartbeat", {}).items() if k == "enabled"}
         self.heartbeat = _typed(HeartbeatSettings(**heartbeat), "heartbeat")
         self.hands = _typed(options_from(HandsSettings, _current(raw.get("hands", {}), "hands"), "hands"), "hands")

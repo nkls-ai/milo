@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import logging
 
+from milo.core import words
 from milo.core.events import ActionDone, Status
 from milo.core.logtext import private
 from milo.core.opening import OpenRequest
 from milo.core.ports import AppHands, Clock, EventSink
 from milo.core.types import HandsError
+from milo.core.words import say
 
 log = logging.getLogger("milo.open")
 
@@ -28,12 +30,6 @@ def action(request: OpenRequest) -> tuple[str, dict]:
     if request.path:
         return "open_file", {"path": request.path}
     return "open_app", {"name": request.app}
-
-
-def couldnt(request: OpenRequest, language: str = "") -> str:
-    if language == "de":
-        return f"Ich konnte {request.what} nicht öffnen."
-    return f"I couldn't open {request.what}."
 
 
 class Opener:
@@ -53,7 +49,7 @@ class Opener:
             result = await self._hands.act(tool, args)
         except HandsError as e:
             log.warning("could not open %s: %s", private(request.what), e)
-            self._sink.emit(Status(couldnt(request, language)))
+            self._sink.emit(Status(say("opener.couldnt", language, what=request.what)))
             return False
         done = self._clock.monotonic()
         after = f", {done - since:.2f}s after the user's words" if since is not None else ""
@@ -63,5 +59,5 @@ class Opener:
                  after, front)
         # A card for it (ADR 0030): a click on it opens the page again, or the app it opened in.
         self._sink.emit(ActionDone("opened", request.what, request.url, app=str(result.get("app") or request.app),
-                                   lang="de" if language == "de" else "en"))
+                                   lang=words.language(language)))
         return True

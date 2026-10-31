@@ -5,18 +5,10 @@ from datetime import datetime
 from milo.core.events import ActionDone, Bubble, Confirm, ConfirmAnswer, ConfirmDone, EmotionChanged, Heard, Level, StateChanged
 from milo.core.logtext import log_content
 from milo.core.types import Emotion, HarnessError, MiloState, Reminder, Usage
-from milo.services.live_talk import HICCUP, task_question
+from milo.services.live_talk import HICCUP
+from milo.services.reply_effects import task_question
 from tests.fakes import FakeAudioOutput, FakeHarness, FakeLiveModel, ListReminders, MemoryProfile, without_undo_id
-from tests.services.stack import Stack, settle
-
-
-def talk(s: Stack, *texts: str) -> None:
-    async def run():
-        for text in texts:
-            await s.live_talk.start(text)
-            await settle()
-
-    asyncio.run(run())
+from tests.services.stack import Stack, settle, talk
 
 
 def test_a_turn_streams_into_speech_and_records_usage():
@@ -57,16 +49,28 @@ def test_first_speech_starts_before_the_stream_finishes():
     assert len(s.output.streams) == 1
 
 
-def test_the_system_prompt_has_persona_rules_profile_and_open_reminders():
+def test_the_system_prompt_has_persona_rules_and_profile_but_no_reminders():
     s = Stack(profile=MemoryProfile("# About the user\n- Name: Niklas\n"),
-              reminders=ListReminders(Reminder("a", datetime(2026, 10, 30, 9, 0), "Call mom", False),
-                                      Reminder("b", datetime(2026, 10, 28, 9, 0), "Old one", True)))
+              reminders=ListReminders(Reminder("a", datetime(2026, 10, 30, 9, 0), "Call mom", False)))
     talk(s, "hi")
     [system] = s.model.system_prompts
     assert system.startswith("You are Milo, a test persona.")
     assert "[happy]" in system and "<remember>" in system and "<task>" in system
     assert "- Name: Niklas" in system
-    assert "- 2026-10-30 09:00 Call mom" in system and "Old one" not in system
+    assert "Call mom" not in system, "reminders change; they go in <today>, so the cached prompt doesn't"
+
+
+def test_open_reminders_go_in_the_today_block_and_again_when_they_change():
+    s = Stack(model=FakeLiveModel(["[happy] Hi."], ["[happy] Sure. <reminder>2026-10-31 18:00 Buy milk</reminder>"],
+                                  ["[happy] Okay."], ["[happy] Fine."]),
+              reminders=ListReminders(Reminder("a", datetime(2026, 10, 30, 9, 0), "Call <b>mom</b>", False),
+                                      Reminder("b", datetime(2026, 10, 28, 9, 0), "Old one", True)))
+    talk(s, "hi", "remind me to buy milk at six", "thanks", "ok")
+    first, _, third, fourth = s.model.turns
+    assert "<today>\nThe user's day" in first and "Milo's reminders:\n- 2026-10-30 09:00 Call ‹b›mom‹/b›" in first
+    assert "Old one" not in first and "Today:" not in first, "without quick actions: only Milo's reminders"
+    assert "- 2026-10-31 18:00 Buy milk" in third, "a new reminder: the block goes in again"
+    assert "<today>" not in fourth, "unchanged: not again"
 
 
 def test_conversation_continues_and_restarts_after_idle_with_a_fresh_profile():
@@ -433,7 +437,7 @@ def test_task_questions_are_one_short_sentence_in_plain_words():
     morning = ("Open Microsoft Excel on the user's Mac and create a new blank workbook. In the first sheet, make a "
                "simple table with a header row with the columns \"Day\" and \"Budget\", then one row for each day "
                "of the week from Monday to Sunday.")
-    assert task_question(morning) == "Open Microsoft Excel and create a new blank workbook?"
+    assert task_question(morning, computer="Mac") == "Open Microsoft Excel and create a new blank workbook?"
     assert task_question("Make a budget table in Excel. Details follow.") == "Make a budget table in Excel?"
     assert task_question("file the user's newest PDF into a folder for the user") == "File your newest PDF into a folder?"
     long = task_question("Look through every email from the last three months and collect each invoice amount "

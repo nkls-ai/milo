@@ -113,7 +113,7 @@ def wired(model: FakeLiveModel | None = None, harness: FakeHarness | None = None
     tasks = Orchestrator(TaskRunner(s.harness, s.ledger, s.clock, s.context), s.speaker, s.ui, s.clock,
                          transcript=transcript, wait_s=0.05, poll_s=0.005, coalesce_s=0)
     live = LiveTalk(s.model, s.speaker, s.ui, s.context, s.clock, s.profile, s.reminders, s.ledger,
-                    lambda: s.persona, s.idle_reset_s, tasks, transcript)
+                    lambda: s.persona, s.idle_reset_s, tasks, transcript=transcript)
     tasks.on_result = live.note
     brain = Brain(s.ui, s.listening, live, s.context, s.heartbeat, UiSettings(), transcript, helpers=tasks)
     return s, brain, tasks, sink, store

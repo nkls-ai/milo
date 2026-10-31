@@ -133,9 +133,9 @@ def test_settings_values_come_from_the_file():
     assert config.tts.fallback == ""
     assert config.dictation.keep_history is False
     assert config.ui == UiSettings("right_command", "right_control")
-    assert Config.parse(MINIMAL).ui.character == "milo"
-    # a retired look from an old config still loads, and means the wren
-    assert Config.parse(MINIMAL + '[ui]\ncharacter = "classic"\n').ui.character == "classic"
+    # [ui] character is gone (there is one Milo), but an old config that still names a look loads
+    for look in ("pip", "classic", "milo", "robot"):
+        assert Config.parse(MINIMAL + f'[ui]\ncharacter = "{look}"\n').ui == UiSettings()
     assert config.heartbeat.enabled is False
     assert config.section("heartbeat")["tick_s"] == 5
 
@@ -160,7 +160,6 @@ def test_an_unknown_section_names_it():
     ("[ui]\nwhats_this_key = \"ctrl+\"\n", "whats_this_key"),
     ("[hands]\nenabled = \"yes\"\n", "enabled"),
     ("[hands]\nconfirm = 3\n", "confirm"),
-    ("[ui]\ncharacter = \"robot\"\n", "character"),
     ("[ui]\nvoice = \"loud\"\n", "voice"),
     ("[ui]\nhide_after_s = -5\n", "hide_after_s"),
     ("[ui]\nhide_after_s = \"soon\"\n", "hide_after_s"),

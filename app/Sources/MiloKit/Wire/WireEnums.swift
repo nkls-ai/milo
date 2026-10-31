@@ -8,21 +8,6 @@ public enum Emotion: String, CaseIterable, Sendable {
     case neutral, happy, excited, thinking, concerned, sad, sleepy, confused
 }
 
-/// How Milo looks (`[ui] character`). There is one Milo, the wren in the marigold scarf; the looks he used to
-/// have are retired, and a config that still names one means him.
-public enum CharacterStyle: String, CaseIterable, Sendable {
-    case milo
-
-    /// Looks older configs may still name.
-    static let retired: Set<String> = ["pip", "classic", "dragon", "kit", "glow"]
-
-    /// The style a wire name means: Milo for his own name or a retired look, nil for anything else.
-    public init?(wire name: String) {
-        guard name == Self.milo.rawValue || Self.retired.contains(name) else { return nil }
-        self = .milo
-    }
-}
-
 /// Why the user is holding a push-to-talk key.
 public enum ListenMode: String, CaseIterable, Sendable, Encodable {
     /// Speech becomes text pasted into the focused app.

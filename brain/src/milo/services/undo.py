@@ -17,13 +17,15 @@ import hashlib
 import json
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 
 from milo.core.events import UndoPoints
 from milo.core.hands import only_opens
 from milo.core.ports import AppHands, Clock, Confirmer, EventSink, UndoShelf
+from milo.core.times import parse_local
 from milo.core.types import Emotion, HandsError
+from milo.core.words import say
 
 from . import sheets, snapshots
 from .hands import title as step_title
@@ -40,8 +42,6 @@ KEEP_TASKS = 20
 WAIT_FOR_QUIET_S = 30.0
 MAX_NOTES = 50
 MAX_CHANGES = 60
-TOO_OLD = "I can't undo that any more: I keep what I need to undo a task for a day."
-NOTHING = "There's nothing of mine to undo right now."
 UNFINISHED = "Unfinished task"
 """The title of a task Milo quit during, which never got its own."""
 WHICH = "Milo can't tell which task this is for. Pass the task id from your instructions as `task`."
@@ -57,8 +57,10 @@ class Undo:
     def __init__(self, shelf: UndoShelf, hands: AppHands, sink: EventSink, clock: Clock, *, confirm: Confirmer,
                  speaker: Speaker, helpers: Callable[[], object], transcript: Transcript | None = None,
                  quiet: Callable[[], bool] = lambda: False, keep_s: float = KEEP_S, keep_tasks: int = KEEP_TASKS,
-                 wait_s: float = WAIT_FOR_QUIET_S, poll_s: float = POLL_S):
+                 wait_s: float = WAIT_FOR_QUIET_S, poll_s: float = POLL_S, language: Callable[[], str] = lambda: ""):
         self._shelf = shelf
+        self._language = language
+        """The language of the message being answered: what Undo says follows it (ADR 0028)."""
         self._hands = hands
         self._sink = sink
         self._clock = clock
@@ -206,7 +208,7 @@ class Undo:
         dropped = 0
         for i, task in enumerate(done):
             record = self._shelf.load(task) or {}
-            made = _when(record.get("made"))
+            made = parse_local(record.get("made"))
             if len(done) - i > self.keep_tasks or made is None or now - made > timedelta(seconds=self.keep_s):
                 self._shelf.drop(task)
                 self._mark(task, "")
@@ -237,52 +239,54 @@ class Undo:
         return UndoPoints(points[:self.keep_tasks])
 
     async def _undo(self, ref: str) -> None:
+        lang = self._language()
         task = self._resolve(ref)
         if task is None:
-            return await self._tell(NOTHING if not ref.strip() else TOO_OLD)
+            return await self._tell(say("undo.nothing" if not ref.strip() else "undo.too_old", lang))
         settling = self._settling.get(task)
         if settling is not None:
             await asyncio.wait({settling})
         record = self._shelf.load(task)
         if record is None:
-            return await self._tell(TOO_OLD)
-        title = record.get("title") or "that task"
+            return await self._tell(say("undo.too_old", lang))
+        title = record.get("title") or say("undo.that_task", lang)
         if record["state"] == "undone":
-            return await self._tell(f"“{title}” is already undone.")
+            return await self._tell(say("undo.already", lang, title=title))
         if record["state"] != "ready":
             return
         self._set(task, record, "undoing")
         try:
             if record.get("reverse"):
-                return await self._run_back(task, record, title)
-            await self._take_back(task, record, title)
+                return await self._run_back(task, record, title, lang)
+            await self._take_back(task, record, title, lang)
         except Exception:
             log.exception("undo of %s failed", task)
             self._set(task, record, "ready")
-            await self._tell(f"Something went wrong while I undid “{title}”.")
+            await self._tell(say("undo.went_wrong", lang, title=title))
 
-    async def _take_back(self, task: str, record: dict, title: str) -> None:
+    async def _take_back(self, task: str, record: dict, title: str, lang: str) -> None:
         docs = [d for d in record["docs"] if d.get("copy")]
         files = record["files"]
-        changed = [f"“{d['document']}”" for d in docs if await self._fingerprint(d) != d.get("after")]
+        changed = [say("undo.quote", lang, text=d["document"]) for d in docs
+                   if await self._fingerprint(d) != d.get("after")]
         changed += [Path(f["path"]).name for f in files
                     if await asyncio.to_thread(self._shelf.digest, f["path"]) != f.get("after")]
         if changed:
-            names = _and(changed)
-            question = f"{names} changed since “{title}”. Undo anyway? Your changes since would be lost."
-            if not await self._confirm.confirm(question):
+            names, one = _and(changed, lang), len(changed) == 1
+            if not await self._confirm.confirm(say("undo.changed_one" if one else "undo.changed_many", lang,
+                                                   names=names, title=title)):
                 self._set(task, record, "ready")
-                return await self._tell(f"Okay, I left {names} as {'it is' if len(changed) == 1 else 'they are'}.")
+                return await self._tell(say("undo.left_one" if one else "undo.left_many", lang, names=names))
         restored, failed = [], []
         for doc in docs:
             try:
                 folder = self._shelf.app_folder(doc["app"]) or ""
                 await self._hands.act("run_applescript",
                                       {"script": snapshots.excel_restore(doc["document"], doc["copy"], folder=folder)})
-                restored.append(f"“{doc['document']}”")
+                restored.append(say("undo.quote", lang, text=doc["document"]))
             except (HandsError, ValueError) as e:
                 log.warning("undo: could not restore a workbook: %s", e)
-                failed.append(f"“{doc['document']}”")
+                failed.append(say("undo.quote", lang, text=doc["document"]))
         for kept in files:
             try:
                 await asyncio.to_thread(self._shelf.put_back, task, kept)
@@ -293,29 +297,26 @@ class Undo:
         rest = [c for c in record["changes"] if not c["covered"]]
         # Notes alone record how things were, not that they changed: every change Milo saw is in `rest`. Opening a
         # window or a tab changed nothing that needs putting back. Neither starts a helper (ADR 0026).
-        helper = self._hand_on(task, record, rest) if any(not _only_opens(c) for c in rest) else None
+        helper = self._hand_on(task, record, rest, lang) if any(not _only_opens(c) for c in rest) else None
         if helper is None:
             self._set(task, record, "undone" if not failed else "ready")
         parts = []
         if restored:
-            one = len(restored) == 1
-            parts.append(f"Undid “{title}”: {_and(restored)} {'is' if one else 'are'} back the way "
-                         f"{'it was' if one else 'they were'}.")
+            parts.append(say("undo.back_one" if len(restored) == 1 else "undo.back_many", lang, title=title,
+                             names=_and(restored, lang)))
         if failed:
-            parts.append(f"I couldn't put {_and(failed)} back.")
+            parts.append(say("undo.not_back", lang, names=_and(failed, lang)))
         if helper is not None:
-            parts.append("A helper is putting back the rest." if restored else
-                         f"I'm undoing “{title}”: a helper is putting things back.")
+            parts.append(say("undo.helper_rest", lang) if restored else say("undo.helper_all", lang, title=title))
         if not parts:
-            parts.append(f"Nothing to undo for “{title}”: it only opened windows or tabs. Close them if you don't "
-                         f"need them." if rest else f"Nothing to undo for “{title}”: it didn't change anything.")
+            parts.append(say("undo.only_opened" if rest else "undo.no_change", lang, title=title))
         await self._tell(" ".join(parts))
 
-    async def _run_back(self, task: str, record: dict, title: str) -> None:
+    async def _run_back(self, task: str, record: dict, title: str, lang: str) -> None:
         """A quick action's steps, newest first. A step done stays done, so trying again goes on where it stopped."""
         if self.reverse is None:
             self._set(task, record, "ready")
-            return await self._tell(f"I can't undo “{title}” right now.")
+            return await self._tell(say("undo.cant_now", lang, title=title))
         for step in reversed(record["reverse"]):
             if step.get("done"):
                 continue
@@ -324,16 +325,17 @@ class Undo:
             except Exception as e:
                 log.warning("undo: a quick action's step failed: %s", e)
                 self._set(task, record, "ready")
-                return await self._tell(f"I couldn't undo “{title}”: {str(e).rstrip('.') or 'it did not work'}.")
+                return await self._tell(say("undo.failed", lang, title=title,
+                                            why=str(e).rstrip(".") or say("undo.did_not_work", lang)))
             if not taken:
                 self._set(task, record, "ready")
-                return await self._tell(f"Okay, I left “{title}” as it is.")
+                return await self._tell(say("undo.left_it", lang, title=title))
             step["done"] = True
             self._shelf.save(task, record)
         self._set(task, record, "undone")
-        await self._tell(f"Undid “{title}”.")
+        await self._tell(say("undo.undid", lang, title=title))
 
-    def _hand_on(self, task: str, record: dict, rest: list[dict]) -> Helper:
+    def _hand_on(self, task: str, record: dict, rest: list[dict], lang: str) -> Helper:
         """What no copy covers goes to a helper, with the record of what the task did."""
         # The record and the notes come from a worker that may have read outside text: no tag opens inside them.
         steps = "\n".join(inert(f"- {c['title']}" + (f": {c['detail'][:400]}" if c.get("detail") else ""))
@@ -346,9 +348,10 @@ class Undo:
                            if notes else "")
                         + "Put back only what that task changed, using the app's own Undo where it still works. "
                           "Change nothing else. If something was changed again since, leave it and say so.")
-        title = f"Undo: {record.get('title') or 'the task'}"
+        named = record.get("title") or say("undo.the_task", lang)
         return self._helpers().submit(
-            f"Undo “{record.get('title') or 'the task'}”", title=title, screen=bool(record.get("screen")),
+            say("undo.helper_task", lang, title=named), title=say("undo.helper_title", lang, title=named),
+            screen=bool(record.get("screen")),
             careful=bool(record.get("careful")), instructions=instructions,
             user_asked=bool(record.get("user_asked")) and not record.get("careful"),
             on_finish=lambda h: self._helper_done(task, h))
@@ -495,12 +498,5 @@ def _detail(tool: str, args: dict) -> str:
     return f"{tool} " + json.dumps(args, ensure_ascii=False)[:400]
 
 
-def _and(names: list[str]) -> str:
-    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
-
-
-def _when(value: object) -> datetime | None:
-    try:
-        return datetime.fromisoformat(str(value))
-    except ValueError:
-        return None
+def _and(names: list[str], lang: str) -> str:
+    return names[0] if len(names) == 1 else say("undo.and", lang, names=", ".join(names[:-1]), last=names[-1])

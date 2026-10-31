@@ -2,23 +2,10 @@
 
 import asyncio
 import json
-import shutil
 import stat
-import tempfile
-from pathlib import Path
 
-import pytest
 
 from milo.transport.tool_socket import ToolSocketServer
-
-
-@pytest.fixture
-def sock_path():
-    root = Path(tempfile.mkdtemp(dir="/tmp", prefix="milo-"))
-    try:
-        yield root / "run" / "tools.sock"
-    finally:
-        shutil.rmtree(root, ignore_errors=True)
 
 
 def test_requests_are_answered_with_their_id_concurrently(sock_path):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from concurrent.futures import Executor, Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -10,7 +11,6 @@ from pathlib import Path
 from milo.adapters.connect.fake import _fake
 from milo.adapters.embed.hashing import HashEmbedder
 from milo.core.registry import AdapterContext
-from milo.services.app_ops import AppOps
 from milo.services.quick_actions import QuickActions
 from milo.brain import Brain
 from milo.config import UiSettings
@@ -29,13 +29,14 @@ from milo.services.hands import HandsService
 from milo.services.heartbeat_runner import HeartbeatRunner
 from milo.services.cloud_hearing import CloudHearing
 from milo.services.listening import Listening
-from milo.services.live_talk import LiveTalk, untrusted
+from milo.services.live_talk import LiveTalk
 from milo.services.memory import Memory, MemoryParts, TurnMemory
 from milo.services.messages import MessageService, MessageSettings
 from milo.services.speaker import Speaker
 from milo.services.orchestrator import Orchestrator
 from milo.services.permits import Permits
 from milo.services.routines import Routines
+from milo.services.talk_prompt import untrusted
 from milo.services.task_runner import TaskRunner
 from milo.services.tool_requests import ToolRequests
 from milo.services.undo import Undo
@@ -144,7 +145,8 @@ class Stack:
             self.undo = Undo(FileUndoShelf(self.home / "Milo" / "state" / "undo", self.home,
                                            protected=Protected(self.home / "Milo")), self.hands_port, self.ui,
                              self.clock, confirm=self.approvals, speaker=self.speaker, helpers=lambda: self.tasks,
-                             quiet=lambda: self.live_talk.busy, wait_s=self.wait_s, poll_s=0.005)
+                             quiet=lambda: self.live_talk.busy, wait_s=self.wait_s, poll_s=0.005,
+                             language=self.language.get)
         self.hands = HandsService(self.hands_port, self.approvals, self.ui, access=self.gate,
                                   before_change=self.undo.before_change if self.undo is not None else None,
                                   language=self.language.get)
@@ -167,7 +169,7 @@ class Stack:
         self.routines = Routines(self.routine_book, self.routine_state, self.tasks, self.speaker, self.ui,
                                  self.clock, approvals=self.approvals, quiet=lambda: self.live_talk.busy,
                                  max_runs_per_day=lambda: self.max_routine_runs, inert=untrusted, wait_s=self.wait_s,
-                                 poll_s=0.005)
+                                 poll_s=0.005, language=self.language.get, computer="Mac")
         self.tasks.on_done.append(self.routines.seen)
         if self.undo is not None:
             self.tasks.on_done.append(self.undo.finished)
@@ -177,7 +179,7 @@ class Stack:
         if self.world is not None:
             self.connections = _fake({"dir": str(self.world)}, AdapterContext(self.world, self.world / "state",
                                                                               self.clock))
-            self.quick = QuickActions(AppOps(self.connections), self.connections, self.ui, self.speaker, self.clock,
+            self.quick = QuickActions(self.connections, self.ui, self.speaker, self.clock,
                                       approvals=self.approvals, undo=self.undo, reminders=self.reminders,
                                       meetings=self.meetings, quiet=lambda: self.mic.active, wait_s=self.wait_s,
                                       language=self.language.get, poll_s=0.005)
@@ -194,7 +196,7 @@ class Stack:
                                   eyes=self.eyes, approvals=self.approvals, memory=self.turn_memory,
                                   routines=self.routines, undo=self.undo, opener=self.opener,
                                   language=self.language, quick=self.quick, meetings=self.meetings,
-                                  writer=self.writer)
+                                  writer=self.writer, computer="Mac")
         self.tasks.on_result = self.live_talk.note
         self.dictation = DictationService(UpperCleaner(), self.history, self.ui)
         self.listening = Listening(self.mic, self.transcriber, executor, self.ui, self.dictation, self.live_talk,
@@ -215,7 +217,8 @@ class Stack:
             self.messages = MessageService(self.channel, self.live_talk, self.approvals, self.remote, self.speaker,
                                            self.ui, self.context, self.clock, settings=self.message_settings,
                                            helpers=lambda: self.tasks.helpers, board=self.tasks.board,
-                                           reminders=self.reminders, app=self.bridge.call,
+                                           reminders=self.reminders,
+                                           today=self.quick.today if self.quick is not None else None,
                                            wait_for_mac_s=self.wait_s, typing_every_s=0.01, backoff_s=(0.01, 0.02))
             self.approvals.relays.append(self.messages)
             self.tasks.watchers.append(self.messages.helper_changed)
@@ -243,3 +246,21 @@ async def settle(rounds: int = 50) -> None:
     """Let background tasks (turns, speech, threadsafe callbacks) run to their next real wait."""
     for _ in range(rounds):
         await asyncio.sleep(0)
+
+
+async def until(condition, timeout: float = 10.0) -> None:
+    """Wait for `condition()` in real time, polling every 5 ms; fail after `timeout` seconds."""
+    deadline = time.monotonic() + timeout
+    while not condition():
+        assert time.monotonic() < deadline, "timed out"
+        await asyncio.sleep(0.005)
+
+
+def talk(s: Stack, *texts: str, **kwargs) -> None:
+    """Each of `texts` as a user turn, one after the other, each settled before the next. `kwargs` go to start."""
+    async def run():
+        for text in texts:
+            await s.live_talk.start(text, **kwargs)
+            await settle()
+
+    asyncio.run(run())

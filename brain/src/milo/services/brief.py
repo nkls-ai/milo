@@ -1,6 +1,7 @@
 """The morning brief sent to the owner's phone: today's calendar, due reminders and open helpers.
 
-Built from local data with plain templates, so it costs zero tokens (ADR 0003). The heartbeat checks every
+Built from local data with plain templates, so it costs zero tokens (ADR 0003). The calendar and Apple Reminders come
+from the talker's day (`Today.current`), which reads them again only when they are older than five minutes. The heartbeat checks every
 tick whether it is due; it goes once a day, at `[messages] brief_at` or within three hours after it (a Mac
 that slept through 7:30 sends it when it wakes at 8:15).
 """
@@ -8,23 +9,20 @@ that slept through 7:30 sends it when it wakes at 8:15).
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Sequence
 from datetime import datetime, time, timedelta
-from typing import Any
 
-from milo.core.dates import month, weekday
 from milo.core.ports import ReminderSource
+from milo.core.times import parse_local
+from milo.core.words.dates import month, weekday
 
 from .helpers import Helper, HelperStatus
+from .today import Snapshot, Today
 
 log = logging.getLogger("milo.brief")
 
 LATE_BY = timedelta(hours=3)
 MAX_ITEMS = 12
-
-AppCall = Callable[[str, dict], Awaitable[Any]]
-"""The app's Calendar and Reminders (AppBridge.call). Raises when the app can't answer."""
-
 
 def due(at: time | None, now: datetime, sent_on: str) -> bool:
     """Whether the brief should go now: it's past `at` today, not too long past, and none went today."""
@@ -34,13 +32,16 @@ def due(at: time | None, now: datetime, sent_on: str) -> bool:
     return start <= now < start + LATE_BY
 
 
-async def build(now: datetime, *, app: AppCall | None, calendar: bool, apple_reminders: bool,
-                reminders: ReminderSource, helpers: Sequence[Helper]) -> str:
-    """The brief's text. A part whose data can't be read (the app isn't running) is left out with a note."""
+async def build(now: datetime, *, today: Today | None, reminders: ReminderSource, helpers: Sequence[Helper]) -> str:
+    """The brief's text. A part whose data can't be read (the app isn't running) is left out with a note. `today`:
+    the day with the calendar and Apple Reminders, if they are switched on."""
     lines = [f"Good morning! Here's {weekday(now)}, {now.day} {month(now)}."]
-    if calendar and app is not None:
-        lines += ["", *await _calendar(app, now)]
-    lines += ["", *await _reminders(app if apple_reminders else None, reminders, now)]
+    connections = today.connections if today is not None else None
+    day = await today.current() if connections is not None else None
+    if connections is not None and connections.calendar is not None:
+        lines += ["", *_calendar(day, now)]
+    apple = day if connections is not None and connections.reminders is not None else None
+    lines += ["", *_reminders(apple, reminders, now)]
     working = [h for h in helpers if h.active]
     if working:
         lines += ["", "Helpers still at work:"]
@@ -49,14 +50,11 @@ async def build(now: datetime, *, app: AppCall | None, calendar: bool, apple_rem
     return "\n".join(lines).strip()
 
 
-async def _calendar(app: AppCall, now: datetime) -> list[str]:
-    start = datetime.combine(now.date(), time())
-    try:
-        events = await app("calendar.events", {"start": _local(start), "end": _local(start + timedelta(days=1))})
-    except Exception as e:  # noqa: BLE001 - the brief goes out without this part
-        log.info("brief without the calendar: %s", type(e).__name__)
+def _calendar(day: Snapshot | None, now: datetime) -> list[str]:
+    if day is None:
+        log.info("brief without the calendar")
         return ["(I couldn't read your calendar: is Milo running on the Mac?)"]
-    events = [e for e in events if isinstance(e, dict)] if isinstance(events, list) else []
+    events = [e for e in day.events if Today.on(e, now.date())]
     if not events:
         return ["Nothing in your calendar today."]
     out = ["Today:"]
@@ -70,20 +68,15 @@ async def _calendar(app: AppCall, now: datetime) -> list[str]:
     return out
 
 
-async def _reminders(app: AppCall | None, reminders: ReminderSource, now: datetime) -> list[str]:
+def _reminders(day: Snapshot | None, reminders: ReminderSource, now: datetime) -> list[str]:
+    """Milo's own reminders due today or before, and Apple Reminders' from `day` (the day's to-dos)."""
     today = now.date()
     items: list[tuple[datetime, str]] = [(r.due, r.text) for r in reminders.all()
                                          if not r.done and r.due.date() <= today]
-    if app is not None:
-        try:
-            listed = await app("reminders.list", {})
-        except Exception as e:  # noqa: BLE001
-            log.info("brief without Apple Reminders: %s", type(e).__name__)
-            listed = []
-        for r in listed if isinstance(listed, list) else []:
-            when = _parse(r.get("due")) if isinstance(r, dict) else None
-            if when is not None and when.date() <= today and not r.get("done"):
-                items.append((when, _one_line(r.get("title")) or "(no title)"))
+    for r in day.todos if day is not None else ():
+        when = _parse(r.get("due"))
+        if when is not None and when.date() <= today and not r.get("done"):
+            items.append((when, _one_line(r.get("title")) or "(no title)"))
     if not items:
         return ["No reminders due today."]
     items.sort(key=lambda item: item[0])
@@ -103,16 +96,7 @@ def _span(start: object, end: object) -> str:
 
 
 def _parse(value: object) -> datetime | None:
-    if not isinstance(value, str) or not value:
-        return None
-    try:
-        return datetime.fromisoformat(value)
-    except ValueError:
-        return None
-
-
-def _local(when: datetime) -> str:
-    return when.strftime("%Y-%m-%dT%H:%M")
+    return parse_local(value) if isinstance(value, str) else None
 
 
 def _one_line(value: object, limit: int = 100) -> str:

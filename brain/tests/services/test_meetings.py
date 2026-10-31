@@ -17,9 +17,9 @@ from pathlib import Path
 
 import pytest
 
-from milo.core.events import (CallEnded, CallStarted, Confirm, MeetingChunk, MeetingLines, MeetingMail,
-                              MeetingNotesReady, MeetingPause, MeetingRecord, MeetingRecording, MeetingStatus,
-                              MeetingTodo, MeetingToggle, OpenMeeting, Status)
+from milo.core.events import (CallEnded, CallStarted, Confirm, MeetingChunk, MeetingMail,
+                              MeetingNotesReady, MeetingRecord, MeetingRecording, MeetingStatus,
+                              MeetingTodo, Status)
 from milo.core.meetings import Track
 from milo.core.memory import Episode
 from milo.core.types import Interrupted, ListenMode, MiloState
@@ -29,7 +29,7 @@ from milo.services.listening import Listening
 from milo.services.meetings import QUESTION, MeetingOptions, MeetingService, followup_task
 from tests.meeting_fakes import (FakeVoiceBook, GivingWay, LineVoices, Script, SummaryModel, WordReader, line_of_word,
                                  word, write_chunks)
-from tests.services.stack import InlineExecutor, Stack, settle
+from tests.services.stack import InlineExecutor, Stack, settle, until
 
 SUMMARY = json.dumps({"summary": "We moved the release by a week.", "decisions": ["Release on the 21st"],
                       "todos": [{"text": "Write to the customer", "owner": "me", "due": "Friday"},
@@ -105,14 +105,6 @@ class Rig:
 
     def lines(self):
         return self.store.lines(self.id)
-
-
-async def until(condition, timeout: float = 5.0) -> None:
-    deadline = time.monotonic() + timeout
-    while not condition():
-        if time.monotonic() > deadline:
-            raise AssertionError("timed out waiting")
-        await asyncio.sleep(0.01)
 
 
 def said_lines(rig: Rig, lines) -> dict[int, list[str]]:

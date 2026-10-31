@@ -8,20 +8,12 @@ import asyncio
 
 from milo.core.events import ActionDone, Confirm, Status
 from milo.core.types import HandsError, ListenMode
+from milo.core.words import say
 from milo.services.cloud_hearing import CloudHearing
 from tests.fakes import FakeAudioInput, FakeHands, FakeLiveModel, FakeStreamingTranscriber, FakeTranscriber
-from tests.services.stack import Stack, settle
+from tests.services.stack import Stack, settle, talk
 
 YOUTUBE = '[happy] <open app="Google Chrome" url="https://www.youtube.com"/> Opening YouTube in Chrome.'
-
-
-def talk(s: Stack, *texts: str, language: str = "") -> None:
-    async def run():
-        for text in texts:
-            await s.live_talk.start(text, language=language)
-            await settle()
-
-    asyncio.run(run())
 
 
 def opened(s: Stack) -> list[tuple[str, dict]]:
@@ -243,10 +235,10 @@ def test_the_local_transcribers_language_reaches_the_turn():
 
 
 def test_milos_own_lines_around_a_question_follow_the_language():
-    from milo.services.approvals import SEE_WINDOW_DE, fit_bubble
+    from milo.services.approvals import fit_bubble
 
     question, _ = fit_bubble("Soll ich das wirklich machen " * 20, "", "de")
-    assert question.endswith(SEE_WINDOW_DE)
+    assert question.endswith(say("approvals.see_window", "de"))
     s = Stack(confirm_timeout_s=0.01)
     s.language.hear("Kannst du das bitte machen?")
     said = []
@@ -260,7 +252,7 @@ def test_the_remind_question_doesnt_use_a_day_format_windows_lacks(monkeypatch):
     import time
     from datetime import datetime
 
-    from milo.services.live_talk import remind_question
+    from milo.services.reply_effects import remind_question
 
     real = time.strftime
 
@@ -277,7 +269,7 @@ def test_the_remind_question_doesnt_use_a_day_format_windows_lacks(monkeypatch):
 def test_remember_and_remind_questions_follow_the_language():
     from datetime import datetime
 
-    from milo.services.live_talk import remember_question, remind_question, task_question
+    from milo.services.reply_effects import remember_question, remind_question, task_question
 
     assert remember_question("Mag Tee", "de") == "Soll ich mir das merken: Mag Tee?"
     assert remind_question(datetime(2026, 11, 2, 9, 0), "Anna anrufen", "de") == \

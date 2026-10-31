@@ -13,6 +13,7 @@ from milo.core.conversations import (MAX_TITLE, RECAP_TOKENS, ConversationInfo, 
 from milo.core.events import Activity, EntryChanged, History, ReplyDelta
 from milo.core.logtext import private
 from milo.core.ports import Clock, ConversationStore, EventSink
+from milo.core.times import parse_local
 from milo.core.types import Emotion, EntryKind, Step, StepStatus, TranscriptEntry
 
 log = logging.getLogger("milo.transcript")
@@ -411,10 +412,7 @@ def _settled(info: ConversationInfo) -> ConversationInfo:
 
 
 def _time(ts: str) -> datetime:
-    try:
-        return datetime.fromisoformat(ts)
-    except ValueError:
-        return datetime.fromtimestamp(0)
+    return parse_local(ts) or datetime.fromtimestamp(0)
 
 
 class _Nowhere:

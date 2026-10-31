@@ -229,11 +229,10 @@ public final class MiloController {
                 NSLog("Milo: not trusted for Accessibility, dictation left on the clipboard")
                 model.show(Self.pasteBlocked, action: .permissions)
             }
-        case let .uiConfig(dictateKey, talkKey, handsFreeMax, whatsThisKey, character, meetingKey):
+        case let .uiConfig(dictateKey, talkKey, handsFreeMax, whatsThisKey, meetingKey):
             if let handsFreeMax, handsFreeMax > 0 { pushToTalk.maxLocked = handsFreeMax }
             if let whatsThisKey { screen?.setShortcut(whatsThisKey) }
             if let meetingKey { meetings?.setShortcut(meetingKey) }
-            if let character, character != model.character { model.character = character }
             let next = bindings.applying(dictateKey: dictateKey, talkKey: talkKey)
             guard next != bindings else { return }
             pushToTalkChanged(pushToTalk.rebind(next), at: nil)

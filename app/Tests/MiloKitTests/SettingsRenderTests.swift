@@ -52,51 +52,39 @@ struct SettingsRenderTests {
         waiting.restart = true
         var refused = Self.report
         refused.error = "The dictate key and the talk key need to be different keys."
-        for style in skins {
-            var report = Self.report
-            report.settings[0].value = .string(style.rawValue)
-            for dark in [false, true] {
-                try render(SettingsModel(report: report), style, name: "settings-\(style.rawValue)-\(dark ? "dark" : "light")",
-                           dark: dark)
-            }
+        for dark in [false, true] {
+            try render(SettingsModel(report: Self.report), name: "settings-milo-\(dark ? "dark" : "light")", dark: dark)
         }
-        try render(SettingsModel(report: waiting), .milo, name: "settings-restart-light", dark: false)
+        try render(SettingsModel(report: waiting), name: "settings-restart-light", dark: false)
         var auto = Self.report
         auto.settings[auto.settings.count - 2].value = "auto"
         auto.settings[auto.settings.count - 1].value = .array([])
-        try render(SettingsModel(report: auto), .milo, name: "settings-auto-light", dark: false)
-        try render(SettingsModel(report: auto), .milo, name: "settings-auto-dark", dark: true)
-        try render(SettingsModel(report: refused), .milo, name: "settings-error-light", dark: false)
-        try render(SettingsModel(report: nil), .milo, name: "settings-starting-dark", dark: true)
-    }
-
-    private var skins: [CharacterStyle] {
-        let only = ProcessInfo.processInfo.environment["MILO_SKINS"]?.split(separator: ",").map(String.init)
-        return CharacterStyle.allCases.filter { only?.contains($0.rawValue) ?? true }
+        try render(SettingsModel(report: auto), name: "settings-auto-light", dark: false)
+        try render(SettingsModel(report: auto), name: "settings-auto-dark", dark: true)
+        try render(SettingsModel(report: refused), name: "settings-error-light", dark: false)
+        try render(SettingsModel(report: nil), name: "settings-starting-dark", dark: true)
     }
 
     @Test func renderTheSetupWindow() throws {
         _ = NSApplication.shared
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let size = CGSize(width: 560, height: 1500)
-        for style in skins {
-            let (setup, permissions) = Self.setup([.microphone: .notAsked, .screenRecording: .denied,
-                                                   .accessibility: .denied, .reminders: .notAsked, .automation: .unknown])
-            setup.fix(.accessibility)  // the drag-in hint
-            setup.fix(.screenRecording)  // the restart note
-            permissions.states[.accessibility] = .granted
-            setup.refresh()
-            for dark in [false, true] {
-                try render(SetupView(setup: setup, done: {}).environment(\.miloTheme, Theme.for(style)), size: size,
-                           name: "setup-\(style.rawValue)-\(dark ? "dark" : "light")", dark: dark)
-            }
+        let (setup, permissions) = Self.setup([.microphone: .notAsked, .screenRecording: .denied,
+                                               .accessibility: .denied, .reminders: .notAsked, .automation: .unknown])
+        setup.fix(.accessibility)  // the drag-in hint
+        setup.fix(.screenRecording)  // the restart note
+        permissions.states[.accessibility] = .granted
+        setup.refresh()
+        for dark in [false, true] {
+            try render(SetupView(setup: setup, done: {}).environment(\.miloTheme, .milo), size: size,
+                       name: "setup-milo-\(dark ? "dark" : "light")", dark: dark)
         }
         let scheduler = ManualScheduler()
         let (stuck, _) = Self.setup([.accessibility: .denied, .screenRecording: .denied], scheduler: scheduler)
         stuck.startWatching()
         stuck.fix(.accessibility)
         scheduler.advance(by: SetupModel.patience)
-        try render(SetupView(setup: stuck, done: {}).environment(\.miloTheme, Theme.for(.milo)), size: size,
+        try render(SetupView(setup: stuck, done: {}).environment(\.miloTheme, .milo), size: size,
                    name: "setup-stuck-light", dark: false)
         // The apps macOS was asked about (ADR 25), under the optional rows.
         let suite = "SettingsRender-apps-\(UUID().uuidString)"
@@ -106,21 +94,21 @@ struct SettingsRenderTests {
         apps.note(AccessAnswer(.no, app: AccessApp(name: "Numbers", bundle: "com.apple.iWork.Numbers")))
         let (withApps, _) = Self.setup([.microphone: .granted, .accessibility: .granted, .screenRecording: .granted])
         for dark in [false, true] {
-            try render(SetupView(setup: withApps, apps: apps, done: {}).environment(\.miloTheme, Theme.for(.milo)),
+            try render(SetupView(setup: withApps, apps: apps, done: {}).environment(\.miloTheme, .milo),
                        size: size, name: "setup-apps-\(dark ? "dark" : "light")", dark: dark)
-            try render(ControlledAppsCard(apps: apps, open: {}).padding(16).environment(\.miloTheme, Theme.for(.milo)),
+            try render(ControlledAppsCard(apps: apps, open: {}).padding(16).environment(\.miloTheme, .milo),
                        size: CGSize(width: 520, height: 260), name: "setup-apps-card-\(dark ? "dark" : "light")", dark: dark)
         }
         let (ready, _) = Self.setup([:])
         ready.startWatching()
         ready.noticed(.dictating)
         ready.stopWatching()
-        try render(SetupView(setup: ready, done: {}).environment(\.miloTheme, Theme.for(.milo)), size: size,
+        try render(SetupView(setup: ready, done: {}).environment(\.miloTheme, .milo), size: size,
                    name: "setup-done-light", dark: false)
-        for (style, dark) in [(CharacterStyle.milo, false), (.milo, true)] {
+        for dark in [false, true] {
             try render(DragHelperView(appURL: URL(fileURLWithPath: "/Applications/Calculator.app"),
                                       icon: NSWorkspace.shared.icon(forFile: "/System/Applications/Calculator.app"),
-                                      close: {}).environment(\.miloTheme, Theme.for(style)),
+                                      close: {}).environment(\.miloTheme, .milo),
                        size: CGSize(width: 210, height: 230), name: "drag-helper-\(dark ? "dark" : "light")", dark: dark)
         }
     }
@@ -135,9 +123,8 @@ struct SettingsRenderTests {
         return (SetupModel(permissions: permissions, scheduler: scheduler, defaults: defaults), permissions)
     }
 
-    private func render(_ settings: SettingsModel, _ style: CharacterStyle, name: String, dark: Bool) throws {
+    private func render(_ settings: SettingsModel, name: String, dark: Bool) throws {
         let model = MiloModel(scheduler: ManualScheduler())
-        model.character = style
         try render(SettingsView(settings: settings, model: model, restart: {}, showWords: {}).themed(by: model),
                    size: Self.size,
                    name: name, dark: dark)

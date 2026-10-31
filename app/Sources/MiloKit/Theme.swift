@@ -4,14 +4,13 @@ import SwiftUI
 /// Milo's colours and motion, so every surface around him matches him: the bubble, the windows, the setup
 /// scenes, the overlays. Taken from the wren himself: lavender feathers, the marigold scarf.
 ///
-///     Theme.for(.milo).primary              // SwiftUI
-///     Theme.for(.milo).appKit.primary       // AppKit (NSColor), for panels and layers
+///     Theme.milo.primary                    // SwiftUI
+///     Theme.milo.appKit.primary             // AppKit (NSColor), for panels and layers
 ///     @Environment(\.miloTheme) var theme   // inside a view under `.themed(by: model)`
 ///     model.theme                           // from a MiloModel
 ///
 /// Every colour adapts to light and dark mode by itself.
-public struct Theme: Equatable, Sendable {
-    public let style: CharacterStyle
+public struct Theme: Sendable {
     public let appKit: ThemeColors
     public let motion: ThemeMotion
 
@@ -32,11 +31,9 @@ public struct Theme: Equatable, Sendable {
     /// Hairlines and borders.
     public var rule: Color { Color(nsColor: appKit.rule) }
 
-    public static func `for`(_ style: CharacterStyle) -> Theme { milo }
-
     /// The wren's own colours: lavender feathers, a marigold scarf, cream paper. Springs a little lively,
     /// like his hops.
-    static let milo = Theme(style: .milo, colors: .init(
+    public static let milo = Theme(colors: .init(
         primary: (rgb(0.37, 0.31, 0.64), rgb(0.71, 0.66, 0.94)),
         tint: (rgb(0.961, 0.949, 0.996), rgb(0.118, 0.106, 0.200)),
         accent: (rgb(0.79, 0.52, 0.15), rgb(0.94, 0.71, 0.29)),
@@ -44,8 +41,7 @@ public struct Theme: Equatable, Sendable {
         glow: (rgb(0.78, 0.74, 0.94), rgb(0.50, 0.44, 0.82))),
         motion: ThemeMotion(response: 0.45, damping: 0.74, bob: 1))
 
-    private init(style: CharacterStyle, colors: ThemeColors, motion: ThemeMotion) {
-        self.style = style
+    private init(colors: ThemeColors, motion: ThemeMotion) {
         appKit = colors
         self.motion = motion
     }
@@ -53,8 +49,6 @@ public struct Theme: Equatable, Sendable {
     private static func rgb(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat) -> NSColor {
         NSColor(srgbRed: r, green: g, blue: b, alpha: 1)
     }
-
-    public static func == (a: Theme, b: Theme) -> Bool { a.style == b.style }
 }
 
 /// A theme's colours as NSColor, each with a light and a dark variant that AppKit picks by appearance.
@@ -117,11 +111,11 @@ extension EnvironmentValues {
 
 extension MiloModel {
     /// His theme.
-    public var theme: Theme { Theme.for(character) }
+    public var theme: Theme { .milo }
 }
 
 extension View {
-    /// Puts `model.theme` in the environment and follows `[ui] character` live.
+    /// Puts `model.theme` in the environment.
     public func themed(by model: MiloModel) -> some View {
         modifier(Themed(model: model))
     }

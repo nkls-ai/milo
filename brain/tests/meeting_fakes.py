@@ -126,7 +126,7 @@ class WordReader:
         if self.delay_s:
             time.sleep(self.delay_s)
         q = np.round(audio, 5)
-        words, i, n = [], 0, len(q)
+        words, n = [], len(q)
         changes = np.flatnonzero(np.diff(q)) + 1
         bounds = [0, *changes.tolist(), n]
         for a, b in zip(bounds, bounds[1:]):

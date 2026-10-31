@@ -4,7 +4,7 @@ Platform specifics belong in `milo/adapters/` (picked by name in config.toml) an
 reads every core module and fails when one imports or names something only macOS has: AppleScript, bundle ids,
 macOS paths and commands, the ⌘ key vocabulary, System Settings, Apple-only frameworks and apps, "Mac" in words
 the user or the model reads, POSIX-only calls, `%-d`-style strftime flags (Windows raises on them; use
-`milo.core.dates`), and branches on `sys.platform`.
+`milo.core.words.dates`), and branches on `sys.platform`.
 
 It reads code, not comments: imports, attribute uses and string values. Docstrings and other bare strings are
 left alone, so a comment may still say how macOS behaves.
@@ -166,7 +166,6 @@ ALLOWED: dict[tuple[str, str], str] = {
     ("connect/tools.py", "mac-keys"): "the worker's undo instructions say Excel's ⌘Z can't undo a script",
     ("services/sheets.py", "applescript"): "sheet_write/sheet_read compose AppleScript; moves behind a per-platform script builder",
     ("services/sheets.py", "mac-app"): "Excel and Numbers by their Mac names",
-    ("services/sheets.py", "mac-path"): "app_name strips \".app\" from a path",
     ("services/documents.py", "applescript"): "write_document composes AppleScript for TextEdit and Pages",
     ("services/documents.py", "mac-app"): "TextEdit and Pages are the document apps",
     # Risk: the word lists know Mac apps, bundle ids and shortcuts.
@@ -192,11 +191,10 @@ ALLOWED: dict[tuple[str, str], str] = {
     ("services/approvals.py", "mac-word"): "a log line about an answer at the Mac",
     ("services/brief.py", "mac-word"): "\"is Milo running on the Mac?\"",
     ("services/cloud_hearing.py", "mac-word"): "NOTICE says it transcribes on this Mac",
-    ("services/live_talk.py", "mac-app"): "the talker's prompt names Numbers among the apps",
-    ("services/live_talk.py", "mac-word"): "the persona and prompt say Milo lives on the user's Mac",
+    ("services/talk_prompt.py", "mac-app"): "the talker's prompt names Numbers among the apps",
     ("services/messages.py", "mac-word"): "phone replies say \"at your Mac\"",
     ("services/routines.py", "mac-app"): "the recipe example uses apps: [Numbers]",
-    ("services/routines.py", "mac-word"): "\"while the Mac was asleep\" and the recipe prompt's \"Mac apps\"",
+    ("services/routines.py", "mac-word"): "the recipe prompt asks for \"the Mac apps\" the work used",
     ("services/settings_guard.py", "mac-word"): "PUT_BACK says \"change them at the Mac\"",
     ("services/orchestrator.py", "mac-settings"): "_SCREEN_WORDS counts \"system settings\" as screen work",
     # Private folders are where macOS keeps them.
@@ -211,7 +209,7 @@ ALLOWED: dict[tuple[str, str], str] = {
 }
 
 
-CEILING = 56
+CEILING = 54
 """How many ALLOWED lines there were at the last count (2026-10-31: 57, less the one in GROWN). It only goes down:
 when a coupling moves out and its line goes, lower it too. It never goes up."""
 

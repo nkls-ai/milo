@@ -9,7 +9,6 @@ public final class ConversationWindow: NSWindow {
     private let route = WindowRoute(page: .live)
     /// The gear in the title bar: open the Settings window.
     public var onSettings: (() -> Void)?
-    private var restyle: AnyCancellable?
 
     public init(controller: MiloController) {
         self.controller = controller
@@ -25,9 +24,7 @@ public final class ConversationWindow: NSWindow {
             actions: controller.windowActions, usage: controller.usage)
             .themed(by: controller.model))
         // The title bar shows the window's own colour: keep it Milo's paper.
-        restyle = controller.model.$character.sink { [weak self] in
-            self?.backgroundColor = Theme.for($0).appKit.tint
-        }
+        backgroundColor = Theme.milo.appKit.tint
         addSettingsButton()
         if !setFrameUsingName(Self.frameName) { placeNearMilo() }
         setFrameAutosaveName(Self.frameName)

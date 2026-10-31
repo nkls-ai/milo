@@ -27,6 +27,7 @@ from pathlib import Path
 from milo.core.events import Bubble
 from milo.core.ports import Clock, EventSink
 from milo.core.types import Step
+from milo.core.words import say
 
 from .helpers import _APP_IN_TITLE, Helper, is_installed_app
 
@@ -43,49 +44,31 @@ GAP_S = 20.0
 PROGRESS_AFTER_S = 8.0
 """A voice task still at work after this long gets its one spoken line."""
 
-_LINES = {
-    "en": {"open": "Opening {app} now…", "app": "Working in {app} now…", "calendar": "Checking your calendar…",
-           "mail": "Going through your mail…", "reminders": "Looking at your reminders…",
-           "notes": "Looking in your notes…", "files": "Looking through your files…", "web": "Looking it up online…",
-           "edit": "Making the changes now…", "": "Still on it…"},
-    "de": {"open": "Ich öffne gerade {app}…", "app": "Ich bin gerade in {app}…",
-           "calendar": "Ich schaue in deinen Kalender…", "mail": "Ich gehe deine Mails durch…",
-           "reminders": "Ich schaue in deine Erinnerungen…", "notes": "Ich schaue in deine Notizen…",
-           "files": "Ich suche in deinen Dateien…", "web": "Ich schaue online nach…",
-           "edit": "Ich mache gerade die Änderungen…", "": "Bin noch dran…"},
-    "fr": {"open": "J'ouvre {app}…", "app": "Je travaille dans {app}…", "calendar": "Je regarde ton agenda…",
-           "mail": "Je parcours tes mails…", "reminders": "Je regarde tes rappels…", "notes": "Je regarde tes notes…",
-           "files": "Je cherche dans tes fichiers…", "web": "Je cherche en ligne…", "edit": "Je fais les changements…",
-           "": "J'y suis encore…"},
-    "es": {"open": "Abriendo {app}…", "app": "Trabajando en {app}…", "calendar": "Mirando tu calendario…",
-           "mail": "Revisando tu correo…", "reminders": "Mirando tus recordatorios…", "notes": "Mirando tus notas…",
-           "files": "Buscando en tus archivos…", "web": "Buscándolo en internet…", "edit": "Haciendo los cambios…",
-           "": "Sigo en ello…"},
-}
-"""The spoken line for each kind of work. Other languages get English."""
 _TOPICS = (("calendar", "calendar"), ("mail", "mail"), ("email", "mail"), ("draft", "mail"), ("reminder", "reminders"),
            ("note", "notes"), ("file", "files"), ("folder", "files"))
 """Words in the titles of Milo's own tool steps (core/wording.py) and what they are about."""
+_KINDS = {"web": "web", "edit": "edit", "search": "files"}
+"""Step kinds with a line of their own (core/words/updates.py); the rest say "still"."""
 _BOOKKEEPING = ("Noting how things were", "Keeping a copy of", "Checking which apps are open")
 
 
 def progress_line(helper: Helper, installed: Callable[[str], bool] = is_installed_app) -> str:
     """One short spoken line about what `helper` is doing, in its user's language. Only the kind of work and the name
     of an app installed here go in, never a file name or other text the step may carry."""
-    lines = _LINES.get(helper.language, _LINES["en"])
+    lang = helper.language
     steps = [s for s in helper.steps if not s.title.startswith(_BOOKKEEPING)]
     step = next((s for s in reversed(steps) if s.kind == "app"), steps[-1] if steps else None)
     if step is None:
-        return lines[""]
+        return say("updates.still", lang)
     match = _APP_IN_TITLE.search(step.title)
     app = next((g for g in match.groups() if g), "").strip() if match else ""
     if app and installed(app):
-        return lines["open" if step.title.startswith("Opening ") else "app"].format(app=app)
+        return say("updates.open" if step.title.startswith("Opening ") else "updates.working", lang, app=app)
     words = step.title.lower()
     topic = next((t for word, t in _TOPICS if word in words), "")
     if topic:
-        return lines[topic]
-    return lines.get({"web": "web", "edit": "edit", "search": "files"}.get(step.kind, ""), lines[""])
+        return say(f"updates.{topic}", lang)
+    return say(f"updates.{_KINDS.get(step.kind, 'still')}", lang)
 
 
 class UpdateMode(StrEnum):

@@ -16,7 +16,8 @@ import pytest
 
 from milo.core.events import Bubble, Confirm, ConfirmDone
 from milo.core.types import ScreenCapture
-from milo.services.approvals import ActionPolicy, MONEY_YES
+from milo.core.words import say
+from milo.services.approvals import ActionPolicy
 from milo.services.permits import AppRef, Scope
 from milo.services.risk import Risk, classify, normalize_combo
 from tests.fakes import FakeChannel, FakeEyes, FakeHarness, FakeLiveModel
@@ -123,7 +124,7 @@ def test_a_money_question_offers_no_always_and_a_spoken_yes_doesnt_answer_it():
     asyncio.run(run())
     assert [d.answer for d in s.sink.of(ConfirmDone)] == ["yes"]
     assert s.hands_port.actions.count("ax_press") == 1, "bought after the click"
-    assert any(b.text == MONEY_YES for b in s.sink.of(Bubble)), "Milo says the button has to answer"
+    assert any(b.text == say("approvals.money_yes") for b in s.sink.of(Bubble)), "Milo says the button has to answer"
     assert s.approvals.permits.always == ()
 
 

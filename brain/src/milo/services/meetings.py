@@ -26,6 +26,7 @@ from milo.core.events import (CallEnded, CallStarted, MeetingChunk, MeetingLines
 from milo.core.logtext import private
 from milo.core.meetings import ME, MeetingInfo, MeetingNotes, Track, TranscriptLine, clock
 from milo.core.ports import Clock, Diarizer, LiveModel, MeetingStore, TimedTranscriber, VoiceBook
+from milo.core.times import local
 from milo.core.memory import Episode, new_id
 from milo.core.types import STT_SAMPLE_RATE, Emotion, Interrupted
 
@@ -954,7 +955,7 @@ class MeetingService:
             return None
         def current(e: dict) -> bool:
             try:
-                start, end = datetime.fromisoformat(e["start"]), datetime.fromisoformat(e["end"])
+                start, end = local(e["start"]), local(e["end"])
             except (KeyError, ValueError, TypeError):
                 return False
             return not e.get("all_day") and start - timedelta(minutes=10) <= now <= end

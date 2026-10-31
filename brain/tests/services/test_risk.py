@@ -1,6 +1,6 @@
 import pytest
 
-from milo.services.risk import Risk, Verdict, classify, normalize_combo
+from milo.services.risk import Risk, classify, normalize_combo
 
 
 @pytest.mark.parametrize("tool, args, target, risk, reason", [

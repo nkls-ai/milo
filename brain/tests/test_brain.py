@@ -9,14 +9,14 @@ import pytest
 from milo.brain import Brain
 from milo.config import UiSettings
 from milo.core.events import (Bubble, Dictation, EmotionChanged, Facts, HandsSession, Heard, Level, ListenStart,
-                              ListenStop, Looking, Mute, Partial, SetSetting, SettingsReport, StateChanged, Status,
+                              ListenStop, Mute, Partial, SetSetting, SettingsReport, StateChanged, Status,
                               TextInput, UiConfig, parse_command)
 from milo.core.events import Routines
 from milo.core.memory import Fact
 from milo.core.routines import Routine
-from milo.core.types import Emotion, HandsError, ListenMode, LiveMode, MiloState, Nudge, ScreenCapture
+from milo.core.types import Emotion, HandsError, ListenMode, LiveMode, MiloState, Nudge
 from milo.services.app_bridge import AppEyes, AppHands
-from tests.fakes import FakeEyes, FakeHands, FakeLiveModel, FakeTranscriber, MemoryConfigFile
+from tests.fakes import FakeLiveModel, FakeTranscriber, MemoryConfigFile
 from milo.services.helpers import HelperStatus
 from tests.fakes import ScriptedHarness, WorkerScript
 from tests.services.stack import Stack, settle

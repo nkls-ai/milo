@@ -30,7 +30,7 @@ public final class SetupWindow: NSWindow, NSWindowDelegate {
         center()
         setup.restart = { Relaunch.now() }
         model.$state.sink { [weak setup] in setup?.noticed($0) }.store(in: &watching)
-        model.$character.sink { [weak self] in self?.backgroundColor = Theme.for($0).appKit.tint }.store(in: &watching)
+        backgroundColor = Theme.milo.appKit.tint
         setup.$helper.sink { [weak self] in self?.showHelper($0 != nil) }.store(in: &watching)
     }
 

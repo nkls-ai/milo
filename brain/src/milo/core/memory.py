@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import os
 import time
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
+
+from .times import local
 
 EPISODE_KINDS = ("conversation", "task", "meeting", "dictation", "look", "note")
 TOPICS = ("basics", "people", "work", "preferences", "routines", "learned")
@@ -29,7 +31,7 @@ def new_id(at: datetime | None = None) -> str:
 
 
 def _time(value: Any) -> datetime:
-    return datetime.fromisoformat(str(value))
+    return local(value)
 
 
 def _strings(value: Any) -> tuple[str, ...]:
@@ -251,7 +253,3 @@ class ConsolidationReport:
 def estimate_tokens(text: str) -> int:
     """About 4 bytes of UTF-8 per token for English and German. Cheap and on the safe side."""
     return (len(text.encode("utf-8")) + 3) // 4
-
-
-def retopic(fact: Fact, topic: str) -> Fact:
-    return replace(fact, topic=topic if topic in TOPICS else "learned")

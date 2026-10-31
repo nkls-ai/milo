@@ -3,7 +3,6 @@
 import json
 import re
 from importlib import resources
-from pathlib import Path
 
 import pytest
 

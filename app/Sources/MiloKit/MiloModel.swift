@@ -69,8 +69,6 @@ public final class MiloModel: ObservableObject {
     @Published public var workingWindow: CGRect?
     /// That window's number on screen, when known, so the outline sits just above it and under anything in front.
     @Published public var workingWindowNumber: Int?
-    /// How Milo looks, from the brain's `ui_config`.
-    @Published public var character: CharacterStyle = .milo
     /// Milo by message, for the menu. nil while messages are off.
     @Published public var remote: RemoteStatus?
     /// A point on screen Milo should fly to and point at, in AppKit global screen coordinates (points,

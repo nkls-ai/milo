@@ -30,20 +30,19 @@ struct HelperRenderTests {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         for dark in [false, true] {
             let tag = dark ? "dark" : "light"
-            try renderCorner(helpers: Self.three, character: .milo, name: "helpers-corner-\(tag)", dark: dark)
-            try renderCorner(helpers: Self.finishing, character: .milo, name: "helpers-corner-finishing-\(tag)",
+            try renderCorner(helpers: Self.three, name: "helpers-corner-\(tag)", dark: dark)
+            try renderCorner(helpers: Self.finishing, name: "helpers-corner-finishing-\(tag)",
                              dark: dark)
             try renderWindow(helpers: Self.three, name: "helpers-window-\(tag)", dark: dark)
         }
-        try renderCorner(helpers: [Self.three[0]], character: .milo, name: "helpers-corner-one", dark: false,
+        try renderCorner(helpers: [Self.three[0]], name: "helpers-corner-one", dark: false,
                          bubble: "Budget table in Excel: Opening Microsoft Excel")
     }
 
-    private func renderCorner(helpers: [HelperInfo], character: CharacterStyle, name: String, dark: Bool,
+    private func renderCorner(helpers: [HelperInfo], name: String, dark: Bool,
                               bubble: String? = nil) throws {
         let model = MiloModel(scheduler: ManualScheduler())
         model.connected = true
-        model.character = character
         model.apply(.helpers(helpers))
         if let bubble { model.show(bubble) }
         let view = ZStack {

@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 
 from milo.core.memory import Episode, new_id
 from milo.core.ports import DictationHistory, ScreenEyes, TranscriptStore
+from milo.core.times import local
 from milo.core.types import ScreenCapture
 
 log = logging.getLogger("milo.memory")
@@ -36,7 +37,7 @@ def _cut(text: str, limit: int = MAX_PART) -> str:
 
 def _at(entry: dict, fallback: Callable[[], datetime]) -> datetime:
     try:
-        return datetime.fromisoformat(str(entry["ts"]))
+        return local(entry["ts"])
     except (KeyError, ValueError):
         return fallback()
 
@@ -129,7 +130,7 @@ class RoutineEpisodes:
         self._people = people
 
     def __call__(self, run: dict) -> None:
-        at = datetime.fromisoformat(str(run["at"]))
+        at = local(run["at"])
         inputs = ", ".join(f"{k} {v}" for k, v in (run.get("inputs") or {}).items())
         summary = f"Routine “{_cut(run.get('name', ''), 80)}”"
         summary += " on its schedule" if run.get("scheduled") else ""

@@ -28,6 +28,8 @@ class Platform:
     """[chat] use: the talker's model. The Claude CLI runs everywhere."""
     messages: str = "telegram"
     """[messages] use: the phone channel. Telegram's bot API runs everywhere."""
+    computer: str = "computer"
+    """What Milo calls the machine he runs on in what he says ("while the computer was asleep")."""
 
     def use(self, section: str) -> str | None:
         """The default `use` for a pluggable config section, None for sections that must name one."""

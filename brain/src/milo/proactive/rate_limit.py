@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
+from milo.core.times import local
+
 _HOUR = timedelta(hours=1)
 
 
@@ -33,7 +35,7 @@ class RateLimiter:
         out = []
         for raw in self.state.get("times", []):
             try:
-                out.append(datetime.fromisoformat(raw))
+                out.append(local(raw))
             except (TypeError, ValueError):
                 continue
         return out

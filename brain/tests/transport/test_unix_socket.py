@@ -3,10 +3,8 @@
 import asyncio
 import json
 import os
-import shutil
 import socket
 import stat
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -18,15 +16,6 @@ from milo.transport.unix_socket import UnixSocketServer
 
 TIMEOUT_S = 2
 GREETING = [StateChanged(MiloState.IDLE), UiConfig("fn", "right_option")]
-
-
-@pytest.fixture
-def sock_path():
-    root = Path(tempfile.mkdtemp(dir="/tmp", prefix="milo-"))
-    try:
-        yield root / "run" / "brain.sock"
-    finally:
-        shutil.rmtree(root, ignore_errors=True)
 
 
 class Client:

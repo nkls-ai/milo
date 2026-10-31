@@ -7,19 +7,13 @@ import SwiftUI
 public final class WorkingFrame {
     private var windows: [NSWindow] = []
     private var subscription: AnyCancellable?
-    private var restyle: AnyCancellable?
-    private var theme = Theme.for(.milo)
+    private let theme = Theme.milo
 
     public init(model: MiloModel) {
         // Only while Milo borrows the real mouse or keyboard: then any touch stops him, so the whole screen
         // says so. Background work shows the per-window outline instead (WorkingOutline).
         subscription = model.$handsBorrowed.removeDuplicates().receive(on: DispatchQueue.main).sink { [weak self] on in
             on ? self?.show() : self?.hide()
-        }
-        restyle = model.$character.removeDuplicates().sink { [weak self] in
-            guard let self else { return }
-            theme = Theme.for($0)
-            if !windows.isEmpty { show() }  // showing: draw it again in the new colours
         }
     }
 
@@ -48,7 +42,7 @@ public final class WorkingFrame {
 
 struct WorkingFrameView: View {
     static let label = "Milo is using your mouse. Move it or press esc to take over."
-    var theme = Theme.for(.milo)
+    var theme = Theme.milo
 
     var body: some View {
         ZStack(alignment: .top) {

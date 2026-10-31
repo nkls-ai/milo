@@ -10,6 +10,7 @@ from collections.abc import Iterator
 from datetime import date, datetime
 from pathlib import Path
 
+from milo.core.times import local
 from milo.core.types import Usage
 from milo.core.usage import Call, Dictated
 
@@ -55,7 +56,7 @@ def _entries(path: Path, since: date) -> Iterator[tuple[dict, datetime]]:
                 continue
             try:
                 e = json.loads(line)
-                at = datetime.fromisoformat(str(e["ts"]))
+                at = local(e["ts"])
             except (ValueError, KeyError, TypeError):
                 continue
             if at.date() >= since:
@@ -67,7 +68,7 @@ def _first_day(path: Path) -> date | None:
         with path.open(encoding="utf-8") as f:
             for line in f:
                 try:
-                    return datetime.fromisoformat(str(json.loads(line)["ts"])).date()
+                    return local(json.loads(line)["ts"]).date()
                 except (ValueError, KeyError, TypeError):
                     continue
     except FileNotFoundError:

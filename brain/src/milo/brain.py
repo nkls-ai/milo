@@ -100,7 +100,7 @@ class Brain:
 
     def _ui_config(self) -> UiConfig:
         ui = self._ui_settings
-        return UiConfig(ui.dictate_key, ui.talk_key, ui.hands_free_max_s, ui.whats_this_key, ui.character, ui.meeting_key)
+        return UiConfig(ui.dictate_key, ui.talk_key, ui.hands_free_max_s, ui.whats_this_key, ui.meeting_key)
 
     def _history(self) -> list[Event]:
         history = [self._transcript.history()] if self._transcript is not None else []

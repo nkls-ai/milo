@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from milo.core.ports import Connections
+from milo.core.times import local
 from milo.core.types import ToolError
 from milo.core.wording import question
 
@@ -61,7 +62,7 @@ def _time(args: dict, key: str) -> datetime | None:
     if not value:
         return None
     try:
-        return datetime.fromisoformat(value).replace(tzinfo=None)
+        return local(value)
     except ValueError:
         raise ToolError(f"{key} must look like 2026-11-05T15:00, not {value!r}") from None
 

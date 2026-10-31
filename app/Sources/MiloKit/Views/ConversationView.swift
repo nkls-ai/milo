@@ -77,7 +77,6 @@ public struct ConversationView: View {
         }
         .background(theme.tint)
         .background(shortcuts)
-        .animation(theme.motion.gentle, value: theme)
         .onChange(of: settings.focus) {
             guard let id = settings.focus else { return }
             settings.focus = nil
@@ -488,7 +487,7 @@ struct EmptyConversation: View {
     var body: some View {
         VStack(spacing: 12) {
             Spacer()
-            CharacterFigure(for: theme.style, emotion: .happy, size: 72)
+            CharacterFigure(emotion: .happy, size: 72)
                 .frame(width: 72, height: 72)
                 .background(Circle().fill(RadialGradient(colors: [theme.glow.opacity(0.45), theme.glow.opacity(0)], center: .center, startRadius: 4, endRadius: 50)).frame(width: 110, height: 110))
             Text("Hold \(talkKey) and talk, or type here.")

@@ -8,10 +8,10 @@ import subprocess
 import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from milo.core.app_connections import AppCalendar, AppReminders
 from milo.core.control import Protected
 from milo.core.ports import Connections
 from milo.core.registry import CONNECTIONS, AdapterContext, options_from
@@ -32,60 +32,9 @@ class MacOptions:
     files_scope: str = "~"
 
 
-def _iso(dt: datetime | None) -> str:
-    return dt.isoformat(timespec="minutes") if dt is not None else ""
-
-
-class AppCalendar:
-    """EventKit in Milo.app, reached through the brain. The brain applies the action level itself."""
-
-    approves_itself = True
-
-    def __init__(self, brain: BrainClient):
-        self._brain = brain
-
-    def _app(self, name: str, args: dict) -> Any:
-        return self._brain.request({"op": "app", "name": name, "args": args})
-
-    def events(self, start: datetime, end: datetime, query: str = "") -> list[dict]:
-        return self._app("calendar.events", {"start": _iso(start), "end": _iso(end), "query": query})
-
-    def add_event(self, title: str, start: datetime, end: datetime, location: str = "", notes: str = "",
-                  calendar: str = "", all_day: bool = False) -> dict:
-        return self._app("calendar.add_event", {"title": title, "start": _iso(start), "end": _iso(end),
-                                                "location": location, "notes": notes, "calendar": calendar,
-                                                **({"all_day": True} if all_day else {})})
-
-    def event(self, id: str, at: datetime | None = None) -> dict:
-        return self._app("calendar.event", {"id": id, "at": _iso(at)})
-
-    def move_event(self, id: str, at: datetime | None, start: datetime, end: datetime) -> dict:
-        return self._app("calendar.update_event", {"id": id, "at": _iso(at), "start": _iso(start), "end": _iso(end)})
-
-    def delete_event(self, id: str, at: datetime | None = None) -> dict:
-        return self._app("calendar.delete_event", {"id": id, "at": _iso(at)})
-
-
-class AppReminders:
-    approves_itself = True
-
-    def __init__(self, brain: BrainClient):
-        self._brain = brain
-
-    def _app(self, name: str, args: dict) -> Any:
-        return self._brain.request({"op": "app", "name": name, "args": args})
-
-    def list(self, query: str = "", include_done: bool = False) -> list[dict]:
-        return self._app("reminders.list", {"query": query, "include_done": include_done})
-
-    def add(self, title: str, due: datetime | None = None, notes: str = "", list_name: str = "") -> dict:
-        return self._app("reminders.add", {"title": title, "due": _iso(due), "notes": notes, "list": list_name})
-
-    def complete(self, id: str) -> dict:
-        return self._app("reminders.complete", {"id": id})
-
-    def delete(self, id: str) -> dict:
-        return self._app("reminders.delete", {"id": id})
+def _app(brain: BrainClient):
+    """Runs one of the app's Calendar and Reminders ops through the brain, which applies the action level."""
+    return lambda name, args: brain.request({"op": "app", "name": name, "args": args})
 
 
 # Both mailboxes are the unified ones across accounts. Messages are found again by their Message-ID header.
@@ -386,6 +335,6 @@ class SpotlightFiles:
 def _mac(options: Mapping[str, Any], ctx: AdapterContext) -> Connections:
     o = options_from(MacOptions, options, "connections.mac")
     brain = BrainClient(Workspace(ctx.home).tools_socket_path)
-    return Connections(calendar=AppCalendar(brain), reminders=AppReminders(brain), mail=AppleMail(),
+    return Connections(calendar=AppCalendar(_app(brain)), reminders=AppReminders(_app(brain)), mail=AppleMail(),
                        notes=AppleNotes(), shortcuts=ShortcutsApp(),
                        files=SpotlightFiles(Path(o.files_scope).expanduser().resolve(), Protected(ctx.home)))

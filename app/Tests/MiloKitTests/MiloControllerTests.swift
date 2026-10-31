@@ -126,8 +126,8 @@ private final class Harness {
 
     // MARK: Settings
 
-    private static let look = Setting(section: "ui", key: "character", value: "pip",
-                                      options: ["pip", "dragon"], labels: ["Pip", "Dragon"])
+    private static let style = Setting(section: "dictation", key: "stream", value: "preview",
+                                       options: ["off", "preview", "type"], labels: ["Off", "Preview", "Type"])
 
     private static func hideAfter(_ value: JSONValue) -> SettingsReport {
         SettingsReport(settings: [Setting(section: "ui", key: "hide_after_s", value: value, options: [30, 60, 300, 0],
@@ -144,7 +144,7 @@ private final class Harness {
         #expect(h.model.presence.hideAfter == nil, "0 is Never")
         h.controller.settingsModel.change("ui", "hide_after_s", to: 30)
         #expect(h.model.presence.hideAfter == 30, "the window's choice works before the brain answers")
-        h.brain.emit(.settings(SettingsReport(settings: [Self.look])))
+        h.brain.emit(.settings(SettingsReport(settings: [Self.style])))
         #expect(h.model.presence.hideAfter == Presence.defaultHideAfter, "an older brain that doesn't know the setting: the default")
     }
 
@@ -165,18 +165,18 @@ private final class Harness {
         h.brain.clearSent()
         h.controller.settingsModel.refresh()
         #expect(h.brain.sent == [.getSettings])
-        h.brain.emit(.settings(SettingsReport(settings: [Self.look])))
-        #expect(h.controller.settingsModel.value("ui", "character") == "pip")
+        h.brain.emit(.settings(SettingsReport(settings: [Self.style])))
+        #expect(h.controller.settingsModel.value("dictation", "stream") == "preview")
 
-        h.controller.settingsModel.change("ui", "character", to: "dragon")
-        #expect(h.controller.settingsModel.value("ui", "character") == "dragon", "shown before the brain answers")
-        h.controller.settingsModel.change("ui", "character", to: "dragon")
+        h.controller.settingsModel.change("dictation", "stream", to: "type")
+        #expect(h.controller.settingsModel.value("dictation", "stream") == "type", "shown before the brain answers")
+        h.controller.settingsModel.change("dictation", "stream", to: "type")
         h.controller.settingsModel.change("ui", "nothing", to: "x")
-        #expect(h.brain.sent == [.getSettings, .setSetting(section: "ui", key: "character", value: "dragon")])
+        #expect(h.brain.sent == [.getSettings, .setSetting(section: "dictation", key: "stream", value: "type")])
 
         h.brain.emit(.settings(SettingsReport(settings: [], error: "Milo couldn't use that.")))
         #expect(h.controller.settingsModel.report?.error == "Milo couldn't use that.")
-        #expect(h.controller.settingsModel.value("ui", "character") == "dragon", "an error alone keeps the values")
+        #expect(h.controller.settingsModel.value("dictation", "stream") == "type", "an error alone keeps the values")
     }
 
     // MARK: Usage
@@ -366,15 +366,6 @@ private final class Harness {
         h.keys.press(.rightCommand, at: 2)
         h.keys.release(.rightCommand, at: 3)
         #expect(h.brain.sent == [.listenStart(.dictate, tentative: true), .listenStop])
-    }
-
-    @Test func uiConfigPicksTheCharacter() {
-        let h = Harness()
-        #expect(h.model.character == .milo)
-        h.brain.emit(.uiConfig(dictateKey: "fn", talkKey: "right_option", character: .milo))
-        #expect(h.model.character == .milo)
-        h.brain.emit(.uiConfig(dictateKey: "fn", talkKey: "right_option"))
-        #expect(h.model.character == .milo, "a missing or unknown character keeps the current one")
     }
 
     @Test func uiConfigWithTheCurrentKeysChangesNothing() {

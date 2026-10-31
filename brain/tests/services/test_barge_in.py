@@ -12,8 +12,8 @@ from milo.adapters.audio.wav_file import WavPlayer
 from milo.core.types import STT_SAMPLE_RATE, Emotion, MiloState
 from milo.services.barge_in import BargeIn, reference_for
 from milo.services.echo import BLOCK, EchoCanceller, TalkDetector
-from tests.fakes import FakeAudioInput, FakeTranscriber
-from tests.services.stack import Stack, settle
+from tests.fakes import FakeTranscriber
+from tests.services.stack import Stack, until
 
 RATE = STT_SAMPLE_RATE
 
@@ -24,13 +24,6 @@ def onset(audio: np.ndarray) -> float:
     loud = np.sqrt(np.mean(blocks ** 2, axis=1)) > 0.5 * np.sqrt(np.mean(audio ** 2))
     held = loud[:-2] & loud[1:-1] & loud[2:]  # for 48 ms, so a click at the very start doesn't count
     return int(np.argmax(held)) * BLOCK / RATE
-
-
-async def until(condition, seconds: float = 10.0) -> None:
-    deadline = time.monotonic() + seconds
-    while not condition():
-        assert time.monotonic() < deadline, "timed out"
-        await asyncio.sleep(0.005)
 
 
 def voiced(seconds: float, pitch: float, seed: int, level: float = 0.1, rate: int = RATE) -> np.ndarray:

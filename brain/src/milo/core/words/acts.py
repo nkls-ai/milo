@@ -1,16 +1,11 @@
-"""The one line Milo says after a quick action is done (ADR 0029), in the user's language.
+"""What Milo says after a quick action (ADR 0029), and what he asks before one that needs a yes.
 
-Milo says it himself, from a template, once the action really happened: the live model doesn't promise it before.
-English and German for now; another language falls back to English. The language is the one of the message being
-answered (`SpokenLanguage`, ADR 0028), the same one the reply and Milo's other questions follow.
+Milo says a line himself, from a template, once the action really happened: the live model doesn't promise it
+before.
 """
 
 from __future__ import annotations
 
-import re
-from datetime import date, datetime, timedelta
-
-LANGS = ("en", "de")
 LINES: dict[str, dict[str, str]] = {
     "event": {"en": "{title}, {when}. It's in.", "de": "{title}, {when}. Steht drin."},
     "moved": {"en": "Moved {title} to {when}.", "de": "{title} ist jetzt {when}."},
@@ -65,72 +60,3 @@ QUESTIONS: dict[str, dict[str, str]] = {
                            "gelöscht“."},
 }
 """What Milo asks before an act that needs a yes, and before an Undo of something changed since."""
-
-_DAYS = {"en": ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"),
-         "de": ("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag")}
-_MONTHS = {"en": ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
-                  "November", "December"),
-           "de": ("Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober",
-                  "November", "Dezember")}
-_NEAR = {"en": ("today", "tomorrow", "the day after tomorrow"), "de": ("heute", "morgen", "übermorgen")}
-
-
-def language(code: str) -> str:
-    """The language of the message being answered, if Milo has lines in it, else English."""
-    return code if code in LANGS else "en"
-
-
-def line(key: str, lang: str, **values: str) -> str:
-    templates = LINES[key]
-    return templates.get(lang, templates["en"]).format(**values)
-
-
-def ask(key: str, lang: str, **values: str) -> str:
-    templates = QUESTIONS[key]
-    return templates.get(lang, templates["en"]).format(**values)
-
-
-def day(d: date, today: date, lang: str) -> str:
-    """"today", "tomorrow", "Thursday" within a week, else "Thursday 12 November"."""
-    lang = lang if lang in LANGS else "en"
-    ahead = (d - today).days
-    if 0 <= ahead < 3:
-        return _NEAR[lang][ahead]
-    name = _DAYS[lang][d.weekday()]
-    if 0 < ahead < 7:
-        return name
-    return f"{name}, {d.day}. {_MONTHS[lang][d.month - 1]}" if lang == "de" else \
-        f"{name} {d.day} {_MONTHS[lang][d.month - 1]}"
-
-
-def clock(t: datetime, lang: str) -> str:
-    """"at 3 pm", "at 3:30 pm"; "um 15 Uhr", "um 15:30"."""
-    if lang == "de":
-        return f"um {t.hour} Uhr" if t.minute == 0 else f"um {t:%H:%M}"
-    hour = t.hour % 12 or 12
-    half = "am" if t.hour < 12 else "pm"
-    return f"at {hour} {half}" if t.minute == 0 else f"at {hour}:{t:%M} {half}"
-
-
-def when(t: datetime, today: date, lang: str, *, all_day: bool = False) -> str:
-    """"Thursday at 3 pm", "morgen um 9 Uhr"; a whole day says only the day."""
-    d = day(t.date(), today, lang)
-    return d if all_day else f"{d} {clock(t, lang)}"
-
-
-def span(seconds: float, lang: str) -> str:
-    """"10 minutes", "1 hour 30 minutes", "90 seconds"; "10 Minuten"."""
-    seconds = max(1, round(seconds))
-    words = {"en": (("hour", "hours"), ("minute", "minutes"), ("second", "seconds")),
-             "de": (("Stunde", "Stunden"), ("Minute", "Minuten"), ("Sekunde", "Sekunden"))}[lang if lang in LANGS
-                                                                                            else "en"]
-    hours, rest = divmod(seconds, 3600)
-    minutes, secs = divmod(rest, 60)
-    if seconds < 120 and not hours:
-        minutes, secs = (0, seconds) if seconds % 60 else (seconds // 60, 0)
-    parts = [(n, w) for n, w in zip((hours, minutes, secs), words) if n]
-    return " ".join(f"{n} {w[0] if n == 1 else w[1]}" for n, w in parts) or f"0 {words[2][1]}"
-
-
-def end_of(d: date) -> datetime:
-    return datetime.combine(d + timedelta(days=1), datetime.min.time())
