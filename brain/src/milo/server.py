@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 log = logging.getLogger("milo")
 
 DEFAULT_HOME = "~/Milo"
-NOISY_LOGGERS = ("httpx", "httpx2", "huggingface_hub")
+NOISY_LOGGERS = ("httpx", "httpx2", "huggingface_hub", "pocket_tts")
 CLOSE_TIMEOUT_S = 3.0
 MESSAGES_TICK_S = 30.0
 LOOP_STUCK_S = 5.0

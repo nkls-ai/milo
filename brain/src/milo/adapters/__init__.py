@@ -18,6 +18,7 @@ BUILTIN = (
     "stt.tones",
     "tts.say",
     "tts.omnivoice",
+    "tts.pocket",
     "tts.elevenlabs",
     "audio.sounddevice_io",
     "audio.wav_file",

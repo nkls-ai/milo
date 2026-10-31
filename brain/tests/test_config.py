@@ -42,7 +42,7 @@ def test_on_a_mac_the_template_gets_todays_engines_and_elsewhere_ones_without_th
     # ADR 0027: the template names no Mac engine; the platform fills in what it leaves out.
     mac = Config.load(TEMPLATE, MACOS)
     assert [mac.pluggable(s)[0] for s in ("stt", "tts", "connections", "chat")] == \
-        ["mlx_whisper", "omnivoice", "mac", "claude_live"]
+        ["mlx_whisper", "pocket", "mac", "claude_live"]
     assert (mac.tts.fallback, mac.embedder()[0]) == ("say", "mlx_e5")
     for platform in (LINUX, WINDOWS):
         other = Config.load(TEMPLATE, platform)
@@ -66,7 +66,7 @@ def test_what_config_toml_names_wins_over_the_platform():
     ("chat", "claude_live", "model", "claude-haiku-5-5"),
     ("harness", "codex", "reasoning_effort", "low"),
     ("stt", "mlx_whisper", "model", "mlx-community/whisper-large-v3-turbo"),
-    ("tts", "omnivoice", "steps", 6),
+    ("tts", "pocket", "voice", "stuart_bell"),
     ("audio", "sounddevice", "input_device", ""),
     ("dictation", "fillers", "languages", ["en", "de"]),
 ])

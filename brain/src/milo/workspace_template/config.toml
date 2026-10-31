@@ -162,10 +162,11 @@ language = ""                     # empty: auto-detect. "de" or "en" to pin it.
 vocabulary = "Milo, Codex, Claude" # names Whisper should spell right
 
 [tts]
-# omnivoice: on this Mac, a cloned voice, piece by piece. elevenlabs: a cloud voice that speaks a whole answer
-# as one, starting about 0.2 s after his first sentence is written; needs a key in ~/Milo/secrets/elevenlabs.key.
-# say: the Mac's own voice. Left out: omnivoice on a Mac, elevenlabs elsewhere.
-# use = "omnivoice"
+# pocket: on this Mac, Kyutai's Pocket TTS on the CPU, piece by piece, about 7x faster than real time, English
+# and German. omnivoice: on this Mac, a cloned voice on the GPU, slower. elevenlabs: a cloud voice that speaks a
+# whole answer as one, starting about 0.2 s after his first sentence is written; needs a key in
+# ~/Milo/secrets/elevenlabs.key. say: the Mac's own voice. Left out: pocket on a Mac, elevenlabs elsewhere.
+# use = "pocket"
 # Used if `use` fails to load, and while elevenlabs can't be reached. It loads only when needed: "say" at
 # once, "omnivoice" sounds more like Milo but takes a while and a few GB of memory the first time.
 # "" for none. Left out: say on a Mac, none elsewhere.
@@ -181,6 +182,11 @@ stability = 0.5                   # lower: livelier, higher: steadier
 similarity_boost = 0.75           # eleven_flash_v2_5 and other v2.5 models only
 speed = 1.0                       # 0.7 to 1.2, v2.5 models only
 language = ""                     # empty: follows the text, German and English mixed
+
+[tts.pocket]
+voice = "stuart_bell"             # a premade voice: stuart_bell, peter_yearsley, bill_boerst, alba, marius, ...
+english = "english"               # the model for English; "" for none. english_7m_2026-10 is smaller and faster
+german = "german"                 # the model for German; "" for none
 
 [tts.omnivoice]
 device = ""                       # empty: the GPU it finds (mps on a Mac, cuda), else cpu

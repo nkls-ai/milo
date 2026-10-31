@@ -41,7 +41,7 @@ Fetch = Callable[[str, dict[str, str]], tuple[int, str]]
 TALKING, TASKS, VOICE, HEARING, DICTATION = "Talking", "Tasks", "Milo's voice", "Hearing you", "Dictation"
 
 CLAUDE_PLANS = {"max": "Max", "pro": "Pro", "team": "Team", "enterprise": "Enterprise", "free": "Free"}
-LOCAL_VOICES = {"omnivoice": "OmniVoice", "say": "macOS voice"}
+LOCAL_VOICES = {"pocket": "Pocket TTS", "omnivoice": "OmniVoice", "say": "macOS voice"}
 
 
 class CliAccounts:
