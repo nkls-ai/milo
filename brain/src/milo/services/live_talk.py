@@ -25,6 +25,7 @@ from .memory import Recalled, TurnMemory
 from .reply_stream import ActRequest, ReplyParser
 from .screen import look_prompt
 from .speaker import Speaker, Utterance
+from .tag_policy import TagPolicy, policy
 from .talk_prompt import NAME_IT, PromptParts, system_prompt, untrusted, update_prompt
 from .transcript import Transcript, unrecorded
 from .ui_state import UiState
@@ -45,27 +46,6 @@ HOLD_MAX_S = 330.0  # a held reply is dropped after this: longer than the longes
 
 QUESTION_CHARS = 80
 _FIRST_SENTENCE = re.compile(r"(?<=[.!?;:])\s")
-_WORK = re.compile(r"\b((fix|fill|put|add|make|change|update|correct|write|enter|insert|sort|format|create|build|"
-                   r"finish|complete|edit|move|rename|copy|paste|replace|open|go|show|play|send|remind|check|find|"
-                   r"summari[sz]e|start|stop|set|take)(es|s|ed|d|ing)?|"
-                   r"(mach|füll|änder|korrigier|trag|schreib|erstell|sortier|formatier|bearbeit|füg|erledig|"
-                   r"kopier|ersetz|verschieb|benenn|öffne|zeig|spiel|schick|erinner|stell)\w*)\b", re.IGNORECASE)
-_QUESTION = re.compile(r"^\s*(what|why|how|who|whom|whose|where|when|which|is|are|was|were|does|did|do|has|have|"
-                       r"was|warum|wieso|weshalb|wie|wer|wo|wann|welche\w*|ist|sind|hat|haben)\b", re.IGNORECASE)
-
-
-_PLEASE = re.compile(r"^\s*(?:(?:yes|yeah|ok|okay|please|so|and|ja|bitte|also|und)\b[\s,.!]*)*"
-                     r"(?:(?:can|could|would|will) you|(?:kannst|könntest|würdest) du)\b", re.IGNORECASE)
-
-
-def asks_for_work(text: str) -> bool:
-    """Whether the user's own words ask Milo to do something, not only to look or explain: "fix this sheet",
-    "yes, open Chrome", "can you summarize the PDF", "füll das aus". "Can you …" and "kannst du …" with such a
-    verb are requests. A question ("what is this?", "why is it red?", "can you see my screen?") never is. In auto
-    mode only then may a task from the reply to what he saw start without a question."""
-    if not _WORK.search(text):
-        return False
-    return bool(_PLEASE.search(text)) or not _QUESTION.search(text)
 _PLAIN = ((re.compile(r"\s+(on|in) the user's (Mac|computer)\b", re.I), ""),
           (re.compile(r"\s+for the user\b", re.I), ""),
           (re.compile(r"\bthe user's\b", re.I), "your"),
@@ -428,6 +408,7 @@ class LiveTalk:
             # Another person's line in <today> stays in the conversation, so later turns count as outside too.
             self._tainted = self._tainted or bool(notes) or bool(meeting) or outside or not recalled.trusted
             self._saw_screen = self._saw_screen or screen
+            rule = self._policy(now=screen or outside)
             self._streaming = True
             blocks = [*earlier, *notes, recalled.block, *([meeting] if meeting else []), today]
             async for delta in self._model.turn(self._prompt(text, blocks, name=tags and not screen), images):
@@ -437,13 +418,13 @@ class LiveTalk:
                         self._looking(False)  # he has seen it and starts to answer
                 speech = parser.feed(delta)
                 if tags and len(parser.opens) > opened:
-                    held += self._open_now(parser.opens[opened:], screen=screen or outside)
+                    held += self._open_now(parser.opens[opened:], rule)
                     opened = len(parser.opens)
                 if tags and len(parser.acts) > acted:
-                    self._act_now(parser.acts[acted:], screen=screen or outside)
+                    self._act_now(parser.acts[acted:], rule)
                     acted = len(parser.acts)
                 if tags and len(parser.writes) > wrote:
-                    self._write_now(parser.writes[wrote:], screen=screen or outside)
+                    self._write_now(parser.writes[wrote:], rule)
                     wrote = len(parser.writes)
                 if speak and utterance is None and parser.emotion is not None:
                     utterance = (self._backchannel.utterance(parser.emotion) if self._backchannel is not None
@@ -482,11 +463,11 @@ class LiveTalk:
         self._last_turn_at = self._clock.monotonic()
         rest = parser.finish()
         if tags and len(parser.opens) > opened:  # an unclosed tag at the very end
-            held += self._open_now(parser.opens[opened:], screen=screen or outside)
+            held += self._open_now(parser.opens[opened:], rule)
         if tags and len(parser.acts) > acted:
-            self._act_now(parser.acts[acted:], screen=screen or outside)
+            self._act_now(parser.acts[acted:], rule)
         if tags and len(parser.writes) > wrote:
-            self._write_now(parser.writes[wrote:], screen=screen or outside)
+            self._write_now(parser.writes[wrote:], rule)
         if rest:
             shown = self._show(shown, parser, rest)
         self._end_reply(shown, parser)
@@ -495,7 +476,7 @@ class LiveTalk:
         if tags:
             if parser.title:
                 self._transcript.titled(parser.title)
-            self._apply(parser, screen=screen or outside, held=held, remember=not screen)
+            self._apply(parser, rule, held=held, remember=not screen)
             self._take_back(parser)
         if not speak:
             if parser.spoken.strip():
@@ -609,7 +590,13 @@ class LiveTalk:
         return await self._memory.before_turn(text, self._context.app, outside=outside,
                                               at_mac=self._via in ("voice", "typed"))
 
-    def _open_now(self, requests: Sequence[OpenRequest], *, screen: bool) -> list[OpenRequest]:
+    def _policy(self, *, now: bool) -> TagPolicy:
+        """The rules for this reply's tags (tag_policy). `now`: the message being answered carries outside text."""
+        auto = self._approvals is not None and self._approvals.permits.ask == "auto"
+        return policy(tainted=self._tainted, saw_screen=self._saw_screen, now=now, auto=auto, via=self._via,
+                      request=self._request)
+
+    def _open_now(self, requests: Sequence[OpenRequest], rule: TagPolicy) -> list[OpenRequest]:
         """Open what the reply's <open> tags name, while the reply still streams, so the page is up by the time
         Milo has said "Opening YouTube in Chrome". An app always opens: that changes nothing. An address or a file
         opens at once when the user's own words named it ("go on YouTube") or the conversation read no outside
@@ -619,30 +606,29 @@ class LiveTalk:
             if requests:
                 log.info("ignoring %d <open> tag(s): nothing to open them with", len(requests))
             return []
-        outside = self._tainted or screen or self._saw_screen
         held = []
         for request in requests:
-            if (request.url or request.path) and outside and not named_by(request, self._request):
+            if (request.url or request.path) and rule.open_outside and not named_by(request, self._request):
                 held.append(request)
                 continue
             self._start_open(request)
         return held
 
-    def _act_now(self, acts: Sequence[ActRequest], *, screen: bool) -> None:
+    def _act_now(self, acts: Sequence[ActRequest], rule: TagPolicy) -> None:
         """Start the reply's act tags while it still streams, like <open> (ADR 0029). An act follows the <reminder>
         rule: after outside text it asks, and its question waits for the reply to end."""
         if self._quick is None:
             log.info("ignoring %d act tag(s): quick actions are off", len(acts))
             return
-        self._quick.start(acts, outside=self._tainted or screen, via=self._via)
+        self._quick.start(acts, outside=rule.act_outside, via=self._via)
 
-    def _write_now(self, texts: Sequence[str], *, screen: bool) -> None:
+    def _write_now(self, texts: Sequence[str], rule: TagPolicy) -> None:
         """Paste what <write> wrote the moment its tag closes (ADR 0033). After outside text it goes in only when the
         user's own words asked for the writing; Writer decides that from them."""
         if self._writer is None:
             log.info("ignoring %d <write> tag(s): nothing to paste them with", len(texts))
             return
-        self._writer.start(texts, outside=self._tainted or screen or self._saw_screen, request=self._request,
+        self._writer.start(texts, outside=rule.write_outside, request=self._request,
                            via=self._via)
 
     def _start_open(self, request: OpenRequest) -> None:
@@ -650,7 +636,7 @@ class LiveTalk:
         self._opening.add(task)
         task.add_done_callback(self._opening.discard)
 
-    def _apply(self, parser: ReplyParser, *, screen: bool = False, held: Sequence[OpenRequest] = (),
+    def _apply(self, parser: ReplyParser, rule: TagPolicy, *, held: Sequence[OpenRequest] = (),
                remember: bool = True) -> None:
         """Save facts and reminders, start tasks the reply asked for, and start a look.
 
@@ -662,10 +648,8 @@ class LiveTalk:
         never asks. Without a way to ask, tags that need a yes are dropped. A reply to screen data never
         remembers facts: those come from the user, never from the screen.
 
-        `screen`: the message being answered carried outside text: screen data, or other people's words in the
-        <today> block (an invite, ADR 0029), which don't stay in the conversation's taint. Every tag in the reply
-        follows the rule for a reply to the screen. `remember=False`: it was screen data, which never becomes a fact
-        and doesn't look again.
+        `rule`: what this reply's tags may do without a yes (tag_policy). `remember=False`: it was screen data,
+        which never becomes a fact and doesn't look again.
         """
         if not remember and parser.remembers:
             log.info("not remembering %d fact(s) from a turn with screen data", len(parser.remembers))
@@ -674,19 +658,7 @@ class LiveTalk:
             self._looking(True)
             self._ui.thinking = True
             self._look_started = asyncio.create_task(self._eyes.look("window"))
-        # Auto mode (ADR 0022, 0024): at the Mac a task never asks to start. When the user's own words asked for
-        # work ("fix this sheet", "mach die Mappe rot") that request is the yes for the whole task, even after Milo
-        # read the screen or other outside text. Otherwise ("what's this?", "thanks" after a task result) the task
-        # still starts, since reading never asks, but runs careful: before it changes anything it asks, so text
-        # Milo read can't turn into changes nobody asked for. Messages from the phone keep the rules below.
-        auto = self._approvals is not None and self._approvals.permits.ask == "auto"
-        at_mac = auto and self._via in ("voice", "typed")
-        own_work = at_mac and asks_for_work(self._request)
-        ask_tasks = (self._tainted or screen) and not at_mac
-        # A routine is a recipe that may do a lot unattended: outside text can't start one without a yes.
-        ask_routines = (self._tainted or screen) and not own_work
-        careful = (self._saw_screen or self._tainted or screen) and not own_work
-        user_asked = own_work or (not self._tainted and not screen)
+        careful, user_asked = rule.careful, rule.user_asked
         lang = self._language.code
         effects: list[tuple[str, str, Callable[[], None], bool]] = []
         for request in held:  # opening asks only here, for what outside text may have named (see _open_now)
@@ -694,26 +666,26 @@ class LiveTalk:
                             lambda request=request: self._start_open(request), True))
         for fact in parser.remembers if remember else ():
             effects.append((remember_question(fact, lang), "", lambda fact=fact: self._remember(fact),
-                            self._tainted or screen))
+                            rule.ask_remember))
         for due, what in parser.reminders:  # open reminders go into later system prompts: screen text asks too
             effects.append((remind_question(due, what, lang), "",
                             lambda due=due, what=what: self._remind(due, what, parser.spoken),
-                            self._tainted or screen))
+                            rule.ask_remind))
         for task in parser.tasks:
             question = task_question(task.description, title=task.title, language=lang)
             # The whole task shows under the short question in the window: the user approves all of it.
             detail = "" if question.rstrip("?") == task.description.rstrip(".?") else task.description
             effects.append((question, detail, lambda task=task: self._tasks.submit(
                 task.description, title=task.title, screen=task.screen, careful=careful, user_asked=user_asked,
-                language=lang), ask_tasks))
+                language=lang), rule.ask_tasks))
         for ref, change in parser.steers:  # a change to a task is a task: same rule
             question = task_question(say("talk.steer", lang, change=change))
             detail = change if question.endswith("…?") else ""
             effects.append((question, detail, lambda ref=ref, change=change: self._tasks.steer(
-                ref, change, careful=careful, user_asked=user_asked), ask_tasks))
+                ref, change, careful=careful, user_asked=user_asked), rule.ask_tasks))
         if self._routines is not None:  # a routine run is a task: same rule, unless the routine says otherwise
             for question, detail, apply, ask in self._routines.effects(parser.routines, careful=careful):
-                effects.append((question, detail, apply, ask_routines if ask is None else ask))
+                effects.append((question, detail, apply, rule.ask_routines if ask is None else ask))
         for ref in parser.stops:  # stopping is always safe
             self._tasks.stop(ref)
         for _, _, apply, ask in effects:

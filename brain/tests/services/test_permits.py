@@ -576,7 +576,7 @@ def test_scripts_that_reach_outside_the_open_sheet_ask_even_in_auto_mode(script)
     ("thanks", False), ("wie geht's?", False),
 ])
 def test_only_words_that_ask_for_work_let_a_task_from_a_look_start_unasked(text, work):
-    from milo.services.live_talk import asks_for_work
+    from milo.services.tag_policy import asks_for_work
 
     assert asks_for_work(text) is work
 
