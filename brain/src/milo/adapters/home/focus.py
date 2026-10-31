@@ -2,7 +2,8 @@
 
 macOS has no public way for an app to switch a Focus. Shortcuts' "Set Focus" action can, so Milo runs a shortcut:
 "Milo Do Not Disturb On" and "Milo Do Not Disturb Off" for Do Not Disturb, or the user's own for another Focus,
-found by its name ("Work Focus on", „Arbeit an“).
+found by its name, which says Focus ("Work Focus on", „Fokus Arbeit an“): a shortcut called only "Work on" could
+do anything, and a Focus never asks.
 
 Milo makes the two Do Not Disturb shortcuts himself when they are missing (`offer`): each is a one-action workflow
 written as a property list, signed with `shortcuts sign --mode anyone` (Apple's signing service, a few seconds) and
@@ -34,6 +35,7 @@ DND_MODE = "com.apple.donotdisturb.mode.default"
 _DND_NAMES = frozenset({"", "dnd", "do not disturb", "nicht stören", "nicht stoeren", "bitte nicht stören"})
 _ON = frozenset({"on", "an", "ein", "start", "einschalten", "anschalten"})
 _OFF = frozenset({"off", "aus", "stop", "end", "ausschalten", "beenden"})
+_FOCUS_WORDS = frozenset({"focus", "fokus"})
 _FILLER = frozenset({"focus", "fokus", "mode", "modus", "turn", "switch", "set", "milo", "schalte", "the", "der",
                      "den", "die"})
 
@@ -92,15 +94,15 @@ class ShortcutsFocus:
         return True
 
     def _find(self, on: bool, name: str) -> str | None:
-        """The shortcut that turns `name` on or off: Milo's own for Do Not Disturb, else the user's whose name holds
-        the Focus's words and an on or off word."""
+        """The shortcut that turns `name` on or off: Milo's own for Do Not Disturb, else the user's whose name says
+        Focus, the Focus's words and on or off, and nothing else."""
         listed = [n.strip() for n in self._run(["shortcuts", "list"], LIST_TIMEOUT_S).splitlines() if n.strip()]
         if _is_dnd(name) and OWN[on] in listed:
             return OWN[on]
         switch = _ON if on else _OFF
         for shortcut in listed:
             words = _words(shortcut)
-            if not set(words) & switch:
+            if not set(words) & switch or not set(words) & _FOCUS_WORDS:
                 continue
             rest = [w for w in words if w not in _FILLER and w not in _ON | _OFF]
             if (_is_dnd(name) and _is_dnd(" ".join(rest))) or (not _is_dnd(name) and rest == [

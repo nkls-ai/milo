@@ -3,7 +3,8 @@
 A Mac app can't reach HomeKit: that needs an entitlement Apple gives only to apps it reviews. Shortcuts can, so the
 user's Home scenes and devices come in as shortcuts in one folder ("Milo Home", `[home.apple_home] folder`), listed
 with `shortcuts list --folder-name`. Without that folder, the user's shortcuts whose names say something about the
-home (lights, heating, blinds, a scene, a lock...) count.
+home (lights, heating, blinds, a scene, a lock...) count, but ask like any shortcut: only the folder says the user
+meant them for this.
 
 A shortcut's name says what it does. "Living room lights on" and "Living room lights off" are one device, "Living room
 lights", that can go on and off; "Wohnzimmer Licht an" and „Licht aus“ too. "Lock front door", "Garage open",
@@ -133,7 +134,7 @@ class AppleHome:
 
     def _devices(self) -> tuple[dict[str, Device], dict[tuple[str, str], str]]:
         """The devices by id (their name, folded), and the shortcut for each (device, action)."""
-        names = self._list()
+        names, chosen = self._list()
         actions: dict[str, dict[str, str]] = {}
         shown: dict[str, str] = {}
         for shortcut in names:
@@ -149,19 +150,20 @@ class AppleHome:
                 kind = "scene"
             if kind == "scene":
                 does = {"run": next(iter(does.values()))}
-            devices[key] = Device(key, shown[key], kind, does=tuple(does))
+            devices[key] = Device(key, shown[key], kind, does=tuple(does), known=chosen)
             shortcuts.update({(key, do): name for do, name in does.items()})
         return devices, shortcuts
 
-    def _list(self) -> list[str]:
-        """The shortcuts in the folder; without the folder, the user's shortcuts whose names are about the home. A
-        folder that isn't there lists as empty, so the folders are asked first."""
+    def _list(self) -> tuple[list[str], bool]:
+        """The shortcuts in the folder, and True: the user put them there for this. Without the folder, the user's
+        shortcuts whose names are about the home, and False: a name can say "lights" and do anything, so those ask
+        like any shortcut. A folder that isn't there lists as empty, so the folders are asked first."""
         folders = self._run(["shortcuts", "list", "--folders"], LIST_TIMEOUT_S).splitlines()
         if any(f.strip().casefold() == self.folder.casefold() for f in folders):
             listed = self._run(["shortcuts", "list", "--folder-name", self.folder], LIST_TIMEOUT_S)
-            return [n.strip() for n in listed.splitlines() if n.strip()]
+            return [n.strip() for n in listed.splitlines() if n.strip()], True
         listed = self._run(["shortcuts", "list"], LIST_TIMEOUT_S)
-        return [n.strip() for n in listed.splitlines() if n.strip() and _homeish(n.strip())]
+        return [n.strip() for n in listed.splitlines() if n.strip() and _homeish(n.strip())], False
 
     def _shortcut(self, name: str, given: str) -> str:
         with tempfile.TemporaryDirectory(prefix="milo-home-") as tmp:

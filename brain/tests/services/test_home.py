@@ -186,7 +186,7 @@ def test_a_focus_without_its_shortcut_offers_it_or_says_how_to_make_one(tmp_path
     asyncio.run(say(s, "schalte bitte nicht stören für mich an", "und jetzt bitte den Fokus Arbeit an"))
     assert world(s)["focus_offers"] == 2
     assert said(s).startswith("Für Nicht stören brauche ich zwei kleine Kurzbefehle. Ich habe sie geöffnet")
-    assert "Für Arbeit brauche ich Kurzbefehle: leg einen namens „Arbeit an“" in said(s)
+    assert "Für Arbeit brauche ich Kurzbefehle: leg einen namens „Fokus Arbeit an“" in said(s)
     assert cards(s) == []
 
 
@@ -198,3 +198,11 @@ def test_a_scene_that_unlocks_the_door_asks_like_the_lock_and_so_does_its_undo(t
     assert ask.question == "Start the scene “Welcome home”?"
     asyncio.run(answer(s, "undo that", False))
     assert s.sink.of(Confirm)[-1].question == "Lock “Front door”?", "putting the lock back asks too"
+
+
+def test_a_script_milo_cant_see_into_asks_like_a_shortcut(tmp_path):
+    home = [*HOME, {"id": "script.leave", "name": "Leaving home", "kind": "scene", "known": False}]
+    s = stack(tmp_path, ['[happy] <home scene="Leaving home"/>'], world={"home": home})
+    ask = asyncio.run(answer(s, "leaving home", False))
+    assert ask.question == "Start the scene “Leaving home”?"
+    assert world(s)["home_runs"] == []

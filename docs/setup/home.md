@@ -18,7 +18,7 @@ He uses one home system, set in `~/Milo/config.toml` under `[home]`. With `use =
 
 4. Menu bar item › Restart brain.
 
-Milo sees lights, switches, scenes, scripts, heating (climate), fans, covers (blinds, and garage doors or gates by their device class), locks and alarm panels, and the rooms (areas) they are in. The names he uses are the names Home Assistant shows. An alarm panel that wants a code can't be armed or disarmed by Milo.
+Milo sees lights, switches, scenes, scripts (they ask first, like a shortcut: Milo can't see what they do; so does a scene that names no devices), heating (climate), fans, covers (blinds, and garage doors or gates by their device class), locks and alarm panels, and the rooms (areas) they are in. The names he uses are the names Home Assistant shows. An alarm panel that wants a code can't be armed or disarmed by Milo.
 
 ## Apple Home, through Shortcuts
 
@@ -33,7 +33,7 @@ A Mac app can't reach Apple Home directly: Apple keeps that for apps it reviews.
    - A level: "Heizung set" or "Desk lamp dim", whose shortcut takes the number Milo passes as its input (use **Shortcut Input** in the action).
 3. That's it: Milo reads the folder when you ask. No restart needed.
 
-A shortcut whose name says lock, door, garage, gate or alarm (or Schloss, Tür, Tor, Alarm) always asks first, whatever it does. Without the "Milo Home" folder, Milo looks at all your shortcuts and takes the ones whose names are about the home.
+A shortcut whose name says lock, door, garage, gate or alarm (or Schloss, Tür, Tor, Alarm) always asks first, whatever it does. Without the "Milo Home" folder, Milo looks at all your shortcuts and takes the ones whose names are about the home, but each of those asks first like any shortcut: a name can say "lights" and do anything. The folder is how you tell Milo they are what they say.
 
 Shortcuts can't tell Milo whether a light is on, so Undo runs the opposite shortcut ("… off" after "… on"). A scene has no Undo there.
 
@@ -44,7 +44,7 @@ Shortcuts can't tell Milo whether a light is on, so Undo runs the opposite short
 macOS has no way for an app to switch a Focus except through Shortcuts' **Set Focus** action.
 
 - **Do Not Disturb:** the first time, Milo makes two shortcuts himself ("Milo Do Not Disturb On" and "… Off") and opens them. Click **Add Shortcut** on each, then ask again.
-- **Another Focus** (Work, Sleep, your own): make two shortcuts with the Set Focus action, named "Work Focus on" and "Work Focus off" (or „Arbeit an“ / „Arbeit aus“). Milo finds them by the Focus's name and "on" or "off".
+- **Another Focus** (Work, Sleep, your own): make two shortcuts with the Set Focus action, named "Work Focus on" and "Work Focus off" (or „Fokus Arbeit an“ / „Fokus Arbeit aus“). Milo finds them by the word Focus, the Focus's name and "on" or "off", nothing else: a Focus never asks, so a shortcut called just "Work on" isn't taken.
 
 ## Switches
 

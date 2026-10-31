@@ -167,7 +167,8 @@ def _device(s: Mapping[str, Any], rooms: Mapping[str, str]) -> Device | None:
     members = attrs.get("entity_id") if kind == "scene" and isinstance(attrs.get("entity_id"), list) else []
     return Device(id, str(attrs.get("friendly_name") or id.split(".", 1)[-1].replace("_", " ")), kind,
                   room=rooms.get(id, ""), state=state, level=level, does=_DOES[kind],
-                  members=tuple(str(m) for m in members))
+                  members=tuple(str(m) for m in members),
+                  known=domain != "script" and (kind != "scene" or bool(members)))
 
 
 def _service(domain: str, do: str, value: str) -> tuple[str, dict]:

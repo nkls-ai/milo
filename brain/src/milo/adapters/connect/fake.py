@@ -313,7 +313,7 @@ class FakeHome:
 def _fake_device(d: dict) -> Device:
     return Device(d["id"], d["name"], d.get("kind", "switch"), room=d.get("room", ""), state=d.get("state", ""),
                   level=d.get("level"), does=tuple(d.get("does") or _FAKE_DOES.get(d.get("kind", ""), ("on", "off"))),
-                  members=tuple(d.get("members", [])))
+                  members=tuple(d.get("members", [])), known=d.get("known", True))
 
 
 _FAKE_DOES = {"light": ("on", "off", "toggle", "set"), "scene": ("run",), "climate": ("on", "off", "set", "mode"),

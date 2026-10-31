@@ -43,10 +43,10 @@ LINES: dict[str, dict[str, str]] = {
                           "each, then ask me again.",
                     "de": "Für {title} brauche ich zwei kleine Kurzbefehle. Ich habe sie geöffnet: klick bei beiden "
                           "auf „Kurzbefehl hinzufügen“, dann frag mich noch mal."},
-    "focus_make": {"en": "To switch {title} I need your shortcuts for it: make one called “{title} on” with the Set "
-                         "Focus action, and one called “{title} off”.",
-                   "de": "Für {title} brauche ich Kurzbefehle: leg einen namens „{title} an“ mit der Aktion „Fokus "
-                         "festlegen“ an, und einen namens „{title} aus“."},
+    "focus_make": {"en": "To switch {title} I need your shortcuts for it: make one called “{title} Focus on” with "
+                         "the Set Focus action, and one called “{title} Focus off”.",
+                   "de": "Für {title} brauche ich Kurzbefehle: leg einen namens „Fokus {title} an“ mit der Aktion "
+                         "„Fokus festlegen“ an, und einen namens „Fokus {title} aus“."},
 }
 
 QUESTIONS: dict[str, dict[str, str]] = {

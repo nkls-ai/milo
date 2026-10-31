@@ -66,6 +66,7 @@ def test_home_assistant_devices_get_kinds_rooms_levels_and_scene_members(tmp_pat
     assert devices["cover.garage"].kind == "garage" and devices["cover.blinds"].kind == "cover"
     assert devices["lock.front"].kind == "lock" and devices["alarm_control_panel.home"].kind == "alarm"
     assert devices["climate.living"].level == 20 and devices["scene.movie"].members == ("light.kitchen",)
+    assert devices["scene.movie"].known and devices["light.kitchen"].known
 
 
 def test_home_assistant_acts_through_its_services(tmp_path):
@@ -143,18 +144,19 @@ def test_without_the_folder_only_shortcuts_about_the_home_count():
     home = AppleHome(run=FakeShortcuts(["Kitchen light on", "Kitchen light off", "Send invoice", "Make GIF",
                                         "Good night scene"]))
     assert sorted(d.name for d in home.devices()) == ["Good night scene", "Kitchen light"]
+    assert not any(d.known for d in home.devices()), "outside the folder they only sound like home ones: they ask"
 
 
 def test_focus_runs_milos_own_shortcut_or_the_users_for_another_focus():
-    runner = FakeShortcuts([OWN[True], OWN[False], "Work Focus on", "Arbeit aus"])
+    runner = FakeShortcuts([OWN[True], OWN[False], "Work Focus on", "Fokus Arbeit aus", "Sleep on"])
     focus = ShortcutsFocus(Path("/nonexistent"), run=runner)
     focus.set(True)
     focus.set(False, "Do Not Disturb")
     focus.set(True, "Work")
     focus.set(False, "Arbeit")
-    assert [r[0] for r in runner.ran] == [OWN[True], OWN[False], "Work Focus on", "Arbeit aus"]
+    assert [r[0] for r in runner.ran] == [OWN[True], OWN[False], "Work Focus on", "Fokus Arbeit aus"]
     with pytest.raises(NotSetUp):
-        focus.set(True, "Sleep")
+        focus.set(True, "Sleep")  # "Sleep on" doesn't say Focus: it could do anything
 
 
 def test_focus_makes_signs_and_opens_its_two_shortcuts_once(tmp_path):

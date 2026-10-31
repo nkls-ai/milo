@@ -825,8 +825,10 @@ class QuickActions:
             if do not in d.does:
                 raise Problem(say("home.why_cant", lang, title=inert(d.name, 50)))
         by_id = {d.id: d for d in devices}
-        # A scene that sets a lock, a garage door or the alarm is one too: it asks like them.
+        # A scene that sets a lock, a garage door or the alarm is one too: it asks like them. One Milo can't see
+        # into (a script, a shortcut that only sounds like a home one) asks like any shortcut.
         secure = kind in SECURE or any(by_id[m].kind in SECURE for d in hits for m in d.members if m in by_id)
+        unknown = not secure and not all(d.known for d in hits)
 
         async def run() -> _Done:
             reverse = []
@@ -845,8 +847,9 @@ class QuickActions:
                          reverse=reverse)
 
         spoken = (f"{value}°" if kind == "climate" else f"{value} %") if do == "set" else ""
-        return _Plan("lock" if secure else "change",
-                     say(f"home.ask.{do}", lang, title=inert(title, 50), value=spoken), None, run, light=not secure)
+        return _Plan("lock" if secure else "shortcut" if unknown else "change",
+                     say(f"home.ask.{do}", lang, title=inert(title, 50), value=spoken), None, run,
+                     light=not secure and not unknown)
 
     def _focus(self, act: ActRequest, lang: str) -> _Plan:
         """Do Not Disturb or another Focus on or off (ADR 0037). Never asked: it only keeps things quiet, and Undo

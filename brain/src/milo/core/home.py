@@ -39,6 +39,9 @@ class Device:
     """What `Home.act` can do with it, from DOES."""
     members: tuple[str, ...] = ()
     """A scene: the ids of the devices it sets, so Undo can put them back as they were."""
+    known: bool = True
+    """False: Milo can't tell what it does (a Home Assistant script or a scene that names no devices, a shortcut
+    outside the home folder that only sounds like a home one). It asks like any shortcut, every time."""
 
 
 class NotSetUp(ToolError):
