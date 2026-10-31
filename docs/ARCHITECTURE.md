@@ -86,6 +86,21 @@ Rules that keep the parts swappable:
 5. **Blocking work runs on dedicated single-thread executors.** STT gets one thread and TTS another, so MLX and PyTorch each stay on their own thread and the event loop never blocks.
 6. **"Is the user busy?" has one answer.** `services/attention.py` holds the facts (a turn runs, the mic records, Milo speaks, a question waits, a helper works) and named questions over them: `in_conversation`, `using_voice`, `occupied`, `at_work`, `private`, `user_speaking`. compose.py passes the question a service needs, never its own mix.
 
+## Portability
+
+Milo runs on macOS only, but the brain's core and the protocol must not depend on it, so a Windows or Linux app can drive the same brain later ([ADR 27](adr/0027-a-platform-boundary.md)). macOS belongs in brain adapters (picked by name, defaults per platform from `compose.py`) and in the app's adapters behind `app/Sources/MiloKit/Ports.swift`. On the wire go plain words, opaque ids and top-left global points, never native enums or key codes. `brain/tests/test_portability.py` reads every core module (`core`, `services`, `memory`, `proactive`, `connect`, `transport` and the top-level modules) and fails on a new macOS or POSIX coupling: AppleScript, bundle ids, macOS paths and commands, ⌘ keys, System Settings, Apple frameworks and apps, "Mac" in what the user or the model reads, `fcntl` and `AF_UNIX`, `sys.platform`. Its `ALLOWED` list holds today's 62 exceptions, each with its reason. It is the to-do list for a port, and it can only get shorter: a line that no longer matches fails too.
+
+For every new feature:
+
+- An OS call in the brain goes into an adapter behind a port. Services get the port.
+- Core strings the user or the model reads don't say "Mac", "⌘" or "System Settings". Use neutral words, or let the app write its platform's text, as it does for permission errors.
+- An app the brain must know goes in one place under a canonical key (today `core/types._BUNDLES`), not as a bundle id in a service.
+- A worker tool is named for what it does, not for the API behind it (`run_script` with a language, not more AppleScript-only tools).
+- A protocol field carries plain words (`button`, not `AXButton`), opaque ids the brain only echoes back (`pid`, `window`) or top-left global points.
+- Key combos and risk words are data that say what a key or a label means on that platform.
+- In the app, logic goes in `MiloKit` files that import only Foundation or Combine. AppKit, AX, CGEvent and ScreenCaptureKit go in `Adapters/` or `AppKit/`.
+- An Apple-only Python package gets a `sys_platform == 'darwin'` marker and is imported only inside its adapter's methods.
+
 ## Cross-module interfaces
 
 Beyond `milo.core.ports`, these entry points are fixed:
