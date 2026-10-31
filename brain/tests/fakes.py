@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from collections import deque
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -990,3 +991,8 @@ def json_copy(data: dict) -> dict:
     import json
 
     return json.loads(json.dumps(data))
+
+
+def without_undo_id(prompt: str) -> str:
+    """A worker's prompt without the line that tells it its task id for undo points (ADR 0024)."""
+    return re.sub(r"\n\n\(Task id for undo_point and undo_note: [\w-]+\.\)$", "", prompt)

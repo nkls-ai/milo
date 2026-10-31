@@ -36,6 +36,7 @@ OUTBOUND = {
     "confirm_done": lambda m: ev.ConfirmDone(m["id"], m["answer"]),
     "app_request": lambda m: ev.AppRequest(m["id"], m["op"], m["args"]),
     "helpers": lambda m: ev.Helpers(m["helpers"]),
+    "undo_points": lambda m: ev.UndoPoints(m["points"]),
     "hands_borrow": lambda m: ev.HandsBorrow(m["on"], m["what"]),
     "facts": lambda m: ev.Facts(m["facts"]),
     "routines": lambda m: ev.Routines(m["routines"], m["drafts"]),

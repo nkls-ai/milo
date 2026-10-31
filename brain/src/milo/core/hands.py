@@ -122,7 +122,9 @@ TOOLS: tuple[Tool, ...] = (
          "Safari, Finder). For tables use sheet_write, for a new text document write_document; for mail, notes, "
          "calendar, reminders and files use Milo's own tools if you have them. Each script waits for the "
          "user's yes, so do the whole job in one script rather than many small ones. Scripts about passwords "
-         "never run. Up to 30 s.",
+         "never run. Up to 30 s. Milo keeps a copy of an Excel workbook before your first change, so the user can "
+         "undo it; for other apps call undo_note first with what you change and how it was. Never save, open or "
+         "export to a new place from a script: the app would stop and ask the user.",
          {"script": _s("The AppleScript source.")}, ("script",), acts=True),
     Tool("screenshot", "Take a screenshot of the display with the front window. Slow and costly: use it only "
          "when window_text and ax_tree can't tell you enough. click and scroll take x and y in this "

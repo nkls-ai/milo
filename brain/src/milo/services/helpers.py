@@ -83,6 +83,8 @@ class Helper:
     instructions: str = ""
     """What the worker gets instead of the description, when that is long: a routine's recipe. The
     description stays short, for the Milo window."""
+    undo: str = ""
+    """"ready" once what it changed can be taken back, "undoing", "undone"; "" for nothing to undo (ADR 0024)."""
     on_finish: Callable[[Helper], None] | None = field(default=None, compare=False, repr=False)
     """Called once when it ends, however it ends (a routine's run log)."""
 
@@ -190,8 +192,13 @@ def board(helpers: list[Helper], now: float, inert, installed=None) -> str:
             head += f". {steps} so far, now {', before that '.join(recent)}"
         if h.amendments:
             head += f". Changed by the user: {inert('; '.join(h.amendments), 200)}"
+        if not h.active and h.undo in _UNDO_WORDS:
+            head += f". {_UNDO_WORDS[h.undo]}"
         lines.append(head)
     return "<helpers>\n" + "\n".join(lines) + "\n</helpers>"
+
+
+_UNDO_WORDS = {"ready": "What it changed can be undone", "undoing": "Being undone", "undone": "Undone"}
 
 
 def _state(h: Helper, now: float) -> str:

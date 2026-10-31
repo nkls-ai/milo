@@ -40,6 +40,7 @@
     {"type": "confirm_done", "id": "7d8e9f0a1b2c", "answer": "no"},
     {"type": "app_request", "id": "a41f", "op": "calendar.add_event", "args": {"title": "Doctor", "start": "2026-11-05T15:00:00", "end": "2026-11-05T16:00:00"}},
     {"type": "helpers", "helpers": [{"id": "c0ffee12ab34", "title": "Budget table in Excel", "status": "working", "step": "Typing “Monday” in Excel", "progress": 0.4}, {"id": "d00d12ab3456", "title": "Flights to Lisbon", "status": "queued", "step": "Waiting for a free helper"}, {"id": "e1e1e1e1e1e1", "title": "Sort downloads", "status": "needs_you", "step": "Waiting for your answer"}, {"id": "f2f2f2f2f2f2", "title": "Dentist email", "status": "done", "step": ""}]},
+    {"type": "undo_points", "points": [{"id": "f2f2f2f2f2f2", "title": "Excel red", "state": "ready", "said": "Done: every cell of Book2 is red now."}, {"id": "a1b2c3d4e5f6", "title": "Rent 950", "state": "undone", "said": "I changed the rent to 950."}, {"id": "b2c3d4e5f6a7", "title": "Letter to Anna", "state": "undoing", "said": ""}]},
     {"type": "hands_borrow", "on": true, "what": "mouse"},
     {"type": "facts", "facts": [
       {"id": "01JBF6Z3Q8M2X4K7N9P0R5T6VW", "text": "The user's name is Niklas.", "topic": "basics", "since": "2026-10-30T09:12:00", "pinned": true},
@@ -110,6 +111,7 @@
     {"type": "app_response", "id": "a41f", "ok": true, "result": {"id": "E1F2-77", "title": "Doctor", "start": "2026-11-05T15:00:00", "end": "2026-11-05T16:00:00", "calendar": "Home"}},
     {"type": "app_response", "id": "a42f", "ok": false, "error": "Milo isn't allowed to use your calendar. Turn it on in System Settings › Privacy & Security › Calendars."},
     {"type": "stop_helper", "id": "c0ffee12ab34"},
+    {"type": "undo_task", "id": "f2f2f2f2f2f2"},
     {"type": "stop_all"},
     {"type": "hands_result", "id": "hands-7", "ok": false, "result": {"borrow": "mouse"}, "error": "Excel doesn't take clicks in the background."},
     {"type": "get_facts"},

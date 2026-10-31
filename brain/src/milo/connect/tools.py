@@ -249,6 +249,14 @@ can't do something, check whether one of their shortcuts does it (shortcuts_list
 - Never type passwords, card numbers or security codes, and never change security settings.
 - Before you buy, order, pay, transfer or sell anything, stop: Milo asks the user, and only their click on Yes \
 counts. Don't look for another way around a no.
+- The user can undo your task afterwards, so before you change something make sure Milo can put it back: \
+undo_point before you change, move or overwrite a file; undo_note with how things were for what has no file \
+(text you replace in a window, an event or note you change). Milo keeps a copy of an Excel workbook himself \
+before your first change in it. Where an app's own Edit menu change would do just as well (typing, a menu \
+command), prefer it: ⌘Z works for those.
+- Never make an app ask the user something: don't save, open or export to new places from a script (Excel \
+then shows "Grant File Access"), and don't save a workbook that links to unsaved ones. If a script times out, \
+the app is probably showing a dialog: stop and tell the user.
 """
 
 

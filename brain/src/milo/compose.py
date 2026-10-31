@@ -53,6 +53,7 @@ from .services.task_runner import TaskRunner
 from .services.tool_requests import ToolRequests
 from .services.transcript import NO_TRANSCRIPT, Transcript
 from .services.ui_state import UiState
+from .services.undo import Undo
 from .services.updates import LiveSettings, Milestones, Updates
 from .settings import Settings
 from .transport.hands_socket import HandsSocketServer
@@ -270,14 +271,19 @@ def _presence(p: Parts) -> None:
 def _helpers(p: Parts) -> None:
     """Computer use, the helpers that do the real work, and the routines they follow."""
     from .memory.routines import JsonStateFile, MarkdownRoutineBook
+    from .memory.undo_shelf import FileUndoShelf
 
     config, mem, workspace = p.config, p.mem, p.workspace
+    # Takes back what a task changed (ADR 0024); the orchestrator, built below, finds its helpers.
+    p.undo = undo = Undo(FileUndoShelf(workspace.undo_dir, Path.home()), AppHands(p.bridge), p.ui, p.clock,
+                         confirm=p.approvals, speaker=p.speaker, helpers=p.later("helpers"), transcript=p.transcript,
+                         quiet=p.attention.in_conversation)
     p.hands = p.hands_server = None
     if config.hands.enabled:
         # The questions reach the orchestrator, built below, only once a helper runs.
         p.hands = HandsService(AppHands(p.bridge), HelperQuestions(p.approvals, p.later("helpers"), screen=True),
                                p.ui, transcript=p.transcript, applescript=config.hands.applescript,
-                               locale=_mac_locale(), protected=workspace.protected)
+                               locale=_mac_locale(), protected=workspace.protected, before_change=undo.before_change)
         p.hands_server = HandsSocketServer(workspace.hands_socket_path, p.hands.call)
     p.memory_requests = MemoryRequests(mem.memory, p.approvals, mem.profile.remember) if mem is not None else None
     p.eyes = AppEyes(p.bridge)
@@ -289,6 +295,8 @@ def _helpers(p: Parts) -> None:
                                        updates=p.updates, milestones=Milestones(), inert=untrusted)
     p.attention.attach(helpers=lambda: helpers.busy)
     helpers.on_done.append(lambda helper: p.permits.end(helper.id))  # an Allow lasts as long as its helper
+    helpers.on_done.append(undo.finished)
+    undo.expire()
     p.permits.user_asked = helpers.user_asked
     p.routines = None
     if config.routines.enabled:
@@ -353,7 +361,7 @@ def _talk(p: Parts) -> None:
         p.live_model, p.speaker, p.ui, p.context, p.clock, p.profile, p.reminders, p.ledger,
         _persona(p.workspace.persona_path), config.chat.conversation_idle_reset_s, p.helpers, p.transcript,
         eyes=p.eyes, approvals=p.approvals, memory=mem.turns if mem is not None else None,
-        backchannel=p.backchannel, routines=p.routines, meetings=p.meetings)
+        backchannel=p.backchannel, routines=p.routines, meetings=p.meetings, undo=p.undo)
     p.attention.attach(turn=lambda: live_talk.busy)
     p.helpers.on_result = live_talk.note
     p.updates.speak = live_talk.speak_update
@@ -411,7 +419,7 @@ def _tool_socket(p: Parts) -> None:
     questions = HelperQuestions(p.approvals, p.later("helpers"), screen=False)
     p.tool_server = ToolSocketServer(p.workspace.tools_socket_path,
                                      ToolRequests(questions, p.bridge, p.enabled, p.memory_requests,
-                                                  phone=p.messages, reminders=p.reminders).handle)
+                                                  phone=p.messages, reminders=p.reminders, undo=p.undo).handle)
 
 
 def _heartbeat(p: Parts) -> None:
@@ -493,7 +501,7 @@ def _brain(p: Parts) -> None:
                     approvals=p.approvals, bridge=p.bridge, hands=p.hands, screens=p.workspace.screens_dir,
                     helpers=p.helpers, memory=p.mem.memory if p.mem is not None else None, routines=p.routines,
                     settings=settings, messages=p.messages, meetings=p.meetings,
-                    conversations=p.conversations, usage=usage, corrections=corrections)
+                    conversations=p.conversations, usage=usage, corrections=corrections, undo=p.undo)
 
 
 BUILD_STEPS = (_workspace, _engines, _stores, _presence, _helpers, _meetings, _talk, _messages, _tool_socket,

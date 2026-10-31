@@ -31,6 +31,7 @@ def first_prompt(helper: Helper, *, no_screen: bool) -> str:
                      f"already: check before you redo anything.")
     if no_screen:
         parts.append(NO_SCREEN)
+    parts.append(f"(Task id for undo_point and undo_note: {helper.id}.)")
     return "\n\n".join(parts)
 
 

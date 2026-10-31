@@ -13,6 +13,7 @@ from .app_bridge import AppBridge, AppError
 from .approvals import Approvals
 from .memory_requests import MemoryRequests
 from .sharing import NotShareable
+from .undo import Undo
 
 log = logging.getLogger("milo.tool_requests")
 
@@ -62,13 +63,15 @@ class ToolRequests:
       from the arguments that go to the app, never taken from the caller.
     - `send_to_phone` {path, caption?}: send one file to the owner's phone. Always a `share`, so it asks first
       unless the user made sharing not ask; the question names the file and its size. Result: {sent}.
+    - `undo.point` {path, task?}: copy a file before a task changes it, so Undo can put it back (ADR 0024). `undo.note`
+      {text, task?}: how something was before the task changed it, where no copy can be kept. Result: {note}.
     - `reminder.add` {when, text}: one of Milo's own reminders, a line in reminders.md, which the worker can't
       write (ADR 0020). Always asks, with the reminder on its own marked line. Result: {reminder, due}.
     """
 
     def __init__(self, approvals: Approvals, bridge: AppBridge, enabled: Collection[str] = ("calendar", "reminders"),
                  memory: MemoryRequests | None = None, phone: Phone | None = None,
-                 reminders: ReminderBook | None = None):
+                 reminders: ReminderBook | None = None, undo: Undo | None = None):
         self._approvals = approvals
         self._bridge = bridge
         self._enabled = frozenset(enabled)
@@ -76,6 +79,7 @@ class ToolRequests:
         """`memory.*` ops: the worker's memory tools (services/memory_requests.py). None: memory is off."""
         self._phone = phone
         self._reminders = reminders
+        self._undo = undo
 
     async def handle(self, request: dict) -> dict:
         """{"ok": true, "result": ...} or {"ok": false, "error": "plain words"}. Never raises."""
@@ -112,6 +116,8 @@ class ToolRequests:
                     if not decision.allowed:
                         return _error(REFUSED.get(decision.answer, REFUSED["refused"]))
                     return _ok(await self._phone.send_file(outgoing, str(request.get("caption") or "")))
+                case "undo.point" | "undo.note" if self._undo is not None:
+                    return self._undo_request(op, request)
                 case "reminder.add" if self._reminders is not None:
                     return await self._remind(request)
                 case str() if op.startswith("memory.") and self._memory is not None:
@@ -124,6 +130,15 @@ class ToolRequests:
             log.exception("tool request %s failed", op)
             return _error("Something went wrong inside Milo.")
         return _error(f"unknown op {op!r}")
+
+    def _undo_request(self, op: str, request: dict) -> dict:
+        task = str(request.get("task") or "")
+        try:
+            if op == "undo.point":
+                return _ok({"note": self._undo.keep_file(task, str(request["path"]))})
+            return _ok({"note": self._undo.note(task, str(request["text"]))})
+        except (ValueError, OSError) as e:
+            return _error(str(e))
 
     async def _remind(self, request: dict) -> dict:
         text = " ".join(str(request.get("text") or "").split())[:200]

@@ -14,7 +14,7 @@ from .core.events import (AppResponse, CallEnded, CallStarted, Command, ConfirmA
                           LookResult, MeetingChunk, MeetingMail, MeetingPause, MeetingRecording, MeetingTodo,
                           MeetingToggle, Mute, OpenMeeting, NewConversation,
                           OpenConversation, RemoteForget, RemotePause, RenameConversation, RoutineAction,
-                          RoutineDraftAnswer, SearchConversations, SetSetting, StateChanged, StopAll, StopHelper,
+                          RoutineDraftAnswer, SearchConversations, SetSetting, StateChanged, StopAll, StopHelper, UndoTask,
                           TextInput, UiConfig, WhatsThis)
 from .core.types import ListenMode
 from .services.app_bridge import AppBridge
@@ -34,6 +34,7 @@ from .services.routines import Routines
 from .services.screen import checked, inside
 from .services.transcript import Transcript
 from .services.ui_state import UiState
+from .services.undo import Undo
 from .services.usage import UsageService
 from .settings import Settings
 
@@ -55,7 +56,8 @@ class Brain:
                  routines: Routines | None = None, settings: Settings | None = None,
                  messages: MessageService | None = None, meetings: MeetingService | None = None,
                  conversations: ConversationBrowser | None = None, usage: UsageService | None = None,
-                 corrections: Corrections | None = None):
+                 corrections: Corrections | None = None, undo: Undo | None = None):
+        self._undo = undo
         self._conversations = conversations
         self._usage = usage
         self._corrections = corrections
@@ -82,6 +84,7 @@ class Brain:
         return [StateChanged(self._ui.state), EmotionChanged(self._ui.emotion), self._ui_config(),
                 *([self._settings.report()] if self._settings is not None else []),
                 *self._history(), *([self._helpers.snapshot()] if self._helpers is not None else []),
+                *([self._undo.event()] if self._undo is not None else []),
                 *([self._meetings.status_event()] if self._meetings is not None else []),
                 *([self._messages.status()] if self._messages is not None else [])]
 
@@ -178,6 +181,9 @@ class Brain:
             case StopHelper(id):
                 if self._helpers is not None and not self._helpers.stop(id):
                     log.info("Stop came for a helper that isn't working")
+            case UndoTask(id):
+                if self._undo is not None:
+                    self._undo.undo(id)
             case RoutineAction(id, action):
                 if self._routines is not None:
                     self._routines.command(id, action)

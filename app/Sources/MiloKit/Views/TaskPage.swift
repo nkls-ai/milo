@@ -6,6 +6,9 @@ struct TaskCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let entry: TranscriptEntry
     var helper: HelperInfo?
+    /// Its Undo, once it changed something and has finished (ADR 0024).
+    var undo: UndoPoint?
+    var undoTask: (String) -> Void = { _ in }
     let open: () -> Void
     @State private var hovered = false
 
@@ -29,6 +32,7 @@ struct TaskCard: View {
                     }
                 }
                 Spacer(minLength: 6)
+                if undo != nil { Color.clear.frame(width: Self.undoRoom, height: 1) }
                 Image(systemName: "chevron.right")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(theme.ink.opacity(hovered ? 0.6 : 0.3))
@@ -44,6 +48,10 @@ struct TaskCard: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // Over the card, not in it: a button inside the card's own button would open the task instead.
+        .overlay(alignment: .trailing) {
+            if let undo { UndoButton(point: undo, undo: undoTask).padding(.trailing, 30) }
+        }
         .onHover { hovered = $0 }
         .animation(theme.motion.animation(reduced: reduceMotion), value: hovered)
         .help("Open this task")
@@ -64,6 +72,9 @@ struct TaskCard: View {
             return entry.result.isEmpty ? "Couldn't finish" : entry.result
         }
     }
+
+    /// Room kept on the card for the Undo laid over it.
+    static let undoRoom: CGFloat = 76
 
     static func statusWords(_ status: ActivityStep.Status) -> String {
         switch status {
@@ -125,6 +136,8 @@ struct TaskPage: View {
     let entry: TranscriptEntry
     let conversation: ConversationInfo?
     var helper: HelperInfo?
+    var undo: UndoPoint?
+    var undoTask: (String) -> Void = { _ in }
     let openConversation: (String) -> Void
     let stop: (String) -> Void
     let reveal: (String) -> Void
@@ -179,6 +192,8 @@ struct TaskPage: View {
                     Button("Stop") { stop(entry.id) }
                         .buttonStyle(StopButtonStyle())
                         .help("Stop this helper")
+                } else if let undo {
+                    UndoButton(point: undo, undo: undoTask)
                 }
             }
             if entry.text != entry.headline {

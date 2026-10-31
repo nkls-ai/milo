@@ -84,6 +84,11 @@ private func entries(_ key: String) throws -> [[String: Any]] {
                 HelperInfo(id: "e1e1e1e1e1e1", title: "Sort downloads", status: .needsYou, step: "Waiting for your answer"),
                 HelperInfo(id: "f2f2f2f2f2f2", title: "Dentist email", status: .done),
             ]),
+            .undoPoints([
+                UndoPoint(id: "f2f2f2f2f2f2", title: "Excel red", state: .ready, said: "Done: every cell of Book2 is red now."),
+                UndoPoint(id: "a1b2c3d4e5f6", title: "Rent 950", state: .undone, said: "I changed the rent to 950."),
+                UndoPoint(id: "b2c3d4e5f6a7", title: "Letter to Anna", state: .undoing),
+            ]),
             .handsBorrow(on: true, what: "mouse"),
             .facts([
                 MemoryFact(id: "01JBF6Z3Q8M2X4K7N9P0R5T6VW", text: "The user's name is Niklas.", topic: "basics",
@@ -265,6 +270,7 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .appResponse(id: "a42f", outcome: .failure(
                 "Milo isn't allowed to use your calendar. Turn it on in System Settings › Privacy & Security › Calendars.")),
             .stopHelper(id: "c0ffee12ab34"),
+            .undoTask(id: "f2f2f2f2f2f2"),
             .stopAll,
             .handsResult(id: "hands-7", ok: false, result: ["borrow": "mouse"],
                          error: "Excel doesn't take clicks in the background."),

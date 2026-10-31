@@ -80,6 +80,7 @@ let lifecycle = AppLifecycle(
             case .callAudio: SystemPermissions().openSettings(.screenRecording)
             case .copyConsent: break  // MiloModel copies it itself
             case let .openMeeting(id): window.show(meeting: id)
+            case .undo: break  // MiloModel sends it itself
             }
         }
         model.meeting.onOpen = { window.show(meeting: $0) }

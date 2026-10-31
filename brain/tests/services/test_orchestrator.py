@@ -9,7 +9,7 @@ from milo.services.helpers import HelperStatus, is_installed_app, plain_step
 from milo.services.live_talk import untrusted
 from milo.services.orchestrator import HelperQuestions, needs_screen
 from milo.services.task_runner import NEEDS_SCREEN, NO_SCREEN, TASK_FAILED
-from tests.fakes import FakeAudioOutput, FakeHarness, FakeLiveModel, ScriptedHarness, WorkerScript
+from tests.fakes import FakeAudioOutput, FakeHarness, FakeLiveModel, ScriptedHarness, WorkerScript, without_undo_id
 from tests.services.stack import Stack, settle
 
 R, D = StepStatus.RUNNING, StepStatus.DONE
@@ -59,7 +59,7 @@ def test_helpers_run_in_parallel_each_in_its_own_session_and_each_result_is_spok
 
     asyncio.run(run())
     first, second = s.harness.played
-    assert [p.prompt.split("\n", 1)[1] for p in (first, second)] == ["sort downloads", "find flights"]
+    assert [without_undo_id(p.prompt).split("\n", 1)[1] for p in (first, second)] == ["sort downloads", "find flights"]
     assert first.session_id is None and second.session_id is None, "every helper starts its own session"
     assert "frontmost app: Finder" in first.prompt
     assert sorted(s.voice.spoken) == ["Found three flights.", "Sorted your downloads."], "neither cut off the other"
@@ -544,6 +544,6 @@ def test_instructions_go_to_the_worker_and_on_finish_hears_how_it_ended_once():
         return follow
 
     follow = asyncio.run(run())
-    assert s.harness.played[0].prompt.endswith("Follow this recipe: 1. Count.")
+    assert without_undo_id(s.harness.played[0].prompt).endswith("Follow this recipe: 1. Count.")
     assert ended == [("Do the routine Report", HelperStatus.DONE), ("Tidy", HelperStatus.STOPPED)]
     assert follow.instructions == "Follow this recipe: 1. Count." and follow.on_finish is None

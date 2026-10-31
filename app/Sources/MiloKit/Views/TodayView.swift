@@ -170,30 +170,34 @@ struct TodayView: View {
     private var doneCard: some View {
         TodayCard(title: "Done today", icon: "checkmark.seal.fill", tint: WindowColors.done) {
             ForEach(doneToday, id: \.task.id) { item in
-                Button { actions.open(item.conversation.id); route.go(.task(item.task.id)) } label: {
-                    HStack(spacing: 10) {
-                        StatusSeal(status: item.task.status, size: 20)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(item.task.title)
-                                .font(.system(size: 13, weight: .medium, design: .rounded))
-                                .foregroundStyle(theme.ink)
-                                .lineLimit(1)
-                            Text("in “\(item.conversation.title)”")
-                                .font(.system(size: 11))
-                                .foregroundStyle(theme.ink.opacity(0.5))
-                                .lineLimit(1)
+                HStack(spacing: 8) {
+                    Button { actions.open(item.conversation.id); route.go(.task(item.task.id)) } label: {
+                        HStack(spacing: 10) {
+                            StatusSeal(status: item.task.status, size: 20)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(item.task.title)
+                                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                                    .foregroundStyle(theme.ink)
+                                    .lineLimit(1)
+                                Text("in “\(item.conversation.title)”")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(theme.ink.opacity(0.5))
+                                    .lineLimit(1)
+                            }
+                            Spacer(minLength: 6)
+                            Text(item.task.date.formatted(date: .omitted, time: .shortened))
+                                .font(.system(size: 10.5).monospacedDigit())
+                                .foregroundStyle(theme.ink.opacity(0.42))
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(theme.ink.opacity(0.3))
                         }
-                        Spacer(minLength: 6)
-                        Text(item.task.date.formatted(date: .omitted, time: .shortened))
-                            .font(.system(size: 10.5).monospacedDigit())
-                            .foregroundStyle(theme.ink.opacity(0.42))
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(theme.ink.opacity(0.3))
+                        .contentShape(Rectangle())
                     }
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    // Beside the row, not in it: a button inside its button would open the task instead.
+                    if let point = model.undoPoint(item.task.id) { UndoButton(point: point, undo: model.undo) }
                 }
-                .buttonStyle(.plain)
             }
         }
     }

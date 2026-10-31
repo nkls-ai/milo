@@ -86,6 +86,10 @@ public final class MiloModel: ObservableObject {
     public var onStopAll: (() -> Void)?
     /// Called when the user clicks a helper's bird: show it in the Milo window. Set by main.swift.
     public var onOpenHelper: ((String) -> Void)?
+    /// Tasks Milo can take back, newest first, from the brain's `undo_points` event (ADR 0024).
+    @Published public private(set) var undoPoints: [UndoPoint] = []
+    /// Called when the user clicks Undo on a task. Set by the controller.
+    public var onUndo: ((String) -> Void)?
     /// The user's routines by name, from the brain's `routines` event.
     @Published public private(set) var routines: [RoutineInfo] = []
     /// Recipes Milo wrote down that wait for the user's look: Save, or "Change it".
@@ -134,6 +138,9 @@ public final class MiloModel: ObservableObject {
     }
 
     /// How long a bubble stays up: longer for longer text, at most 20 s.
+    /// Extra seconds a bubble with Undo stays up.
+    public static let undoLinger: TimeInterval = 8
+
     public static func bubbleDuration(for text: String) -> TimeInterval {
         min(20, 4 + Double(text.count) / 15)
     }
@@ -178,6 +185,11 @@ public final class MiloModel: ObservableObject {
             scheduleBubbleHide()
         case let .helpers(list):
             if list != helpers { helpers = list }
+        case let .undoPoints(list):
+            guard list != undoPoints else { break }
+            undoPoints = list
+            // The Undo under a bubble goes once its task is being undone, or can't be any more.
+            if case let .undo(id) = bubbleAction, undoPoint(id)?.state != .ready { bubbleAction = nil }
         case let .routines(list, waiting):
             if list != routines { routines = list }
             if waiting != drafts { drafts = waiting }
@@ -233,6 +245,25 @@ public final class MiloModel: ObservableObject {
         }
     }
 
+    /// The undo point of the task `id`, if it has one.
+    public func undoPoint(_ id: String) -> UndoPoint? {
+        undoPoints.first { $0.id == id }
+    }
+
+    /// The user clicked Undo on the task `id`. It goes at once; `undo_points` says how it went.
+    public func undo(_ id: String) {
+        guard undoPoint(id)?.state == .ready else { return }
+        onUndo?(id)
+    }
+
+    /// The Undo for the bubble that says `text`: the newest task that can be undone, if Milo is saying what it did.
+    func undoAction(for text: String) -> BubbleAction? {
+        let shown = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard !shown.isEmpty, let point = undoPoints.first(where: { $0.state == .ready }) else { return nil }
+        let said = point.said.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return !said.isEmpty && said.hasPrefix(shown) ? .undo(point.id) : nil
+    }
+
     /// The user clicked Stop on the helper `id`.
     public func stopHelper(_ id: String) {
         onStopHelper?(id)
@@ -271,7 +302,8 @@ public final class MiloModel: ObservableObject {
             clearBubble()
             return scheduleBubbleHide()
         }
-        reveal.show(text, speaking: state == .speaking && action == nil, at: now())
+        let action = action ?? undoAction(for: text)
+        reveal.show(text, speaking: state == .speaking && (action == nil || action?.paced == true), at: now())
         bubble = text
         if bubbleAction != action { bubbleAction = action }
         scheduleBubbleHide()
@@ -280,6 +312,7 @@ public final class MiloModel: ObservableObject {
     /// The user clicked the bubble's button.
     public func performBubbleAction() {
         guard let bubbleAction else { return }
+        if case let .undo(id) = bubbleAction { return undo(id) }
         if bubbleAction == .copyConsent {
             // Done here, so the bubble can say it worked.
             meeting.copyConsent()
@@ -345,7 +378,9 @@ public final class MiloModel: ObservableObject {
         hideBubble = nil
         // A question stays up until it is answered or over.
         guard let text = bubble, state != .speaking, question == nil else { return }
-        hideBubble = scheduler.after(Self.bubbleDuration(for: text)) { [weak self] in
+        // An Undo stays a while longer, so there is time to reach it.
+        let longer: TimeInterval = if case .undo = bubbleAction { Self.undoLinger } else { 0 }
+        hideBubble = scheduler.after(Self.bubbleDuration(for: text) + longer) { [weak self] in
             guard let self else { return }
             clearBubble()
             heard = nil
@@ -371,12 +406,25 @@ public enum BubbleAction: Equatable, Sendable {
     case copyConsent
     /// Shows a meeting's notes in the Milo window.
     case openMeeting(String)
+    /// Takes back what the task did (its id), under the bubble that says its result.
+    case undo(String)
+
+    /// Its words keep pace with Milo's voice, like an answer without a button: it sits under what he is saying.
+    public var paced: Bool {
+        if case .undo = self { true } else { false }
+    }
+
+    /// The symbol before its title, for the quieter buttons.
+    public var icon: String? {
+        if case .undo = self { "arrow.uturn.backward" } else { nil }
+    }
 
     public var title: String {
         switch self {
         case .permissions, .microphone, .callAudio: "Fix it"
         case .copyConsent: "Copy a note for the chat"
         case .openMeeting: "Open notes"
+        case .undo: "Undo"
         }
     }
 
@@ -388,6 +436,7 @@ public enum BubbleAction: Equatable, Sendable {
         case .callAudio: "Opens the screen and system audio recording settings in System Settings"
         case .copyConsent: "Copies a line telling the others that Milo takes notes, to paste into the call's chat"
         case .openMeeting: "Shows the meeting's notes in the Milo window"
+        case .undo: "Puts back what Milo changed in this task"
         }
     }
 }

@@ -451,6 +451,13 @@ def check_get_usage(s: Stack, msg: dict) -> None:
     assert s.model.turns == [] and s.harness.calls == [], "the page costs no model call"
 
 
+def check_undo_task(s: Stack, msg: dict) -> None:
+    taken = []
+    s.brain._undo = type("Undo", (), {"undo": lambda self, id: taken.append(id), "event": lambda self: None})()
+    asyncio.run(s.brain.handle(parse_command(msg)))
+    assert taken == [msg["id"]]
+
+
 CHECKS = {
     "get_usage": check_get_usage,
     "get_conversations": check_conversations,
@@ -474,6 +481,7 @@ CHECKS = {
     "meeting_todo": check_meeting,
     "meeting_mail": check_meeting,
     "stop_helper": check_stop_helper,
+    "undo_task": check_undo_task,
     "stop_all": check_stop_all,
     "get_facts": check_get_facts,
     "forget_fact": check_forget_fact,

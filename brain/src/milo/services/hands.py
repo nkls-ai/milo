@@ -5,6 +5,7 @@ import itertools
 import json
 import logging
 import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from milo.core.control import Protected
@@ -44,6 +45,10 @@ MAX_ASKS = 3
 """Questions for one action whose target keeps changing under the user's answers, before Milo gives up."""
 
 
+BeforeChange = Callable[[str, str, dict, dict], Awaitable[None]]
+"""(task id, tool, its arguments, what it would touch), awaited before an action that may change something."""
+
+
 @dataclass(frozen=True)
 class ToolOutput:
     text: str
@@ -66,11 +71,13 @@ class HandsService:
 
     def __init__(self, hands: AppHands, confirm: Confirmer, sink: EventSink, *,
                  transcript: Transcript | None = None, applescript: bool = True, locale: str = "",
-                 protected: Protected | None = None):
+                 protected: Protected | None = None, before_change: BeforeChange | None = None):
         """`locale` is the Mac's region (AppleLocale, like "en_US@rg=dezzzz"): money in spreadsheets uses its
         currency. A script that names one of Milo's control files (`protected`) never runs (ADR 0020); one
         that builds the path some other way still waits for the user's yes, like every script."""
         self._protected = protected
+        self._before_change = before_change
+        """Keeps an undo point before an action changes something (services/undo.py, ADR 0024)."""
         self._hands = hands
         self._locale = locale
         self._confirm = confirm
@@ -172,6 +179,8 @@ class HandsService:
             self._transcript.task_step(task_id, step)
             if spec.acts:
                 self._start_session(target)
+            if spec.acts and self._before_change is not None:
+                await self._before_change(task_id, tool, args, target)
             try:
                 try:
                     result = await self._perform(tool, args)
