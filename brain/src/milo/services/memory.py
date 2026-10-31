@@ -290,7 +290,7 @@ _PAST = re.compile(
 
 def about_the_past(text: str) -> bool:
     """Whether a turn asks about something from before or from outside: what someone said or wrote, a mail, a
-    result, "remember when", "yesterday". Only such a turn at the Mac recalls outside memories (ADR 0028)."""
+    result, "remember when", "yesterday". Only such a turn at the Mac recalls outside memories (ADR 0031)."""
     return bool(_PAST.search(text))
 
 
@@ -301,7 +301,7 @@ class TurnMemory:
     At the Mac (voice or typed) a turn recalls outside memories (episodes of looks, task results, meetings) only
     when it asks about the past (`about_the_past`): small talk then can't pull other people's words into the
     conversation, so it stays trusted and its helpers aren't careful. A turn that does ask, and every turn from
-    the phone, gets them as data and the conversation counts as outside, as before (ADR 0010, 0028).
+    the phone, gets them as data and the conversation counts as outside, as before (ADR 0010, 0031).
     """
 
     rules = MEMORY_RULES
