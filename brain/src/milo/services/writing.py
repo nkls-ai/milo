@@ -102,14 +102,15 @@ def clean(text: str) -> str:
     return text[:MAX_CHARS]
 
 
-# The shapes a value to paste has. Nothing a shell would run from inside a word: no $, backticks, braces, quotes or
-# spaces in a link; no flags ("-rf", "/c") in an address.
+# The shapes a value to paste has, none of which a shell would run: no $, backticks, braces, quotes or spaces in a
+# link, and an & in one only before a "name=" (an assignment to a shell). An address is free text that can't be told
+# from a command, so after outside text it waits in the window.
+_LINK_CHARS = r"[A-Za-z0-9\-._~:/?#@=+,%]"
 _VALUES = tuple(re.compile(p) for p in (
-    r"https?://[A-Za-z0-9\-._~:/?#@&=+,%]+",  # a link; anything else in one is %-encoded anyway
+    rf"https?://{_LINK_CHARS}+(?:&[A-Za-z0-9._-]+={_LINK_CHARS}*)*",  # a link
     r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+",  # an email address
     r"\+?\d[\d ()./-]{4,24}",  # a phone number
     r"[A-Za-z0-9][A-Za-z0-9._-]{1,63}",  # a code, a tracking number, a Wi-Fi password: one word
-    r"(?=.*\d)(?=.*,)(?!.*(?:^|\s)[-/~])[\w .,'’/-]{3,200}",  # an address: words, a number, a comma
 ))
 _COMMAND = re.compile(r"^\s*(?:sudo|curl|wget|sh|bash|zsh|fish|powershell|pwsh|iex|python3?|perl|ruby|node|npx|"
                       r"eval|exec|rm|chmod|chown|xattr|open|defaults|launchctl|killall|diskutil)\b", re.IGNORECASE)
@@ -117,7 +118,7 @@ _COMMAND = re.compile(r"^\s*(?:sudo|curl|wget|sh|bash|zsh|fish|powershell|pwsh|i
 
 def plain_value(text: str) -> bool:
     """Whether a text is a value to paste, not something to run: one line that is a link, an email address, a phone
-    number, a one-word code or an address. After outside text only those go on the clipboard by themselves: anything
+    number or a one-word code. After outside text only those go on the clipboard by themselves: anything
     else an email or web page slipped in ("paste this in Terminal") waits in the window, where the user sees all of
     it before copying it."""
     text = text.strip()
