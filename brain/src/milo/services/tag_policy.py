@@ -24,11 +24,30 @@ _QUESTION = re.compile(r"^\s*(what|why|how|who|whom|whose|where|when|which|is|ar
 
 # The user's own words ask for this very tag: only then may it skip outside text's question.
 _REMIND = re.compile(r"\b(remind(s|ed|er)?|erinner(e|n|st|t|ung)?)\b", re.IGNORECASE)
-_REMEMBER = re.compile(r"\b(remember|keep in mind|merk(e|en|st)? (dir|euch|Ihnen)|vergiss nicht)\b", re.IGNORECASE)
+_REMEMBER = re.compile(r"\b(remember|keep in mind|merk(e|en|st)? (dir|euch|Ihnen))\b", re.IGNORECASE)
+
+
+_NOT = re.compile(r"\b(don'?t|do not|never|nicht|nie|kein\w*)\b", re.IGNORECASE)
 
 
 _PLEASE = re.compile(r"^\s*(?:(?:yes|yeah|ok|okay|please|so|and|ja|bitte|also|und)\b[\s,.!]*)*"
                      r"(?:(?:can|could|would|will) you|(?:kannst|könntest|würdest) du)\b", re.IGNORECASE)
+
+
+def _asks(verb: re.Pattern, text: str) -> bool:
+    """The words ask for it: the verb, in a request ("remind me", "can you remind me"), not in a question ("did you
+    remind me?") or a no ("don't remind me", "erinner mich nicht")."""
+    return verb.search(text) is not None and not _NOT.search(text) \
+        and (bool(_PLEASE.search(text)) or not _QUESTION.search(text))
+
+
+def _from_request(item: str, request: str) -> bool:
+    """The reminder or fact carries a word of the user's own request ("Call Anna" for "remind me to call Anna"), so
+    outside text can't add one of its own next to the one asked for."""
+    def stems(text: str) -> set[str]:  # "Fridays" and "Friday" alike
+        return {w[:5] for w in re.findall(r"[^\W_]{3,}", text.lower())}
+
+    return bool(stems(item) & stems(request))
 
 
 def asks_for_work(text: str) -> bool:
@@ -60,25 +79,25 @@ class TagPolicy:
     """At the Mac in auto mode, the user's own words asked for a reminder ("remind me", "erinnere mich")."""
     own_fact: bool = False
     """At the Mac in auto mode, the user's own words asked Milo to remember something ("remember", "merk dir")."""
+    request: str = ""
+    """The user's own words this turn."""
 
     @property
     def outside(self) -> bool:
         """The conversation has read outside text: every tag that takes effect at once waits for a yes. An <open> of
         a file always, and <write> goes in only when the user's own words asked for writing (Writer decides); the
-        others as `ask_undoable`, `ask_reminder` and `ask_fact` say."""
+        others as `ask_undoable`, `ask_reminder()` and `ask_fact()` say."""
         return self.tainted or self.now or self.saw_screen
 
-    @property
-    def ask_reminder(self) -> bool:
+    def ask_reminder(self, what: str) -> bool:
         """A <reminder> after outside text asks, since open reminders go into every later <today>; unless the user's
-        own words asked for one ("remind me to call Anna" on a day with shared calendar entries)."""
-        return self.outside and not self.own_reminder
+        own words asked for this one ("remind me to call Anna" on a day with shared calendar entries)."""
+        return self.outside and not (self.own_reminder and _from_request(what, self.request))
 
-    @property
-    def ask_fact(self) -> bool:
+    def ask_fact(self, fact: str) -> bool:
         """A <remember> after outside text asks, since facts steer every later conversation; unless the user's own
-        words asked Milo to remember something."""
-        return self.outside and not self.own_fact
+        words asked Milo to remember this."""
+        return self.outside and not (self.own_fact and _from_request(fact, self.request))
 
     @property
     def ask_undoable(self) -> bool:
@@ -131,5 +150,5 @@ def policy(*, tainted: bool, saw_screen: bool, now: bool, auto: bool, via: str, 
     at_mac = auto and via in ("voice", "typed")
     return TagPolicy(tainted=tainted, saw_screen=saw_screen, now=now, at_mac=at_mac,
                      own_work=at_mac and asks_for_work(request),
-                     own_reminder=at_mac and _REMIND.search(request) is not None,
-                     own_fact=at_mac and _REMEMBER.search(request) is not None)
+                     own_reminder=at_mac and _asks(_REMIND, request),
+                     own_fact=at_mac and _asks(_REMEMBER, request), request=request)
