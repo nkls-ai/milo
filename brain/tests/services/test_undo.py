@@ -341,6 +341,49 @@ def test_a_file_that_became_a_link_since_is_not_written_through(tmp_path):
     assert any("I couldn't put budget.csv back." in b for b in s.bubbles())
 
 
+def test_a_hard_link_to_a_secret_gets_no_undo_point(tmp_path):
+    """A second name for a key is the key: a file with more than one name is not copied."""
+    secrets = tmp_path / "Milo" / "secrets"
+    secrets.mkdir(parents=True)
+    (secrets / "elevenlabs.key").write_text("sk-123")
+    alias = tmp_path / "notes.txt"
+    alias.hardlink_to(secrets / "elevenlabs.key")
+    s = Stack(home=tmp_path)
+
+    async def run():
+        helper = s.tasks.submit("tidy my notes", title="Notes", screen=False, user_asked=True)
+        with pytest.raises(ValueError, match="more than one name"):
+            s.undo.keep_file(helper.id, str(alias))
+        await s.tasks.idle()
+
+    asyncio.run(run())
+    assert not [p for p in (tmp_path / "Milo" / "state").rglob("*") if p.is_file() and p.name != "record.json"]
+
+
+def test_putting_a_file_back_never_writes_through_a_link_left_next_to_it(tmp_path):
+    """Undo writes its copy to a new file of its own beside the target, then renames it into place."""
+    budget = tmp_path / "budget.csv"
+    budget.write_text("rent,900\n")
+    config = tmp_path / "Milo" / "config.toml"
+    config.parent.mkdir(parents=True)
+    config.write_text("[ui]\n")
+    for name in (".budget.csv.milo-undo", ".milo-undo-budget.csv"):
+        (tmp_path / name).symlink_to(config)
+    s = Stack(home=tmp_path)
+
+    async def run():
+        helper = s.tasks.submit("raise the rent", title="Rent", screen=False, user_asked=True)
+        s.undo.keep_file(helper.id, str(budget))
+        budget.write_text("rent,950\n")
+        await s.tasks.idle()
+        await s.undo.idle()
+        await s.undo.undo(helper.id)
+
+    asyncio.run(run())
+    assert config.read_text() == "[ui]\n"
+    assert budget.read_text() == "rent,900\n" and not budget.is_symlink()
+
+
 def test_the_workers_notes_reach_the_undo_helper_as_inert_text(tmp_path):
     """The notes are what a worker wrote while it may have read outside text: no tag can open inside them."""
     s = Stack(harness=FakeHarness(), background=FakeHarness(), home=tmp_path)
