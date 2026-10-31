@@ -1094,7 +1094,7 @@ class QuickActions:
             for d in hits:
                 # A scene goes back by putting what it set back as it was.
                 for before in [by_id[m] for m in d.members if m in by_id] or [d]:
-                    reverse += _home_back(before, do, value, before.kind in SECURE)
+                    reverse += _home_back(before, do, value, before.kind in SECURE, unknown=not before.known)
                 after = await reach(home.act, d.id, do, value)
             self.today.changed()
             state = after.state if isinstance(after, Device) and len(hits) == 1 else ""
@@ -1345,9 +1345,11 @@ class QuickActions:
                 home = self._connections.home
                 if home is None:
                     raise ValueError("no home is connected")
-                if step.get("secure") and not (await self._approvals.approve(
-                        "lock", say(f"home.ask.{step['do']}", self._lang(), title=inert(step.get("title"), 50),
-                                    value=step.get("value", "")))).allowed:
+                # Undo asks like the way there: a lock as a lock, a guessed shortcut as a shortcut.
+                ask = "lock" if step.get("secure") else "shortcut" if step.get("unknown") else None
+                if ask and not (await self._approvals.approve(
+                        ask, say(f"home.ask.{step['do']}", self._lang(), title=inert(step.get("title"), 50),
+                                 value=step.get("value", "")))).allowed:
                     return False
                 await reach(home.act, step["id"], step["do"], str(step.get("value") or ""))
             case "focus":
@@ -1456,10 +1458,11 @@ def _home_title(wanted: str) -> str:
     return text[:1].upper() + text[1:]
 
 
-def _home_back(before: Device, do: str, value: str, secure: bool) -> list[dict]:
+def _home_back(before: Device, do: str, value: str, secure: bool, unknown: bool = False) -> list[dict]:
     """The steps that put `before` back as it was after `do`. The home may not say how it was (shortcuts): then the
-    opposite of `do`, where there is one."""
-    step = {"op": "home", "id": before.id, "title": before.name, **({"secure": True} if secure else {})}
+    opposite of `do`, where there is one. `unknown`: Milo can't see into it, so its Undo asks like a shortcut."""
+    step = {"op": "home", "id": before.id, "title": before.name, **({"secure": True} if secure else {}),
+            **({"unknown": True} if unknown and not secure else {})}
     state, level, does = before.state, before.level, before.does
     opposite = {"on": "off", "off": "on", "toggle": "toggle", "open": "close", "close": "open", "lock": "unlock",
                 "unlock": "lock", "arm": "disarm", "disarm": "arm"}

@@ -102,6 +102,7 @@ class Runtime:
     attention: Attention | None = None
     background_stt: BackgroundStt | None = None
     alarms: Alarms | None = None
+    weather: WeatherReport | None = None
 
 
 @dataclass
@@ -147,7 +148,7 @@ def build(home: Path) -> Runtime:
     return Runtime(p.brain, p.server, p.heartbeat, p.transcriber, p.voice, p.stt_executor, p.tts_executor, p.harness,
                    p.live_model, p.live_talk, p.tool_server, p.hands_server, p.helpers, p.mem, p.barge_in,
                    p.backchannel, p.messages, p.notices, meetings=p.meetings, diarize_executor=p.diarize_executor,
-                   attention=p.attention, background_stt=p.background_stt, alarms=p.alarms)
+                   attention=p.attention, background_stt=p.background_stt, alarms=p.alarms, weather=p.weather)
 
 
 def _workspace(p: Parts) -> None:
@@ -434,14 +435,15 @@ def _quick(p: Parts):
     from .services.quick_actions import QuickActions
     from .services.today import Today
 
-    p.alarms = None
+    p.alarms = p.weather = None
     if not p.config.chat.quick_actions or p.connections is None:
         return None
     attention = p.attention
     p.alarms = Alarms(JsonStateFile(p.workspace.alarms_path), p.speaker, p.clock, transcript=p.transcript,
                       quiet=attention.user_speaking, computer=p.platform.computer)
+    p.weather = _weather(p)
     return QuickActions(p.connections, p.ui, p.speaker, p.clock, approvals=p.approvals,
-                        today=Today(p.connections, p.clock, reminders=p.reminders, weather=_weather(p)), undo=p.undo,
+                        today=Today(p.connections, p.clock, reminders=p.reminders, weather=p.weather), undo=p.undo,
                         transcript=p.transcript, access=p.access, meetings=p.meetings, reminders=p.reminders,
                         alarms=p.alarms, quiet=attention.user_speaking, language=p.language.get,
                         music_app=p.config.connections.music_app)

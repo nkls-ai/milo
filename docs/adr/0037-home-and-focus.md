@@ -38,4 +38,8 @@ Until now the only way was `<shortcut name="Lights off"/>`: it asks every time (
 - The user does something once: a token file for Home Assistant, or a "Milo Home" folder of shortcuts, and two clicks for Do Not Disturb.
 - Helpers (the worker) don't get the home: it is the talker's, like the music.
 - An alarm panel that wants a code can't be armed or disarmed.
-- Device names in `<today>` are the user's own and not marked as outside text, but they are made inert like titles.
+- Device names in `<today>` are marked “names by others” and count as outside text, like a song title: Home Assistant
+  often takes them from what it finds on the network. They are made inert like titles too. (Security review,
+  2026-11-01; before, they counted as the user's own.)
+- Undo asks like the way there: a lock as a lock, a shortcut Milo only guessed is for the home as a shortcut.
+- A Home Assistant cover with device_class door, gate or garage is a garage and asks first: it lets people in.

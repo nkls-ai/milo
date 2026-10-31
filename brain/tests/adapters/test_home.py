@@ -190,3 +190,13 @@ def test_auto_picks_home_assistant_when_it_has_a_url_else_apple_home_where_short
     monkeypatch.setattr("shutil.which", lambda name: None)
     assert HOMES.create("auto", {}, ctx) is None
     assert HOMES.create("none", {}, ctx) is None
+
+
+def test_a_door_or_gate_cover_is_a_garage_and_asks_first():
+    """Security review, 2026-11-01: a cover with device_class door opened like a blind, without a question."""
+    from milo.adapters.home.home_assistant import _device
+    for cls in ("door", "gate", "garage"):
+        d = _device({"entity_id": "cover.x", "state": "closed", "attributes": {"device_class": cls}}, {})
+        assert d is not None and d.kind == "garage", cls
+    blinds = _device({"entity_id": "cover.y", "state": "open", "attributes": {"device_class": "blind"}}, {})
+    assert blinds is not None and blinds.kind == "cover"

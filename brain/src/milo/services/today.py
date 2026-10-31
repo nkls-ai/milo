@@ -263,7 +263,12 @@ class Today:
             lines += self._alarm_lines(self.alarms)
         if self.weather is not None:
             lines += self.weather.lines()  # a service's numbers: not other people's text
-        lines += self._home_lines()
+        home = self._home_lines()
+        if home:
+            # Device names come from the home system, which often takes them from what it finds on the network:
+            # other people's text, like a song title (ADR 0037).
+            lines += home
+            outside = True
         if len(lines) == 1:
             return "", False
         return "<today>\n" + "\n".join(lines) + "\n</today>", outside
@@ -387,7 +392,7 @@ class Today:
         rooms: dict[str, list[str]] = {}
         for d in self._home:
             rooms.setdefault("Scenes" if d.kind == "scene" else d.room or "Other", []).append(inert(d.name))
-        lines, left = [f"Home ({inert(home.name)}), the names to use:"], MAX_HOME
+        lines, left = [f"Home ({inert(home.name)}), the names to use (names by others):"], MAX_HOME
         for room in sorted(rooms, key=lambda r: (r == "Scenes", r == "Other", r)):
             names = rooms[room][:left]
             left -= len(names)

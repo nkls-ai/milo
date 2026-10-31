@@ -164,9 +164,10 @@ def test_the_home_is_in_the_today_block_by_room_without_states(tmp_path):
     s = stack(tmp_path, ["[happy] Sure."])
     asyncio.run(say(s, "hi"))
     block = s.model.turns[0].split("<today>")[1].split("</today>")[0]
-    assert "Home (Fake home), the names to use:\n- Kitchen: Kitchen ceiling light, Kitchen counter light\n" \
+    assert "Home (Fake home), the names to use (names by others):\n- Kitchen: Kitchen ceiling light, Kitchen counter light\n" \
            "- Wohnzimmer: Stehlampe, Heizung\n- Other: Front door, Garage door\n- Scenes: Movie night" in block
     assert "locked" not in block and "heat" not in block, "no states: they would resend the block"
+    assert s.quick.today.render()[1], "names come from the home system, often from the network: outside text"
 
 
 def test_do_not_disturb_goes_on_without_a_question_and_undo_turns_it_off(tmp_path):
@@ -206,3 +207,14 @@ def test_a_script_milo_cant_see_into_asks_like_a_shortcut(tmp_path):
     ask = asyncio.run(answer(s, "leaving home", False))
     assert ask.question == "Start the scene “Leaving home”?"
     assert world(s)["home_runs"] == []
+
+
+def test_the_undo_of_a_shortcut_milo_only_guessed_is_for_the_home_asks_like_the_way_there(tmp_path):
+    """Security review, 2026-11-01: the way there asked like a shortcut, its Undo ran the opposite one unasked."""
+    home = [*HOME, {"id": "sc.porch", "name": "Porch light", "kind": "light", "state": "off", "known": False}]
+    s = stack(tmp_path, ['[happy] <home device="Porch light" do="on"/>'], ["[happy] <undo/>"], world={"home": home})
+    ask = asyncio.run(answer(s, "porch light on", True))
+    assert ask.question == "Turn on “Porch light”?" and device(s, "sc.porch")["state"] == "on"
+    undo = asyncio.run(answer(s, "undo that", False))
+    assert undo.question == "Turn off “Porch light”?", "the Undo asks too"
+    assert device(s, "sc.porch")["state"] == "on", "and a no leaves it"

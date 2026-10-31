@@ -42,7 +42,8 @@ _AREAS = ("{% set ns = namespace(out=[]) %}{% for s in states %}{% set a = area_
 
 _KINDS = {"light": "light", "switch": "switch", "input_boolean": "switch", "scene": "scene", "script": "scene",
           "climate": "climate", "fan": "fan", "cover": "cover", "lock": "lock", "alarm_control_panel": "alarm"}
-"""The domains Milo switches, and the kind each is. A cover with device_class garage or gate is a garage."""
+"""The domains Milo switches, and the kind each is. A cover with device_class garage, gate or door is a garage:
+it lets people in, so it asks first."""
 _DOES = {"light": ("on", "off", "toggle", "set"), "switch": ("on", "off", "toggle"), "scene": ("run",),
          "climate": ("on", "off", "set", "mode"), "fan": ("on", "off", "toggle", "set"),
          "cover": ("open", "close", "toggle", "set"), "garage": ("open", "close"), "lock": ("lock", "unlock"),
@@ -150,7 +151,7 @@ def _device(s: Mapping[str, Any], rooms: Mapping[str, str]) -> Device | None:
     if kind is None:
         return None
     attrs = s.get("attributes") if isinstance(s.get("attributes"), dict) else {}
-    if kind == "cover" and attrs.get("device_class") in ("garage", "gate"):
+    if kind == "cover" and attrs.get("device_class") in ("garage", "gate", "door"):
         kind = "garage"
     state = str(s.get("state") or "")
     level = None

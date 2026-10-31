@@ -168,6 +168,8 @@ async def _serve(runtime: Runtime) -> None:
     if memory is not None:
         engines["memory"] = memory.memory.warm  # the embedder on its own thread, then the index catches up
     warming = asyncio.create_task(_warm_all(engines))
+    if runtime.weather is not None:
+        runtime.weather.soon()  # so the first "do I need an umbrella?" finds the forecast in <today> (ADR 0038)
     loops: dict[str, Callable[[], Awaitable[None]]] = {}
     if runtime.heartbeat is not None:
         loops["the heartbeat"] = runtime.heartbeat.run
