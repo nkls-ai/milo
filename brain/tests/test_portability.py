@@ -30,7 +30,8 @@ CORE = ("core", "services", "memory", "proactive", "connect", "transport")
 """Packages that must work on any platform. Not here: `adapters/` (that is where platforms live), `system/` (the
 OS primitives, one module per OS family; tests/test_system.py keeps them in step), `eval/`
 (developer tools that drive the real Mac app) and `workspace_template/` (no Python)."""
-TOP_LEVEL = ("brain.py", "compose.py", "config.py", "config_file.py", "mcp_server.py", "server.py", "settings.py")
+TOP_LEVEL = ("brain.py", "compose.py", "config.py", "config_file.py", "install.py", "mcp_server.py", "server.py",
+             "settings.py")
 
 TEXT_RULES: dict[str, re.Pattern[str]] = {
     "applescript": re.compile(r"osascript|applescript|\btell application\b|JavaScript for Automation|\bJXA\b",
