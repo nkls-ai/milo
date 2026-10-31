@@ -23,6 +23,7 @@ from .meetings import Chunk, MeetingInfo, MeetingNotes, TimedWord, Track, Transc
 from .memory import ConsolidationReport, Document, Episode, Fact, Hit, IndexItem, Recall, TurnContext
 from .routines import Routine
 from .usage import Account, Call, Dictated
+from .weather import Forecast
 from .types import AppRef, Audio, Inbound, Nudge, Reminder, Reply, ScreenCapture, Scope, Signals, Step, Usage
 
 LevelCallback = Callable[[float], None]
@@ -1069,4 +1070,17 @@ class UndoShelf(Protocol):
 
     def digest(self, path: str) -> str:
         """A hash of the file now, "" if it is missing."""
+        ...
+
+
+# ---- weather (ADR 0038)
+
+
+@runtime_checkable
+class Weather(Protocol):
+    """A weather service (adapters/weather/). Blocks: the brain calls it on a thread."""
+
+    def forecast(self, place: str, days: int, units: str) -> Forecast:
+        """The next `days` days for `place` (a city, "Berlin, Germany", or "52.52,13.41"), in "metric" or
+        "imperial" units. Raises ToolError with plain words when it can't (offline, a place it doesn't know)."""
         ...

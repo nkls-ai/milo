@@ -132,6 +132,7 @@ public enum DoneCardText {
         case .reminder: return w("I'll remind you")
         case .note: return inApp("In your notes")
         case .timer: return w("Timer running")
+        case .alarm: return w("Alarm set")
         case .draft: return w("Draft, not sent")
         case .shortcut: return w("Shortcut ran")
         // The title says what happened ("Paused"); the player, if it said which one it is.
@@ -171,6 +172,7 @@ public enum DoneCardText {
         case .reminder: w("Reminder")
         case .note: w("Note written")
         case .timer: w("Timer")
+        case .alarm: w("Alarm")
         case .draft: w("Draft written")
         case .shortcut: w("Shortcut ran")
         case .music: w("Music")
@@ -229,6 +231,7 @@ public enum DoneCardText {
             "Shows it": "Zeigt es", "Opens it": "Öffnet es", "Opens it in %@": "Öffnet es in %@",
             "Ready to copy": "Bereit zum Kopieren", "Written": "Geschrieben", "Written, ready to copy": "Geschrieben, bereit zum Kopieren",
             "On your clipboard": "In der Zwischenablage", "Copied": "Kopiert",
+            "Alarm set": "Wecker gestellt", "Alarm": "Wecker",
             "Shows it in the Milo window, to copy": "Zeigt es im Milo-Fenster, zum Kopieren",
         ]
     }

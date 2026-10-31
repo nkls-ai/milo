@@ -161,6 +161,10 @@ import Testing
         #expect(line(ActionDone(kind: .event, title: "Dentist", detail: "Dr. Lee", when: at("2026-11-12T08:00:00+01:00")))
                 == "8:00, Dr. Lee", "the calendar page shows the day")
         #expect(line(ActionDone(kind: .timer, title: "Pasta", when: at("2026-11-04T10:12:00+01:00"))) == "Rings at 10:12")
+        #expect(line(ActionDone(kind: .alarm, title: "Alarm", when: at("2026-11-05T07:00:00+01:00"), app: "Milo")) ==
+                "Tomorrow 7:00", "an alarm says the day it rings")
+        #expect(line(ActionDone(kind: .alarm, title: "Train", detail: "Snoozed",
+                                when: at("2026-11-04T10:05:00+01:00"))) == "Today 10:05, Snoozed")
         #expect(line(ActionDone(kind: .todo, title: "Buy milk", app: "Reminders")) == "In Reminders")
         #expect(line(ActionDone(kind: .draft, title: "To Anna")) == "Draft, not sent")
         #expect(line(ActionDone(kind: .music, title: "Paused")) == "Music", "never \"Playing\" for a pause")

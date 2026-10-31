@@ -83,6 +83,14 @@ music = true                      # play, pause and skip the music
 [connections.mac]
 files_scope = "~"                 # files outside this folder are never searched or read
 
+[weather]
+# The forecast Milo answers "do I need an umbrella tomorrow?" from, read about every 45 minutes.
+# The place's name goes to Open-Meteo (free, no account); nothing else about you does.
+enabled = true
+# use = "open_meteo"              # left out: Open-Meteo
+place = ""                        # a city ("Berlin", "Portland, Oregon") or "52.52,13.41"; empty: your time zone's city
+units = "metric"                  # "metric" (°C, km/h) or "imperial" (°F, mph)
+
 [approvals]
 # A question stays open until you answer it, and is said once more after reask_s. A task waiting for it
 # pauses as "waiting for your answer" and goes on after a yes. timeout_s > 0: no answer in that time means no.

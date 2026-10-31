@@ -17,6 +17,7 @@ from .core.events import (AppResponse, CallEnded, CallStarted, Command, ConfirmA
                           RoutineDraftAnswer, SearchConversations, SetSetting, StateChanged, StopAll, StopHelper, UndoTask,
                           TextInput, UiConfig, WhatsThis)
 from .core.types import ListenMode
+from .services.alarms import Alarms
 from .services.app_bridge import AppBridge
 from .services.approvals import Approvals
 from .services.context import UserContext
@@ -56,8 +57,10 @@ class Brain:
                  routines: Routines | None = None, settings: Settings | None = None,
                  messages: MessageService | None = None, meetings: MeetingService | None = None,
                  conversations: ConversationBrowser | None = None, usage: UsageService | None = None,
-                 corrections: Corrections | None = None, undo: Undo | None = None):
+                 corrections: Corrections | None = None, undo: Undo | None = None, alarms: Alarms | None = None):
         self._undo = undo
+        self._alarms = alarms
+        """Milo's alarms: a key, a typed message or Stop ends one that rings (ADR 0038)."""
         self._conversations = conversations
         self._usage = usage
         self._corrections = corrections
@@ -111,6 +114,7 @@ class Brain:
     async def handle(self, command: Command) -> None:
         match command:
             case ListenStart(mode, tentative):
+                self._hush()
                 if mode is ListenMode.TALK:
                     self._live_talk.prepare()  # a fresh conversation starts while the user speaks
                 self._listening.start(mode, tentative)
@@ -121,6 +125,7 @@ class Brain:
             case ListenCancel():
                 self._listening.cancel()
             case TextInput(text, speak, conversation):
+                self._hush()
                 if conversation and self._transcript is not None:
                     recap = self._transcript.resume(conversation)
                     if recap is not None:
@@ -171,6 +176,7 @@ class Brain:
                     log.info("an answer came for a question that is over")
             case StopAll():
                 log.info("the user pressed Stop")
+                self._hush()
                 if self._approvals is not None:
                     self._approvals.cancel()
                 if self._helpers is not None:
@@ -222,6 +228,11 @@ class Brain:
                     self._settings.change(section, key, value)
             case _:
                 log.warning("no handler for %s", command.type)
+
+    def _hush(self) -> None:
+        """The user is here: an alarm that rings stops (and "five more minutes" can still snooze it)."""
+        if self._alarms is not None:
+            self._alarms.hush()
 
     def _facts(self, command: Command) -> None:
         """The "What Milo knows" screen: list, forget, edit. The user's own clicks, so nobody asks again."""
