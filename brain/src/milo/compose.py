@@ -275,7 +275,8 @@ def _helpers(p: Parts) -> None:
 
     config, mem, workspace = p.config, p.mem, p.workspace
     # Takes back what a task changed (ADR 0024); the orchestrator, built below, finds its helpers.
-    p.undo = undo = Undo(FileUndoShelf(workspace.undo_dir, Path.home()), AppHands(p.bridge), p.ui, p.clock,
+    shelf = FileUndoShelf(workspace.undo_dir, Path.home(), protected=workspace.protected)
+    p.undo = undo = Undo(shelf, AppHands(p.bridge), p.ui, p.clock,
                          confirm=p.approvals, speaker=p.speaker, helpers=p.later("helpers"), transcript=p.transcript,
                          quiet=p.attention.in_conversation)
     p.hands = p.hands_server = None

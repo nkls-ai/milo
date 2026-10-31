@@ -33,6 +33,7 @@ from milo.services.task_runner import TaskRunner
 from milo.services.tool_requests import ToolRequests
 from milo.services.undo import Undo
 from milo.memory.undo_shelf import FileUndoShelf
+from milo.core.control import Protected
 from milo.services.ui_state import UiState
 from milo.settings import Settings
 from tests.fakes import (FakeAudioInput, FakeAudioOutput, FakeChannel, FakeClock, FakeEyes, FakeHands, FakeHarness,
@@ -121,7 +122,8 @@ class Stack:
         self.bridge = AppBridge(self.sink, timeout_s=self.confirm_timeout_s)
         self.undo = None
         if self.home is not None:
-            self.undo = Undo(FileUndoShelf(self.home / "Milo" / "state" / "undo", self.home), self.hands_port, self.ui,
+            self.undo = Undo(FileUndoShelf(self.home / "Milo" / "state" / "undo", self.home,
+                                           protected=Protected(self.home / "Milo")), self.hands_port, self.ui,
                              self.clock, confirm=self.approvals, speaker=self.speaker, helpers=lambda: self.tasks,
                              quiet=lambda: self.live_talk.busy, wait_s=self.wait_s, poll_s=0.005)
         self.hands = HandsService(self.hands_port, self.approvals, self.ui,
