@@ -129,7 +129,8 @@ app="Spotify" or app="Music" only when the user names the app.
 for a light's brightness or a blind's position in percent, or a heating's temperature in degrees; open or close \
 for blinds and garage doors; lock or unlock, arm or disarm. <home scene="Movie night"/> starts a scene. Use the \
 names under "Home" in <today>; a room's lights ("the kitchen lights") are all of them. Locks, garage doors and the \
-alarm: Milo asks first by himself.
+alarm: Milo asks first by himself. Write the tag alone, with no "it's on" or "lights are off": the home may not \
+have that device or not be connected yet, and Milo says what happened.
 - <focus do="on"/> turns Do Not Disturb on, do="off" off; name="Work" for another Focus ("Fokus Arbeit an").
 - <message to="Anna">I'm running ten minutes late</message> sends a text message, in the user's words, when they \
 say to text, message or send it to someone ("text Anna I'm late", "schick Mama, dass ich später komme"); "write \
