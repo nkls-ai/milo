@@ -61,3 +61,20 @@ def test_policy_is_at_the_mac_only_in_auto_mode_by_voice_or_typed():
     assert not policy(tainted=True, saw_screen=False, now=False, auto=False, via="voice", request="fix it").at_mac
     assert not policy(tainted=True, saw_screen=False, now=False, auto=True, via="voice",
                       request="what is this?").own_work
+
+
+def test_only_words_that_ask_for_the_tag_itself_let_it_skip_the_question():
+    from milo.services.tag_policy import policy
+
+    def rule(request: str):
+        return policy(tainted=True, saw_screen=False, now=False, auto=True, via="voice", request=request)
+
+    assert not rule("Remind me to call Anna tomorrow at 9").ask_reminder
+    assert not rule("erinnere mich morgen an Anna").ask_reminder
+    assert rule("add a to-do to call Anna").ask_reminder, "work, but not a reminder"
+    assert rule("okay").ask_reminder
+    assert not rule("remember I like Friday dinners").ask_fact
+    assert not rule("merk dir, dass ich Tee mag").ask_fact
+    assert rule("remind me to call Anna").ask_fact, "a reminder isn't a fact"
+    assert policy(tainted=True, saw_screen=False, now=False, auto=True, via="message",
+                  request="remind me to call Anna").ask_reminder, "from the phone the plain rule holds"
