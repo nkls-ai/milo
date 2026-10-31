@@ -22,6 +22,7 @@ from milo.core.hands import mac_server
 from milo.core.ports import PlanCallback, SessionCallback, StepCallback
 from milo.core.control import clear_steering
 from milo.core.registry import HARNESSES, AdapterContext, ConfigError, options_from
+from milo.core.task_scope import ToolScope, trim_instructions
 from milo.core.types import REPLY_SCHEMA, HarnessError, Reply, ToolServer, Usage
 
 from ._activity import CodexActivity, RunWatch, lines
@@ -69,18 +70,18 @@ def user_codex_home() -> Path:
     return Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex").expanduser()
 
 
-# What Codex would read from its home as instructions, hooks, rules or extra config. Only Milo's own AGENTS.md
-# (put back after this cleanup) goes there.
+# What Codex would read from its home as instructions, hooks, rules or extra config. Milo's own instructions don't
+# go there either: they come with each turn (`developer_instructions`), trimmed to its task.
 _FOREIGN = ("AGENTS.md", "AGENTS.override.md", "hooks.json", "hooks", "rules", "skills", "plugins", "agents")
 
 
-def prepare_home(home: Path, login_from: Path, instructions: Path | None = None) -> None:
-    """Milo's Codex home: a fresh config.toml, a link to the user's login, Milo's instructions (a copy of
-    `instructions`, the workspace's AGENTS.md) and nothing else that steers Codex.
+def prepare_home(home: Path, login_from: Path) -> None:
+    """Milo's Codex home: a fresh config.toml, a link to the user's login, and nothing else that steers Codex.
 
     A link that is already there is kept, and so is a real auth.json (a login made for Milo alone). Nothing
-    here follows a symlink except the login: config.toml and AGENTS.md are replaced, not written through.
-    The home is outside the worker's folder, so its sandbox can't change it for the next task.
+    here follows a symlink except the login: config.toml is replaced, not written through. The home is outside
+    the worker's folder, so its sandbox can't change it for the next task. Milo's instructions are not kept here:
+    helpers share the home, and each turn brings its own, trimmed to its task (CodexHarness.command).
     """
     if home.is_symlink():
         raise HarnessError(f"{home} is a symlink; Milo's Codex home must be a real folder", transient=False)
@@ -94,11 +95,6 @@ def prepare_home(home: Path, login_from: Path, instructions: Path | None = None)
     for profile in home.glob("*.config.toml"):
         profile.unlink()
     _replace(home / "config.toml", HOME_CONFIG)
-    if instructions is not None:
-        try:
-            _replace(home / "AGENTS.md", instructions.read_text(encoding="utf-8"))
-        except OSError as e:
-            log.warning("could not give the worker Milo's instructions from %s: %s", instructions, e)
     auth, source = home / "auth.json", login_from / "auth.json"
     if auth.is_symlink() and not auth.exists():
         auth.unlink()  # the user's login moved or went away
@@ -108,10 +104,18 @@ def prepare_home(home: Path, login_from: Path, instructions: Path | None = None)
         log.warning("codex has no login in %s; run `codex login` first", login_from)
 
 
+LIGHT_MODEL = "gpt-6-luna"
+"""Codex's "fast and affordable model for easier tasks". Measured on 2026-10-31 against Milo's made-up world: the
+same answers as the default model on calendar, mail and file reads, in less time (ADR 0032)."""
+
+
 @dataclass(frozen=True)
 class CodexOptions:
     binary: str = ""
     model: str = ""
+    light_model: str = LIGHT_MODEL
+    """For helpers off the screen whose task names its connections (a calendar read, a draft, a file search). ""
+    uses `model` for those too."""
     reasoning_effort: str = "low"
     sandbox: str = "workspace-write"
     """workspace-write (the worker's folder only) or read-only. Never danger-full-access: the worker would
@@ -125,13 +129,14 @@ SANDBOXES = ("workspace-write", "read-only")
 class CodexHarness:
     name = "codex"
 
-    def __init__(self, binary: str, workdir: Path, schema_path: Path, *, model: str = "",
+    def __init__(self, binary: str, workdir: Path, schema_path: Path, *, model: str = "", light_model: str = "",
                  reasoning_effort: str = "low", sandbox: str = "workspace-write", timeout_s: float = 180,
                  mac_tools: Sequence[str] = (), tool_servers: tuple[ToolServer, ...] = (),
                  home: Path | None = None, login_from: Path | None = None, instructions: Path | None = None):
         """`home` is Milo's own Codex home (None: the user's, for tests), `login_from` the user's.
-        `instructions` (the workspace's AGENTS.md) become the home's AGENTS.md: the worker runs in `workdir`,
-        a folder below the workspace, where Codex wouldn't look for them."""
+        `instructions` (the workspace's AGENTS.md) go with every new session, trimmed to the turn's task: the
+        worker runs in `workdir`, a folder below the workspace, where Codex wouldn't look for them. `light_model`
+        does the simple turns (ToolScope.simple)."""
         self.binary = binary
         self.home = home
         self.instructions = instructions
@@ -141,13 +146,14 @@ class CodexHarness:
         self.workdir = workdir
         self.schema_path = schema_path
         self.model = model
+        self.light_model = light_model
         self.reasoning_effort = reasoning_effort
         self.sandbox = sandbox
         self.timeout_s = timeout_s
         schema_path.parent.mkdir(parents=True, exist_ok=True)
         schema_path.write_text(json.dumps(REPLY_SCHEMA))
 
-    def command(self, prompt: str, session_id: str | None) -> list[str]:
+    def command(self, prompt: str, session_id: str | None, scope: ToolScope | None = None) -> list[str]:
         cmd = [self.binary, "exec"]
         if session_id:
             cmd += ["resume", session_id]
@@ -160,19 +166,37 @@ class CodexHarness:
             "-c", f'sandbox_mode="{self.sandbox}"',
             "-c", f'model_reasoning_effort="{self.reasoning_effort}"',
         ]
-        if self.model:
-            cmd += ["-m", self.model]
-        for server in (*mac_server(self.mac_tools), *self.tool_servers):
+        model = self.light_model if scope is not None and scope.simple and self.light_model else self.model
+        if model:
+            cmd += ["-m", model]
+        if session_id is None:
+            instructions = self._instructions(scope)
+            if instructions:
+                cmd += ["-c", f"developer_instructions={json.dumps(instructions)}"]
+        servers = (*mac_server(self.mac_tools), *self.tool_servers)
+        for server in scope.servers(servers) if scope is not None else servers:
             cmd += mcp_overrides(server)
         return cmd + ["--", prompt]
 
+    def _instructions(self, scope: ToolScope | None) -> str:
+        """Milo's AGENTS.md, as the user keeps it, without the sections this turn's task has no use for."""
+        if self.instructions is None:
+            return ""
+        try:
+            text = self.instructions.read_text(encoding="utf-8")
+        except OSError as e:
+            log.warning("could not give the worker Milo's instructions from %s: %s", self.instructions, e)
+            return ""
+        return trim_instructions(text, scope) if scope is not None else text
+
     async def reply(self, prompt: str, session_id: str | None, *, on_step: StepCallback | None = None,
-                    on_session: SessionCallback | None = None, on_plan: PlanCallback | None = None) -> Reply:
+                    on_session: SessionCallback | None = None, on_plan: PlanCallback | None = None,
+                    scope: ToolScope | None = None) -> Reply:
         on_line = lines(CodexActivity(on_step, self.workdir).line if on_step is not None else None,
                         RunWatch(on_session, on_plan).line if on_session or on_plan else None)
         env = None
         if self.home is not None:
-            prepare_home(self.home, self.login_from, self.instructions)
+            prepare_home(self.home, self.login_from)
             env = {**os.environ, "CODEX_HOME": str(self.home)}
         # codex takes another 4-6 s to exit after turn.completed; the answer is complete by then.
         try:
@@ -180,7 +204,7 @@ class CodexHarness:
             clear_steering(self.workdir)  # nothing a helper left there steers this one (ADR 0020)
         except OSError as e:
             raise HarnessError(f"the worker's folder isn't safe to work in: {e}", transient=False) from None
-        code, out, err = await run(self.command(prompt, session_id), cwd=self.workdir, timeout_s=self.timeout_s,
+        code, out, err = await run(self.command(prompt, session_id, scope), cwd=self.workdir, timeout_s=self.timeout_s,
                                    on_line=on_line, done=turn_over, env=env)
         thread_id, text, usage, error = parse_events(out.splitlines())
         if error or code != 0 or text is None:
@@ -253,6 +277,7 @@ def _codex(options: Mapping[str, Any], ctx: AdapterContext) -> CodexHarness:
         ctx.worker_dir,
         ctx.state_dir / "reply-schema.json",
         model=o.model,
+        light_model=o.light_model,
         reasoning_effort=o.reasoning_effort,
         sandbox=o.sandbox,
         timeout_s=o.timeout_s,

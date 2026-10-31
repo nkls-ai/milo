@@ -8,7 +8,7 @@ from milo.core.types import Emotion, HarnessError, ListenMode, MiloState, Reply,
 from milo.services.helpers import HelperStatus, is_installed_app, plain_step
 from milo.services.live_talk import untrusted
 from milo.services.orchestrator import HelperQuestions, needs_screen
-from milo.services.task_runner import NEEDS_SCREEN, NO_SCREEN, TASK_FAILED
+from milo.services.task_runner import NEEDS_SCREEN, NEEDS_TOOLS, NO_SCREEN, TASK_FAILED
 from tests.fakes import FakeAudioOutput, FakeHarness, FakeLiveModel, ScriptedHarness, WorkerScript, without_undo_id
 from tests.services.stack import Stack, settle
 
@@ -547,3 +547,39 @@ def test_instructions_go_to_the_worker_and_on_finish_hears_how_it_ended_once():
     assert without_undo_id(s.harness.played[0].prompt).endswith("Follow this recipe: 1. Count.")
     assert ended == [("Do the routine Report", HelperStatus.DONE), ("Tidy", HelperStatus.STOPPED)]
     assert follow.instructions == "Follow this recipe: 1. Count." and follow.on_finish is None
+
+
+# ---- the tools a helper gets (ADR 0032)
+
+
+def test_a_helper_gets_the_connections_its_task_names():
+    s = Stack(harness=ScriptedHarness(name="screen"), background=ScriptedHarness(name="background"))
+    run_tasks(s, "Lies die Termine im Kalender für morgen")
+    turn = s.background.played[0]
+    assert turn.scope.kinds == frozenset({"calendar"}) and not turn.scope.screen
+    assert "mcp__milo__calendar_events(" in turn.prompt and "mcp__milo__mail_search(" not in turn.prompt
+
+
+def test_a_helper_short_of_a_tool_runs_again_with_all_of_them():
+    s = Stack(harness=ScriptedHarness(name="screen"),
+              background=ScriptedHarness(WorkerScript(NEEDS_TOOLS), WorkerScript("Anna's birthday is in May."),
+                                         name="background"))
+    run_tasks(s, "Lies die Termine im Kalender und sag mir, wann Anna Geburtstag hat")
+    first, second = s.background.played
+    assert first.scope.kinds is not None and second.scope.kinds is None and second.session_id is None
+    assert s.voice.spoken == ["Anna's birthday is in May."], "NEEDS_TOOLS is never said"
+
+
+def test_a_routine_and_a_helper_moved_to_the_screen_keep_what_they_need():
+    s = Stack(harness=ScriptedHarness(WorkerScript("Typed."), name="screen"),
+              background=ScriptedHarness(WorkerScript("Counted."), WorkerScript(NEEDS_SCREEN), name="background"))
+
+    async def run():
+        s.tasks.submit("Monday report", instructions="Follow this recipe: 1. Count.")
+        s.tasks.submit("put the calendar totals in")
+        await s.tasks.idle()
+
+    asyncio.run(run())
+    assert s.tasks.helpers[0].scope is None, "a recipe may use any tool"
+    moved = s.harness.played[-1].scope
+    assert moved.screen and moved.kinds == frozenset({"calendar"})

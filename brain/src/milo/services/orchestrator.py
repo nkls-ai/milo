@@ -21,13 +21,14 @@ from dataclasses import replace
 from milo.core.events import Helpers
 from milo.core.logtext import private
 from milo.core.ports import Clock, EventSink
+from milo.core.task_scope import scope_for
 from milo.core.types import Decision, Emotion, HarnessError, Reply, Scope, Step
 
 from . import helpers as board_text
 from .helpers import Helper, HelperStatus, plain_step, reads_outside, short_title
 from .quiet import POLL_S
 from .speaker import Speaker
-from .task_runner import NEEDS_SCREEN, TASK_FAILED, TaskRunner, follow_up_prompt, steer_prompt
+from .task_runner import NEEDS_SCREEN, NEEDS_TOOLS, TASK_FAILED, TaskRunner, follow_up_prompt, steer_prompt
 from .transcript import Transcript, unrecorded
 from .updates import Milestones, Updates
 
@@ -154,7 +155,8 @@ class Orchestrator:
         name = short_title(description, title)
         helper = Helper(self._transcript.task_started(description, title=name, own=own), self._numbers, name,
                         description, screen, self._clock.monotonic(), careful=careful, instructions=instructions,
-                        on_finish=on_finish, user_asked=user_asked, language=language)
+                        on_finish=on_finish, user_asked=user_asked, language=language,
+                        scope=None if instructions else scope_for(description, screen=screen))
         log.info("helper %d %s%s, %s", helper.number, "on the screen" if screen else "in the background",
                  " (careful)" if careful else "", private(description))
         self._add(helper)
@@ -193,7 +195,9 @@ class Orchestrator:
                                                       title=helper.title),
                         self._next_number(), helper.title, helper.description, helper.screen, self._clock.monotonic(),
                         session_id=helper.session_id, amendments=[*helper.amendments, change], follow_up=change,
-                        careful=careful, instructions=helper.instructions, user_asked=user_asked)
+                        careful=careful, instructions=helper.instructions, user_asked=user_asked,
+                        language=helper.language,
+                        scope=helper.scope and scope_for(f"{helper.description}\n{change}", screen=helper.screen))
         self._add(follow)
         return follow
 
@@ -337,6 +341,11 @@ class Orchestrator:
                     helper.screen, helper.status, helper.session_id = True, HelperStatus.QUEUED, None
                     self._changed(now=True)
                     return
+                if reply.say.strip() == NEEDS_TOOLS and helper.scope is not None:
+                    log.info("helper %d needs more tools than its task named, running it with all", helper.number)
+                    helper.scope = None
+                    prompt, session = self._runner.first_prompt(helper), None
+                    continue
                 self._done(helper, reply)
                 return
         except asyncio.CancelledError:

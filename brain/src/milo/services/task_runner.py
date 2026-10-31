@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import logging
 
-from milo.core.hands import SERVER_NAME, TOOLS
+from milo.connect.brief import brief
 from milo.core.language import name as language_name
 from milo.core.logtext import private
 from milo.core.ports import Clock, Harness, PlanCallback, SessionCallback, StepCallback, UsageLedger
+from milo.core.task_scope import ToolScope
 from milo.core.types import Reply
 
 from .context import UserContext
@@ -17,6 +18,7 @@ log = logging.getLogger("milo.tasks")
 
 TASK_FAILED = "I couldn't finish that task. Check ~/Milo/logs/brain.log."
 NEEDS_SCREEN = "NEEDS_SCREEN"
+NEEDS_TOOLS = "NEEDS_TOOLS"
 
 # Said to a helper that works without the screen. If it needs the screen after all, it comes back with
 # NEEDS_SCREEN and the orchestrator queues it again for the screen.
@@ -29,17 +31,25 @@ def answer_in(language: str) -> str:
     return f"(The user speaks {language_name(language)}: write `say` in {language_name(language)}.)"
 
 
-def screen_tools() -> str:
-    """Names the screen tools up front. A Codex worker otherwise starts by listing every tool it has, and each
-    description comes back with the server's instructions in front: some 10,000 tokens that every later step of
-    the task sends again."""
-    names = ", ".join(t.name for t in TOOLS)
-    return (f"(Your screen tools are on the {SERVER_NAME} server: {names}. Call them directly, no need to look them "
-            f"up first. To open an app or a web page use open_app or open_url, never keys.)")
+# Said to a helper that got only the connections its task names (core/task_scope.py). If it needs another one, it
+# comes back with NEEDS_TOOLS and the orchestrator runs it again with all of them.
+SOME_TOOLS = (f"(You have only the tools this task seems to need. If it needs another of Milo's tools (calendar, "
+              f"reminders, mail, notes, shortcuts, files, memory), stop at once and reply with say exactly "
+              f"{NEEDS_TOOLS}.)")
 
 
-def first_prompt(helper: Helper, *, no_screen: bool, tools: bool = False) -> str:
-    """The task as the talker wrote it, plus whatever the user changed since. Self-contained."""
+def scope(helper: Helper, *, screen_tools: bool) -> ToolScope:
+    """The tools a helper's turn gets: its task's connections, and the screen tools if it works there."""
+    kinds = helper.scope.kinds if helper.scope is not None else None
+    return ToolScope(kinds, screen=helper.screen and screen_tools)
+
+
+def first_prompt(helper: Helper, *, no_screen: bool, tools: bool = False,
+                 available: frozenset[str] | None = None) -> str:
+    """The task as the talker wrote it, plus whatever the user changed since, and the tools it has, by name and
+    arguments: a Codex worker otherwise starts by listing every tool, and each description came back with its
+    server's instructions in front (10,000 tokens that every later step sent again). Self-contained.
+    `tools`: the screen tools are there; `available`: the connections switched on (None: all)."""
     parts = [helper.instructions or helper.description]
     if helper.amendments:
         changes = "\n".join(f"- {a}" for a in helper.amendments)
@@ -49,8 +59,10 @@ def first_prompt(helper: Helper, *, no_screen: bool, tools: bool = False) -> str
         parts.append(answer_in(helper.language))
     if no_screen:
         parts.append(NO_SCREEN)
-    elif tools and helper.screen:
-        parts.append(screen_tools())
+    turn = scope(helper, screen_tools=tools)
+    parts.append(brief(turn, available=available))
+    if turn.kinds is not None:
+        parts.append(SOME_TOOLS)
     parts.append(f"(Task id for undo_point and undo_note: {helper.id}.)")
     return "\n\n".join(parts)
 
@@ -78,8 +90,11 @@ class TaskRunner:
     """
 
     def __init__(self, harness: Harness, ledger: UsageLedger, clock: Clock, context: UserContext, *,
-                 background: Harness | None = None, hands: HandsService | None = None):
+                 background: Harness | None = None, hands: HandsService | None = None,
+                 available: frozenset[str] | None = None):
+        """`available`: the connections switched on, so a helper's prompt names only tools it has."""
         self._harness = harness
+        self._available = available
         self._background = background
         self._ledger = ledger
         self._clock = clock
@@ -92,7 +107,8 @@ class TaskRunner:
         return self._background is not None
 
     def first_prompt(self, helper: Helper) -> str:
-        return first_prompt(helper, no_screen=self.has_screen and not helper.screen, tools=self._hands is not None)
+        return first_prompt(helper, no_screen=self.has_screen and not helper.screen, tools=self._hands is not None,
+                            available=self._available)
 
     async def run(self, helper: Helper, prompt: str, session_id: str | None, *, on_step: StepCallback,
                   on_session: SessionCallback, on_plan: PlanCallback) -> Reply:
@@ -104,7 +120,8 @@ class TaskRunner:
             self._hands.begin(helper.id, careful=helper.careful)
         try:
             reply = await harness.reply(stamp(prompt, self._clock.now(), self._context.app), session_id,
-                                        on_step=on_step, on_session=on_session, on_plan=on_plan)
+                                        on_step=on_step, on_session=on_session, on_plan=on_plan,
+                                        scope=scope(helper, screen_tools=self.has_screen))
         finally:
             if holds_hands:
                 self._hands.end(helper.id)
