@@ -213,7 +213,8 @@ class EntryKind(StrEnum):
 class TranscriptEntry:
     """One line of a conversation as the Milo window shows it.
 
-    user: what the user said, `via` "voice", "typed" or "message". milo: a reply, `done` False while it streams.
+    user: what the user said, `via` "voice", "typed" or "message". milo: a reply, `done` False while it streams;
+    `written` when it is text Milo wrote for the user to paste or copy (<write>, ADR 0033), which gets a Copy button.
     task: work handed to the worker agent, with its short `title`, its steps, `status`, the `result` Milo reported
     and the `files` it named that exist. `conversation` is the id of the conversation it belongs to.
     """
@@ -231,6 +232,7 @@ class TranscriptEntry:
     conversation: str = ""
     title: str = ""
     files: list[str] = field(default_factory=list)
+    written: bool = False
 
     def to_dict(self) -> dict:
         d: dict = {"id": self.id, "ts": self.ts, "kind": self.kind.value, "text": self.text}
@@ -238,6 +240,8 @@ class TranscriptEntry:
             d["via"] = self.via
         elif self.kind is EntryKind.MILO:
             d |= {"emotion": self.emotion.value, "done": self.done}
+            if self.written:
+                d["written"] = True
         else:
             d |= {"status": self.status.value, "result": self.result, "steps": [s.to_dict() for s in self.steps]}
             if self.title:
@@ -256,6 +260,7 @@ class TranscriptEntry:
             status=StepStatus(d.get("status", "done")), result=str(d.get("result", "")),
             steps=[Step.from_dict(s) for s in d.get("steps", [])], conversation=str(d.get("conversation", "")),
             title=str(d.get("title", "")), files=[str(f) for f in d.get("files", [])],
+            written=bool(d.get("written", False)),
         )
 
 

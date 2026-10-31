@@ -111,6 +111,9 @@ class Stack:
     world: Path | None = None
     """A folder for made-up connections (adapters/connect/fake.py, world.json): the talker's quick actions and its
     <today> block work on them (ADR 0029). None: no quick actions."""
+    paste: object | None = None
+    """What the app answers to text.write and text.unwrite (a FakePaste, tests/services/test_writing.py): <write> tags
+    paste through it (ADR 0033). None: no Writer."""
     meetings: object | None = None
     """What <meeting> tags start and stop: a MeetingService or a stand-in with recording, toggle and pause."""
     real_threads: bool = False
@@ -178,11 +181,19 @@ class Stack:
                                       approvals=self.approvals, undo=self.undo, reminders=self.reminders,
                                       meetings=self.meetings, quiet=lambda: self.mic.active, wait_s=self.wait_s,
                                       language=self.language.get, poll_s=0.005)
+        self.writer = None
+        if self.paste is not None:
+            from milo.services.writing import Writer
+            from milo.services.transcript import Transcript
+            from tests.fakes import MemoryConversations
+            self.writer = Writer(self.paste, self.ui, self.speaker, undo=self.undo, quiet=lambda: self.mic.active,
+                                 transcript=Transcript(self.sink, MemoryConversations(), self.clock),
+                                 language=self.language.get, wait_s=self.wait_s, poll_s=0.005)
         self.live_talk = LiveTalk(self.model, self.speaker, self.ui, self.context, self.clock, self.profile,
                                   self.reminders, self.ledger, lambda: self.persona, self.idle_reset_s, self.tasks,
                                   eyes=self.eyes, approvals=self.approvals, memory=self.turn_memory,
                                   routines=self.routines, undo=self.undo, opener=self.opener,
-                                  language=self.language, quick=self.quick)
+                                  language=self.language, quick=self.quick, writer=self.writer)
         self.tasks.on_result = self.live_talk.note
         self.dictation = DictationService(UpperCleaner(), self.history, self.ui)
         self.listening = Listening(self.mic, self.transcriber, executor, self.ui, self.dictation, self.live_talk,

@@ -13,12 +13,12 @@ log = logging.getLogger("milo.reply")
 
 ACTS = ("event", "todo", "note", "timer", "draft", "shortcut", "music", "meeting")
 """Things the talker does at once, without a helper (services/quick_actions.py, ADR 0029)."""
-TAGS = ("remember", "reminder", "task", "look", "steer", "stop", "undo", "routine", "title", "open", *ACTS)
+TAGS = ("remember", "reminder", "task", "look", "steer", "stop", "undo", "routine", "title", "open", "write", *ACTS)
 _SELF_CLOSING = ("<look/>", "<look />")
 _MARKERS = tuple(f"<{name}>" for name in TAGS) + tuple(f"</{name}>" for name in TAGS) + _SELF_CLOSING
 # Tags that may carry attributes: <task title="..." screen="yes">, <steer helper="2">, <stop helper="all"/>, <undo/>,
 # <routine do="run" name="...">, <open app="..." url="..."/>, and every act: <event title="..." start="..."/>, ...
-_WITH_ATTRS = "|".join(("task", "steer", "stop", "undo", "routine", "open", *ACTS))
+_WITH_ATTRS = "|".join(("task", "steer", "stop", "undo", "routine", "open", "write", *ACTS))
 _OPENER = re.compile(rf"<({_WITH_ATTRS})((?:\s+[a-z_]+\s*=\s*(?:\"[^\"<>]*\"|'[^'<>]*'|[^\s<>/\"']+))*)\s*(/?)>",
                      re.IGNORECASE)
 _OPENING = re.compile(rf"<({_WITH_ATTRS})\s[^<>]*$", re.IGNORECASE)
@@ -107,6 +107,9 @@ class ReplyParser:
         self.acts: list[ActRequest] = []
         """Each act tag, in order: an event, a to-do, a note, a timer, ... (services/quick_actions.py). Like opens,
         LiveTalk starts them while the reply still streams."""
+        self.writes: list[str] = []
+        """Each <write> tag's text, its lines as written: Milo pastes it where the user is (services/writing.py).
+        LiveTalk hands it on the moment the tag closes."""
         self.title = ""
         """A <title> tag: Milo's name for the conversation, when he was asked for one."""
         self.look: str | None = None
@@ -264,6 +267,13 @@ class ReplyParser:
     def _collect(self, tag: str, content: str) -> None:
         attrs, self._attrs = self._attrs, {}
         self.acted = self.acted or tag not in _NOT_ACTIONS
+        if tag == "write":  # pasted as it is: indents and blank lines too, only the ends trimmed
+            text = content.replace("\r\n", "\n").replace("\r", "\n")
+            # A space after <write> isn't an indent; a line of its own may be (code, a list).
+            text = (text.lstrip(" \t") if not text.lstrip(" \t").startswith("\n") else text).strip("\n").rstrip()
+            if text.strip():
+                self.writes.append(text)
+            return
         if tag in ACTS:  # a note's or a draft's text keeps its lines
             lines = [" ".join(line.split()) for line in content.strip().splitlines()]
             self.acts.append(ActRequest(tag, attrs, "\n".join(lines).strip()))
