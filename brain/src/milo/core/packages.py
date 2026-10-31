@@ -152,8 +152,9 @@ def _objects(words: str) -> list[list[str]]:
 def named_by(wanted: Install, words: str) -> bool:
     """Whether the user's own words asked for this very install, so it needs no question in auto mode. Either the
     object of their install verb is a program `KNOWN` maps to exactly this (manager, package) ("install the codex
-    cli" -> npm `@openai/codex`, never npm's unrelated `codex`), or, for a program the map doesn't know, it is the
-    package's exact name ("install cowsay", "install @openai/codex": a scoped package only with its scope, so
+    cli" -> npm `@openai/codex`, never npm's unrelated `codex`; "codex plus" is neither), or, for a program the map
+    doesn't know, the whole object is the package's exact name: on Homebrew by itself ("install tree"), on npm or uv
+    only with that manager named too ("install cowsay with npm"; a scoped package only with its scope, so
     `@evil/codex` isn't "codex"). A manager they named must be the one used.
     Never for a version, tag, tap or other source (`pinned`), and never when the words point at text someone else
     wrote (`POINTS_OUTSIDE`)."""
@@ -172,6 +173,12 @@ def named_by(wanted: Install, words: str) -> bool:
         if known is not None:  # a known program is only what its own instructions name: npm's `codex` isn't Codex
             if (wanted.manager, wanted.package) in known:
                 return True
-        elif thing[0] == wanted.package.lower():
+            continue
+        if any(" ".join(name[:n]) in KNOWN for n in range(1, len(name))):
+            continue  # "codex plus" starts with a known program but isn't it: neither the map nor the name decides
+        # The exact name: on Homebrew (its own curated formulae and casks) by itself, on npm or PyPI, where anyone can
+        # publish under any free name, only when the user also named that manager ("install cowsay with npm").
+        if name == [wanted.package.lower()] and (wanted.manager in said or (
+                not said and wanted.manager in ("brew", "brew_cask"))):
             return True
     return False

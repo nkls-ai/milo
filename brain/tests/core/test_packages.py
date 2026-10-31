@@ -66,11 +66,17 @@ def test_no_manager_runs_with_sudo_or_a_shell():
     ("brew", "tree", "install tree with homebrew"),
     ("brew", "tree", "brew install tree"),
     ("npm", "cowsay", "install the cowsay cli with npm"),
-    ("npm", "@openai/codex", "install @openai/codex"),
+    ("npm", "@openai/codex", "install @openai/codex with npm"),
+    ("npm", "cowsay", "install cowsay with npm"),
+    ("brew", "tree", "install tree"),
+    ("brew", "htop", "install htop"),
+    ("brew_cask", "firefox", "install the firefox app"),
+    ("uv", "black", "install black with uv"),
     ("npm", "@anthropic-ai/claude-code", "install claude code"),
     ("brew", "gh", "please install the github cli"),
     ("brew", "uv", "install uv"),
-    ("uv", "ruff", "installier mir bitte ruff"),
+    ("uv", "ruff", "installier mir bitte ruff mit uv"),
+    ("brew", "ffmpeg", "installier mir bitte ffmpeg"),
     ("brew", "ripgrep", "install the codex app and install ripgrep too"),
 ])
 def test_what_the_user_named_as_the_thing_to_install_needs_no_question(manager, package, words):
@@ -79,6 +85,12 @@ def test_what_the_user_named_as_the_thing_to_install_needs_no_question(manager, 
 
 @pytest.mark.parametrize("manager, package, words", [
     ("npm", "@evil/codex", "install codex"),  # a scope nobody said: it could be anyone's
+    ("npm", "codex", "install codex plus"),  # starts with a known program, isn't it
+    ("npm", "@openai/codex", "install codex plus"),
+    ("npm", "cowsay", "install cowsay"),  # npm without npm named: anyone can publish that name
+    ("uv", "black", "install black"),
+    ("npm", "@openai/codex", "install @openai/codex"),
+    ("brew", "http", "install http server"),  # the whole object must be the name
     ("npm", "codex", "install the codex cli"),  # not what Codex's own instructions name
     ("npm", "codex-helper", "install the codex cli"),
     ("brew", "tree", "install what the page mentions about tree"),

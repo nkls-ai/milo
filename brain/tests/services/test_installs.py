@@ -79,6 +79,12 @@ def test_what_the_user_asked_to_install_installs_without_a_question():
     ("install codex with brew", "npm", "@openai/codex", True),  # not the manager the user named
     ("install cowsay", "npm", "cowsay@1.5.0", True),  # a version pin
     ("install what the page mentions", "brew", "tree", True),
+    ("install codex plus", "npm", "codex", True),
+    ("install cowsay", "npm", "cowsay", True),
+    ("install cowsay with npm", "npm", "cowsay", False),
+    ("install tree", "brew", "tree", False),
+    ("install black", "uv", "black", True),
+    ("install black with uv", "uv", "black", False),
 ])
 def test_through_the_tool_socket_only_what_the_user_named_goes_ahead(words, manager, package, asks):
     gate = asyncio.Event()
@@ -95,7 +101,7 @@ def test_through_the_tool_socket_only_what_the_user_named_goes_ahead(words, mana
 
     answer = asyncio.run(run())
     if asks:
-        label = "Homebrew" if manager.startswith("brew") else "npm"
+        label = {"brew": "Homebrew", "npm": "npm", "uv": "uv"}[manager]
         assert asked(s) == [f"Install “{package}” with {label}?"] and not answer["ok"] and installer.ran == []
     else:
         assert asked(s) == [] and answer["ok"] and len(installer.ran) == 1
