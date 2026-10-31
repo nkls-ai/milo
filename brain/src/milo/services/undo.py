@@ -17,7 +17,7 @@ import hashlib
 import json
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 
 from milo.core.events import UndoPoints
