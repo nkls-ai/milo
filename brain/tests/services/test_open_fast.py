@@ -6,7 +6,7 @@ and asked "May I use Milo?", and the answer came in German to an English questio
 
 import asyncio
 
-from milo.core.events import Confirm, Status
+from milo.core.events import ActionDone, Confirm, Status
 from milo.core.types import HandsError, ListenMode
 from milo.services.cloud_hearing import CloudHearing
 from tests.fakes import FakeAudioInput, FakeHands, FakeLiveModel, FakeStreamingTranscriber, FakeTranscriber
@@ -35,6 +35,17 @@ def test_open_chrome_and_go_to_youtube_opens_it_at_once_without_a_helper_or_a_qu
     assert s.voice.spoken == ["Opening YouTube in Chrome."]
     assert s.tasks.helpers == [] and s.harness.calls == [], "no helper, no harness turn"
     assert s.sink.of(Confirm) == []
+
+
+def test_what_milo_opened_gets_a_card_that_opens_it_again():
+    s = Stack(model=FakeLiveModel([YOUTUBE], ['[happy] <open app="Notes"/> Here.'],
+                                  ['[happy] <open path="~/Downloads"/> There.']),
+              hands_port=FakeHands(results={"open_app": {"text": "Opened Notes.", "app": "Notes", "front": True},
+                                            "open_file": {"text": "Opened Downloads.", "app": "Finder"}}))
+    talk(s, "go on YouTube in Chrome", "open Notes", "show me my downloads")
+    assert [(c.kind, c.title, c.detail, c.app, c.undo) for c in s.sink.of(ActionDone)] == [
+        ("opened", "www.youtube.com", "https://www.youtube.com", "Google Chrome", ""),
+        ("opened", "Notes", "", "Notes", ""), ("opened", "Downloads", "", "Finder", "")]
 
 
 def test_the_page_opens_while_the_reply_is_still_streaming():
@@ -109,6 +120,7 @@ def test_when_the_app_cant_open_it_the_user_sees_why():
               hands_port=FakeHands(results={"open_app": HandsError("There is no app called Nonexistent.")}))
     talk(s, "open Nonexistent")
     assert Status("I couldn't open Nonexistent.") in s.sink.of(Status)
+    assert s.sink.of(ActionDone) == [], "no card for what didn't open"
 
 
 def test_the_message_says_its_language_and_a_question_follows_it():
