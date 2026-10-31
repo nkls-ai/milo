@@ -107,3 +107,16 @@ def test_a_short_message_keeps_the_conversations_language():
     assert language.hear("Can you open a new tab and search for Wikipedia?", reported="deu") == "en", \
         "clear English words win over a transcriber that heard an accent as German"
     assert language.hear("Kannst du Chrome öffnen?", reported="eng") == "de"
+
+
+def test_a_greeting_says_its_language_and_the_last_language_outlives_a_restart(tmp_path):
+    """2026-10-31: after a restart "hi" got "Hallo! Ich bin Milo": too short to tell, and nothing to keep."""
+    from milo.core.language import SpokenLanguage, detect
+
+    assert detect("hi") == "en" and detect("hello") == "en" and detect("moin") == "de"
+    kept = []
+    language = SpokenLanguage(changed=kept.append)
+    language.hear("Can you open Chrome and YouTube?")
+    language.hear("okay")
+    assert kept == ["en"], "told once, when it changed"
+    assert SpokenLanguage(kept[-1]).hear("mhm") == "en"

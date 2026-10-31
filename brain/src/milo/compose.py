@@ -20,6 +20,7 @@ from .core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, CHANNELS, DIARIZERS, EM
                             Registry)
 from .core.task_scope import CONNECT_SERVER
 from .core.types import Emotion, LiveMode, ToolServer
+from .memory.state import JsonState
 from .services.app_bridge import AppAccessLink, AppBridge, AppEyes, AppHands
 from .services.approvals import ActionPolicy, Approvals
 from .services.attention import Attention
@@ -260,7 +261,10 @@ def _presence(p: Parts) -> None:
                                           memory=mem.memory.search if mem is not None else None,
                                           reminders=p.reminders)
     p.permits = Permits(config.approvals.ask, config.approvals.allowed_apps)  # saves once Settings exists
-    p.language = language = SpokenLanguage()  # the latest message's language: replies, helpers, questions follow it
+    # The latest message's language: replies, helpers and questions follow it. Kept across restarts.
+    spoken = JsonState(p.workspace.state_dir / "language.json")
+    p.language = language = SpokenLanguage(
+        str(spoken.data.get("code", "")), changed=lambda code: (spoken.data.update(code=code), spoken.save()))
     p.approvals = approvals = Approvals(ui, speaker, ActionPolicy(config.approval_levels),
                                         timeout_s=config.approvals.timeout_s, reask_s=config.approvals.reask_s,
                                         speak=config.approvals.speak,
@@ -577,7 +581,6 @@ def _memory(config: Config, workspace, ctx: AdapterContext, clock, ui: UiState, 
     from .memory.facts import JsonlFactStore
     from .memory.index import SqliteMemoryIndex
     from .memory.recall import HybridRecaller, RecallTuning, render
-    from .memory.state import JsonState
 
     settings = config.memory
     name, options = config.embedder()

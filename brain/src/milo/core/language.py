@@ -8,6 +8,7 @@ engine, so `detect` guesses from common short words, which is enough to tell Ger
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 
 NAMES = {"en": "English", "de": "German", "fr": "French", "es": "Spanish", "it": "Italian", "nl": "Dutch",
          "pt": "Portuguese", "pl": "Polish", "sv": "Swedish", "da": "Danish", "no": "Norwegian", "fi": "Finnish",
@@ -25,12 +26,12 @@ _WORD = re.compile(r"[a-zäöüß']+")
 _EN = frozenset("""the a an and or but is are was were be been it its this that these those you your i me my we our
 they them their he she his her to of in on at for with from by as do does did not no yes can could would should
 will what why how who where when which please open go get make show tell me just so now then there here have has
-had into about up out all some any thanks thank okay hey""".split())
+had into about up out all some any thanks thank okay hey hi hello morning bye""".split())
 _DE = frozenset("""der die das den dem des ein eine einen einem einer und oder aber ist sind war waren sein bin bist
 es ich mich mir mein meine du dich dir dein wir uns unser ihr sie er ihm ihn sein nicht kein keine ja nein kann
 kannst könntest würde sollte wird was warum wie wer wo wann welche bitte öffne öffnen geh gehe mach mache zeig
 zeige sag sage jetzt dann dort hier habe hast hat hatte auf zu mit von für bei aus nach über auch noch mal doch
-danke schön okay hallo""".split())
+danke schön okay hallo moin servus tschüss morgen""".split())
 
 
 def normalize(code: str) -> str:
@@ -66,16 +67,23 @@ def name(code: str) -> str:
 
 class SpokenLanguage:
     """The language of the user's latest message, shared by everything that speaks to them about it: the talker's
-    reply, a helper's answer and the questions Milo asks while it works. Set once per turn by LiveTalk."""
+    reply, a helper's answer and the questions Milo asks while it works. Set once per turn by LiveTalk.
 
-    def __init__(self, code: str = ""):
+    `code`: the language to start in, the last one the user spoke before a restart, so a first "hi" isn't answered
+    in a guessed language. `changed` is told each new one, to keep it for next time."""
+
+    def __init__(self, code: str = "", changed: Callable[[str], None] | None = None):
         self.code = normalize(code)
+        self._changed = changed
 
     def hear(self, text: str, reported: str = "") -> str:
         """A new message: the language its words clearly are, else the one its transcriber reported, else the one
         before (a short "okay" or "yes" keeps the conversation's language). Returns the code. The words go first:
         the reply should match them, and a transcriber hears English with a German accent as German now and then."""
-        self.code = detect(text) or normalize(reported) or self.code
+        code = detect(text) or normalize(reported) or self.code
+        if code != self.code and self._changed is not None:
+            self._changed(code)
+        self.code = code
         return self.code
 
     def get(self) -> str:
