@@ -212,7 +212,7 @@ def test_the_remind_question_doesnt_use_a_day_format_windows_lacks(monkeypatch):
     import time
     from datetime import datetime
 
-    from milo.services.live_talk import remind_question
+    from milo.services.reply_effects import remind_question
 
     real = time.strftime
 
@@ -229,7 +229,7 @@ def test_the_remind_question_doesnt_use_a_day_format_windows_lacks(monkeypatch):
 def test_remember_and_remind_questions_follow_the_language():
     from datetime import datetime
 
-    from milo.services.live_talk import remember_question, remind_question, task_question
+    from milo.services.reply_effects import remember_question, remind_question, task_question
 
     assert remember_question("Mag Tee", "de") == "Soll ich mir das merken: Mag Tee?"
     assert remind_question(datetime(2026, 11, 2, 9, 0), "Anna anrufen", "de") == \

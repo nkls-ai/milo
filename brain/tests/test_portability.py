@@ -193,7 +193,6 @@ ALLOWED: dict[tuple[str, str], str] = {
     ("services/brief.py", "mac-word"): "\"is Milo running on the Mac?\"",
     ("services/cloud_hearing.py", "mac-word"): "NOTICE says it transcribes on this Mac",
     ("services/talk_prompt.py", "mac-app"): "the talker's prompt names Numbers among the apps",
-    ("services/live_talk.py", "mac-word"): "task_question drops \"on the user's Mac\" from a task's first sentence",
     ("services/messages.py", "mac-word"): "phone replies say \"at your Mac\"",
     ("services/routines.py", "mac-app"): "the recipe example uses apps: [Numbers]",
     ("services/routines.py", "mac-word"): "the recipe prompt asks for \"the Mac apps\" the work used",
@@ -211,7 +210,7 @@ ALLOWED: dict[tuple[str, str], str] = {
 }
 
 
-CEILING = 56
+CEILING = 55
 """How many ALLOWED lines there were at the last count (2026-10-31: 57, less the one in GROWN). It only goes down:
 when a coupling moves out and its line goes, lower it too. It never goes up."""
 

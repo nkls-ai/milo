@@ -5,7 +5,8 @@ from datetime import datetime
 from milo.core.events import ActionDone, Bubble, Confirm, ConfirmAnswer, ConfirmDone, EmotionChanged, Heard, Level, StateChanged
 from milo.core.logtext import log_content
 from milo.core.types import Emotion, HarnessError, MiloState, Reminder, Usage
-from milo.services.live_talk import HICCUP, task_question
+from milo.services.live_talk import HICCUP
+from milo.services.reply_effects import task_question
 from tests.fakes import FakeAudioOutput, FakeHarness, FakeLiveModel, ListReminders, MemoryProfile, without_undo_id
 from tests.services.stack import Stack, settle
 
@@ -433,7 +434,7 @@ def test_task_questions_are_one_short_sentence_in_plain_words():
     morning = ("Open Microsoft Excel on the user's Mac and create a new blank workbook. In the first sheet, make a "
                "simple table with a header row with the columns \"Day\" and \"Budget\", then one row for each day "
                "of the week from Monday to Sunday.")
-    assert task_question(morning) == "Open Microsoft Excel and create a new blank workbook?"
+    assert task_question(morning, computer="Mac") == "Open Microsoft Excel and create a new blank workbook?"
     assert task_question("Make a budget table in Excel. Details follow.") == "Make a budget table in Excel?"
     assert task_question("file the user's newest PDF into a folder for the user") == "File your newest PDF into a folder?"
     long = task_question("Look through every email from the last three months and collect each invoice amount "

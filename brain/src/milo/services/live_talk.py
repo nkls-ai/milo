@@ -2,26 +2,24 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 from collections.abc import Callable, Sequence
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from milo.core.events import ActionDone, Bubble, Heard, Looking
+from milo.core.events import Bubble, Heard, Looking
 from milo.core.language import SpokenLanguage
 from milo.core.language import name as language_name
 from milo.core.logtext import private
 from milo.core.opening import OpenRequest, named_by
 from milo.core.ports import Clock, LiveModel, ProfileMemory, ReminderBook, ScreenEyes, UsageLedger
 from milo.core.types import Emotion, HarnessError, MiloState, ScreenCapture
-from milo.core.words import dates, say
 
 from .approvals import Approvals
 from .backchannel import Backchannel
 from .context import UserContext
 from .conversation import stamp
 from .memory import Recalled, TurnMemory
+from .reply_effects import ReplyEffects
 from .reply_stream import ActRequest, ReplyParser
 from .screen import look_prompt
 from .speaker import Speaker, Utterance
@@ -43,41 +41,6 @@ log = logging.getLogger("milo.live")
 
 HICCUP = "My brain hiccuped. Check ~/Milo/logs/brain.log."
 HOLD_MAX_S = 330.0  # a held reply is dropped after this: longer than the longest hands-free recording
-
-QUESTION_CHARS = 80
-_FIRST_SENTENCE = re.compile(r"(?<=[.!?;:])\s")
-_PLAIN = ((re.compile(r"\s+(on|in) the user's (Mac|computer)\b", re.I), ""),
-          (re.compile(r"\s+for the user\b", re.I), ""),
-          (re.compile(r"\bthe user's\b", re.I), "your"),
-          (re.compile(r"\bthe user\b", re.I), "you"))
-
-
-def task_question(description: str, *, title: str = "", language: str = "") -> str:
-    """A yes-or-no question a person can answer at a glance: the task's first sentence, short, in the second
-    person. "Open Microsoft Excel on the user's Mac and make a table. Then ..." asks "Open Microsoft Excel and
-    make a table?". A first sentence too long to fit asks about the task's `title` instead, if it has one."""
-    first = _FIRST_SENTENCE.split(" ".join(description.split()), maxsplit=1)[0].rstrip(".!?;: ")
-    for pattern, plain in _PLAIN:
-        first = pattern.sub(plain, first)
-    if len(first) > QUESTION_CHARS - 1 and title.strip():
-        return say("talk.start_titled", language, title=" ".join(title.split()))
-    if len(first) > QUESTION_CHARS - 1:
-        first = first[:QUESTION_CHARS - 2].rsplit(" ", 1)[0].rstrip(",;: ") + "…"
-    return (first[:1].upper() + first[1:] or say("talk.go_ahead", language)) + "?"
-
-
-def open_question(request: OpenRequest, language: str = "") -> str:
-    """Asked before opening an address or a file the user didn't name, after Milo read outside text."""
-    return say("talk.open", language, what=request.what)
-
-
-def remember_question(fact: str, language: str = "") -> str:
-    return say("talk.remember", language, fact=fact)
-
-
-def remind_question(due: datetime, what: str, language: str = "") -> str:
-    return say("talk.remind", language, when=dates.date_time(due, language), what=what)
-
 
 class LiveTalk:
     """A user turn, typed or spoken, answered by the streaming live model and spoken as it arrives.
@@ -109,8 +72,6 @@ class LiveTalk:
         """The language of the message being answered; the reply, helpers and questions follow it."""
         self._opening: set[asyncio.Task] = set()
         self._heard_at: float | None = None
-        self._undo = undo
-        """Takes back what a helper did on <undo> (ADR 0026). None: the tag does nothing."""
         self._meetings = meetings
         self._backchannel = backchannel
         self._routines = routines
@@ -151,7 +112,9 @@ class LiveTalk:
         """The user's own words in the turn being answered (auto mode reads them, ADR 0022)."""
         self._via = ""
         """Where the turn came from: "voice" or "typed" at the Mac, "message" from the phone."""
-        self._asking: set[asyncio.Task] = set()
+        self._effects = ReplyEffects(ui, profile, reminders, tasks, start_open=self._start_open, approvals=approvals,
+                                     routines=routines, undo=undo, quick=quick, computer=computer)
+        """Does what a finished reply's tags say, asking first where its TagPolicy says so."""
         self._preparing: asyncio.Task | None = None
         self._hold_timer: asyncio.TimerHandle | None = None
 
@@ -477,7 +440,6 @@ class LiveTalk:
             if parser.title:
                 self._transcript.titled(parser.title)
             self._apply(parser, rule, held=held, remember=not screen)
-            self._take_back(parser)
         if not speak:
             if parser.spoken.strip():
                 await self._speaker.say(parser.spoken, parser.emotion, speak=False)
@@ -638,96 +600,15 @@ class LiveTalk:
 
     def _apply(self, parser: ReplyParser, rule: TagPolicy, *, held: Sequence[OpenRequest] = (),
                remember: bool = True) -> None:
-        """Save facts and reminders, start tasks the reply asked for, and start a look.
-
-        Some tags wait for the user's yes, because text from outside could have talked the model into them; `rule`
-        says which (tag_policy). Opening an app or making a new document never asks. Without a way to ask, tags that
-        need a yes are dropped. A reply to screen data never remembers facts: those come from the user, never from
-        the screen.
-
-        `rule`: what this reply's tags may do without a yes (tag_policy). `remember=False`: it was screen data,
-        which never becomes a fact and doesn't look again.
-        """
-        if not remember and parser.remembers:
-            log.info("not remembering %d fact(s) from a turn with screen data", len(parser.remembers))
-        elif parser.look is not None and remember and self._eyes is not None:
+        """Start a look the reply asked for, then do what its other tags say (ReplyEffects). `remember=False`: the
+        reply was to screen data, so it doesn't look again or remember facts."""
+        if remember and parser.look is not None and self._eyes is not None:
             # Look while the first words are spoken; thinking keeps Milo from resting in between.
             self._looking(True)
             self._ui.thinking = True
             self._look_started = asyncio.create_task(self._eyes.look("window"))
-        careful, user_asked = rule.careful, rule.user_asked
-        lang = self._language.code
-        effects: list[tuple[str, str, Callable[[], None], bool]] = []
-        for request in held:  # opening asks only here, for what outside text may have named (see _open_now)
-            effects.append((open_question(request, lang), request.url or request.path,
-                            lambda request=request: self._start_open(request), True))
-        for fact in parser.remembers if remember else ():
-            effects.append((remember_question(fact, lang), "", lambda fact=fact: self._remember(fact),
-                            rule.outside))
-        for due, what in parser.reminders:  # open reminders go into later system prompts: screen text asks too
-            effects.append((remind_question(due, what, lang), "",
-                            lambda due=due, what=what: self._remind(due, what, parser.spoken),
-                            rule.outside))
-        for task in parser.tasks:
-            question = task_question(task.description, title=task.title, language=lang)
-            # The whole task shows under the short question in the window: the user approves all of it.
-            detail = "" if question.rstrip("?") == task.description.rstrip(".?") else task.description
-            effects.append((question, detail, lambda task=task: self._tasks.submit(
-                task.description, title=task.title, screen=task.screen, careful=careful, user_asked=user_asked,
-                language=lang), rule.ask_tasks))
-        for ref, change in parser.steers:  # a change to a task is a task: same rule
-            question = task_question(say("talk.steer", lang, change=change))
-            detail = change if question.endswith("…?") else ""
-            effects.append((question, detail, lambda ref=ref, change=change: self._tasks.steer(
-                ref, change, careful=careful, user_asked=user_asked), rule.ask_tasks))
-        if self._routines is not None:  # a routine run is a task: same rule, unless the routine says otherwise
-            for question, detail, apply, ask in self._routines.effects(parser.routines, careful=careful):
-                effects.append((question, detail, apply, rule.ask_routines if ask is None else ask))
-        for ref in parser.stops:  # stopping is always safe
-            self._tasks.stop(ref)
-        for _, _, apply, ask in effects:
-            if not ask:
-                apply()
-        asks = [(question, detail, apply) for question, detail, apply, ask in effects if ask]
-        if asks and self._approvals is None:
-            log.warning("dropped %d tag(s) from a reply to outside text: nobody to ask", len(asks))
-        elif asks:
-            asking = asyncio.create_task(self._ask_then_apply(asyncio.current_task(), asks))
-            self._asking.add(asking)
-            asking.add_done_callback(self._asking.discard)
-
-    def _take_back(self, parser: ReplyParser) -> None:
-        """<undo> tags. Like stopping, undoing never asks first: it only puts back what a helper changed, and Undo
-        itself asks when the user changed it since."""
-        for ref in parser.undos if self._undo is not None else ():
-            self._undo.undo(ref)
-
-    async def _ask_then_apply(self, turn: asyncio.Task | None,
-                              effects: list[tuple[str, str, Callable[[], None]]]) -> None:
-        if turn is not None:
-            await asyncio.wait({turn})  # ask once the reply is over, so the question is what the bubble shows
-        for question, detail, apply in effects:
-            if await self._approvals.confirm(question, detail=detail):
-                apply()
-
-    def _remember(self, fact: str) -> None:
-        try:
-            self._profile.remember(fact)
-            log.info("remembered a fact, %s", private(fact))
-        except Exception:
-            log.exception("could not save to the profile")
-
-    def _remind(self, due: datetime, what: str, said: str = "") -> None:
-        try:
-            reminder = self._reminders.add(due, what)
-            log.info("reminder set, %s", private(what))
-        except Exception:
-            log.exception("could not save the reminder")
-            return
-        if self._quick is not None:
-            self._quick.reminded(reminder, said)  # its card, with Undo
-        else:
-            self._ui.emit(ActionDone("reminder", what, when=due.isoformat(timespec="minutes")))
+        self._effects.apply(parser, rule, held=held, remember=remember, language=self._language.code)
+        self._effects.take_back(parser)
 
     def _hiccup(self) -> None:
         self._system = None  # the conversation may be broken: start a fresh one next turn
