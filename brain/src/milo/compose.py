@@ -311,7 +311,7 @@ def _helpers(p: Parts) -> None:
     p.attention.attach(helpers=lambda: helpers.busy)
     helpers.on_done.append(lambda helper: p.permits.end(helper.id))  # an Allow lasts as long as its helper
     helpers.on_done.append(undo.finished)
-    undo.expire()
+    undo.recover()  # what the last run left half done, then expiry
     p.permits.user_asked = helpers.user_asked
     p.routines = None
     if config.routines.enabled:
@@ -464,6 +464,8 @@ def _messages(p: Parts) -> None:
         transcript=transcript, home=Path.home(), milo=p.home)
     p.approvals.relays.append(messages)
     helpers.watchers.append(messages.helper_changed)
+    if p.quick is not None:  # an act's line that comes after its reply by message went
+        p.quick.to_phone = messages.tell
 
 
 def _tool_socket(p: Parts) -> None:
@@ -630,11 +632,15 @@ def _mac_locale() -> str:
 
 
 def _persona(path: Path):
-    """Read persona.md on every conversation start, so the user's edits apply without a restart."""
+    """persona.md as it is now, so the user's edits apply without a restart. Read again only when it changed: the
+    system prompt is built on every press of the talk key."""
+    from .memory.text_file import TextFile
+
+    file = TextFile(path)
 
     def read() -> str:
         try:
-            return path.read_text(encoding="utf-8")
+            return file.read()
         except OSError as e:
             log.warning("could not read %s, talking without a persona: %s", path, e)
             return ""

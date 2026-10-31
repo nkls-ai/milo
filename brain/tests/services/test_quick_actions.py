@@ -76,6 +76,17 @@ def test_an_event_goes_in_at_once_with_one_line_a_card_and_an_undo(tmp_path):
     assert s.sink.of(UndoPoints)[-1].points[0]["state"] == "undone"
 
 
+def test_an_event_card_carries_only_the_place_since_the_card_shows_the_day_and_time_itself(tmp_path):
+    """ADR 0030: the card's calendar page shows the day and its line the time from `when`. A detail with the spoken
+    "Thursday at 3 pm" read "15:00, Thursday 5 November at 3 pm"."""
+    s = stack(tmp_path, ['[happy] <event title="Dentist" start="2026-11-05T15:00" location="Dr. Weber"/>'],
+              ['[happy] <event title="Gym" start="2026-11-06T18:00"/>'],
+              ['[happy] <event do="move" title="Gym" on="2026-11-06" start="2026-11-06T19:00"/>'])
+    asyncio.run(say(s, "dentist thursday at 3 at Dr. Weber", "gym friday at 6", "move the gym to 7"))
+    assert [(c.title, c.detail, c.when) for c in cards(s)] == [
+        ("Dentist", "Dr. Weber", "2026-11-05T15:00"), ("Gym", "", "2026-11-06T18:00"), ("Gym", "", "2026-11-06T19:00")]
+
+
 def test_the_line_comes_in_the_users_language(tmp_path):
     s = stack(tmp_path, ['[happy] <event title="Zahnarzt" start="2026-10-30T09:00"/>'],
               ['[happy] <todo>Milch kaufen</todo>'])
@@ -104,6 +115,20 @@ def test_undo_asks_when_the_user_changed_the_event_since(tmp_path):
     asyncio.run(run())
     assert len(world(s)["events"]) == 1
     assert said(s).endswith("Okay, I left “Dentist” as it is.")
+
+
+def test_undo_of_an_all_day_event_doesnt_ask_about_its_end(tmp_path):
+    """Milo asks the calendar for an all-day event until the next midnight; the calendar reads it back ending at 23:59
+    the same day. That is the same event, not one the user changed."""
+    s = stack(tmp_path, ['[happy] <event title="Holiday" start="2026-11-05T00:00" all_day="yes"/>'], ["[happy] <undo/>"])
+    asyncio.run(say(s, "put a holiday in on the fifth"))
+    w = world(s)
+    assert w["events"][0]["end"] == "2026-11-06T00:00"
+    w["events"][0]["end"] = "2026-11-05T23:59"  # how EventKit reads it back
+    World(s.world).save(w)
+    asyncio.run(say(s, "undo that"))
+    assert not s.sink.of(Confirm)
+    assert world(s)["events"] == []
 
 
 def test_the_today_block_comes_once_per_change_with_handles_and_inert_invites(tmp_path):
@@ -297,6 +322,29 @@ def test_an_event_named_by_title_on_another_day_is_found(tmp_path):
     assert world(s)["events"] == []
 
 
+@pytest.mark.parametrize("tag", ['<event do="cancel" title="Dentist" on="2026-10-29"/>',
+                                 '<event do="move" title="Dentist" on="2026-10-29" start="2026-10-29T17:00"/>'])
+def test_an_event_found_only_by_part_of_its_title_asks_with_the_title_found(tmp_path, tag):
+    """"Cancel Dentist" must not quietly delete "Dentist prep": when no title matches exactly, Milo asks first."""
+    prep = {**DENTIST, "title": "Dentist prep"}
+    s = stack(tmp_path, [f"[happy] {tag}"], world={"events": [prep]})
+
+    async def run():
+        s.live_talk.start("cancel the dentist today")
+        for _ in range(100):
+            await asyncio.sleep(0.005)
+            if s.approvals.pending:
+                break
+        [ask] = s.sink.of(Confirm)
+        assert "“Dentist prep”" in ask.question
+        await s.brain.handle(ConfirmAnswer(ask.id, False))
+        await s.quick.idle()
+
+    asyncio.run(run())
+    assert world(s)["events"] == [prep]
+    assert said(s).endswith("Okay, I left it.")
+
+
 def test_deleting_your_own_event_doesnt_ask_and_undo_makes_it_again(tmp_path):
     s = stack(tmp_path, ["[happy] At three."], ['[happy] <event do="cancel" id="e1"/>'], ["[happy] <undo/>"],
               world={"events": [DENTIST]})
@@ -409,8 +457,17 @@ def test_music_pauses_and_undo_plays_again(tmp_path):
     s = stack(tmp_path, ['[happy] <music do="pause"/>'], ["[happy] <undo/>"], world={"music": "playing"})
     asyncio.run(say(s, "pause the music"))
     assert world(s)["music"] == "paused" and said(s) == "Paused."
+    [card] = cards(s)
+    assert (card.kind, card.title, card.detail, card.app) == ("music", "Paused", "", ""), \
+        "the card says what happened, in the user's words, and names no player it doesn't know"
     asyncio.run(say(s, "undo that"))
     assert world(s)["music"] == "playing"
+
+
+def test_the_music_card_speaks_the_users_language(tmp_path):
+    s = stack(tmp_path, ['[happy] <music do="next"/>'], world={"music": "playing"})
+    asyncio.run(say(s, "spiel mir bitte das nächste Lied, das hier mag ich nicht"))
+    assert [(c.title, c.lang) for c in cards(s)] == [("Nächster", "de")], "the app writes its own words in it too"
 
 
 def test_after_a_task_result_an_act_asks_like_a_reminder(tmp_path):
@@ -456,7 +513,8 @@ def test_milos_own_reminder_gets_a_card_and_an_undo(tmp_path):
               ["[happy] <undo/>"])
     asyncio.run(say(s, "remind me to call the bank tomorrow at nine"))
     [card] = cards(s)
-    assert (card.kind, card.title, card.when, card.app) == ("reminder", "Call the bank", "2026-10-30T09:00", "Milo")
+    assert (card.kind, card.title, card.detail, card.when, card.app) == (
+        "reminder", "Call the bank", "", "2026-10-30T09:00", ""), "Milo's own: a click shows Today (ADR 0030)"
     assert said(s) == "I'll remind you at nine.", "the model's own words for a reminder, as before"
     asyncio.run(say(s, "undo that"))
     assert s.reminders.items == []
@@ -476,6 +534,9 @@ class Notes:
     def pause(self, on: bool) -> None:
         self.paused.append(on)
 
+    async def before_turn(self, text: str) -> str:
+        return ""
+
 
 def test_im_done_taking_notes_stops_them(tmp_path):
     notes = Notes()
@@ -494,6 +555,40 @@ def test_a_message_from_the_phone_gets_the_line_with_its_answer(tmp_path):
     assert asyncio.run(run()) == "Milk. It's on your list."
     assert said(s) == "", "nothing is said out loud for the phone"
     assert world(s)["reminders"][0]["title"] == "Milk"
+
+
+def test_a_line_that_comes_after_the_answer_was_sent_goes_to_the_phone_on_its_own(tmp_path):
+    """A shortcut asks every time. From the phone the question goes to the chat, and the user may answer after the
+    reply has gone (it waits only so long for its acts). The line then follows as a message of its own."""
+    from tests.fakes import FakeChannel, MemoryRemoteState
+    from tests.services.test_messages import OWNER, me
+
+    s = stack(tmp_path, ['[happy] Sure. <shortcut name="Lights off"/>'],
+              world={"shortcuts": [{"name": "Lights off"}]}, channel=FakeChannel(), remote=MemoryRemoteState(OWNER))
+    s.quick.message_wait_s = 0.05
+
+    async def run():
+        work = asyncio.create_task(s.messages.run())
+        s.channel.push(me("lights off please"))
+        for _ in range(400):
+            await asyncio.sleep(0.005)
+            if "Sure." in s.channel.texts("42"):
+                break
+        sent_before = list(s.channel.texts("42"))
+        [(_, id, question)] = s.channel.questions
+        assert question.startswith("Run the shortcut “Lights off”?"), "the question still waits, on the phone"
+        s.channel.push(me(answer=f"yes:{id}", ref="cb1"))
+        await s.quick.idle()
+        await settle(200)
+        work.cancel()
+        await asyncio.gather(work, return_exceptions=True)
+        return sent_before
+
+    before = asyncio.run(run())
+    assert "Done: Lights off." not in " ".join(before)
+    assert world(s)["shortcut_runs"] == [{"name": "Lights off", "input": ""}]
+    assert s.channel.texts("42")[-1] == "Done: Lights off."
+    assert said(s) == "", "nothing is said out loud for the phone"
 
 
 # ---- the parts
@@ -549,6 +644,26 @@ def test_ops_go_to_the_app_for_what_it_holds():
     assert calls == [("media.pause", {})] and ops.has("calendar") and not ops.has("reminders")
     with pytest.raises(OpsError):
         asyncio.run(ops("reminders.list", {}))
+
+
+def test_today_asks_the_app_for_everything_at_once_and_doesnt_wait_for_a_slow_player():
+    """Calendar and Reminders are a round trip to the app each, and the system's player may take 0.5 s to say
+    nothing. One after the other they missed the 0.3 s a turn waits, and the turn went without the day."""
+    clock = FakeClock()
+
+    async def app(op, args):
+        if op == "media.state":
+            await asyncio.sleep(5)  # the player won't say
+        await asyncio.sleep(0.15)
+        if op == "calendar.events":
+            return [DENTIST]
+        if op == "reminders.list":
+            return [{"id": "r1", "title": "Buy milk", "due": "2026-10-29T18:00", "done": False}]
+        return {}
+
+    today = Today(AppOps(call=app, via_app=("calendar", "reminders", "media")), clock)
+    text, _ = asyncio.run(today.note())
+    assert "Dentist" in text and "Buy milk" in text, "both in within the 0.3 s"
 
 
 def test_today_fetches_through_the_app_and_waits_only_briefly():

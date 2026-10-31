@@ -23,17 +23,22 @@ public struct ActionDone: Equatable, Sendable, Decodable {
     public let app: String
     /// The task whose Undo takes it back (`undo_task`, ADR 0026); "" when there is none.
     public let undo: String
+    /// The language Milo said it in ("en", "de"), which the title is in: the card's own words follow it. "" when the
+    /// brain didn't say; then they follow the system's.
+    public let lang: String
 
-    public init(kind: Kind, title: String, detail: String = "", when: Date? = nil, app: String = "", undo: String = "") {
+    public init(kind: Kind, title: String, detail: String = "", when: Date? = nil, app: String = "", undo: String = "",
+                lang: String = "") {
         self.kind = kind
         self.title = title
         self.detail = detail
         self.when = when
         self.app = app
         self.undo = undo
+        self.lang = lang
     }
 
-    private enum Key: String, CodingKey { case kind, title, detail, when, app, undo }
+    private enum Key: String, CodingKey { case kind, title, detail, when, app, undo, lang }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Key.self)
@@ -43,6 +48,7 @@ public struct ActionDone: Equatable, Sendable, Decodable {
         when = try c.decodeIfPresent(String.self, forKey: .when).flatMap(Self.time)
         app = try c.decodeIfPresent(String.self, forKey: .app) ?? ""
         undo = try c.decodeIfPresent(String.self, forKey: .undo) ?? ""
+        lang = try c.decodeIfPresent(String.self, forKey: .lang) ?? ""
     }
 
     /// An ISO time with a zone ("2026-11-05T15:00:00+01:00", "…Z"), or local time without one ("2026-11-05T15:00").

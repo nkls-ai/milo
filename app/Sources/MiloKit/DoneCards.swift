@@ -113,39 +113,47 @@ public final class DoneCards: ObservableObject {
 }
 
 /// The words on a card, apart from its title.
+///
+/// The title and the detail come from the brain, in the language Milo answered in. The card's own words follow that
+/// language (`ActionDone.lang`), so a German line never sits above an English card; when the brain names none, they
+/// follow the system's. English and German, like Milo's spoken lines; any other language gets English.
 public enum DoneCardText {
     /// The line under the title: when it is, and the detail; or where it went when it has neither.
     public static func line(_ action: ActionDone, now: Date, calendar: Calendar = .current,
                             locale: Locale = .current) -> String {
-        let time = action.when.map { when(for: action.kind, $0, now: now, calendar: calendar, locale: locale) }
+        let (w, locale) = words(action, locale)
+        let time = action.when.map { when(for: action.kind, $0, now: now, calendar: calendar, locale: locale, words: w) }
         let parts = [time, action.detail.isEmpty ? nil : action.detail].compactMap { $0 }
         if !parts.isEmpty { return parts.joined(separator: ", ") }
+        let inApp = { (fallback: String) in action.app.isEmpty ? w(fallback) : w("In %@", action.app) }
         switch action.kind {
-        case .event: return action.app.isEmpty ? "In your calendar" : "In \(action.app)"
-        case .todo: return action.app.isEmpty ? "On your list" : "In \(action.app)"
-        case .reminder: return "I'll remind you"
-        case .note: return action.app.isEmpty ? "In your notes" : "In \(action.app)"
-        case .timer: return "Timer running"
-        case .draft: return "Draft, not sent"
-        case .shortcut: return "Shortcut ran"
-        case .music: return "Playing"
-        case .opened: return action.app.isEmpty ? "Opened" : "In \(action.app)"
-        case .written: return action.app.isEmpty ? "Ready to copy" : "In \(action.app)"
-        case .other: return "Done"
+        case .event: return inApp("In your calendar")
+        case .todo: return inApp("On your list")
+        case .reminder: return w("I'll remind you")
+        case .note: return inApp("In your notes")
+        case .timer: return w("Timer running")
+        case .draft: return w("Draft, not sent")
+        case .shortcut: return w("Shortcut ran")
+        // The title says what happened ("Paused"); the player, if it said which one it is.
+        case .music: return action.app.isEmpty ? w("Music") : action.app
+        case .opened: return inApp("Opened")
+        case .written: return inApp("Ready to copy")
+        case .other: return w("Done")
         }
     }
 
     /// "Today 15:00", "Tomorrow 09:00", "Thu 5 Nov, 15:00"; a timer says when it rings, and an event only its time,
     /// since its calendar page shows the day.
-    static func when(for kind: ActionDone.Kind, _ date: Date, now: Date, calendar: Calendar, locale: Locale) -> String {
+    static func when(for kind: ActionDone.Kind, _ date: Date, now: Date, calendar: Calendar, locale: Locale,
+                     words w: Words = Words("en")) -> String {
         var clock = Date.FormatStyle(date: .omitted, time: .shortened, locale: locale, calendar: calendar)
         clock.timeZone = calendar.timeZone
         let hour = date.formatted(clock)
-        if kind == .timer { return "Rings at \(hour)" }
+        if kind == .timer { return w("Rings at %@", hour) }
         if kind == .event { return hour }
-        if calendar.isDate(date, inSameDayAs: now) { return "Today \(hour)" }
+        if calendar.isDate(date, inSameDayAs: now) { return "\(w("Today")) \(hour)" }
         if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now), calendar.isDate(date, inSameDayAs: tomorrow) {
-            return "Tomorrow \(hour)"
+            return "\(w("Tomorrow")) \(hour)"
         }
         var day = Date.FormatStyle(locale: locale, calendar: calendar).weekday(.abbreviated).day().month(.abbreviated)
         day.timeZone = calendar.timeZone
@@ -153,35 +161,73 @@ public enum DoneCardText {
     }
 
     /// What VoiceOver says for the card.
-    public static func spoken(_ action: ActionDone, now: Date) -> String {
+    public static func spoken(_ action: ActionDone, now: Date, locale: Locale = .current) -> String {
+        let (w, dates) = words(action, locale)
         let what: String = switch action.kind {
-        case .event: "Added to your calendar"
-        case .todo: "Added to your to-dos"
-        case .reminder: "Reminder set"
-        case .note: "Note written"
-        case .timer: "Timer set"
-        case .draft: "Draft written"
-        case .shortcut: "Shortcut ran"
-        case .music: "Playing"
-        case .opened: "Opened"
-        case .written: action.app.isEmpty ? "Written, ready to copy" : "Written"
-        case .other: "Done"
+        case .event: w("Added to your calendar")
+        case .todo: w("Added to your to-dos")
+        case .reminder: w("Reminder set")
+        case .note: w("Note written")
+        case .timer: w("Timer set")
+        case .draft: w("Draft written")
+        case .shortcut: w("Shortcut ran")
+        case .music: w("Music")
+        case .opened: w("Opened")
+        case .written: action.app.isEmpty ? w("Written, ready to copy") : w("Written")
+        case .other: w("Done")
         }
-        var said = "\(what): \(action.title), \(line(action, now: now))"
+        var said = "\(what): \(action.title), \(line(action, now: now, locale: locale))"
         if action.kind == .event, let when = action.when {
-            said += ", \(when.formatted(.dateTime.weekday(.wide).day().month(.wide)))"
+            said += ", \(when.formatted(Date.FormatStyle(locale: dates).weekday(.wide).day().month(.wide)))"
         }
         return said
     }
 
     /// What a click on the card does, for VoiceOver and the tooltip.
-    public static func opens(_ action: ActionDone) -> String {
+    public static func opens(_ action: ActionDone, locale: Locale = .current) -> String {
+        let (w, _) = words(action, locale)
         switch action.kind {
-        case .reminder where action.app.isEmpty: "Shows your reminders in the Milo window"
-        case .opened: "Shows it"
-        case .written where action.app.isEmpty: "Shows it in the Milo window, to copy"
-        default: action.app.isEmpty ? "Opens it" : "Opens it in \(action.app)"
+        case .reminder where action.app.isEmpty: return w("Shows your reminders in the Milo window")
+        case .opened: return w("Shows it")
+        case .written where action.app.isEmpty: return w("Shows it in the Milo window, to copy")
+        default: return action.app.isEmpty ? w("Opens it") : w("Opens it in %@", action.app)
         }
+    }
+
+    /// The words for this card, and the locale its dates are written in: the system's, unless Milo spoke another
+    /// language the card has words in.
+    static func words(_ action: ActionDone, _ locale: Locale) -> (Words, Locale) {
+        let system = locale.language.languageCode?.identifier ?? "en"
+        let wanted = Words(action.lang.isEmpty ? system : action.lang)
+        return (wanted, action.lang.isEmpty || wanted.code == system ? locale : Locale(identifier: wanted.code))
+    }
+
+    /// A card's own words in one language, looked up by their English text; "%@" takes the one argument.
+    struct Words {
+        let code: String
+
+        init(_ code: String) {
+            self.code = code == "de" ? "de" : "en"
+        }
+
+        func callAsFunction(_ english: String, _ argument: String = "") -> String {
+            let text = code == "de" ? Self.german[english] ?? english : english
+            return text.replacingOccurrences(of: "%@", with: argument)
+        }
+
+        static let german: [String: String] = [
+            "In your calendar": "In deinem Kalender", "In %@": "In %@", "On your list": "Auf deiner Liste",
+            "I'll remind you": "Ich erinnere dich", "In your notes": "In deinen Notizen", "Timer running": "Timer läuft",
+            "Draft, not sent": "Entwurf, nicht gesendet", "Shortcut ran": "Kurzbefehl ausgeführt", "Music": "Musik",
+            "Opened": "Geöffnet", "Done": "Erledigt", "Rings at %@": "Klingelt um %@", "Today": "Heute",
+            "Tomorrow": "Morgen", "Added to your calendar": "Im Kalender eingetragen",
+            "Added to your to-dos": "Zu deinen To-dos hinzugefügt", "Reminder set": "Erinnerung gestellt",
+            "Note written": "Notiz geschrieben", "Timer set": "Timer gestellt", "Draft written": "Entwurf geschrieben",
+            "Shows your reminders in the Milo window": "Zeigt deine Erinnerungen im Milo-Fenster",
+            "Shows it": "Zeigt es", "Opens it": "Öffnet es", "Opens it in %@": "Öffnet es in %@",
+            "Ready to copy": "Bereit zum Kopieren", "Written": "Geschrieben", "Written, ready to copy": "Geschrieben, bereit zum Kopieren",
+            "Shows it in the Milo window, to copy": "Zeigt es im Milo-Fenster, zum Kopieren",
+        ]
     }
 }
 
@@ -210,7 +256,8 @@ public enum DonePlace: Equatable, Sendable {
         case .todo, .reminder: return .reminder(app: action.app.isEmpty ? "Reminders" : action.app, title: action.title)
         case .written: return action.app.isEmpty ? .conversation : .app(action.app)
         case .opened:
-            if let page = page(action.detail) ?? page(action.title) { return .page(page) }
+            // Only the detail, where the brain puts the address it opened: a title may be a file's name.
+            if let page = page(action.detail) { return .page(page) }
             return action.app.isEmpty ? .none : .app(action.app)
         default:
             let app = action.app.isEmpty ? defaultApp[action.kind] ?? "" : action.app

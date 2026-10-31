@@ -94,8 +94,8 @@ private func entries(_ key: String) throws -> [[String: Any]] {
                 UndoPoint(id: "a1b2c3d4e5f6", title: "Rent 950", state: .undone, said: "I changed the rent to 950."),
                 UndoPoint(id: "b2c3d4e5f6a7", title: "Letter to Anna", state: .undoing),
             ]),
-            .actionDone(ActionDone(kind: .event, title: "Dentist", detail: "Thursday 5 November, 15:00 to 16:00",
-                                   when: ActionDone.time("2026-11-05T15:00"), app: "Calendar", undo: "q-3f9a2c7d1e04")),
+            .actionDone(ActionDone(kind: .event, title: "Dentist", when: ActionDone.time("2026-11-05T15:00"),
+                                   app: "Calendar", undo: "q-3f9a2c7d1e04", lang: "en")),
             .actionDone(ActionDone(kind: .shortcut, title: "Lights off")),
             .actionDone(ActionDone(kind: .written, title: "Hi Anna,", app: "Mail", undo: "w-8a7b6c5d4e3f")),
             .handsBorrow(on: true, what: "mouse"),
@@ -271,9 +271,9 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             ]),
             .actionDone(ActionDone(kind: .event, title: "Dentist", detail: "Dr. Lee, Main Street 4",
                                    when: try #require(RoutineInfo.parseTime("2026-11-05T15:00")), app: "Calendar",
-                                   undo: "a7b8c9d0e1f2")),
+                                   undo: "a7b8c9d0e1f2", lang: "en")),
             .actionDone(ActionDone(kind: .reminder, title: "Call the dentist",
-                                   when: try #require(RoutineInfo.parseTime("2026-10-30T09:00")))),
+                                   when: try #require(RoutineInfo.parseTime("2026-10-30T09:00")), lang: "de")),
         ])
     }
 

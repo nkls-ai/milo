@@ -107,7 +107,9 @@ public final class EventKitConnections: AppConnections {
     }
 
     /// The occurrence `args` names: the event `id` that starts at `at`, so one of a repeating series is never
-    /// mistaken for the first. Without `at`, the event the id stands for.
+    /// mistaken for the first. Without `at`, the event the id stands for. When none starts at `at`, a repeating
+    /// event is not found: the id would stand for another occurrence, and moving or deleting `.thisEvent` would
+    /// hit that one. A one-off event moved since is still itself; the brain's Undo compares its start and asks.
     private func occurrence(_ args: JSONValue) -> EKEvent? {
         guard let id = Self.text(args["id"]) else { return nil }
         if let at = Self.date(args["at"]) {
@@ -118,6 +120,10 @@ public final class EventKitConnections: AppConnections {
             }) {
                 return found
             }
+            guard let event = store.calendarItem(withIdentifier: id) as? EKEvent, !event.hasRecurrenceRules else {
+                return nil
+            }
+            return event
         }
         return store.calendarItem(withIdentifier: id) as? EKEvent
     }
@@ -298,21 +304,21 @@ public final class EventKitConnections: AppConnections {
     /// Local time as the brain writes it: "2026-11-05T15:00", seconds optional.
     static func date(_ value: JSONValue?) -> Date? {
         guard let text = value?.string, !text.isEmpty else { return nil }
-        for pattern in ["yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd"] {
-            let f = formatter(pattern)
-            if let date = f.date(from: text) { return date }
-        }
-        return nil
+        return readers.lazy.compactMap { $0.date(from: text) }.first
     }
 
     static func format(_ date: Date) -> String {
-        formatter("yyyy-MM-dd'T'HH:mm").string(from: date)
+        minutes.string(from: date)
     }
+
+    /// Made once: a DateFormatter is costly to make and safe to share between threads. The zone follows the Mac's.
+    private static let minutes = formatter("yyyy-MM-dd'T'HH:mm")
+    private static let readers = [formatter("yyyy-MM-dd'T'HH:mm:ss"), minutes, formatter("yyyy-MM-dd")]
 
     private static func formatter(_ pattern: String) -> DateFormatter {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
-        f.timeZone = .current
+        f.timeZone = .autoupdatingCurrent
         f.dateFormat = pattern
         return f
     }

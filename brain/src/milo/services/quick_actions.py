@@ -98,6 +98,8 @@ class _Plan:
     question: str
     scope: AppRef | None
     run: Callable[[], Awaitable[_Done]]
+    sure: bool = True
+    """False: Milo only guessed what it is about (an event found by part of its title). It asks first, every time."""
 
 
 @dataclass
@@ -155,6 +157,10 @@ class QuickActions:
         follow it."""
         self._wait_s = wait_s
         self._poll_s = poll_s
+        self.message_wait_s = MESSAGE_WAIT_S
+        self.to_phone: Callable[[str], object] | None = None
+        """Sends a line to the owner's phone on its own (MessageService.tell): one that comes after the reply by
+        message went, because its act waited for a yes. None: such a line only shows at the Mac."""
         self._timers: dict[str, _Timer] = {}
         self._running: set[asyncio.Task] = set()
         self._by_turn: dict[asyncio.Task, list[asyncio.Task]] = {}
@@ -195,16 +201,18 @@ class QuickActions:
 
     def reminded(self, reminder: Reminder, said: str) -> None:
         """A <reminder> tag set one of Milo's own reminders: give it an Undo and a card."""
-        done = _Done("reminder", reminder.text, said, detail=words.when(reminder.due, self._clock.now().date(), self._lang()),
-                     when=_iso(reminder.due), app="Milo", reverse=[{"op": "reminder.remove", "id": reminder.id}])
-        self._card(done, self._record(done))
+        # No app: Milo's own, so a click shows Today. The card writes the day and time from `when` (ADR 0030).
+        done = _Done("reminder", reminder.text, said, when=_iso(reminder.due),
+                     reverse=[{"op": "reminder.remove", "id": reminder.id}])
+        self._card(done, self._record(done), self._lang())
 
-    async def lines(self, turn: asyncio.Task | None, timeout_s: float = MESSAGE_WAIT_S) -> str:
-        """For a reply by message: wait for the turn's acts and return their lines, to send along."""
+    async def lines(self, turn: asyncio.Task | None) -> str:
+        """For a reply by message: wait (up to `message_wait_s`) for the turn's acts and return their lines, to send
+        along. A line that comes later goes to the phone on its own (`to_phone`)."""
         tasks = self._by_turn.pop(turn, []) if turn is not None else []
         if tasks:
-            await asyncio.wait(tasks, timeout=timeout_s)
-        return " ".join(self._lines.pop(turn, []))  # a line that comes later only shows at the Mac
+            await asyncio.wait(tasks, timeout=self.message_wait_s)
+        return " ".join(self._lines.pop(turn, []))
 
     async def idle(self) -> None:
         """Wait until no act is running. For tests."""
@@ -233,12 +241,16 @@ class QuickActions:
                 level = self._approvals.policy.level(plan.approval)
                 if level is ActionLevel.NEVER:
                     raise Problem("Milo isn't allowed to do that.")
-                if self._approvals.asks(plan.approval, careful=outside):
+                if not plan.sure or self._approvals.asks(plan.approval, careful=outside):
                     if turn is not None and via != "message":
                         await asyncio.wait({turn})  # ask once the reply is over, so the bubble shows the question
-                    decision = await self._approvals.approve(plan.approval, plan.question, careful=outside,
-                                                             scope=Scope((plan.scope,)) if plan.scope else None)
-                    if not decision.allowed:
+                    if not plan.sure:  # whatever the user allowed before: the question is which one, not whether
+                        allowed = await self._approvals.confirm(plan.question)
+                    else:
+                        allowed = (await self._approvals.approve(plan.approval, plan.question, careful=outside,
+                                                                 scope=Scope((plan.scope,)) if plan.scope else None)
+                                   ).allowed
+                    if not allowed:
                         return await self._say(words.line("declined", lang), via, turn, Emotion.NEUTRAL)
             done = await plan.run()
         except (Problem, OpsError, ToolError) as e:
@@ -252,7 +264,7 @@ class QuickActions:
         log.info("quick %s done in %.2fs: %s", act.kind, self._clock.monotonic() - started, private(done.title))
         task = self._record(done) if (done.reverse or done.changes) else ""
         if done.kind:
-            self._card(done, task)
+            self._card(done, task, lang)
         await self._say(done.line, via, turn, Emotion.HAPPY)
 
     def _record(self, done: _Done) -> str:
@@ -266,8 +278,8 @@ class QuickActions:
             return ""
         return task
 
-    def _card(self, done: _Done, task: str) -> None:
-        self._ui.emit(ActionDone(done.kind, done.title, done.detail, done.when, done.app, task))
+    def _card(self, done: _Done, task: str, lang: str) -> None:
+        self._ui.emit(ActionDone(done.kind, done.title, done.detail, done.when, done.app, task, lang))
 
     async def _say(self, text: str, via: str, turn: asyncio.Task | None, emotion: Emotion) -> None:
         """The line once Milo is done speaking and the user isn't talking; after `wait_s` it only shows. A reply by
@@ -276,6 +288,8 @@ class QuickActions:
             self._lines.setdefault(turn, []).append(text)
             self._transcript.say(text, emotion)
             return
+        if via == "message" and self.to_phone is not None:  # the reply went without it
+            self.to_phone(text)
         if turn is not None and turn is not asyncio.current_task():
             await asyncio.wait({turn})  # the act started while the reply streamed: its line comes after the reply
         loop = asyncio.get_running_loop()
@@ -341,20 +355,23 @@ class QuickActions:
             made = await self._ops("calendar.add_event", args) or {}
             self.today.changed()
             spoken = words.when(start, self._clock.now().date(), lang, all_day=all_day)
+            # The card shows the day and the time from `when` (ADR 0030): its detail is only the place.
             return _Done("event", title, words.line("event", lang, title=title, when=spoken),
-                         detail=_detail(spoken, act.get("location")), when=_iso(start), app="Calendar",
+                         detail=act.get("location"), when=_iso(start), app="Calendar",
                          reverse=[{"op": "event.delete", "id": str(made.get("id", "")), "at": _iso(start),
-                                   "title": title, "start": _iso(start), "end": _iso(end)}])
+                                   "title": title, "start": _iso(start), "end": _iso(end),
+                                   **({"all_day": True} if all_day else {})}])
 
         when = words.when(start, self._clock.now().date(), lang, all_day=all_day)
         return _Plan("change", words.ask("event", lang, title=inert(title, 50), when=when), APPS["calendar"], run)
 
-    async def _event(self, act: ActRequest) -> dict:
-        """The event a move or cancel means: its handle from <today>, else its title on a day."""
+    async def _event(self, act: ActRequest) -> tuple[dict, bool]:
+        """The event a move or cancel means: its handle from <today>, else its title on a day. False with it when
+        no title matched exactly and it is one whose title only contains the words."""
         ref = act.get("id") or act.get("event")
         found = self.today.event(ref) if ref else None
         if found is not None:
-            return found
+            return found, True
         title = act.get("title") or ref
         if not title:
             raise Problem("I don't know which event you mean")
@@ -363,18 +380,19 @@ class QuickActions:
         end = start + timedelta(days=1 if day else SEARCH_DAYS)
         hits = await self._ops("calendar.events", {"start": _iso(start), "end": _iso(end), "query": title}) or []
         hits = [e for e in hits if isinstance(e, dict)]
-        exact = [e for e in hits if str(e.get("title", "")).casefold() == title.casefold()] or hits
-        if not exact:
+        exact = [e for e in hits if str(e.get("title", "")).casefold() == title.casefold()]
+        found = exact or hits
+        if not found:
             raise Problem(f"I couldn't find “{inert(title, 50)}” in your calendar")
-        if len(exact) > 1 and not day:
-            days = sorted({str(e.get("start", ""))[:10] for e in exact})
+        if len(found) > 1 and not day:
+            days = sorted({str(e.get("start", ""))[:10] for e in found})
             if len(days) > 1:
                 raise Problem(f"there are several “{inert(title, 50)}”, say which day")
-        return exact[0]
+        return found[0], bool(exact)
 
     async def _move(self, act: ActRequest, lang: str) -> _Plan:
         self._need("calendar")
-        e = await self._event(act)
+        e, sure = await self._event(act)
         old_start, old_end = _time(e.get("start"), "start"), _time(e.get("end"), "end")
         start = _time(act.get("start"), "start")
         if start is None or old_start is None:
@@ -390,19 +408,19 @@ class QuickActions:
                                                       "end": _iso(end)})
             self.today.changed()
             spoken = words.when(start, self._clock.now().date(), lang)
-            return _Done("event", title, words.line("moved", lang, title=title, when=spoken), detail=spoken,
-                         when=_iso(start), app="Calendar",
+            return _Done("event", title, words.line("moved", lang, title=title, when=spoken),
+                         detail=str(e.get("location") or ""), when=_iso(start), app="Calendar",
                          reverse=[{"op": "event.move", "id": e["id"], "at": _iso(start), "start": _iso(old_start),
                                    "end": _iso(old_end or old_start), "title": title}])
 
         # Moving an invite changes what other people see: that asks, like sharing.
         when = words.when(start, self._clock.now().date(), lang)
         return _Plan("share" if others else "change", words.ask("move", lang, title=inert(title, 50), when=when)
-                     + (words.ask("invite", lang) if others else ""), APPS["calendar"], run)
+                     + (words.ask("invite", lang) if others else ""), APPS["calendar"], run, sure)
 
     async def _cancel(self, act: ActRequest, lang: str) -> _Plan:
         self._need("calendar")
-        e = await self._event(act)
+        e, sure = await self._event(act)
         start = _time(e.get("start"), "start")
         title = str(e.get("title") or "the event")
         others = _others(e)
@@ -421,7 +439,7 @@ class QuickActions:
         why = (words.ask("invite", lang) if others else words.ask("series", lang) if e.get("recurring") else "")
         when = words.when(start, self._clock.now().date(), lang, all_day=bool(e.get("all_day"))) if start else ""
         return _Plan("trash" if restorable else "delete",
-                     words.ask("cancel", lang, title=inert(title, 50), when=when) + why, APPS["calendar"], run)
+                     words.ask("cancel", lang, title=inert(title, 50), when=when) + why, APPS["calendar"], run, sure)
 
     def _todo(self, act: ActRequest, lang: str) -> _Plan:
         self._need("reminders")
@@ -538,10 +556,12 @@ class QuickActions:
                 before = str((await self._ops("media.state", {}) or {}).get("state", ""))
             except OpsError:
                 before = ""
-            after = str((await self._ops(f"media.{do}", {}) or {}).get("state", ""))
+            after = await self._ops(f"media.{do}", {}) or {}
             self.today.changed()
             back = {"next": "previous", "previous": "next"}.get(do) or ("play" if before == "playing" else "pause")
-            return _Done("music", do, words.line(do, lang), detail=after, app="Music",
+            line = words.line(do, lang)
+            # The card says it as Milo did ("Paused", "Nächster"). The system's player names no app: "" unless it does.
+            return _Done("music", line.rstrip("."), line, app=str(after.get("app") or ""),
                          reverse=[{"op": "media", "do": back}])
 
         return _Plan("change", words.ask(do, lang), None, run)
@@ -621,10 +641,11 @@ class QuickActions:
                     if op == "event.delete":
                         return True  # gone already: nothing to take back
                     raise
-                expected = ((step["title"], step["start"], step["end"]) if op == "event.delete"
-                            else (step["title"], step["at"]))
-                found = ((now.get("title"), now.get("start"), now.get("end")) if op == "event.delete"
-                         else (now.get("title"), now.get("start")))
+                # The calendar reads an all-day event back ending at 23:59, not at the midnight Milo gave it: its
+                # title and start say whether it is the same.
+                expected, found = (step["title"], step["at"]), (now.get("title"), now.get("start"))
+                if op == "event.delete" and not step.get("all_day"):
+                    expected, found = (*expected, step["end"]), (*found, now.get("end"))
                 if tuple(str(v)[:16] for v in found) != tuple(str(v)[:16] for v in expected):
                     if not await self._approvals.confirm(words.ask("event_changed", self._lang(),
                                                                    title=inert(step["title"], 50))):
@@ -680,10 +701,6 @@ def _time(value: str, key: str) -> datetime | None:
 
 def _iso(t: datetime | None, *, seconds: bool = False) -> str:
     return t.isoformat(timespec="seconds" if seconds else "minutes") if t is not None else ""
-
-
-def _detail(when: str, location: str) -> str:
-    return f"{when}, {location}" if location else when
 
 
 def _people(value: str) -> list[str]:

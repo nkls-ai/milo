@@ -9,6 +9,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from .text_file import TextFile
+
 LEARNED = "## Learned"
 MAX_FACT = 300
 
@@ -18,12 +20,10 @@ class MarkdownProfile:
 
     def __init__(self, path: Path):
         self.path = path
+        self._file = TextFile(path)
 
     def read(self) -> str:
-        try:
-            return self.path.read_text(encoding="utf-8", errors="replace")
-        except FileNotFoundError:
-            return ""
+        return self._file.read()
 
     def remember(self, fact: str) -> None:
         fact = " ".join(fact.split())

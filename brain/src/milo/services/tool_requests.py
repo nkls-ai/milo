@@ -137,7 +137,7 @@ class ToolRequests:
                     allowed, error = await self._access.allows(app)
                     return _ok({"allowed": True} if allowed else {"allowed": False, "error": error})
                 case "undo.point" | "undo.note" if self._undo is not None:
-                    return self._undo_request(op, request)
+                    return await self._undo_request(op, request)
                 case "reminder.add" if self._reminders is not None:
                     return await self._remind(request)
                 case str() if op.startswith("memory.") and self._memory is not None:
@@ -153,11 +153,11 @@ class ToolRequests:
             return _error("Something went wrong inside Milo.")
         return _error(f"unknown op {op!r}")
 
-    def _undo_request(self, op: str, request: dict) -> dict:
+    async def _undo_request(self, op: str, request: dict) -> dict:
         task = str(request.get("task") or "")
         try:
             if op == "undo.point":
-                return _ok({"note": self._undo.keep_file(task, str(request["path"]))})
+                return _ok({"note": await self._undo.keep_file(task, str(request["path"]))})
             return _ok({"note": self._undo.note(task, str(request["text"]))})
         except (ValueError, OSError) as e:
             return _error(str(e))

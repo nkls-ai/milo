@@ -214,7 +214,7 @@ def remind_question(due: datetime, what: str, language: str = "") -> str:
                   "November", "Dezember")
         return (f"Soll ich dich am {days[due.weekday()]}, {due.day}. {months[due.month - 1]} um {due:%H:%M} "
                 f"erinnern: {what}?")
-    return f"Should I remind you on {due:%A %-d %B at %H:%M}: {what}?"
+    return f"Should I remind you on {due:%A} {due.day} {due:%B at %H:%M}: {what}?"
 
 
 class LiveTalk:
@@ -535,10 +535,12 @@ class LiveTalk:
                                   self._clock.monotonic() - self._last_turn_at > self._idle_reset_s)
         try:
             await self._ensure_conversation()
-            meeting = await self._meeting(text) if tags and not screen else ""
-            today, outside = await self._quick.note() if self._quick is not None and tags else ("", False)
-            recalled = await self._recall(text, screen,
-                                          outside=self._tainted or bool(notes) or bool(meeting) or self._saw_screen)
+            meeting, (today, outside), recalled = await asyncio.gather(
+                self._meeting(text) if tags and not screen else asyncio.sleep(0, ""),
+                self._quick.note() if self._quick is not None and tags else asyncio.sleep(0, ("", False)),
+                self._recall(text, screen, outside=self._tainted or bool(notes) or self._saw_screen))
+            if meeting and self._memory is not None:
+                self._memory.outside = True  # what was said in the call: the episode is stored as outside text
             # Another person's line in <today> stays in the conversation, so later turns count as outside too.
             self._tainted = self._tainted or bool(notes) or bool(meeting) or outside or not recalled.trusted
             self._saw_screen = self._saw_screen or screen

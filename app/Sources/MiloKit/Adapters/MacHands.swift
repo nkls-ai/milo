@@ -10,6 +10,11 @@ public final class MacHands: HandsExecutor {
     private let shots: ScreenShots
     private let apps: FrontApps
     private let queue = DispatchQueue(label: "milo.hands")
+    /// open_app, open_url and open_file have a lane of their own: the talker's <open> is meant to be instant
+    /// (ADR 28) and must not wait behind a helper's script or an Undo's Excel copy. They touch none of the state
+    /// below (elements, the last screenshot, the checked focus), only Launch Services and the front app.
+    private let openQueue = DispatchQueue(label: "milo.hands.open")
+    static let openTools: Set<String> = ["open_app", "open_url", "open_file"]
     /// ax_tree element ids, valid until the next ax_tree.
     private var elements: [String: AXUIElement] = [:]
     /// The last screenshot, so click and scroll can turn its pixels into screen points.
@@ -48,7 +53,7 @@ public final class MacHands: HandsExecutor {
     public func perform(_ tool: String, args: [String: JSONValue],
                         completion: @escaping (Result<[String: JSONValue], HandsFailure>) -> Void) {
         let front = apps.front()
-        queue.async { [self] in
+        (Self.openTools.contains(tool) ? openQueue : queue).async { [self] in
             let finish = { (result: Result<[String: JSONValue], HandsFailure>) in
                 DispatchQueue.main.async { completion(result) }
             }

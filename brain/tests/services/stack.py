@@ -193,7 +193,8 @@ class Stack:
                                   self.reminders, self.ledger, lambda: self.persona, self.idle_reset_s, self.tasks,
                                   eyes=self.eyes, approvals=self.approvals, memory=self.turn_memory,
                                   routines=self.routines, undo=self.undo, opener=self.opener,
-                                  language=self.language, quick=self.quick, writer=self.writer)
+                                  language=self.language, quick=self.quick, meetings=self.meetings,
+                                  writer=self.writer)
         self.tasks.on_result = self.live_talk.note
         self.dictation = DictationService(UpperCleaner(), self.history, self.ui)
         self.listening = Listening(self.mic, self.transcriber, executor, self.ui, self.dictation, self.live_talk,
@@ -219,6 +220,8 @@ class Stack:
             self.approvals.relays.append(self.messages)
             self.tasks.watchers.append(self.messages.helper_changed)
             self.heartbeat.after_tick.append(self.messages.tick)
+            if self.quick is not None:
+                self.quick.to_phone = self.messages.tell
         self.brain = Brain(self.ui, self.listening, self.live_talk, self.context, self.heartbeat, UiSettings(),
                            approvals=self.approvals, bridge=self.bridge, hands=self.hands, screens=self.screens,
                            helpers=self.tasks, memory=self.memory, routines=self.routines,

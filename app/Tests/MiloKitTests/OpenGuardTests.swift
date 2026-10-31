@@ -65,6 +65,35 @@ import Testing
         #expect(Date().timeIntervalSince(start) < 0.5)
     }
 
+    /// The talker's <open> is meant to be instant (ADR 28): it never waits behind a helper's script on the hands
+    /// queue. Here a refused address (it never reaches Launch Services) answers while a 1 s script still runs. The
+    /// answers come back through the main queue in the order they were done, so the order says it, whatever else
+    /// keeps the main queue busy.
+    @Test func anOpenDoesntWaitBehindAScript() async {
+        let hands = MacHands(screensFolder: FileManager.default.temporaryDirectory)
+        let order = Order()
+        let script = Task { await withCheckedContinuation { done in
+            hands.perform("run_applescript", args: ["script": .string("delay 1")]) { _ in order.add("script"); done.resume() }
+        } }
+        try? await Task.sleep(for: .milliseconds(100))  // the script is on its queue
+        let opened: Result<[String: JSONValue], HandsFailure> = await withCheckedContinuation { done in
+            hands.perform("open_url", args: ["url": .string("shortcuts://run-shortcut?name=x")]) {
+                order.add("open")
+                done.resume(returning: $0)
+            }
+        }
+        await script.value
+        #expect(order.names == ["open", "script"], "answered while the script still ran")
+        if case .success = opened { Issue.record("another scheme must never open") }
+    }
+
+    private final class Order: @unchecked Sendable {
+        private let lock = NSLock()
+        private var list: [String] = []
+        var names: [String] { lock.lock(); defer { lock.unlock() }; return list }
+        func add(_ name: String) { lock.lock(); list.append(name); lock.unlock() }
+    }
+
     @Test func openingAndFocusingNeedNoAccessibility() {
         for tool in ["open_url", "open_file", "focus_app"] {
             #expect(!MacHands.needsAccessibility(tool, [:]))

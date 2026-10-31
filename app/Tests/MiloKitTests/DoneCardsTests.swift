@@ -38,6 +38,9 @@ import Testing
         #expect(local.when == RoutineInfo.parseTime("2026-11-05T15:00"))
         let newer = try decode(#"{"type":"action_done","kind":"booked_table","title":"Luigi's","when":""}"#)
         #expect(newer.kind == .other && newer.when == nil, "a kind a newer brain invents still shows a card")
+        #expect(newer.lang.isEmpty, "an older brain sends no language")
+        let german = try decode(#"{"type":"action_done","kind":"music","title":"Pausiert","lang":"de"}"#)
+        #expect(german.lang == "de")
     }
 
     // MARK: Showing and tucking away
@@ -136,6 +139,8 @@ import Testing
         #expect(DonePlace.of(ActionDone(kind: .opened, title: "Excel", app: "Microsoft Excel")) ==
                 .app("Microsoft Excel"))
         #expect(DonePlace.of(ActionDone(kind: .other, title: "Something")) == .none)
+        #expect(DonePlace.of(ActionDone(kind: .opened, title: "evil.com", app: "Finder")) == .app("Finder"),
+                "a file named like a site opened in Finder: its name never becomes a page to open")
     }
 
     // MARK: Words
@@ -158,6 +163,32 @@ import Testing
         #expect(line(ActionDone(kind: .timer, title: "Pasta", when: at("2026-11-04T10:12:00+01:00"))) == "Rings at 10:12")
         #expect(line(ActionDone(kind: .todo, title: "Buy milk", app: "Reminders")) == "In Reminders")
         #expect(line(ActionDone(kind: .draft, title: "To Anna")) == "Draft, not sent")
+        #expect(line(ActionDone(kind: .music, title: "Paused")) == "Music", "never \"Playing\" for a pause")
+        #expect(line(ActionDone(kind: .music, title: "Paused", app: "Spotify")) == "Spotify")
+    }
+
+    @Test func theCardsOwnWordsFollowTheLanguageMiloSpoke() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "Europe/Berlin"))
+        func at(_ text: String) -> Date { ISO8601DateFormatter().date(from: text)! }
+        let now = at("2026-11-04T10:00:00+01:00")
+        func line(_ action: ActionDone, _ locale: String) -> String {
+            DoneCardText.line(action, now: now, calendar: calendar, locale: Locale(identifier: locale))
+        }
+        let call = ActionDone(kind: .reminder, title: "Anna anrufen", when: at("2026-11-05T09:30:00+01:00"), lang: "de")
+        #expect(line(call, "en_GB") == "Morgen 9:30", "the language Milo spoke wins over the Mac's")
+        #expect(line(ActionDone(kind: .draft, title: "An Anna", lang: "de"), "en_GB") == "Entwurf, nicht gesendet")
+        #expect(line(ActionDone(kind: .timer, title: "Nudeln", when: at("2026-11-04T10:12:00+01:00"), lang: "de"),
+                     "en_GB") == "Klingelt um 10:12")
+        #expect(line(ActionDone(kind: .draft, title: "To Anna"), "de_DE") == "Entwurf, nicht gesendet",
+                "no language from the brain: the Mac's")
+        #expect(line(ActionDone(kind: .draft, title: "To Anna", lang: "en"), "de_DE") == "Draft, not sent")
+        #expect(line(ActionDone(kind: .draft, title: "Al Anna", lang: "it"), "en_GB") == "Draft, not sent",
+                "a language the card has no words in: English")
+        #expect(DoneCardText.opens(ActionDone(kind: .note, title: "Packliste", app: "Notes", lang: "de")) ==
+                "Öffnet es in Notes")
+        #expect(DoneCardText.spoken(ActionDone(kind: .todo, title: "Milch", app: "Reminders", lang: "de"), now: now)
+                .hasPrefix("Zu deinen To-dos hinzugefügt: Milch"))
     }
 
     // MARK: Clicks through the panel
