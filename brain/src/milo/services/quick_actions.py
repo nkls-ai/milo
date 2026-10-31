@@ -354,8 +354,9 @@ class QuickActions:
             made = await self._ops("calendar.add_event", args) or {}
             self.today.changed()
             spoken = words.when(start, self._clock.now().date(), lang, all_day=all_day)
+            # The card shows the day and the time from `when` (ADR 0030): its detail is only the place.
             return _Done("event", title, words.line("event", lang, title=title, when=spoken),
-                         detail=_detail(spoken, act.get("location")), when=_iso(start), app="Calendar",
+                         detail=act.get("location"), when=_iso(start), app="Calendar",
                          reverse=[{"op": "event.delete", "id": str(made.get("id", "")), "at": _iso(start),
                                    "title": title, "start": _iso(start), "end": _iso(end),
                                    **({"all_day": True} if all_day else {})}])
@@ -406,8 +407,8 @@ class QuickActions:
                                                       "end": _iso(end)})
             self.today.changed()
             spoken = words.when(start, self._clock.now().date(), lang)
-            return _Done("event", title, words.line("moved", lang, title=title, when=spoken), detail=spoken,
-                         when=_iso(start), app="Calendar",
+            return _Done("event", title, words.line("moved", lang, title=title, when=spoken),
+                         detail=str(e.get("location") or ""), when=_iso(start), app="Calendar",
                          reverse=[{"op": "event.move", "id": e["id"], "at": _iso(start), "start": _iso(old_start),
                                    "end": _iso(old_end or old_start), "title": title}])
 
@@ -699,10 +700,6 @@ def _time(value: str, key: str) -> datetime | None:
 
 def _iso(t: datetime | None, *, seconds: bool = False) -> str:
     return t.isoformat(timespec="seconds" if seconds else "minutes") if t is not None else ""
-
-
-def _detail(when: str, location: str) -> str:
-    return f"{when}, {location}" if location else when
 
 
 def _people(value: str) -> list[str]:

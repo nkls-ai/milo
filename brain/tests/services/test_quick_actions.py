@@ -76,6 +76,17 @@ def test_an_event_goes_in_at_once_with_one_line_a_card_and_an_undo(tmp_path):
     assert s.sink.of(UndoPoints)[-1].points[0]["state"] == "undone"
 
 
+def test_an_event_card_carries_only_the_place_since_the_card_shows_the_day_and_time_itself(tmp_path):
+    """ADR 0030: the card's calendar page shows the day and its line the time from `when`. A detail with the spoken
+    "Thursday at 3 pm" read "15:00, Thursday 5 November at 3 pm"."""
+    s = stack(tmp_path, ['[happy] <event title="Dentist" start="2026-11-05T15:00" location="Dr. Weber"/>'],
+              ['[happy] <event title="Gym" start="2026-11-06T18:00"/>'],
+              ['[happy] <event do="move" title="Gym" on="2026-11-06" start="2026-11-06T19:00"/>'])
+    asyncio.run(say(s, "dentist thursday at 3 at Dr. Weber", "gym friday at 6", "move the gym to 7"))
+    assert [(c.title, c.detail, c.when) for c in cards(s)] == [
+        ("Dentist", "Dr. Weber", "2026-11-05T15:00"), ("Gym", "", "2026-11-06T18:00"), ("Gym", "", "2026-11-06T19:00")]
+
+
 def test_the_line_comes_in_the_users_language(tmp_path):
     s = stack(tmp_path, ['[happy] <event title="Zahnarzt" start="2026-10-30T09:00"/>'],
               ['[happy] <todo>Milch kaufen</todo>'])
