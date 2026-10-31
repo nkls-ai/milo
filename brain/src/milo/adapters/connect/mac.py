@@ -165,6 +165,9 @@ end run
 
 
 class AppleMail:
+    controls = "Mail"
+    """The app it scripts: the brain checks the system lets Milo control it before the first call (ADR 0025)."""
+
     def search(self, query: str, limit: int = 20) -> list[dict]:
         out = _osascript.run(_MAIL_SEARCH, query, str(limit), app="Mail")
         found = [{"id": r[0], "from": r[1], "subject": r[2], "date": r[3][:16], "mailbox": r[4]}
@@ -264,6 +267,9 @@ def _note_html(text: str) -> str:
 
 
 class AppleNotes:
+    controls = "Notes"
+    """The app it scripts: the brain checks the system lets Milo control it before the first call (ADR 0025)."""
+
     def search(self, query: str, limit: int = 20) -> list[dict]:
         out = _osascript.run(_NOTES_SEARCH, query, str(limit), app="Notes")
         return [{"id": r[0], "title": r[1], "folder": r[2], "modified": r[3][:16]} for r in records(out) if len(r) >= 4]

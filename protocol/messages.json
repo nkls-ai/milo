@@ -41,6 +41,12 @@
     {"type": "app_request", "id": "a41f", "op": "calendar.add_event", "args": {"title": "Doctor", "start": "2026-11-05T15:00:00", "end": "2026-11-05T16:00:00"}},
     {"type": "helpers", "helpers": [{"id": "c0ffee12ab34", "title": "Budget table in Excel", "status": "working", "step": "Typing “Monday” in Excel", "progress": 0.4}, {"id": "d00d12ab3456", "title": "Flights to Lisbon", "status": "queued", "step": "Waiting for a free helper"}, {"id": "e1e1e1e1e1e1", "title": "Sort downloads", "status": "needs_you", "step": "Waiting for your answer"}, {"id": "f2f2f2f2f2f2", "title": "Dentist email", "status": "done", "step": ""}]},
     {"type": "hands_borrow", "on": true, "what": "mouse"},
+    {"type": "access", "need": "control", "state": "ask", "text": "macOS will ask once whether I may use Microsoft Excel. Click Allow.", "app": "Microsoft Excel", "bundle": "com.microsoft.Excel"},
+    {"type": "access", "need": "control", "state": "no", "text": "Okay, I won't use Microsoft Excel. If you change your mind, Fix it shows the switch.", "app": "Microsoft Excel", "bundle": "com.microsoft.Excel"},
+    {"type": "access", "need": "ui", "state": "no", "text": "To work in other apps' windows I need Accessibility. Fix it shows where to switch it on.", "app": "", "bundle": ""},
+    {"type": "app_request", "id": "a51f", "op": "access.check", "args": {"need": "control", "app": "Microsoft Excel", "bundle": "", "launch": true}},
+    {"type": "app_request", "id": "a52f", "op": "access.request", "args": {"need": "control", "app": "Microsoft Excel", "bundle": "com.microsoft.Excel"}},
+    {"type": "app_request", "id": "a53f", "op": "access.places", "args": {"app": "Microsoft Excel", "bundle": "com.microsoft.Excel"}},
     {"type": "facts", "facts": [
       {"id": "01JBF6Z3Q8M2X4K7N9P0R5T6VW", "text": "The user's name is Niklas.", "topic": "basics", "since": "2026-10-30T09:12:00", "pinned": true},
       {"id": "01JBF7A1B2C3D4E5F6G7H8J9KM", "text": "Anna is the user's sister. Her birthday is March 3.", "topic": "people", "since": "2026-10-30T18:05:41", "pinned": false}
@@ -109,6 +115,9 @@
     {"type": "confirm_answer", "id": "7c1d2e3f4a5b", "yes": true, "choice": "always"},
     {"type": "app_response", "id": "a41f", "ok": true, "result": {"id": "E1F2-77", "title": "Doctor", "start": "2026-11-05T15:00:00", "end": "2026-11-05T16:00:00", "calendar": "Home"}},
     {"type": "app_response", "id": "a42f", "ok": false, "error": "Milo isn't allowed to use your calendar. Turn it on in System Settings › Privacy & Security › Calendars."},
+    {"type": "app_response", "id": "a51f", "ok": true, "result": {"access": "ask", "app": "Microsoft Excel", "bundle": "com.microsoft.Excel", "system": "macOS", "button": "Allow"}},
+    {"type": "app_response", "id": "a52f", "ok": true, "result": {"access": "no", "app": "Microsoft Excel", "bundle": "com.microsoft.Excel", "system": "macOS"}},
+    {"type": "app_response", "id": "a53f", "ok": true, "result": {"sandboxed": true, "places": ["/Users/you/Library/Containers/com.microsoft.Excel/Data"]}},
     {"type": "stop_helper", "id": "c0ffee12ab34"},
     {"type": "stop_all"},
     {"type": "hands_result", "id": "hands-7", "ok": false, "result": {"borrow": "mouse"}, "error": "Excel doesn't take clicks in the background."},

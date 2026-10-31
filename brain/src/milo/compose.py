@@ -19,7 +19,7 @@ from .core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, CHANNELS, DIARIZERS, EM
                             STREAMING_TRANSCRIBERS, TEXT_CLEANERS, TRANSCRIBERS, VOICES, AdapterContext, ConfigError,
                             Registry)
 from .core.types import Emotion, LiveMode, ToolServer
-from .services.app_bridge import AppBridge, AppEyes, AppHands
+from .services.app_bridge import AppAccessLink, AppBridge, AppEyes, AppHands
 from .services.approvals import ActionPolicy, Approvals
 from .services.attention import Attention
 from .services.backchannel import Backchannel
@@ -34,6 +34,7 @@ from .services.corrections import Corrections, DictationFixes
 from .services.dictation import DictationService
 from .services.fallback_voice import NOTICE as VOICE_NOTICE
 from .services.fallback_voice import FallbackVoice, VoiceNotice
+from .services.access import AccessGate
 from .services.hands import HandsService
 from .services.heartbeat_runner import HeartbeatRunner
 from .services.episode_stubs import EpisodeDictations, EpisodeEyes, EpisodeTranscript, RoutineEpisodes
@@ -273,11 +274,16 @@ def _helpers(p: Parts) -> None:
 
     config, mem, workspace = p.config, p.mem, p.workspace
     p.hands = p.hands_server = None
+    # The system's permissions, before Milo first needs one (ADR 0025). The line before the system's own question
+    # is spoken unless the user is talking or answering something.
+    speaker, attention = p.speaker, p.attention
+    p.access = AccessGate(AppAccessLink(p.bridge), p.ui, transcript=p.transcript,
+                          say=lambda text: speaker.say(text, Emotion.NEUTRAL, speak=not attention.occupied()))
     if config.hands.enabled:
         # The questions reach the orchestrator, built below, only once a helper runs.
         p.hands = HandsService(AppHands(p.bridge), HelperQuestions(p.approvals, p.later("helpers"), screen=True),
                                p.ui, transcript=p.transcript, applescript=config.hands.applescript,
-                               locale=_mac_locale(), protected=workspace.protected)
+                               locale=_mac_locale(), protected=workspace.protected, access=p.access)
         p.hands_server = HandsSocketServer(workspace.hands_socket_path, p.hands.call)
     p.memory_requests = MemoryRequests(mem.memory, p.approvals, mem.profile.remember) if mem is not None else None
     p.eyes = AppEyes(p.bridge)
@@ -411,7 +417,8 @@ def _tool_socket(p: Parts) -> None:
     questions = HelperQuestions(p.approvals, p.later("helpers"), screen=False)
     p.tool_server = ToolSocketServer(p.workspace.tools_socket_path,
                                      ToolRequests(questions, p.bridge, p.enabled, p.memory_requests,
-                                                  phone=p.messages, reminders=p.reminders).handle)
+                                                  phone=p.messages, reminders=p.reminders,
+                                                  access=p.access).handle)
 
 
 def _heartbeat(p: Parts) -> None:

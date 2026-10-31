@@ -91,6 +91,21 @@ struct OverlayRenderTests {
         Moment(name: "12-error") { m in
             m.show(MiloController.pasteBlocked, action: .permissions)
         },
+        Moment(name: "12b-access-ask") { m in
+            // The line just before macOS asks whether Milo may control Excel (ADR 25).
+            m.apply(.access(AccessNote(need: .control, state: .ask,
+                                       text: "macOS will ask once whether I may use Microsoft Excel. Click Allow.",
+                                       app: AccessApp(name: "Microsoft Excel", bundle: "com.microsoft.Excel"))))
+        },
+        Moment(name: "12c-access-no") { m in
+            m.apply(.access(AccessNote(need: .control, state: .no,
+                                       text: "Okay, I won't use Microsoft Excel. If you change your mind, Fix it shows the switch.",
+                                       app: AccessApp(name: "Microsoft Excel", bundle: "com.microsoft.Excel"))))
+        },
+        Moment(name: "12d-access-ui") { m in
+            m.apply(.access(AccessNote(need: .ui, state: .no,
+                                       text: "To work in other apps' windows I need Accessibility. Fix it shows where to switch it on.")))
+        },
         Moment(name: "13-status") { m in
             m.apply(.state(.thinking))
             m.apply(.status("Looking at your calendar…"))

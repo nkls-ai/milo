@@ -14,6 +14,7 @@ from typing import Protocol, runtime_checkable
 
 import numpy as np
 
+from .access import AccessAnswer, Need
 from .conversations import ConversationInfo
 from .dictionary import Entries
 from .events import Event
@@ -21,7 +22,7 @@ from .meetings import Chunk, MeetingInfo, MeetingNotes, TimedWord, Track, Transc
 from .memory import ConsolidationReport, Document, Episode, Fact, Hit, IndexItem, Recall, TurnContext
 from .routines import Routine
 from .usage import Account, Call, Dictated
-from .types import Audio, Inbound, Nudge, Reminder, Reply, ScreenCapture, Scope, Signals, Step, Usage
+from .types import AppRef, Audio, Inbound, Nudge, Reminder, Reply, ScreenCapture, Scope, Signals, Step, Usage
 
 LevelCallback = Callable[[float], None]
 """Receives loudness in 0..1. May be called from an audio thread."""
@@ -287,6 +288,24 @@ class AppHands(Protocol):
 
     def cancel(self) -> None:
         """Give up on every action still waiting for the app; each raises HandsError."""
+        ...
+
+
+@runtime_checkable
+class AppAccess(Protocol):
+    """What the system lets Milo do, as the app sees it (ADR 0025). Never raises: what it can't tell is UNKNOWN."""
+
+    async def check(self, need: Need, app: AppRef | None = None) -> AccessAnswer:
+        """The answer as it stands, without asking the user. For CONTROL the app may start `app` (out of sight)
+        first, since only a running app can say; the work that follows would start it anyway."""
+        ...
+
+    async def request(self, need: Need, app: AppRef | None = None) -> AccessAnswer:
+        """Has the system ask the user now if it hasn't yet, and waits for their answer."""
+        ...
+
+    async def places(self, app: AppRef) -> tuple[str, ...] | None:
+        """The folders `app` can write to without the system stopping to ask the user. None: anywhere."""
         ...
 
 

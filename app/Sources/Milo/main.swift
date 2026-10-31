@@ -13,11 +13,19 @@ let brainDir = UVBrainLauncher.resolveBrainDir(
     infoPlistValue: Bundle.main.object(forInfoDictionaryKey: "MiloBrainDir") as? String)
 
 let model = MiloModel(scheduler: scheduler)
+// A copy with its own MILO_HOME shares the bundle id: keep its notes apart.
+let defaults = environment["MILO_HOME"].flatMap { home in
+    UserDefaults(suiteName: "dev.nkls.milo.home" + home.replacingOccurrences(of: "/", with: "."))
+} ?? .standard
+// What macOS lets Milo do, checked before he first needs it (ADR 25), and the apps he asked about.
+let access = MacAppAccess()
+let controlledApps = ControlledApps(defaults: defaults)
+let accessRequests = AccessRequests(source: access, apps: controlledApps, next: EventKitConnections())
 let brain = UnixSocketBrainClient(socketPath: paths.socket.path)
 let screen = ScreenController(
     model: model, brain: brain,
     ports: ScreenPorts(reader: SystemScreenReader(screensFolder: paths.screens),
-                       hands: MacHands(screensFolder: paths.screens),
+                       hands: MacHands(screensFolder: paths.screens, places: { access.places(for: $0) }),
                        input: NSEventInputMonitor(), hotkey: CarbonHotkey(),
                        cursor: CursorOverlay(model: model), windows: MacWindowWatcher()),
     toAppKit: OverlayPanel.appKitPoint)
@@ -32,7 +40,7 @@ let controller = MiloController(
     context: WorkspaceContextProvider(),
     accessibility: SystemAccessibilityPermission(),
     scheduler: scheduler,
-    connections: EventKitConnections(),
+    connections: accessRequests,
     // The setup window explains Accessibility with the other permissions, so no system dialog on top of it.
     // MILO_DROWSY_AFTER (seconds) lets a test instance fall asleep sooner, to measure him asleep.
     settings: MiloController.Settings(drowsyAfter: environment["MILO_DROWSY_AFTER"].flatMap(Double.init) ?? 600,
@@ -41,6 +49,8 @@ let controller = MiloController(
     meetings: MeetingController(model: model, brain: brain, recorder: MacMeetingRecorder(brainLock: paths.brainLock),
                                 signals: MacCallSignals(), scheduler: scheduler, hotkey: CarbonHotkey()),
     pasteWatcher: PasteWatcher(reader: AXFocusedText(), words: SpellCheckWords(), scheduler: scheduler))
+
+accessRequests.onAsking = { screen.systemAsks($0) }
 
 // `[hands] show_window` from the brain's settings; on until the brain says otherwise.
 screen.showWindow = { controller.settingsModel.value("hands", "show_window")?.bool ?? true }
@@ -66,12 +76,8 @@ let lifecycle = AppLifecycle(
         model.onOpenHelper = { window.show(helper: $0) }
         let setupWindow = SetupWindow(
             setup: SetupModel(permissions: SystemPermissions(), scheduler: scheduler,
-                              dictateKey: controller.bindings.dictate.displayName,
-                              // A copy with its own MILO_HOME shares the bundle id: keep its notes apart.
-                              defaults: environment["MILO_HOME"].flatMap { home in
-                                  UserDefaults(suiteName: "dev.nkls.milo.home" + home.replacingOccurrences(of: "/", with: "."))
-                              } ?? .standard),
-            model: model)
+                              dictateKey: controller.bindings.dictate.displayName, defaults: defaults),
+            model: model, apps: controlledApps, access: access)
         // "Fix it" under a bubble about a missing permission opens the window with a button for each.
         model.onBubbleAction = { action in
             switch action {
@@ -80,6 +86,9 @@ let lifecycle = AppLifecycle(
             case .callAudio: SystemPermissions().openSettings(.screenRecording)
             case .copyConsent: break  // MiloModel copies it itself
             case let .openMeeting(id): window.show(meeting: id)
+            // Automation has a switch per app under Milo; Accessibility and Screen Recording have the
+            // permissions window, with its drag tile and restart.
+            case let .access(need, app): need == .control ? access.openSettings(need, app: app) : setupWindow.open()
             }
         }
         model.meeting.onOpen = { window.show(meeting: $0) }
@@ -88,7 +97,7 @@ let lifecycle = AppLifecycle(
             NSPasteboard.general.setString(text, forType: .string)
         }
         let statusMenu = StatusMenu(controller: controller, panel: overlay, window: window, settings: settingsWindow,
-                                    setup: setupWindow, paths: paths)
+                                    setup: setupWindow, paths: paths, apps: controlledApps, access: access)
         controller.onBindingsChange = {
             statusMenu.show($0)
             window.show($0)

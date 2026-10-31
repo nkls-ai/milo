@@ -98,6 +98,19 @@ struct SettingsRenderTests {
         scheduler.advance(by: SetupModel.patience)
         try render(SetupView(setup: stuck, done: {}).environment(\.miloTheme, Theme.for(.milo)), size: size,
                    name: "setup-stuck-light", dark: false)
+        // The apps macOS was asked about (ADR 25), under the optional rows.
+        let suite = "SettingsRender-apps-\(UUID().uuidString)"
+        let apps = ControlledApps(defaults: UserDefaults(suiteName: suite)!)
+        apps.note(AccessAnswer(.yes, app: AccessApp(name: "Microsoft Excel", bundle: "com.microsoft.Excel")))
+        apps.note(AccessAnswer(.yes, app: AccessApp(name: "Mail", bundle: "com.apple.mail")))
+        apps.note(AccessAnswer(.no, app: AccessApp(name: "Numbers", bundle: "com.apple.iWork.Numbers")))
+        let (withApps, _) = Self.setup([.microphone: .granted, .accessibility: .granted, .screenRecording: .granted])
+        for dark in [false, true] {
+            try render(SetupView(setup: withApps, apps: apps, done: {}).environment(\.miloTheme, Theme.for(.milo)),
+                       size: size, name: "setup-apps-\(dark ? "dark" : "light")", dark: dark)
+            try render(ControlledAppsCard(apps: apps, open: {}).padding(16).environment(\.miloTheme, Theme.for(.milo)),
+                       size: CGSize(width: 520, height: 260), name: "setup-apps-card-\(dark ? "dark" : "light")", dark: dark)
+        }
         let (ready, _) = Self.setup([:])
         ready.startWatching()
         ready.noticed(.dictating)

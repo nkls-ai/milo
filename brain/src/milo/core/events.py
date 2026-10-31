@@ -262,6 +262,20 @@ class HandsBorrow(Event):
 
 
 @dataclass(frozen=True)
+class AccessNote(Event):
+    """Milo needs the system's permission for work in progress (ADR 0025): `need` is "control" (an app, `app` and
+    `bundle`), "ui" or "screen". The app shows `text` in the bubble. `state` "ask": the system is about to ask the
+    user. "no": it said no, and the bubble gets a Fix it button that opens the system's switch for that need."""
+
+    type: ClassVar[str] = "access"
+    need: str
+    state: str
+    text: str
+    app: str = ""
+    bundle: str = ""
+
+
+@dataclass(frozen=True)
 class Facts(Event):
     """What Milo knows, for the "What Milo knows" screen: every current fact as {id, text, topic, since, pinned}.
 

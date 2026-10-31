@@ -9,6 +9,7 @@ from milo.core.ports import ReminderBook
 from milo.core.types import AppRef, ChannelError, Scope
 from milo.core.wording import question, when
 
+from .access import AccessGate
 from .app_bridge import AppBridge, AppError
 from .approvals import Approvals
 from .memory_requests import MemoryRequests
@@ -28,6 +29,8 @@ APPS = {"calendar": AppRef("Calendar", "com.apple.iCal"), "reminders": AppRef("R
 # The apps an `approve` may name: the ones Milo's connection tools change things in (connect/server.py APPS).
 # Anything else gets no scope, so a caller can't borrow the Allow (or Allow always) of an app it doesn't work in.
 APPROVE_APPS = {"Notes": AppRef("Notes", "com.apple.Notes"), "Finder": AppRef("Finder", "com.apple.finder")}
+# The apps the connection tools script (adapters/connect, `controls`): the only ones `access` checks.
+ACCESS_APPS = {"Mail": AppRef("Mail"), "Notes": AppRef("Notes")}
 REFUSED = {"no": "The user said no.", "timeout": "The user didn't answer, so it wasn't done.",
            "refused": "Milo isn't allowed to do this."}
 
@@ -64,11 +67,14 @@ class ToolRequests:
       unless the user made sharing not ask; the question names the file and its size. Result: {sent}.
     - `reminder.add` {when, text}: one of Milo's own reminders, a line in reminders.md, which the worker can't
       write (ADR 0020). Always asks, with the reminder on its own marked line. Result: {reminder, due}.
+    - `access` {app}: whether the system lets Milo control `app` (Mail or Notes, ACCESS_APPS), asked before a
+      connection tool's first script there, so the system's question never comes as a surprise (ADR 0025).
+      Result: {allowed, error?}.
     """
 
     def __init__(self, approvals: Approvals, bridge: AppBridge, enabled: Collection[str] = ("calendar", "reminders"),
                  memory: MemoryRequests | None = None, phone: Phone | None = None,
-                 reminders: ReminderBook | None = None):
+                 reminders: ReminderBook | None = None, access: AccessGate | None = None):
         self._approvals = approvals
         self._bridge = bridge
         self._enabled = frozenset(enabled)
@@ -76,6 +82,7 @@ class ToolRequests:
         """`memory.*` ops: the worker's memory tools (services/memory_requests.py). None: memory is off."""
         self._phone = phone
         self._reminders = reminders
+        self._access = access
 
     async def handle(self, request: dict) -> dict:
         """{"ok": true, "result": ...} or {"ok": false, "error": "plain words"}. Never raises."""
@@ -112,6 +119,14 @@ class ToolRequests:
                     if not decision.allowed:
                         return _error(REFUSED.get(decision.answer, REFUSED["refused"]))
                     return _ok(await self._phone.send_file(outgoing, str(request.get("caption") or "")))
+                case "access":
+                    if self._access is None:
+                        return _ok({"allowed": True})  # nothing to check with: the script finds out, as before
+                    app = ACCESS_APPS.get(str(request.get("app") or "").strip())
+                    if app is None:  # only the apps the connection tools script: no caller starts any other
+                        return _error("access is only for the apps Milo's connection tools control.")
+                    allowed, error = await self._access.allows(app)
+                    return _ok({"allowed": True} if allowed else {"allowed": False, "error": error})
                 case "reminder.add" if self._reminders is not None:
                     return await self._remind(request)
                 case str() if op.startswith("memory.") and self._memory is not None:

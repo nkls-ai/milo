@@ -98,6 +98,11 @@ public final class ScreenController {
         }
     }
 
+    /// macOS's own question about controlling an app is up (ADR 25): clicking it isn't the user taking over.
+    public func systemAsks(_ on: Bool) {
+        if on { detector.disarm() } else if model.handsActive && model.question == nil { detector.arm() }
+    }
+
     /// The user pressed the Stop button by Milo: the screen work stops here at once.
     public func stopPressed() {
         guard model.handsActive else { return }

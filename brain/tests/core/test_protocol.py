@@ -37,6 +37,7 @@ OUTBOUND = {
     "app_request": lambda m: ev.AppRequest(m["id"], m["op"], m["args"]),
     "helpers": lambda m: ev.Helpers(m["helpers"]),
     "hands_borrow": lambda m: ev.HandsBorrow(m["on"], m["what"]),
+    "access": lambda m: ev.AccessNote(m["need"], m["state"], m["text"], m["app"], m["bundle"]),
     "facts": lambda m: ev.Facts(m["facts"]),
     "routines": lambda m: ev.Routines(m["routines"], m["drafts"]),
     "settings": lambda m: ev.SettingsReport(m["settings"], m["restart"], m["error"]),

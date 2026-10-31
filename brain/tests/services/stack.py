@@ -13,6 +13,7 @@ from milo.config import UiSettings
 from milo.core.events import Bubble, StateChanged
 from milo.core.types import LiveMode, MiloState
 from milo.memory.recall import HybridRecaller, render
+from milo.services.access import AccessGate
 from milo.services.app_bridge import AppBridge
 from milo.services.approvals import Approvals
 from milo.services.context import UserContext
@@ -76,6 +77,8 @@ class Stack:
     wait_s: float = 0.05  # how long task results and nudges wait for a live turn to end
     eyes: FakeEyes | None = None  # None: Milo can't look, and his prompt says nothing about looking
     hands_port: FakeHands = field(default_factory=FakeHands)
+    access: object | None = None
+    """An AppAccess (FakeAccess): what the system lets Milo do (ADR 0025). None: HandsService doesn't check."""
     screens: Path | None = None
     confirm_timeout_s: float = 1.0
     hearing: CloudHearing | None = None  # a cloud transcriber that listens along in talk mode
@@ -113,7 +116,8 @@ class Stack:
         self.approvals = Approvals(self.ui, self.speaker, timeout_s=self.confirm_timeout_s,
                                    quiet=lambda: self.live_talk.busy, permits=self.permits)
         self.bridge = AppBridge(self.sink, timeout_s=self.confirm_timeout_s)
-        self.hands = HandsService(self.hands_port, self.approvals, self.ui)
+        self.gate = AccessGate(self.access, self.sink, pause_s=0) if self.access is not None else None
+        self.hands = HandsService(self.hands_port, self.approvals, self.ui, access=self.gate)
         self.runner = TaskRunner(self.harness, self.ledger, self.clock, self.context, background=self.background,
                                  hands=self.hands)
         self.tasks = Orchestrator(self.runner, self.speaker, self.ui, self.clock,
