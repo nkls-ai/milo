@@ -246,6 +246,17 @@ import Testing
         #expect(String(MarkdownBlock.inline("a [b").characters) == "a [b")
     }
 
+    @Test func onlyTheNotesOwnTranscriptLinkStaysALink() {
+        let own = MarkdownBlock.inline("[The whole transcript](transcript.md)")
+        #expect(own.runs.compactMap(\.link).map(\.relativeString) == ["transcript.md"])
+        for text in ["[slides](https://example.com/x)", "[open](file:///Applications/Calculator.app)",
+                     "[up](../../secret/transcript.md)", "[mail](mailto:a@b.c)", "<https://example.com>"] {
+            let styled = MarkdownBlock.inline(text)
+            #expect(styled.runs.allSatisfy { $0.link == nil }, "\(text) is still a link")
+        }
+        #expect(String(MarkdownBlock.inline("[slides](https://example.com/x)").characters) == "slides")
+    }
+
     @Test func aMeetingConversationsPreviewLosesItsPrefix() {
         #expect(MeetingPageID.summary(of: "Notes from “Weekly sync”: The launch moves.") == "The launch moves.")
         #expect(MeetingPageID.summary(of: "Something else") == "Something else")
