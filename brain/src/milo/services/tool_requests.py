@@ -4,14 +4,17 @@ import logging
 from collections.abc import Collection
 from typing import Any, Protocol
 
+from milo.core.packages import install as package_install
 from milo.core.ports import ReminderBook
 from milo.core.times import local
 from milo.core.types import AppRef, ChannelError, Scope
 from milo.core.wording import question, when
+from milo.core.words import say
 
 from .access import AccessGate
 from .app_bridge import AppBridge, AppError
-from .approvals import PARKED, Approvals, Parked
+from .approvals import INSTALL, PARKED, Approvals, Parked
+from .installs import Installer
 from .memory_requests import MemoryRequests
 from .sharing import NotShareable
 from .undo import Undo
@@ -74,6 +77,9 @@ class ToolRequests:
       {text, task?}: how something was before the task changed it, where no copy can be kept. Result: {note}.
     - `reminder.add` {when, text}: one of Milo's own reminders, a line in reminders.md, which the worker can't
       write (ADR 0020). Always asks, with the reminder on its own marked line. Result: {reminder, due}.
+    - `package.install` {manager, package}: install a program with a package manager (core/packages.py), which the
+      worker's sandbox can't. An `install`: in auto mode it asks unless the user's own words for the task named the
+      package (HelperQuestions.approve_install). Result: {installed, output} or {running} (services/installs.py).
     - `access` {app}: whether the system lets Milo control `app` (Mail or Notes, ACCESS_APPS), asked before a
       connection tool's first script there, so the system's question never comes as a surprise (ADR 0025).
       Result: {allowed, error?}.
@@ -82,7 +88,7 @@ class ToolRequests:
     def __init__(self, approvals: Approvals, bridge: AppBridge, enabled: Collection[str] = ("calendar", "reminders"),
                  memory: MemoryRequests | None = None, phone: Phone | None = None,
                  reminders: ReminderBook | None = None, access: AccessGate | None = None,
-                 undo: Undo | None = None):
+                 undo: Undo | None = None, installer: Installer | None = None):
         self._approvals = approvals
         self._bridge = bridge
         self._enabled = frozenset(enabled)
@@ -92,6 +98,7 @@ class ToolRequests:
         self._reminders = reminders
         self._access = access
         self._undo = undo
+        self._installer = installer
 
     async def handle(self, request: dict) -> dict:
         """{"ok": true, "result": ...} or {"ok": false, "error": "plain words"}. Never raises."""
@@ -140,6 +147,8 @@ class ToolRequests:
                     return await self._undo_request(op, request)
                 case "reminder.add" if self._reminders is not None:
                     return await self._remind(request)
+                case "package.install" if self._installer is not None:
+                    return await self._install(request)
                 case str() if op.startswith("memory.") and self._memory is not None:
                     return await self._memory.handle(op, request)
         except Parked as e:
@@ -160,6 +169,22 @@ class ToolRequests:
                 return _ok({"note": await self._undo.keep_file(task, str(request["path"]))})
             return _ok({"note": self._undo.note(task, str(request["text"]))})
         except (ValueError, OSError) as e:
+            return _error(str(e))
+
+    async def _install(self, request: dict) -> dict:
+        try:
+            wanted = package_install(str(request.get("manager") or ""), str(request.get("package") or ""))
+        except ValueError as e:
+            return _error(str(e))
+        question = say("connect.install_package", package=wanted.package, manager=wanted.label)
+        approve_install = getattr(self._approvals, "approve_install", None)  # HelperQuestions knows whose words
+        decision = (await approve_install(wanted, question) if approve_install is not None
+                    else await self._approvals.approve(INSTALL, question, careful=True))
+        if not decision.allowed:
+            return _error(REFUSED.get(decision.answer, REFUSED["refused"]))
+        try:
+            return _ok(await self._installer.run(wanted))
+        except ValueError as e:
             return _error(str(e))
 
     async def _remind(self, request: dict) -> dict:

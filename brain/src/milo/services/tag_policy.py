@@ -13,20 +13,23 @@ from dataclasses import dataclass
 
 _WORK = re.compile(r"\b((fix|fill|put|add|make|change|update|correct|write|enter|insert|sort|format|create|build|"
                    r"finish|complete|edit|move|rename|copy|paste|replace|open|go|show|play|send|remind|check|find|"
-                   r"summari[sz]e|start|stop|set|take|search|google|look up|delete|remove|cancel|schedule|save|archive)"
+                   r"summari[sz]e|start|stop|set|take|search|google|look up|delete|remove|cancel|schedule|save|archive|install|"
+                   r"reinstall|upgrade)"
                    r"(es|s|ed|d|ing)?|"
                    # Only in their action form: "Mark", "Haken" and "Streichholz" ask for nothing.
                    r"(tick|cross)(es|s|ed|ing)?\s+(\w+\s+){0,4}?(off|out)|mark(s|ed|ing)?\s+(\w+\s+){0,4}?"
                    r"(as\s+)?(done|complete)|abhak\w*|hak(e|t|en)?\s+(\w+\s+){0,4}?ab|streich(e|t|en)?|stopp(e|t|en)?|"
                    r"(mach|füll|änder|korrigier|trag|schreib|erstell|sortier|formatier|bearbeit|füg|erledig|"
                    r"kopier|ersetz|verschieb|benenn|öffne|zeig|spiel|schick|erinner|stell|such|lösch|entfern|absag|"
-                   r"speicher|notier|plan)\w*)\b", re.IGNORECASE)
+                   r"speicher|notier|plan|installier)\w*)\b", re.IGNORECASE)
 _QUESTION = re.compile(r"^\s*(what|why|how|who|whom|whose|where|when|which|is|are|was|were|does|did|do|has|have|"
                        r"was|warum|wieso|weshalb|wie|wer|wo|wann|welche\w*|ist|sind|hat|haben)\b", re.IGNORECASE)
 
 
 # The user's own words ask for this very tag: only then may it skip outside text's question.
 _REMIND = re.compile(r"\b(remind(s|ed|er)?|erinner(e|n|st|t|ung)?)\b", re.IGNORECASE)
+_INSTALL = re.compile(r"\b((re)?install(s|ed|ing)?|upgrade[sd]?|upgrading|installier\w*)\b",
+                      re.IGNORECASE)
 _REMEMBER = re.compile(r"\b(remember|keep in mind|merk(e|en|st)? (dir|euch|Ihnen))\b", re.IGNORECASE)
 
 
@@ -80,6 +83,9 @@ class TagPolicy:
     """At the Mac in auto mode, the user's own words this turn asked for work (`asks_for_work`)."""
     own_reminder: bool = False
     """At the Mac in auto mode, the user's own words asked for a reminder ("remind me", "erinnere mich")."""
+    own_install: bool = False
+    """At the Mac in auto mode, the user's own words asked Milo to install something ("install the codex cli",
+    "installier mir tree")."""
     own_fact: bool = False
     """At the Mac in auto mode, the user's own words asked Milo to remember something ("remember", "merk dir")."""
     request: str = ""
@@ -118,6 +124,13 @@ class TagPolicy:
         return self.outside and not self.own_work
 
     @property
+    def installs(self) -> bool:
+        """The user's own words asked for an install, so a task from this reply may install the packages those words
+        name without a question (Helper.install_words, core/packages.named_by). Not for a careful helper, and not for
+        one whose user asked only for other work, so a page or mail it reads can't get a program installed."""
+        return self.own_install and not self.careful
+
+    @property
     def user_asked(self) -> bool:
         """The user asked for the work: in auto mode its helper goes on without a question. Never for a careful
         helper, so its questions are asked."""
@@ -154,4 +167,5 @@ def policy(*, tainted: bool, saw_screen: bool, now: bool, auto: bool, via: str, 
     return TagPolicy(tainted=tainted, saw_screen=saw_screen, now=now, at_mac=at_mac,
                      own_work=at_mac and asks_for_work(request),
                      own_reminder=at_mac and _asks(_REMIND, request),
+                     own_install=at_mac and _asks(_INSTALL, request),
                      own_fact=at_mac and _asks(_REMEMBER, request), request=request)

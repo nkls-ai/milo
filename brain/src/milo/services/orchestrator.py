@@ -20,12 +20,13 @@ from dataclasses import replace
 
 from milo.core.events import Helpers
 from milo.core.logtext import private
+from milo.core.packages import Install, named_by
 from milo.core.ports import Clock, EventSink
 from milo.core.task_scope import scope_for
 from milo.core.types import Decision, Emotion, HarnessError, Reply, Scope, Step
 
 from . import helpers as board_text
-from .approvals import MONEY_KINDS, Parked
+from .approvals import INSTALL, MONEY_KINDS, Parked
 from .helpers import Helper, HelperStatus, plain_step, reads_outside, short_title
 from .quiet import POLL_S
 from .speaker import Speaker
@@ -161,13 +162,14 @@ class Orchestrator:
     def submit(self, description: str, *, title: str = "", screen: bool | None = None,
                careful: bool = False, instructions: str = "",
                on_finish: Callable[[Helper], None] | None = None, own: str = "", user_asked: bool = False,
-               language: str = "") -> Helper:
+               language: str = "", install_words: str = "") -> Helper:
         """Hand off a task. Returns at once with the new helper, queued or already working. `careful`: the
         conversation that asked for it read the screen, so its tools ask before changes too. `instructions`
         replace the description for the worker (a routine's recipe); `on_finish` hears how it ended. `own`
         = "routine": the window shows it as a conversation of its own (a routine run on its schedule).
         `user_asked`: the user asked for it in a conversation without outside text (Helper.user_asked).
-        `language`: the code of the language the user asked in ("de"); the helper answers in it."""
+        `language`: the code of the language the user asked in ("de"); the helper answers in it. `install_words`:
+        the user's own words, when they asked for an install (Helper.install_words)."""
         screen = (needs_screen(description) if screen is None else screen) and self._runner.has_screen
         self._numbers += 1
         name = short_title(description, title)
@@ -175,6 +177,7 @@ class Orchestrator:
         helper = Helper(self._transcript.task_started(description, title=name, own=own), self._numbers, name,
                         description, screen, self._clock.monotonic(), careful=careful, instructions=instructions,
                         on_finish=on_finish, user_asked=user_asked, language=language,
+                        install_words="" if careful else install_words,
                         scope=None if instructions else scope_for(description, screen=screen),
                         spoken=spoken)
         log.info("helper %d %s%s, %s", helper.number, "on the screen" if screen else "in the background",
@@ -182,10 +185,13 @@ class Orchestrator:
         self._add(helper)
         return helper
 
-    def steer(self, ref: str, change: str, *, careful: bool = False, user_asked: bool = True) -> Helper | None:
+    def steer(self, ref: str, change: str, *, careful: bool = False, user_asked: bool = True,
+              install_words: str = "") -> Helper | None:
         """Tell a helper the user changed the task. A finished one continues its session as a new helper.
         A `careful` change makes the helper careful from its next turn on; one that isn't `user_asked` (the
-        conversation read outside text) takes the helper's user_asked away.
+        conversation read outside text) takes the helper's user_asked away. `install_words`: the user's own words
+        in the change, when they asked for an install; they add to Helper.install_words, and a careful change takes
+        all of them away.
 
         Returns the helper that will act on it, or None if `ref` names no helper.
         """
@@ -199,6 +205,8 @@ class Orchestrator:
         helper.careful = careful
         user_asked = user_asked and helper.user_asked
         helper.user_asked = user_asked
+        install_words = "" if careful else " ".join(w for w in (helper.install_words, install_words) if w)
+        helper.install_words = install_words
         if helper.status is HelperStatus.QUEUED:
             helper.amendments.append(change)
             self._changed(now=True)
@@ -216,7 +224,7 @@ class Orchestrator:
                         self._next_number(), helper.title, helper.description, helper.screen, self._clock.monotonic(),
                         session_id=helper.session_id, amendments=[*helper.amendments, change], follow_up=change,
                         careful=careful, instructions=helper.instructions, user_asked=user_asked,
-                        language=helper.language,
+                        language=helper.language, install_words=install_words,
                         scope=helper.scope and scope_for(f"{helper.description}\n{change}", screen=helper.screen))
         self._add(follow)
         return follow
@@ -272,6 +280,13 @@ class Orchestrator:
         counts, so a careful helper never acts unasked."""
         working = [h for h in self._helpers if h.status in (HelperStatus.WORKING, HelperStatus.NEEDS_YOU)]
         return any(h.careful for h in working if h.screen or not screen)
+
+    def install_named(self, wanted: Install) -> bool:
+        """Whether the user's own words for the helper at work named the package it wants to install. When it can't
+        tell which of several helpers asks, every one of them must have named it, so another helper's page or mail
+        can't install anything unasked."""
+        working = [h for h in self._helpers if h.status in (HelperStatus.WORKING, HelperStatus.NEEDS_YOU)]
+        return bool(working) and all(not h.careful and named_by(wanted, h.install_words) for h in working)
 
     def user_asked(self, id: str) -> bool:
         """Whether the helper `id` is still at work on something the user asked for themselves."""
@@ -618,7 +633,18 @@ class HelperQuestions:
         """Approvals.approve, careful when the helper that asks is (see Orchestrator.careful). `scope` names the
         app; the helper that asks becomes its task, so the user's Allow lasts as long as that helper (ADR 0022).
         When it can't tell which helper asks, only Allow always covers it."""
-        careful = self._orchestrator().careful(screen=self._screen)
+        # An install without its package to hold against the user's words always asks (approve_install).
+        careful = kind == INSTALL or self._orchestrator().careful(screen=self._screen)
+        return await self._approve(kind, summary, careful=careful, scope=scope)
+
+    async def approve_install(self, wanted: Install, summary: str) -> Decision:
+        """Installing runs a package's own code outside the sandbox. Without a question only in auto mode, for a
+        helper whose user named this very package (Orchestrator.install_named); anything else asks."""
+        careful = (self._approvals.permits.ask != "auto" or self._orchestrator().careful(screen=self._screen)
+                   or not self._orchestrator().install_named(wanted))
+        return await self._approve(INSTALL, summary, careful=careful)
+
+    async def _approve(self, kind: str, summary: str, *, careful: bool, scope: Scope | None = None) -> Decision:
         if not self._approvals.asks(kind, careful=careful):
             return await self._approvals.approve(kind, summary, careful=careful)
         helper = self._orchestrator().asking(screen=self._screen)

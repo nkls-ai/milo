@@ -101,6 +101,7 @@ class ReplyEffects:
         if not remember and parser.remembers:
             log.info("not remembering %d fact(s) from a turn with screen data", len(parser.remembers))
         careful, user_asked, lang = rule.careful, rule.user_asked, language
+        install_words = rule.request if rule.installs else ""
         effects: list[tuple[str, str, Callable[[], None], bool]] = []
         for request in held:  # opening asks only here, for what outside text may have named (LiveTalk._open_now)
             effects.append((open_question(request, lang), request.url or request.path,
@@ -120,12 +121,12 @@ class ReplyEffects:
             detail = "" if question.rstrip("?") == task.description.rstrip(".?") else task.description
             effects.append((question, detail, lambda task=task: self._tasks.submit(
                 task.description, title=task.title, screen=task.screen, careful=careful, user_asked=user_asked,
-                language=lang), rule.ask_tasks))
+                language=lang, install_words=install_words), rule.ask_tasks))
         for ref, change in parser.steers:  # a change to a task is a task: same rule
             question = task_question(say("talk.steer", lang, change=change), computer=self._computer)
             detail = change if question.endswith("…?") else ""
             effects.append((question, detail, lambda ref=ref, change=change: self._tasks.steer(
-                ref, change, careful=careful, user_asked=user_asked), rule.ask_tasks))
+                ref, change, careful=careful, user_asked=user_asked, install_words=install_words), rule.ask_tasks))
         if self._routines is not None:  # a routine run is a task: same rule, unless the routine says otherwise
             for question, detail, apply, ask in self._routines.effects(parser.routines, careful=careful):
                 effects.append((question, detail, apply, rule.ask_routines if ask is None else ask))

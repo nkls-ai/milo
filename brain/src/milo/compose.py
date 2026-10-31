@@ -55,6 +55,7 @@ from .services.settings_guard import SettingsGuard
 from .services.speaker import Speaker
 from .services.talk_prompt import untrusted
 from .services.task_runner import TaskRunner
+from .services.installs import Installer
 from .services.tool_requests import ToolRequests
 from .services.transcript import NO_TRANSCRIPT, Transcript
 from .services.ui_state import UiState
@@ -495,7 +496,8 @@ def _tool_socket(p: Parts) -> None:
     p.tool_server = ToolSocketServer(p.workspace.tools_socket_path,
                                      ToolRequests(questions, p.bridge, p.enabled, p.memory_requests,
                                                   phone=p.messages, reminders=p.reminders,
-                                                  access=p.access, undo=p.undo).handle)
+                                                  access=p.access, undo=p.undo,
+                                                  installer=Installer(search_dirs=p.platform.tool_dirs)).handle)
 
 
 def _heartbeat(p: Parts) -> None:
@@ -622,12 +624,14 @@ def _memory(config: Config, workspace, ctx: AdapterContext, clock, ui: UiState, 
 
 
 def _available(config: Config) -> frozenset[str]:
-    """The connections the worker's tools reach, as config.toml switches them (milo.connect reads the same)."""
+    """The connections the worker's tools reach, as config.toml switches them (milo.connect reads the same), and
+    install_package, which needs no switch: it asks unless the user named the package."""
     switches = config.connections
     names = ("calendar", "reminders", "mail", "notes", "shortcuts", "files")
     on = switches.enabled and config.pluggable("connections")[0] != "none"
     return frozenset({*(n for n in names if on and getattr(switches, n)),
-                      *(("memory",) if config.memory.enabled else ()), *(("phone",) if config.messages.enabled else ())})
+                      *(("memory",) if config.memory.enabled else ()), *(("phone",) if config.messages.enabled else ()),
+                      "install"})
 
 
 def _tool_servers(home: Path) -> tuple[ToolServer, ...]:

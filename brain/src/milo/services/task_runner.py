@@ -34,8 +34,8 @@ def answer_in(language: str) -> str:
 # Said to a helper that got only the connections its task names (core/task_scope.py). If it needs another one, it
 # comes back with NEEDS_TOOLS and the orchestrator runs it again with all of them.
 SOME_TOOLS = (f"(You have only the tools this task seems to need. If it needs another of Milo's tools (calendar, "
-              f"reminders, mail, notes, shortcuts, files, memory), stop at once and reply with say exactly "
-              f"{NEEDS_TOOLS}.)")
+              f"reminders, mail, notes, shortcuts, files, memory, installing programs), stop at once and reply with "
+              f"say exactly {NEEDS_TOOLS}.)")
 
 
 def scope(helper: Helper, *, screen_tools: bool) -> ToolScope:

@@ -30,6 +30,8 @@ class Platform:
     """[messages] use: the phone channel. Telegram's bot API runs everywhere."""
     computer: str = "computer"
     """What Milo calls the machine he runs on in what he says ("while the computer was asleep")."""
+    tool_dirs: tuple[str, ...] = ()
+    """Where package managers live besides PATH, which is bare when the app starts the brain (install_package)."""
 
     def use(self, section: str) -> str | None:
         """The default `use` for a pluggable config section, None for sections that must name one."""

@@ -105,6 +105,7 @@ read = "read"                     # looking things up
 draft = "read"                    # mail drafts: nothing leaves your Mac
 change = "change"                 # calendar entries, reminders, notes
 trash = "change"                  # to the Trash or Recently Deleted: can be undone
+install = "change"                # programs Milo installs; asks unless you named it yourself
 send = "ask_first"
 share = "ask_first"               # anything going to another person
 delete = "ask_first"              # for good: can't be undone

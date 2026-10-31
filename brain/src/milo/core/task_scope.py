@@ -38,9 +38,11 @@ KINDS: dict[str, re.Pattern[str]] = {
                          r"letztes mal|do you know|wei(ß|ss)t du|\bmy (wife|husband|sister|brother|mother|mum|mom|"
                          r"father|dad|son|daughter|partner)\b|meine? (frau|mann|schwester|bruder|mutter|vater|sohn|"
                          r"tochter)\b|sister|schwester", _W),
+    "install": re.compile(r"\binstall|installier|\bupgrade|homebrew|\bbrew\b|\bnpm\b|\bpipx?\b|\buv tool", _W),
 }
-"""The connections and Milo's memory, each with the words that name it in a task (English, German, a little French
-and Spanish). A list could be a note or a reminder list, so it names both (AGENTS.md: look in both)."""
+"""The connections, Milo's memory and installing programs (install_package), each with the words that name it in a
+task (English, German, a little French and Spanish). A list could be a note or a reminder list, so it names both
+(AGENTS.md: look in both)."""
 _WEB = re.compile(r"\bweb\b|internet|online|google|recherch|im netz|website|webseite", _W)
 """Work on the web only: it needs none of the connections, which makes the task's kind known."""
 _APP_KINDS = frozenset({"calendar", "reminders", "mail", "notes", "shortcuts", "files", "phone"})

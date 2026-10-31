@@ -93,3 +93,29 @@ def test_undo_that_is_no_work_request():
         return policy(tainted=True, saw_screen=False, now=False, auto=True, via="voice", request=request)
 
     assert rule("undo that").ask_undoable and rule("undo that").careful
+
+
+@pytest.mark.parametrize("request_, installs", [
+    ("Can you install the Codex UI for me?", True),
+    ("install the codex cli", True),
+    ("bitte installier mir tree", True),
+    ("upgrade codex", True),
+    ("summarize this page", False),
+    ("did you install it?", False),
+    ("don't install anything", False),
+    ("No the CLI, not the UI", False),
+])
+def test_only_the_users_own_words_let_a_task_install_without_a_question(request_, installs):
+    """Even after a shared calendar or a task result made the conversation outside (2026-10-31)."""
+    rule = policy(tainted=True, saw_screen=False, now=True, auto=True, via="voice", request=request_)
+    assert rule.installs is installs
+    if installs:
+        assert rule.own_work and not rule.careful, "an install the user asked for is their work"
+
+
+def test_installs_need_the_mac_in_auto_mode():
+    ask = dict(tainted=False, saw_screen=False, now=False, request="install tree")
+    assert policy(**ask, auto=True, via="typed").installs
+    assert not policy(**ask, auto=False, via="voice").installs
+    assert not policy(**ask, auto=True, via="message").installs, "the phone keeps the plain rule"
+    assert not TagPolicy(tainted=True, own_install=True).installs, "never for a careful task"

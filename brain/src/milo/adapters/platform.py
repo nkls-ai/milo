@@ -11,11 +11,11 @@ from dataclasses import replace
 from milo.core.platform import ANYWHERE, Platform
 
 MACOS = Platform("macos", stt="mlx_whisper", tts="pocket", tts_fallback="say", embedder="mlx_e5",
-                 connections="mac", computer="Mac")
+                 connections="mac", computer="Mac", tool_dirs=("/opt/homebrew/bin", "/usr/local/bin"))
 """Everything local: Whisper and e5 on MLX, Pocket TTS on the CPU with the Mac's `say` behind it, and the Mac's
 own apps as connections."""
 
-LINUX = replace(ANYWHERE, name="linux")
+LINUX = replace(ANYWHERE, name="linux", tool_dirs=("/home/linuxbrew/.linuxbrew/bin",))
 WINDOWS = replace(ANYWHERE, name="windows")
 """Until they have local engines: a faster-whisper or whisper.cpp transcriber, an ONNX e5, Piper as the
 fallback voice, and Outlook or Evolution as connections."""

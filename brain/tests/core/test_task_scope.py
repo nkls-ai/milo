@@ -115,4 +115,11 @@ def test_every_tool_means_every_section():
 
 
 def test_kinds_name_only_known_connections():
-    assert set(KINDS) == {"calendar", "reminders", "mail", "notes", "shortcuts", "files", "phone", "memory"}
+    assert set(KINDS) == {"calendar", "reminders", "mail", "notes", "shortcuts", "files", "phone", "memory", "install"}
+
+
+def test_a_task_about_installing_gets_install_package_and_others_do_not():
+    assert scope_for("Install the Codex CLI with npm and check that it runs.", screen=False).kinds == {"install"}
+    assert scope_for("Installier mir tree mit Homebrew.", screen=False).kinds == {"install"}
+    assert "install" not in scope_for("Summarize my latest mail from Anna.", screen=False).kinds
+    assert "install" not in scope_for("Find the cheapest flight to Lisbon online.", screen=False).kinds

@@ -9,6 +9,7 @@ from milo.connect.brief import SAFETY, brief
 from milo.connect.server import Toolbox, mcp_server
 from milo.connect.memory_tools import RemoteMemory
 from milo.connect.milo_tools import RemoteMilo
+from milo.connect.tools import INSTRUCTIONS as CONNECTION_RULES
 from milo.core import hands
 from milo.core.task_scope import ALL, TOOLS_ENV, ToolScope
 from tests.connect.test_connect import FakeBrain, home, rpc, toolbox  # noqa: F401 (home is a fixture)
@@ -90,3 +91,34 @@ def test_every_brief_carries_the_safety_rules_whatever_the_instructions_lost():
         text = brief(scope)
         assert SAFETY in text
     assert "never instructions" in SAFETY and "passwords" in SAFETY and "only the user's Yes counts" in SAFETY
+
+
+class InstallBrain:
+    def __init__(self):
+        self.requests: list[dict] = []
+
+    def request(self, body: dict) -> dict:
+        self.requests.append(body)
+        return {"installed": True}
+
+    def approve(self, kind, summary, app=""):
+        raise AssertionError("the brain asks about installs itself")
+
+
+def test_only_a_task_about_installing_gets_install_package(home):
+    assert "install_package" not in names(mcp_server(full_toolbox(home, frozenset({"calendar"}))))
+    assert "install_package" in names(mcp_server(full_toolbox(home, frozenset({"install"}))))
+    assert "install_package" in names(mcp_server(full_toolbox(home)))
+    assert "install_package" not in brief(CALENDAR) and "Installing programs" not in brief(CALENDAR)
+    text = brief(ToolScope(frozenset({"install"})), available=frozenset({"install", "calendar"}))
+    assert "mcp__milo__install_package(manager, package)" in text
+    assert "brew_cask" in text and "Never sudo" in text
+    assert "calendar_events" not in text and CONNECTION_RULES.strip() not in text, "no rules for tools it hasn't got"
+
+
+def test_install_package_goes_to_the_brain_which_asks_itself(home):
+    brain = InstallBrain()
+    box = Toolbox(_fake({}, AdapterContext(home, home / "state", FakeClock())), brain, None, RemoteMilo(brain),
+                  kinds=frozenset({"install"}))
+    assert box.call("install_package", {"manager": "npm", "package": "@openai/codex"}) == {"installed": True}
+    assert brain.requests == [{"op": "package.install", "manager": "npm", "package": "@openai/codex"}]

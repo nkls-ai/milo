@@ -49,6 +49,7 @@ DEFAULT_LEVELS: dict[str, ActionLevel] = {
     "draft": ActionLevel.READ,  # a mail draft, nothing leaves the Mac
     "change": ActionLevel.CHANGE,  # a calendar entry, a note, a reminder: can be undone
     "trash": ActionLevel.CHANGE,  # to the Trash or Recently Deleted: can be undone, asks only in "Every step" mode
+    "install": ActionLevel.CHANGE,  # a program from a package manager: asks unless the user named it
     "send": ActionLevel.ASK_FIRST,  # mail, messages
     "share": ActionLevel.ASK_FIRST,  # anything going to another person
     "delete": ActionLevel.ASK_FIRST,  # for good: emptying the Trash, places without one, uninstalling
@@ -60,6 +61,9 @@ DEFAULT_LEVELS: dict[str, ActionLevel] = {
     "password": ActionLevel.NEVER,
     "security": ActionLevel.NEVER,  # security and privacy settings
 }
+INSTALL = "install"
+"""Installing a program (install_package). A `change`, but a helper's install also asks unless, in auto mode, the user's
+own words for its task asked for an install and named that package (HelperQuestions.approve_install)."""
 # Kinds config.toml can't make less strict.
 ALWAYS_NEVER = ("password", "security")
 MONEY_KINDS = ("buy", "money")

@@ -20,6 +20,7 @@ WORDS: dict[str, dict[str, str]] = {
     "files_move": {"en": "Move {what} into {folder}?"},
     "shortcuts_run": {"en": "I'm about to run your shortcut {name}{given}. Go ahead?"},
     "shortcuts_input": {"en": " with {input}"},
+    "install_package": {"en": "Install “{package}” with {manager}?"},
     "other": {"en": "{title}?"},
     "go_ahead": {"en": "Go ahead"},
 }

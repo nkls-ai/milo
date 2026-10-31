@@ -44,7 +44,7 @@ class Toolbox:
 
     def call(self, name: str, args: dict) -> Any:
         tool = self.tools[name]
-        own = {"memory": self._memory, "milo": self._milo}
+        own = {"memory": self._memory, "milo": self._milo, "install": self._milo}
         backend = own[tool.connection] if tool.connection in own else getattr(self._connections, tool.connection)
         unknown = sorted(set(args) - set(tool.properties))
         if unknown:

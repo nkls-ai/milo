@@ -83,6 +83,10 @@ class Helper:
     """The user asked for it themselves, in a conversation without outside text (a look at the screen they asked
     for doesn't count as outside). In auto mode its work in apps needs no question (ADR 0022). Routines, meeting
     follow-ups and anything a mail or web page could have suggested are False."""
+    install_words: str = ""
+    """The user's own words that asked for this task's install (TagPolicy.installs), "" when they didn't. In auto
+    mode an install_package of a package these words name (core/packages.named_by) needs no question; every other
+    install asks."""
     language: str = ""
     """The language the user asked in ("de"), so its answer is spoken in that one. "" when unknown."""
     scope: ToolScope | None = None

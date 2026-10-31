@@ -16,8 +16,8 @@ from milo.core.task_scope import CONNECT_SERVER, ToolScope
 
 from .memory_tools import INSTRUCTIONS as MEMORY_INSTRUCTIONS
 from .memory_tools import MEMORY_TOOLS
+from .milo_tools import INSTALL, INSTALL_INSTRUCTIONS, MILO_TOOLS
 from .milo_tools import INSTRUCTIONS as MILO_INSTRUCTIONS
-from .milo_tools import MILO_TOOLS
 from .tools import INSTRUCTIONS, TOOLS
 
 OWN = "milo"
@@ -52,10 +52,12 @@ def brief(scope: ToolScope, *, available: frozenset[str] | None = None) -> str:
                   hands.INSTRUCTIONS]
     tools = [t for t in (*TOOLS, *MEMORY_TOOLS, *MILO_TOOLS) if has(t.connection)]
     parts.append(_lines(CONNECT_SERVER, ((t.name, t.properties, t.required, t.description) for t in tools)))
-    if any(t.connection not in (OWN, "memory") for t in tools):
+    if any(t.connection not in (OWN, "memory", INSTALL) for t in tools):
         parts.append(INSTRUCTIONS.strip())
     if any(t.connection == "memory" for t in tools):
         parts.append(MEMORY_INSTRUCTIONS.strip())
+    if any(t.connection == INSTALL for t in tools):
+        parts.append(INSTALL_INSTRUCTIONS.strip())
     parts += [MILO_INSTRUCTIONS.strip(), SAFETY]
     return "\n\n".join(parts)
 

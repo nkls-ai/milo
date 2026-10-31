@@ -60,6 +60,8 @@ def title(tool: str, args: dict) -> str | None:
             return "Noting how things were, to undo with"
         case "milo_remind":
             return f"Setting the reminder {_quoted(args.get('text'))}"
+        case "install_package":
+            return f"Installing {_quoted(args.get('package'), 40)}"
         case "mail_search":
             q = args.get("query")
             return f"Looking through your mail for {_quoted(q)}" if q else "Looking through your mail"
