@@ -311,6 +311,29 @@ def test_an_event_named_by_title_on_another_day_is_found(tmp_path):
     assert world(s)["events"] == []
 
 
+@pytest.mark.parametrize("tag", ['<event do="cancel" title="Dentist" on="2026-10-29"/>',
+                                 '<event do="move" title="Dentist" on="2026-10-29" start="2026-10-29T17:00"/>'])
+def test_an_event_found_only_by_part_of_its_title_asks_with_the_title_found(tmp_path, tag):
+    """"Cancel Dentist" must not quietly delete "Dentist prep": when no title matches exactly, Milo asks first."""
+    prep = {**DENTIST, "title": "Dentist prep"}
+    s = stack(tmp_path, [f"[happy] {tag}"], world={"events": [prep]})
+
+    async def run():
+        s.live_talk.start("cancel the dentist today")
+        for _ in range(100):
+            await asyncio.sleep(0.005)
+            if s.approvals.pending:
+                break
+        [ask] = s.sink.of(Confirm)
+        assert "“Dentist prep”" in ask.question
+        await s.brain.handle(ConfirmAnswer(ask.id, False))
+        await s.quick.idle()
+
+    asyncio.run(run())
+    assert world(s)["events"] == [prep]
+    assert said(s).endswith("Okay, I left it.")
+
+
 def test_deleting_your_own_event_doesnt_ask_and_undo_makes_it_again(tmp_path):
     s = stack(tmp_path, ["[happy] At three."], ['[happy] <event do="cancel" id="e1"/>'], ["[happy] <undo/>"],
               world={"events": [DENTIST]})
