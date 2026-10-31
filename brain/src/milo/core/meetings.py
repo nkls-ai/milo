@@ -9,6 +9,8 @@ from enum import StrEnum
 
 import numpy as np
 
+from .times import local
+
 CHUNK_S = 30.0
 """The app writes each track in chunks this long."""
 
@@ -85,7 +87,7 @@ class MeetingInfo:
 
     @staticmethod
     def from_dict(d: dict) -> MeetingInfo:
-        return MeetingInfo(str(d.get("title") or "Meeting"), datetime.fromisoformat(d["started"]),
+        return MeetingInfo(str(d.get("title") or "Meeting"), local(d["started"]),
                            str(d.get("app") or ""), tuple(str(a) for a in d.get("attendees") or ()))
 
 

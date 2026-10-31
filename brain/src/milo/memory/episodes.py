@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from milo.core.memory import Episode
+from milo.core.times import local
 
 from . import jsonl
 
@@ -57,7 +58,7 @@ class JsonlEpisodeLog:
         for path in reversed(self.files()):
             for record in jsonl.read_all(path):
                 if record.get("id") == id and "at" in record:
-                    return datetime.fromisoformat(str(record["at"]))
+                    return local(record["at"])
         return None
 
     def _latest(self, paths: list[Path]) -> Iterator[Episode]:

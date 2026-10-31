@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from milo.core.registry import RULES, AdapterContext, ConfigError, options_from
+from milo.core.times import local
 from milo.core.types import Emotion, Nudge, Reminder, Signals
 
 from .base import is_active
@@ -32,7 +33,7 @@ class WelcomeBackRule:
 
     def check(self, signals: Signals, reminders: list[Reminder]) -> list[Nudge]:
         last = self.state.get("last_active")
-        if not last or signals.now - datetime.fromisoformat(last) < timedelta(minutes=self.options.away_min):
+        if not last or signals.now - local(last) < timedelta(minutes=self.options.away_min):
             return []
         return [Nudge(self.name, Emotion.HAPPY, "Welcome back!", speak=False)]
 

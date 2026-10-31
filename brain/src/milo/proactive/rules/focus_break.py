@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from milo.core.registry import RULES, AdapterContext, ConfigError, options_from
+from milo.core.times import local
 from milo.core.types import Emotion, Nudge, Reminder, Signals
 
 RESET_IDLE_S = 300
@@ -36,7 +37,7 @@ class FocusBreakRule:
         self.observe(signals)
         if not signals.app:
             return []
-        focused = signals.now - datetime.fromisoformat(self.state["since"])
+        focused = signals.now - local(self.state["since"])
         if focused < timedelta(minutes=self.options.after_min):
             return []
         self.state["since"] = signals.now.isoformat()

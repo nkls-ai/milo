@@ -6,9 +6,9 @@ Pure functions, shared by the brain (questions for app work), the connections se
 from __future__ import annotations
 
 import re
-from datetime import datetime
 from pathlib import Path
 
+from .times import local
 from .words import say
 from .words.dates import date_time
 
@@ -129,7 +129,7 @@ def kind(tool: str) -> str:
 def when(value: object) -> str:
     """'2026-11-05T15:00' -> 'Thursday 5 November at 15:00'. Unparseable text comes back as it is."""
     try:
-        dt = datetime.fromisoformat(str(value))
+        dt = local(value)
     except ValueError:
         return str(value)
     return date_time(dt, midnight=False)

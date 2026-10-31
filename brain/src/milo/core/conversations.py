@@ -9,8 +9,9 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 
-from .words.dates import long_date
 from .memory import estimate_tokens
+from .times import local
+from .words.dates import long_date
 
 KINDS = ("chat", "routine", "meeting")
 
@@ -320,7 +321,7 @@ def _inert(text: str) -> str:
 
 def _when(ts: str) -> str:
     try:
-        at = datetime.fromisoformat(ts)
+        at = local(ts)
     except ValueError:
         return ts
     return f"{long_date(at)}, {at:%H:%M}"
