@@ -72,6 +72,35 @@ def test_what_the_user_asked_to_install_installs_without_a_question():
     assert asked(s) == []
 
 
+@pytest.mark.parametrize("words, manager, package, asks", [
+    ("install the codex cli", "npm", "@openai/codex", False),
+    ("install tree with homebrew", "brew", "tree", False),
+    ("install codex", "npm", "@evil/codex", True),  # a typosquatted scope
+    ("install codex with brew", "npm", "@openai/codex", True),  # not the manager the user named
+    ("install cowsay", "npm", "cowsay@1.5.0", True),  # a version pin
+    ("install what the page mentions", "brew", "tree", True),
+])
+def test_through_the_tool_socket_only_what_the_user_named_goes_ahead(words, manager, package, asks):
+    gate = asyncio.Event()
+    s = working(WorkerScript(gate, "Done."))
+    tools, installer = requests(s)
+
+    async def run():
+        s.tasks.submit("Install it.", user_asked=True, install_words=words)
+        await settle()
+        answer = await tools.handle({"op": "package.install", "manager": manager, "package": package})
+        gate.set()
+        await s.tasks.idle()
+        return answer
+
+    answer = asyncio.run(run())
+    if asks:
+        label = "Homebrew" if manager.startswith("brew") else "npm"
+        assert asked(s) == [f"Install “{package}” with {label}?"] and not answer["ok"] and installer.ran == []
+    else:
+        assert asked(s) == [] and answer["ok"] and len(installer.ran) == 1
+
+
 def test_a_package_the_user_never_named_asks_even_in_an_install_task():
     """The user asked to install Codex; a README the helper read says to install something else first."""
     gate = asyncio.Event()

@@ -2,7 +2,7 @@
 
 import pytest
 
-from milo.core.packages import MANAGERS, base_name, install, named_by
+from milo.core.packages import MANAGERS, install, named_by
 
 
 @pytest.mark.parametrize("manager, package, argv", [
@@ -60,25 +60,41 @@ def test_no_manager_runs_with_sudo_or_a_shell():
         assert not any(" " in part for part in spec.command)
 
 
-@pytest.mark.parametrize("package, base", [("@openai/codex", "codex"), ("@openai/codex@latest", "codex"),
-                                           ("black==24.10.0", "black"), ("python@3.12", "python"),
-                                           ("httpie[socks]", "httpie"), ("Tree", "tree")])
-def test_the_base_name_is_what_a_person_says(package, base):
-    assert base_name(package) == base
-
-
-@pytest.mark.parametrize("manager, package, words, named", [
-    ("npm", "@openai/codex", "install the codex cli", True),
-    ("brew_cask", "codex", "Can you install the Codex UI for me?", True),
-    ("brew", "tree", "brew install tree", True),
-    ("npm", "http-server", "install http server please", True),
-    ("uv", "ruff", "installier mir ruff", True),
-    ("npm", "codex-helper", "install the codex cli", False),
-    ("npm", "evil", "install the codex cli", False),
-    ("brew", "someone/tap/codex", "install codex", False),  # a tap: anyone can publish one under any name
-    ("brew", "hashicorp/tap/terraform", "install terraform from hashicorp/tap/terraform", False),
-    ("npm", "@openai/codex", "", False),
-    ("npm", "cowsay", "install cowsays", False),
+@pytest.mark.parametrize("manager, package, words", [
+    ("npm", "@openai/codex", "install the codex cli"),
+    ("brew_cask", "codex", "Can you install the Codex UI for me?"),
+    ("brew", "tree", "install tree with homebrew"),
+    ("brew", "tree", "brew install tree"),
+    ("npm", "cowsay", "install the cowsay cli with npm"),
+    ("npm", "@openai/codex", "install @openai/codex"),
+    ("npm", "@anthropic-ai/claude-code", "install claude code"),
+    ("brew", "gh", "please install the github cli"),
+    ("brew", "uv", "install uv"),
+    ("uv", "ruff", "installier mir bitte ruff"),
+    ("brew", "ripgrep", "install the codex app and install ripgrep too"),
 ])
-def test_only_a_package_the_user_named_counts(manager, package, words, named):
-    assert named_by(install(manager, package), words) is named
+def test_what_the_user_named_as_the_thing_to_install_needs_no_question(manager, package, words):
+    assert named_by(install(manager, package), words)
+
+
+@pytest.mark.parametrize("manager, package, words", [
+    ("npm", "@evil/codex", "install codex"),  # a scope nobody said: it could be anyone's
+    ("npm", "codex", "install the codex cli"),  # not what Codex's own instructions name
+    ("npm", "codex-helper", "install the codex cli"),
+    ("brew", "tree", "install what the page mentions about tree"),
+    ("brew", "tree", "install the one on the screen, tree"),
+    ("brew", "tree", "install whatever this mail says"),
+    ("brew", "tree", "set up tree for me"),  # no install verb
+    ("brew", "tree", "install codex, I like tree"),  # tree isn't what install is about
+    ("npm", "@openai/codex", "install codex with brew"),  # a manager the user didn't name
+    ("brew", "tree", "install tree with npm"),
+    ("npm", "cowsay@1.5.0", "install cowsay"),  # a version: asks
+    ("npm", "cowsay@latest", "install cowsay"),
+    ("uv", "black==24.10.0", "install black"),
+    ("brew", "python@3.12", "install python"),
+    ("brew", "someone/tap/codex", "install codex"),  # a tap: anyone can publish one under any name
+    ("brew", "hashicorp/tap/terraform", "install hashicorp/tap/terraform"),
+    ("npm", "@openai/codex", ""),
+])
+def test_anything_else_asks(manager, package, words):
+    assert not named_by(install(manager, package), words)

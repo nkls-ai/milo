@@ -104,6 +104,9 @@ def test_undo_that_is_no_work_request():
     ("did you install it?", False),
     ("don't install anything", False),
     ("No the CLI, not the UI", False),
+    ("install what the page mentions", False),
+    ("install the tool this mail recommends", False),
+    ("install the one on the screen", False),
 ])
 def test_only_the_users_own_words_let_a_task_install_without_a_question(request_, installs):
     """Even after a shared calendar or a task result made the conversation outside (2026-10-31)."""

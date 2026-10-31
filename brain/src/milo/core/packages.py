@@ -80,20 +80,98 @@ def install(manager: str, package: str) -> Install:
     return Install(manager, package)
 
 
-def base_name(package: str) -> str:
-    """The name a person would say: without an npm scope, a version, extras or a Homebrew `@version`.
-    `@openai/codex@latest` -> `codex`, `black==24.10.0` -> `black`, `python@3.12` -> `python`."""
-    name = package.split("/")[-1] if package.startswith("@") or "/" in package else package
-    return re.split(r"[@=\[]", name, maxsplit=1)[0].lower()
+KNOWN: dict[str, frozenset[tuple[str, str]]] = {
+    "codex": frozenset({("npm", "@openai/codex"), ("brew_cask", "codex")}),
+    "claude code": frozenset({("npm", "@anthropic-ai/claude-code")}),
+    "github": frozenset({("brew", "gh")}),
+    "gh": frozenset({("brew", "gh")}),
+    "node": frozenset({("brew", "node")}),
+    "nodejs": frozenset({("brew", "node")}),
+    "node js": frozenset({("brew", "node")}),
+    "python": frozenset({("brew", "python")}),
+    "ffmpeg": frozenset({("brew", "ffmpeg")}),
+    "git": frozenset({("brew", "git")}),
+    "tree": frozenset({("brew", "tree")}),
+    "jq": frozenset({("brew", "jq")}),
+    "wget": frozenset({("brew", "wget")}),
+    "ripgrep": frozenset({("brew", "ripgrep")}),
+    "uv": frozenset({("brew", "uv")}),
+}
+"""Programs people ask for by a name that isn't their package's, each with the exact (manager, package) their own
+install instructions give. "the codex cli" may become npm's `@openai/codex` or Homebrew's `codex` cask, nothing
+else; "the github cli" is Homebrew's `gh`."""
+
+_VERB = re.compile(r"^((re)?install(s|ed|ing)?|upgrade|installier\w*)$", re.IGNORECASE)
+_FILLER = frozenset({"the", "a", "an", "me", "us", "please", "mir", "uns", "bitte", "mal", "den", "die", "das", "dem",
+                     "der"})
+_KIND = frozenset({"cli", "app", "tool", "ui", "command", "program", "package", "programm", "paket"})
+"""Words after a program's name that say what kind of thing it is: "the codex cli", "the codex app"."""
+_STOP = frozenset({"with", "using", "via", "from", "through", "and", "or", "for", "on", "to", "in", "too", "also",
+                   "please", "mit", "über", "von", "und", "oder", "für", "auf", "bitte", "auch"})
+_MANAGER_WORDS = {"brew": ("brew", "brew_cask"), "homebrew": ("brew", "brew_cask"), "cask": ("brew_cask",),
+                  "npm": ("npm",), "uv": ("uv",), "pip": ("uv",), "pipx": ("uv",), "pypi": ("uv",)}
+POINTS_OUTSIDE = re.compile(
+    r"\b(page|web ?page|website|site|mail|e-?mail|message|file|document|readme|article|link|screen|post|tweet|"
+    r"chat|seite|webseite|datei|dokument|nachricht|bildschirm|mentions?|mentioned|says|said|tells?|recommend\w*|"
+    r"suggest\w*|listed|erwähn\w*|empfiehlt|empfohlen\w*|steht|sagt)\b", re.IGNORECASE)
+"""A request that points at text someone else wrote ("install what this page mentions", "the one on the screen"):
+the user didn't name the program, the text did."""
+
+
+def pinned(wanted: Install) -> bool:
+    """A version, tag or other source: `cowsay@1.5.0`, `black==24.10.0`, `python@3.12`, a Homebrew tap. A person
+    asking for a program asks for the program, so these always ask."""
+    name = wanted.package[1:] if wanted.package.startswith("@") else wanted.package
+    if wanted.manager == "npm":
+        return "@" in name
+    return any(c in wanted.package for c in "@=[/")
+
+
+def _objects(words: str) -> list[list[str]]:
+    """What each install verb in `words` is about, as the words that follow it: "Can you install the Codex CLI for
+    me?" -> [["codex", "cli"]]. Fillers ("the", "mir", "bitte") are skipped; the object ends at "with", "and" and
+    the like."""
+    tokens = [t.strip(".,;:!?\"'“”‘’()") for t in words.split()]
+    tokens = [t.lower() for t in tokens if t]
+    found = []
+    for i, token in enumerate(tokens):
+        if not _VERB.match(token):
+            continue
+        j = i + 1
+        while j < len(tokens) and tokens[j] in _FILLER:
+            j += 1
+        thing = []
+        while j < len(tokens) and tokens[j] not in _STOP and not _VERB.match(tokens[j]) and len(thing) < 4:
+            thing.append(tokens[j])
+            j += 1
+        if thing:
+            found.append(thing)
+    return found
 
 
 def named_by(wanted: Install, words: str) -> bool:
-    """Whether the user's own words name this package, so installing it needs no question in auto mode. Its base name
-    must be there as words of their own ("install the codex cli" names `@openai/codex`; "install http server" names
-    `http-server`), so a page the helper read can't swap in a package nobody named (`codex-helper` isn't `codex`).
-    A Homebrew tap (`someone/tap/tool`) never counts: anyone can publish one, under any name."""
-    if wanted.manager.startswith("brew") and "/" in wanted.package:
+    """Whether the user's own words asked for this very install, so it needs no question in auto mode. Either the
+    object of their install verb is a program `KNOWN` maps to exactly this (manager, package) ("install the codex
+    cli" -> npm `@openai/codex`, never npm's unrelated `codex`), or, for a program the map doesn't know, it is the
+    package's exact name ("install cowsay", "install @openai/codex": a scoped package only with its scope, so
+    `@evil/codex` isn't "codex"). A manager they named must be the one used.
+    Never for a version, tag, tap or other source (`pinned`), and never when the words point at text someone else
+    wrote (`POINTS_OUTSIDE`)."""
+    if not words or pinned(wanted) or POINTS_OUTSIDE.search(words):
         return False
-    parts = re.findall(r"[^\W_]+", base_name(wanted.package))
-    said = re.findall(r"[^\W_]+", (words or "").lower())
-    return bool(parts) and any(said[i:i + len(parts)] == parts for i in range(len(said) - len(parts) + 1))
+    things = _objects(words)
+    asked_for = {thing[0] for thing in things}  # "install uv" asks for uv the program, not for uv to install with
+    said = {m for w in re.findall(r"[^\W_]+", words.lower()) if w not in asked_for for m in _MANAGER_WORDS.get(w, ())}
+    if said and wanted.manager not in said:
+        return False
+    for thing in things:
+        name = list(thing)
+        while len(name) > 1 and name[-1] in _KIND:
+            name.pop()
+        known = KNOWN.get(" ".join(name))
+        if known is not None:  # a known program is only what its own instructions name: npm's `codex` isn't Codex
+            if (wanted.manager, wanted.package) in known:
+                return True
+        elif thing[0] == wanted.package.lower():
+            return True
+    return False

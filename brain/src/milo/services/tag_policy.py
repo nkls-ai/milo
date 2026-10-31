@@ -11,10 +11,12 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from milo.core.packages import POINTS_OUTSIDE
+
 _WORK = re.compile(r"\b((fix|fill|put|add|make|change|update|correct|write|enter|insert|sort|format|create|build|"
                    r"finish|complete|edit|move|rename|copy|paste|replace|open|go|show|play|send|remind|check|find|"
-                   r"summari[sz]e|start|stop|set|take|search|google|look up|delete|remove|cancel|schedule|save|archive|install|"
-                   r"reinstall|upgrade)"
+                   r"summari[sz]e|start|stop|set|take|search|google|look up|delete|remove|cancel|schedule|save|archive|"
+                   r"install|reinstall|upgrade)"
                    r"(es|s|ed|d|ing)?|"
                    # Only in their action form: "Mark", "Haken" and "Streichholz" ask for nothing.
                    r"(tick|cross)(es|s|ed|ing)?\s+(\w+\s+){0,4}?(off|out)|mark(s|ed|ing)?\s+(\w+\s+){0,4}?"
@@ -167,5 +169,5 @@ def policy(*, tainted: bool, saw_screen: bool, now: bool, auto: bool, via: str, 
     return TagPolicy(tainted=tainted, saw_screen=saw_screen, now=now, at_mac=at_mac,
                      own_work=at_mac and asks_for_work(request),
                      own_reminder=at_mac and _asks(_REMIND, request),
-                     own_install=at_mac and _asks(_INSTALL, request),
+                     own_install=at_mac and _asks(_INSTALL, request) and not POINTS_OUTSIDE.search(request),
                      own_fact=at_mac and _asks(_REMEMBER, request), request=request)
