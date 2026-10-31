@@ -344,7 +344,8 @@ class QuickActions:
             return _Done("event", title, words.line("event", lang, title=title, when=spoken),
                          detail=_detail(spoken, act.get("location")), when=_iso(start), app="Calendar",
                          reverse=[{"op": "event.delete", "id": str(made.get("id", "")), "at": _iso(start),
-                                   "title": title, "start": _iso(start), "end": _iso(end)}])
+                                   "title": title, "start": _iso(start), "end": _iso(end),
+                                   **({"all_day": True} if all_day else {})}])
 
         when = words.when(start, self._clock.now().date(), lang, all_day=all_day)
         return _Plan("change", words.ask("event", lang, title=inert(title, 50), when=when), APPS["calendar"], run)
@@ -621,10 +622,11 @@ class QuickActions:
                     if op == "event.delete":
                         return True  # gone already: nothing to take back
                     raise
-                expected = ((step["title"], step["start"], step["end"]) if op == "event.delete"
-                            else (step["title"], step["at"]))
-                found = ((now.get("title"), now.get("start"), now.get("end")) if op == "event.delete"
-                         else (now.get("title"), now.get("start")))
+                # The calendar reads an all-day event back ending at 23:59, not at the midnight Milo gave it: its
+                # title and start say whether it is the same.
+                expected, found = (step["title"], step["at"]), (now.get("title"), now.get("start"))
+                if op == "event.delete" and not step.get("all_day"):
+                    expected, found = (*expected, step["end"]), (*found, now.get("end"))
                 if tuple(str(v)[:16] for v in found) != tuple(str(v)[:16] for v in expected):
                     if not await self._approvals.confirm(words.ask("event_changed", self._lang(),
                                                                    title=inert(step["title"], 50))):

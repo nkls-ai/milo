@@ -106,6 +106,20 @@ def test_undo_asks_when_the_user_changed_the_event_since(tmp_path):
     assert said(s).endswith("Okay, I left “Dentist” as it is.")
 
 
+def test_undo_of_an_all_day_event_doesnt_ask_about_its_end(tmp_path):
+    """Milo asks the calendar for an all-day event until the next midnight; the calendar reads it back ending at 23:59
+    the same day. That is the same event, not one the user changed."""
+    s = stack(tmp_path, ['[happy] <event title="Holiday" start="2026-11-05T00:00" all_day="yes"/>'], ["[happy] <undo/>"])
+    asyncio.run(say(s, "put a holiday in on the fifth"))
+    w = world(s)
+    assert w["events"][0]["end"] == "2026-11-06T00:00"
+    w["events"][0]["end"] = "2026-11-05T23:59"  # how EventKit reads it back
+    World(s.world).save(w)
+    asyncio.run(say(s, "undo that"))
+    assert not s.sink.of(Confirm)
+    assert world(s)["events"] == []
+
+
 def test_the_today_block_comes_once_per_change_with_handles_and_inert_invites(tmp_path):
     s = stack(tmp_path, ["[happy] At three."], ["[happy] Nothing else."],
               ['[happy] <todo due="2026-10-29T18:00">Call Anna</todo>'], ["[happy] ok."],
