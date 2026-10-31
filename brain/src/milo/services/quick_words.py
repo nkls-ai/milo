@@ -1,8 +1,8 @@
 """The one line Milo says after a quick action is done (ADR 0029), in the user's language.
 
 Milo says it himself, from a template, once the action really happened: the live model doesn't promise it before.
-English and German for now; another language falls back to English. The tag's `lang` picks the language, else a guess
-from the user's own words.
+English and German for now; another language falls back to English. The language is the one of the message being
+answered (`SpokenLanguage`, ADR 0028), the same one the reply and Milo's other questions follow.
 """
 
 from __future__ import annotations
@@ -11,11 +11,6 @@ import re
 from datetime import date, datetime, timedelta
 
 LANGS = ("en", "de")
-_GERMAN = re.compile(r"[äöüß]|\b(ich|mir|mich|mein\w*|bitte|und|der|die|das|ist|nicht|morgen|heute|übermorgen|um|uhr|"
-                     r"termin|erinner\w*|kalender|notiz|notier\w*|mach|stell|spiel|pausier\w*|nächste\w*|schreib\w*|"
-                     r"trag|lösch\w*|verschieb\w*|wecker|minuten|stunden?|einkaufsliste|zum|zur|für|mit|auf|in die)\b",
-                     re.IGNORECASE)
-
 LINES: dict[str, dict[str, str]] = {
     "event": {"en": "{title}, {when}. It's in.", "de": "{title}, {when}. Steht drin."},
     "moved": {"en": "Moved {title} to {when}.", "de": "{title} ist jetzt {when}."},
@@ -44,6 +39,33 @@ LINES: dict[str, dict[str, str]] = {
     "declined": {"en": "Okay, I left it.", "de": "Okay, ich lasse es."},
 }
 
+QUESTIONS: dict[str, dict[str, str]] = {
+    "event": {"en": "Add “{title}” to your calendar, {when}?", "de": "„{title}“ eintragen, {when}?"},
+    "move": {"en": "Move “{title}” to {when}?", "de": "„{title}“ auf {when} verschieben?"},
+    "cancel": {"en": "Delete “{title}”, {when}, from your calendar?",
+               "de": "„{title}“, {when}, aus dem Kalender löschen?"},
+    "invite": {"en": " It's an invite, so the others will see it.",
+               "de": " Es ist eine Einladung, die anderen sehen das."},
+    "series": {"en": " It repeats; only this one goes.", "de": " Er wiederholt sich, nur dieser fällt weg."},
+    "todo": {"en": "Add “{title}” to your Reminders?", "de": "„{title}“ zu deinen Erinnerungen hinzufügen?"},
+    "note": {"en": "Make a note: “{title}”?", "de": "Notiz anlegen: „{title}“?"},
+    "draft": {"en": "Write a mail draft to {who}?", "de": "Einen Mail-Entwurf an {who} schreiben?"},
+    "shortcut": {"en": "Run the shortcut “{title}”?", "de": "Den Kurzbefehl „{title}“ ausführen?"},
+    "play": {"en": "Play the music?", "de": "Musik abspielen?"},
+    "pause": {"en": "Pause the music?", "de": "Musik pausieren?"},
+    "next": {"en": "Skip to the next song?", "de": "Zum nächsten Titel?"},
+    "previous": {"en": "Go back a song?", "de": "Einen Titel zurück?"},
+    "meeting_start": {"en": "Take notes of this meeting?", "de": "Bei diesem Meeting mitschreiben?"},
+    "meeting_resume": {"en": "Take notes again?", "de": "Wieder mitschreiben?"},
+    "event_changed": {"en": "“{title}” changed since. Undo anyway? Your changes since would be lost.",
+                      "de": "„{title}“ wurde seitdem geändert. Trotzdem rückgängig machen? Deine Änderungen gehen "
+                            "dann verloren."},
+    "note_changed": {"en": "The note “{title}” changed since. Delete it anyway? It goes to Recently Deleted.",
+                     "de": "Die Notiz „{title}“ wurde seitdem geändert. Trotzdem löschen? Sie kommt in „Zuletzt "
+                           "gelöscht“."},
+}
+"""What Milo asks before an act that needs a yes, and before an Undo of something changed since."""
+
 _DAYS = {"en": ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"),
          "de": ("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag")}
 _MONTHS = {"en": ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
@@ -53,19 +75,18 @@ _MONTHS = {"en": ("January", "February", "March", "April", "May", "June", "July"
 _NEAR = {"en": ("today", "tomorrow", "the day after tomorrow"), "de": ("heute", "morgen", "übermorgen")}
 
 
-def language(attr: str, words: str) -> str:
-    """The language of the line: the tag's `lang` if it is one Milo has lines in, else German if the user's words
-    look German, else English."""
-    attr = attr.strip().lower()[:2]
-    if attr in LANGS:
-        return attr
-    if attr:
-        return "en"
-    return "de" if len(_GERMAN.findall(words)) >= 2 or re.search(r"[äöüß]", words) else "en"
+def language(code: str) -> str:
+    """The language of the message being answered, if Milo has lines in it, else English."""
+    return code if code in LANGS else "en"
 
 
 def line(key: str, lang: str, **values: str) -> str:
     templates = LINES[key]
+    return templates.get(lang, templates["en"]).format(**values)
+
+
+def ask(key: str, lang: str, **values: str) -> str:
+    templates = QUESTIONS[key]
     return templates.get(lang, templates["en"]).format(**values)
 
 

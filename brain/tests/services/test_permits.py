@@ -19,7 +19,8 @@ from milo.services.hands import script_apps
 from milo.services.orchestrator import HelperQuestions
 from milo.services.permits import AppRef, Permits, Scope
 from milo.services.tool_requests import ToolRequests
-from tests.fakes import FakeEyes, FakeHands, FakeHarness, FakeLiveModel, MemoryRoutineBook, ScriptedHarness, WorkerScript
+from tests.fakes import (FakeEyes, FakeHands, FakeHarness, FakeLiveModel, MemoryRoutineBook, ScriptedHarness, WorkerScript,
+                         with_app)
 from tests.services.stack import Stack, settle
 
 EXCEL = {"app": "Microsoft Excel", "bundle": "com.microsoft.Excel"}
@@ -87,7 +88,7 @@ class Worker:
     async def reply(self, prompt, session_id, *, on_step=None, on_session=None, on_plan=None) -> Reply:
         for tool, args in self.turns.pop(0) if self.turns else []:
             try:
-                await self.hands.call(tool, args)
+                await self.hands.call(tool, with_app(self.hands._hands, tool, args))
             except HandsError as e:
                 self.errors.append(f"{tool}: {e}")
         return Reply(Emotion.HAPPY, "Done.", Usage(10, 5, 0), session_id or "s1")
@@ -137,8 +138,8 @@ def test_before_every_step_of_the_excel_work_asked_its_own_question():
     [asked] = work(s, worker, "yes")
     assert [c.question for c in asked] == [
         "Replace 8 filled cells in “Budget”?",
-        "Run a script in Microsoft Excel? It's in my window.",
-        "Run a script in Microsoft Excel? It's in my window.",
+        "May I work in Microsoft Excel directly? You can read the steps in my window.",
+        "May I work in Microsoft Excel directly? You can read the steps in my window.",
         "Can I borrow your mouse for a moment, to click in Microsoft Excel?",
         "Can I borrow your keyboard for a moment, to type in Microsoft Excel?",
         "Replace 8 filled cells in “Budget”?",
@@ -214,10 +215,10 @@ def test_sending_deleting_code_and_other_apps_still_ask_inside_an_allowed_task()
     assert [(c.question, c.always) for c in asked] == [
         ("Replace 8 filled cells in “Budget”?", True),
         ("I'm about to click “Delete Sheet” in Microsoft Excel. Go ahead?", False),
-        ("Run a script in Microsoft Excel that can run other programs or type for you? It's in my window.", False),
-        ("Run a script in Microsoft Excel, Finder? It's in my window.", False),
-        ("Run a script in Microsoft Excel? It's in my window.", False),
-        ("Run a script in Microsoft Excel that can run other programs or type for you? It's in my window.", False),
+        ("May I work in Microsoft Excel directly? It could run other programs or type for you. You can read the steps in my window.", False),
+        ("May I work in Microsoft Excel, Finder directly? You can read the steps in my window.", False),
+        ("May I work in Microsoft Excel directly? You can read the steps in my window.", False),
+        ("May I work in Microsoft Excel directly? It could run other programs or type for you. You can read the steps in my window.", False),
         ("I'm about to click something I can't name in Microsoft Excel. Go ahead?", False),
         ("I'm about to open a program that runs commands in Terminal. Go ahead?", False),
     ]
@@ -565,6 +566,14 @@ def test_scripts_that_reach_outside_the_open_sheet_ask_even_in_auto_mode(script)
     ("look at my screen and fix this sheet", True), ("can you fill this in", True), ("füll das bitte aus", True),
     ("make this a table", True), ("can you see my screen", False), ("what do you think of this?", False),
     ("why is this cell red", False), ("was ist das", False), ("look at my screen", False),
+    # Real requests that used to count as no work (audit of 2026-10-31 transcripts).
+    ("Yes, open Chrome and YouTube.", True), ("Remind me to call Anna tomorrow at 9", True),
+    ("Take notes of this meeting", True), ("Can you summarize the PDF", True), ("show me my calendar", True),
+    ("play some music", True), ("send it to Anna", True), ("find the invoice", True), ("set a timer", True),
+    ("Kannst du Chrome öffnen?", True), ("Zeig mir den Kalender", True), ("Erinnere mich morgen an Anna", True),
+    ("schick das an Anna", True), ("stell den Wecker", True), ("spiel Musik", True),
+    ("what can you open?", False), ("can you see what's on my screen?", False), ("is it set up?", False),
+    ("thanks", False), ("wie geht's?", False),
 ])
 def test_only_words_that_ask_for_work_let_a_task_from_a_look_start_unasked(text, work):
     from milo.services.live_talk import asks_for_work

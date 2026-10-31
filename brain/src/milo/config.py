@@ -104,7 +104,7 @@ class UiSettings:
     """How Milo looks. There is one Milo, a wren in a marigold scarf; the retired looks still load and mean him."""
     voice: bool = True
     """Say answers out loud. False: the bubble and the window only."""
-    hide_after_s: float = 60.0
+    hide_after_s: float = 15.0
     """Milo leaves the screen after this long with nothing going on, and comes back when he is needed. 0: he stays."""
 
     def __post_init__(self):

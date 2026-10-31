@@ -267,6 +267,9 @@ public final class EventKitConnections: AppConnections {
             "notes": .string(event.notes ?? ""),
             "calendar": .string(event.calendar?.title ?? ""),
             "recurring": .bool(event.hasRecurrenceRules),
+            // Written by someone else: a subscribed or read-only calendar, or someone else organizes it. The brain
+            // marks such titles as other people's text (ADR 0029).
+            "shared": .bool(shared(event.calendar) || (event.organizer.map { !$0.isCurrentUser } ?? false)),
             // The others invited, by name (or address), without the user: meeting notes name voices with them.
             "attendees": .array((event.attendees ?? []).filter { !$0.isCurrentUser }
                 .map { .string($0.name ?? $0.url.absoluteString.replacingOccurrences(of: "mailto:", with: "")) }),
@@ -282,7 +285,14 @@ public final class EventKitConnections: AppConnections {
             "notes": .string(reminder.notes ?? ""),
             "list": .string(reminder.calendar?.title ?? ""),
             "done": .bool(reminder.isCompleted),
+            "shared": .bool(shared(reminder.calendar)),
         ])
+    }
+
+    /// A calendar or list whose items the user may not have written: subscribed, or one they can't change.
+    static func shared(_ calendar: EKCalendar?) -> Bool {
+        guard let calendar else { return false }
+        return calendar.isSubscribed || calendar.type == .subscription || !calendar.allowsContentModifications
     }
 
     /// Local time as the brain writes it: "2026-11-05T15:00", seconds optional.

@@ -219,7 +219,9 @@ class Listening:
         try:
             text = await self._hearing.transcribe(cloud, audio) if cloud is not None else None
             by_cloud = text is not None
+            language = ""
             if by_cloud:
+                language = cloud.language
                 if live is not None:
                     live.abort()  # its words were only for the pill
             elif live is not None:
@@ -227,6 +229,8 @@ class Listening:
             else:
                 text = await asyncio.get_running_loop().run_in_executor(
                     self._executor, self._transcriber.transcribe, audio)
+            if not by_cloud:
+                language = str(getattr(self._transcriber, "heard_language", "") or "")
         except Exception:
             log.exception("transcription failed")
             order.run(lambda: self._failed(mode, typed, order))
@@ -234,10 +238,11 @@ class Listening:
             return
         log.info("stt %.2fs audio, ready %.2fs after release%s: %s", len(audio) / STT_SAMPLE_RATE,
                  time.monotonic() - started, " (cloud)" if by_cloud else "", private(text))
-        order.run(lambda: self._deliver(mode, text.strip(), typed, order))
+        order.run(lambda: self._deliver(mode, text.strip(), typed, order, language))
         order.close()
 
-    def _deliver(self, mode: ListenMode, text: str, typed: TypedDictation | None, order: _InOrder) -> None:
+    def _deliver(self, mode: ListenMode, text: str, typed: TypedDictation | None, order: _InOrder,
+                 language: str = "") -> None:
         if typed is not None:
             typed.finish(self._context.app)
             self._rest(order)
@@ -245,7 +250,7 @@ class Listening:
             self._dictation.handle(text, self._context.app)
             self._rest(order)
         elif text:
-            self._live_talk.start(text)
+            self._live_talk.start(text, language=language)
         elif not self._live_talk.resume():  # nothing said: go on with what was cut off
             self._rest(order)
 

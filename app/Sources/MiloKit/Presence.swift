@@ -26,7 +26,7 @@ public final class Presence: ObservableObject {
     @Published public private(set) var phase: Phase = .here
 
     /// `[ui] hide_after_s` until the brain says otherwise.
-    public static let defaultHideAfter: TimeInterval = 60
+    public static let defaultHideAfter: TimeInterval = 15
     /// Seconds with nothing going on before he leaves; nil: he stays on screen. A change counts from now.
     public var hideAfter: TimeInterval? = Presence.defaultHideAfter {
         didSet {

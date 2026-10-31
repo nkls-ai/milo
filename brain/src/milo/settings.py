@@ -43,7 +43,7 @@ SETTINGS = (
     Setting("ui", "meeting_key", ("ctrl+option+n", "ctrl+shift+n", "ctrl+option+r", ""),
             ("Control-Option-N", "Control-Shift-N", "Control-Option-R", "Off")),
     Setting("ui", "voice"),
-    Setting("ui", "hide_after_s", (30, 60, 300, 0), ("After 30 seconds", "After a minute", "After 5 minutes", "Never")),
+    Setting("ui", "hide_after_s", (15, 30, 60, 300, 0), ("After 15 seconds", "After 30 seconds", "After a minute", "After 5 minutes", "Never")),
     Setting("hands", "show_window"),
     Setting("approvals", "ask", ASK, ("Every step", "Once per task", "Only when it matters (auto)")),
     Setting("approvals", "allowed_apps"),

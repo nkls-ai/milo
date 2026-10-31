@@ -34,6 +34,11 @@ class CloudRecording:
         self._sent = 0
         self._pump = asyncio.create_task(self._send_along())
 
+    @property
+    def language(self) -> str:
+        """The language the service heard ("en", "deu"), once finish() returned; "" if it didn't say."""
+        return str(getattr(self._session, "language", "") or "")
+
     async def finish(self, recording: Audio) -> str:
         """The whole recording (as AudioInput.stop() returned it): send the rest and wait for the text.
         Raises VoiceUnavailable."""
