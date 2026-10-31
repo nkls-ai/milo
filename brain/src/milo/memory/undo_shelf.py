@@ -3,11 +3,14 @@ changed under `files/`, and the copies apps saved into folders of their own (Exc
 
 from __future__ import annotations
 
+import contextlib
+import ctypes
 import hashlib
 import json
 import logging
 import os
 import re
+import secrets
 import shutil
 import stat
 import tempfile
@@ -84,8 +87,8 @@ class FileUndoShelf:
             raise ValueError(f"{target.name} is one of Milo's own files. Don't change it, so it needs no undo point.")
         if target.is_dir():
             raise ValueError(f"{target} is a folder. Keep an undo point for each file you change in it.")
-        try:  # what was checked is what is copied: no link is followed after the check
-            fd = os.open(target, os.O_RDONLY | os.O_NOFOLLOW)
+        try:  # no link is followed after the check, and a pipe can't make the open wait
+            fd = os.open(target, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
         except FileNotFoundError:
             return {"path": str(target), "copy": "", "existed": False, "digest": ""}
         except OSError as e:
@@ -96,6 +99,8 @@ class FileUndoShelf:
                 raise ValueError(f"{target.name} isn't a plain file.")
             if info.st_nlink > 1:  # another name could be one of Milo's own files
                 raise ValueError(f"{target.name} has more than one name, so Milo keeps no copy of it.")
+            if _same(target) != (info.st_dev, info.st_ino) or self._protected.covers(target):
+                raise ValueError(f"{target.name} moved while Milo looked at it. Try again.")
             if info.st_size > self._max_file:
                 raise ValueError(f"{target.name} is {info.st_size // (1024 * 1024)} MB, too big to keep a copy of.")
             files = self._folder(task) / "files"
@@ -104,33 +109,43 @@ class FileUndoShelf:
                 raise ValueError("The disk is too full to keep a copy.")
             copy = files / f"{len(list(files.iterdir())) + 1}-{target.name}"
             digest = hashlib.sha256()
-            with open(copy, "xb") as out:
+            out = os.open(copy, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            with os.fdopen(out, "wb") as copied:
                 while chunk := source.read(1 << 20):
                     digest.update(chunk)
-                    out.write(chunk)
+                    copied.write(chunk)
             os.utime(copy, ns=(info.st_atime_ns, info.st_mtime_ns))
         return {"path": str(target), "copy": str(copy.relative_to(self._folder(task))), "existed": True,
-                "digest": digest.hexdigest()}
+                "digest": digest.hexdigest(), "mode": stat.S_IMODE(info.st_mode)}
 
     def put_back(self, task: str, kept: dict) -> None:
         target = Path(str(kept["path"]))
         if target.resolve() != target or self._protected.covers(target):
             raise OSError(f"{target} is a link now, or one of Milo's own files: not writing through it.")
         if kept.get("existed"):
+            source = self._folder(task) / str(kept["copy"])
             target.parent.mkdir(parents=True, exist_ok=True)
-            # A new file of Milo's own beside the target (mkstemp creates it, never opens what is there), then a
-            # rename, which replaces a link put at the target meanwhile instead of writing through it.
-            fd, tmp = tempfile.mkstemp(dir=target.parent, prefix=COPY_PREFIX)
+            # Everything happens in the folder Milo opened and checked: a new file of its own there, then a rename
+            # that replaces a link put at the target meanwhile instead of writing through it.
+            folder = os.open(target.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
             try:
-                with os.fdopen(fd, "wb") as out, open(self._folder(task) / str(kept["copy"]), "rb") as copy:
-                    shutil.copyfileobj(copy, out)
-                shutil.copystat(self._folder(task) / str(kept["copy"]), tmp)
-                if Path(tmp).parent.resolve() != target.parent:
+                if _same(target.parent) != _ids(os.fstat(folder)) or self._protected.covers(target.parent):
                     raise OSError(f"{target.parent} changed into a link: not writing there.")
-                os.replace(tmp, target)
-            except BaseException:
-                Path(tmp).unlink(missing_ok=True)
-                raise
+                tmp = f"{COPY_PREFIX}{secrets.token_hex(8)}-{target.name}"
+                out = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=folder)
+                try:
+                    with os.fdopen(out, "wb") as written, open(source, "rb") as copy:
+                        shutil.copyfileobj(copy, written)
+                        info = os.stat(source)
+                        os.utime(written.fileno(), ns=(info.st_atime_ns, info.st_mtime_ns))
+                        os.chmod(written.fileno(), int(kept.get("mode", stat.S_IMODE(info.st_mode))))
+                    _rename_in(folder, tmp, target.name)
+                except BaseException:
+                    with contextlib.suppress(OSError):
+                        os.unlink(tmp, dir_fd=folder)
+                    raise
+            finally:
+                os.close(folder)
         elif target.exists():
             trash = self._home / ".Trash"
             trash.mkdir(exist_ok=True)
@@ -176,3 +191,26 @@ class FileUndoShelf:
 def _born(folder: Path) -> float:
     st = folder.stat()
     return getattr(st, "st_birthtime", st.st_mtime)
+
+
+def _ids(info: os.stat_result) -> tuple[int, int]:
+    return info.st_dev, info.st_ino
+
+
+def _same(path: Path) -> tuple[int, int] | None:
+    """The file `path` names now, without following a link at its end; None if there is none."""
+    try:
+        return _ids(os.lstat(path))
+    except OSError:
+        return None
+
+
+_libc = ctypes.CDLL(None, use_errno=True)
+
+
+def _rename_in(folder: int, old: str, new: str) -> None:
+    """rename(2) inside the open `folder`, so no link put in its path since can move the write elsewhere. Python's
+    os.replace takes no folder on macOS, so this calls renameat(2) itself."""
+    if _libc.renameat(folder, old.encode(), folder, new.encode()) != 0:
+        err = ctypes.get_errno()
+        raise OSError(err, os.strerror(err), new)
