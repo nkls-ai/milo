@@ -91,6 +91,9 @@ private func entries(_ key: String) throws -> [[String: Any]] {
                 UndoPoint(id: "a1b2c3d4e5f6", title: "Rent 950", state: .undone, said: "I changed the rent to 950."),
                 UndoPoint(id: "b2c3d4e5f6a7", title: "Letter to Anna", state: .undoing),
             ]),
+            .actionDone(ActionDone(kind: .event, title: "Dentist", detail: "Thursday 5 November, 15:00 to 16:00",
+                                   when: ActionDone.time("2026-11-05T15:00"), app: "Calendar", undo: "q-3f9a2c7d1e04")),
+            .actionDone(ActionDone(kind: .shortcut, title: "Lights off")),
             .handsBorrow(on: true, what: "mouse"),
             .access(AccessNote(need: .control, state: .ask,
                                text: "macOS will ask once whether I may use Microsoft Excel. Click Allow.", app: AccessApp(name: "Microsoft Excel", bundle: "com.microsoft.Excel"))),
@@ -99,6 +102,11 @@ private func entries(_ key: String) throws -> [[String: Any]] {
                                app: AccessApp(name: "Microsoft Excel", bundle: "com.microsoft.Excel"))),
             .access(AccessNote(need: .ui, state: .no,
                                text: "To work in other apps' windows I need Accessibility. Fix it shows where to switch it on.")),
+            .appRequest(id: "a43f", op: "calendar.update_event", args: .object([
+                "id": .string("E1F2-77"), "at": .string("2026-11-05T15:00"), "start": .string("2026-11-06T10:00"),
+                "end": .string("2026-11-06T11:00"),
+            ])),
+            .appRequest(id: "a44f", op: "media.pause", args: .object([:])),
             .appRequest(id: "a51f", op: "access.check", args: .object([
                 "need": .string("control"), "app": .string("Microsoft Excel"), "bundle": .string(""), "launch": .bool(true),
             ])),
@@ -251,6 +259,11 @@ private func entries(_ key: String) throws -> [[String: Any]] {
                 ReminderItem(due: try #require(RoutineInfo.parseTime("2026-10-30T15:30")), text: "Leave for the dentist"),
                 ReminderItem(due: try #require(RoutineInfo.parseTime("2026-10-31T09:00")), text: "Call Anna"),
             ]),
+            .actionDone(ActionDone(kind: .event, title: "Dentist", detail: "Dr. Lee, Main Street 4",
+                                   when: try #require(RoutineInfo.parseTime("2026-11-05T15:00")), app: "Calendar",
+                                   undo: "a7b8c9d0e1f2")),
+            .actionDone(ActionDone(kind: .reminder, title: "Call the dentist",
+                                   when: try #require(RoutineInfo.parseTime("2026-10-30T09:00")))),
         ])
     }
 
@@ -290,6 +303,7 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             ]))),
             .appResponse(id: "a42f", outcome: .failure(
                 "Milo isn't allowed to use your calendar. Turn it on in System Settings › Privacy & Security › Calendars.")),
+            .appResponse(id: "a44f", outcome: .success(.object(["state": .string("paused")]))),
             .appResponse(id: "a51f", outcome: .success(.object([
                 "access": .string("ask"), "app": .string("Microsoft Excel"), "bundle": .string("com.microsoft.Excel"),
                 "system": .string("macOS"), "button": .string("Allow"),

@@ -17,6 +17,11 @@ public final class WorkingOutline {
     private var subscription: AnyCancellable?
     private var restyle: AnyCancellable?
     private var timer: Timer?
+    private var hosting: NSHostingView<WorkingOutlineView>?
+    private var theme = Theme.for(.milo)
+    private var caption: String?
+    /// The panel reaches below the window for the caption; false where the window goes down to the screen's edge.
+    private var below = true
 
     public init(model: MiloModel) {
         self.model = model
@@ -28,11 +33,18 @@ public final class WorkingOutline {
         panel.ignoresMouseEvents = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         let hosting = NSHostingView(rootView: WorkingOutlineView())
+        hosting.sizingOptions = []
+        self.hosting = hosting
         panel.contentView = hosting
-        // Milo's colours, changed only when the theme is.
-        restyle = model.$character.removeDuplicates().sink { [weak hosting] in
-            hosting?.rootView = WorkingOutlineView(theme: Theme.for($0))
-        }
+        // Milo's colours and the step he is on, changed only when one of them is.
+        restyle = model.$character.removeDuplicates().combineLatest(model.$workingStep.removeDuplicates())
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] character, step in
+                guard let self else { return }
+                theme = Theme.for(character)
+                caption = step
+                redraw()
+            }
         subscription = model.$workingWindow.combineLatest(model.$workingWindowNumber)
             .removeDuplicates { $0 == $1 }
             .receive(on: DispatchQueue.main)
@@ -45,8 +57,19 @@ public final class WorkingOutline {
             timer = nil
             return panel.orderOut(nil)
         }
-        // A little room so the border sits just outside the window.
-        panel.setFrame(frame.insetBy(dx: -4, dy: -4), display: true)
+        // A little room so the border sits just outside the window, and below it for the caption when the screen
+        // has it.
+        var outline = frame.insetBy(dx: -4, dy: -4)
+        let room = WorkingOutlineView.captionRoom
+        let bottom = NSScreen.screens.first { $0.frame.intersects(frame) }?.frame.minY ?? -.infinity
+        let fits = outline.minY - room >= bottom
+        if fits { outline = CGRect(x: outline.minX, y: outline.minY - room, width: outline.width,
+                                   height: outline.height + room) }
+        if fits != below {
+            below = fits
+            redraw()
+        }
+        panel.setFrame(outline, display: true)
         guard let number else {
             // Window unknown to the window server: above the other apps, still under Milo.
             panel.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue - 1)
@@ -63,6 +86,10 @@ public final class WorkingOutline {
             RunLoop.main.add(timer, forMode: .common)
             self.timer = timer
         }
+    }
+
+    private func redraw() {
+        hosting?.rootView = WorkingOutlineView(theme: theme, caption: caption, below: below)
     }
 
     /// Puts the outline just above window `number`, unless it is already there.

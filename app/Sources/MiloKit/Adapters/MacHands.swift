@@ -183,6 +183,23 @@ public final class MacHands: HandsExecutor {
 
     /// How long opening waits for the app to be in front with a window before it answers anyway.
     static let frontWait: TimeInterval = 2
+    /// How long an opened app gets to come forward by itself before Accessibility brings it.
+    static let nudgeAfter: TimeInterval = 0.4
+
+    /// Brings the app and its main window forward through Accessibility. Since macOS 14 an app that isn't active
+    /// itself (Milo nearly always) may open others, but `open` and `activate()` then leave them behind the user's
+    /// window; setting the app's AXFrontmost is still allowed with the Accessibility permission.
+    static func forceFront(_ app: NSRunningApplication) {
+        guard app.processIdentifier != getpid() else { return }
+        let element = AX.application(app.processIdentifier)
+        if app.isHidden { app.unhide() }
+        AXUIElementSetAttributeValue(element, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
+        if let window = AX.window(of: element) {
+            AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
+            AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+        }
+        app.activate()
+    }
 
     /// Opens the app, or brings it forward if it runs: `open -a` goes through Launch Services, which activates it
     /// even while Milo isn't the active app, and asks a running app without windows for a new one (as a click on
@@ -215,8 +232,15 @@ public final class MacHands: HandsExecutor {
     /// Opens a document or folder in the app the system opens it with, never a named one (a terminal would run a
     /// text file), and never a file that would run code itself (OpenGuard.refuses).
     private func openFile(_ path: String) throws -> [String: JSONValue] {
-        let full = (path as NSString).expandingTildeInPath
-        let url = URL(fileURLWithPath: full)
+        // What is opened is what the link or alias points to, so that is what gets checked.
+        var url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath).resolvingSymlinksInPath()
+        if (try? url.resourceValues(forKeys: [.isAliasFileKey]))?.isAliasFile == true {
+            guard let target = try? URL(resolvingAliasFileAt: url, options: [.withoutUI, .withoutMounting]) else {
+                throw HandsFailure("\(url.lastPathComponent) is an alias Milo can't follow.")
+            }
+            url = target.resolvingSymlinksInPath()
+        }
+        let full = url.path
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: full, isDirectory: &isDirectory) else {
             throw HandsFailure("There is no file or folder at \(path).")
@@ -247,6 +271,7 @@ public final class MacHands: HandsExecutor {
             if !OpenGuard.wait(timeout: 0.4, isFront), let bundle = app.bundleURL {
                 _ = try? launchServices(["-a", bundle.path])
             }
+            if !OpenGuard.wait(timeout: Self.nudgeAfter, isFront) { Self.forceFront(app) }
         }
         let front = OpenGuard.wait(timeout: Self.frontWait, isFront)
         return ["app": .string(app.localizedName ?? name), "bundle": .string(app.bundleIdentifier ?? ""),
@@ -275,10 +300,15 @@ public final class MacHands: HandsExecutor {
             return app.localizedName?.lowercased() == wanted || app.bundleIdentifier?.lowercased() == wanted
         }
         var found: NSRunningApplication?
-        let front = OpenGuard.wait(timeout: Self.frontWait) {
+        let isFront = {
             guard let app = NSWorkspace.shared.frontmostApplication, matches(app) else { return false }
             found = app
             return Self.hasWindow(app.processIdentifier)
+        }
+        var front = OpenGuard.wait(timeout: Self.nudgeAfter, isFront)
+        if !front, let opened = NSWorkspace.shared.runningApplications.first(where: matches) {
+            Self.forceFront(opened)
+            front = OpenGuard.wait(timeout: Self.frontWait - Self.nudgeAfter, isFront)
         }
         let app = found ?? NSWorkspace.shared.runningApplications.first(where: matches)
         let label = app?.localizedName ?? name ?? ""

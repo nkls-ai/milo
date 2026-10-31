@@ -73,6 +73,14 @@ public final class ConversationWindow: NSWindow {
         route.go(.conversation(conversation))
     }
 
+    /// Show it at Today, where Milo's own reminders are.
+    public func showToday() {
+        if !isVisible { controller.requestHistory() }
+        NSApp.activate(ignoringOtherApps: true)
+        makeKeyAndOrderFront(nil)
+        route.go(.today)
+    }
+
     /// Show it, or hide it if it is open.
     public func toggle() {
         if isVisible {

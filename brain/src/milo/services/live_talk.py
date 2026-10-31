@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from milo.core.events import Bubble, Heard, Looking
+from milo.core.events import ActionDone, Bubble, Heard, Looking
 from milo.core.language import SpokenLanguage
 from milo.core.language import name as language_name
 from milo.core.logtext import private
@@ -21,7 +21,7 @@ from .backchannel import Backchannel
 from .context import UserContext
 from .conversation import stamp
 from .memory import Recalled, TurnMemory
-from .reply_stream import ReplyParser
+from .reply_stream import ActRequest, ReplyParser
 from .screen import look_prompt
 from .speaker import Speaker, Utterance
 from .transcript import Transcript, unrecorded
@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from .meetings import MeetingService
     from .opener import Opener
     from .orchestrator import Orchestrator
+    from .quick_actions import QuickActions
     from .routines import Routines
     from .undo import Undo
 
@@ -226,8 +227,10 @@ class LiveTalk:
                  approvals: Approvals | None = None, memory: TurnMemory | None = None,
                  backchannel: Backchannel | None = None, routines: Routines | None = None,
                  meetings: MeetingService | None = None, undo: Undo | None = None, opener: Opener | None = None,
-                 language: SpokenLanguage | None = None):
+                 language: SpokenLanguage | None = None, quick: QuickActions | None = None):
         self._model = model
+        self._quick = quick
+        """Does the everyday act tags itself and keeps the <today> block (ADR 0029). None: those tags do nothing."""
         self._opener = opener
         """Opens what an <open> tag names at once (ADR 0028). None: the tag does nothing."""
         self._language = language or SpokenLanguage()
@@ -426,6 +429,9 @@ class LiveTalk:
         self._notes.extend(data)
         try:
             parser = await self._reply(prompt, (), False, screen=False)
+            if parser is not None and self._quick is not None:  # what the acts did goes along with the answer
+                done = await self._quick.lines(asyncio.current_task())
+                return " ".join(t for t in (parser.spoken.strip(), done) if t)
         finally:
             if self._look_started is not None:  # no looking at the screen from afar
                 self._look_started.cancel()
@@ -446,6 +452,8 @@ class LiveTalk:
         voice opens its connection now too.
         """
         self._speaker.prepare()
+        if self._quick is not None:
+            self._quick.prepare()
         if (self._preparing is None or self._preparing.done()) and self._needs_fresh_conversation():
             self._preparing = asyncio.create_task(self._prepare())
 
@@ -507,6 +515,7 @@ class LiveTalk:
         started = self._clock.monotonic()
         first_at: float | None = None
         opened = 0
+        acted = 0
         notes, self._notes = self._notes, []
         earlier, self._earlier = self._earlier, []
         if speak and self._backchannel is not None:
@@ -514,12 +523,13 @@ class LiveTalk:
         try:
             await self._ensure_conversation()
             meeting = await self._meeting(text) if tags and not screen else ""
+            today, outside = await self._quick.note() if self._quick is not None and tags else ("", False)
             recalled = await self._recall(text, screen,
                                           outside=self._tainted or bool(notes) or bool(meeting) or self._saw_screen)
             self._tainted = self._tainted or bool(notes) or bool(meeting) or not recalled.trusted
             self._saw_screen = self._saw_screen or screen
             self._streaming = True
-            blocks = [*earlier, *notes, recalled.block, *([meeting] if meeting else [])]
+            blocks = [*earlier, *notes, recalled.block, *([meeting] if meeting else []), today]
             async for delta in self._model.turn(self._prompt(text, blocks, name=tags and not screen), images):
                 if first_at is None:
                     first_at = self._clock.monotonic()
@@ -527,8 +537,11 @@ class LiveTalk:
                         self._looking(False)  # he has seen it and starts to answer
                 speech = parser.feed(delta)
                 if tags and len(parser.opens) > opened:
-                    held += self._open_now(parser.opens[opened:], screen=screen)
+                    held += self._open_now(parser.opens[opened:], screen=screen or outside)
                     opened = len(parser.opens)
+                if tags and len(parser.acts) > acted:
+                    self._act_now(parser.acts[acted:], screen=screen or outside)
+                    acted = len(parser.acts)
                 if speak and utterance is None and parser.emotion is not None:
                     utterance = (self._backchannel.utterance(parser.emotion) if self._backchannel is not None
                                  else self._speaker.utterance(parser.emotion))
@@ -540,6 +553,8 @@ class LiveTalk:
         except asyncio.CancelledError:
             self._notes[:0] = notes  # the model may not have seen them: send them again next turn
             self._earlier[:0] = earlier
+            if self._quick is not None:
+                self._quick.today.unsent()
             self._end_reply(shown, parser)
             raise
         except HarnessError as e:
@@ -564,7 +579,9 @@ class LiveTalk:
         self._last_turn_at = self._clock.monotonic()
         rest = parser.finish()
         if tags and len(parser.opens) > opened:  # an unclosed tag at the very end
-            held += self._open_now(parser.opens[opened:], screen=screen)
+            held += self._open_now(parser.opens[opened:], screen=screen or outside)
+        if tags and len(parser.acts) > acted:
+            self._act_now(parser.acts[acted:], screen=screen or outside)
         if rest:
             shown = self._show(shown, parser, rest)
         self._end_reply(shown, parser)
@@ -573,7 +590,7 @@ class LiveTalk:
         if tags:
             if parser.title:
                 self._transcript.titled(parser.title)
-            self._apply(parser, screen=screen, held=held)
+            self._apply(parser, screen=screen or outside, held=held, remember=not screen)
             self._take_back(parser)
         if not speak:
             if parser.spoken.strip():
@@ -653,12 +670,16 @@ class LiveTalk:
                 self._tainted = False
                 if self._memory is not None:
                     self._memory.new_conversation()
+                if self._quick is not None:
+                    self._quick.new_conversation()
 
     def _system_prompt(self) -> str:
         parts = [self._persona().strip() or DEFAULT_PERSONA, REPLY_RULES.strip()]
         if self._eyes is not None:
             parts.append(LOOK_RULES.strip())
         parts.append(HELPER_RULES.strip())
+        if self._quick is not None:
+            parts.append(self._quick.rules().strip())
         if self._memory is not None:
             parts.append(self._memory.rules.strip())
         if self._routines is not None:
@@ -708,12 +729,21 @@ class LiveTalk:
             self._start_open(request)
         return held
 
+    def _act_now(self, acts: Sequence[ActRequest], *, screen: bool) -> None:
+        """Start the reply's act tags while it still streams, like <open> (ADR 0029). An act follows the <reminder>
+        rule: after outside text it asks, and its question waits for the reply to end."""
+        if self._quick is None:
+            log.info("ignoring %d act tag(s): quick actions are off", len(acts))
+            return
+        self._quick.start(acts, outside=self._tainted or screen, via=self._via)
+
     def _start_open(self, request: OpenRequest) -> None:
         task = asyncio.create_task(self._opener.open(request, since=self._heard_at, language=self._language.code))
         self._opening.add(task)
         task.add_done_callback(self._opening.discard)
 
-    def _apply(self, parser: ReplyParser, *, screen: bool = False, held: Sequence[OpenRequest] = ()) -> None:
+    def _apply(self, parser: ReplyParser, *, screen: bool = False, held: Sequence[OpenRequest] = (),
+               remember: bool = True) -> None:
         """Save facts and reminders, start tasks the reply asked for, and start a look.
 
         Some tags wait for the user's yes, because text from outside could have talked the model into them:
@@ -723,10 +753,15 @@ class LiveTalk:
         before anything that sends, deletes, buys or overwrites. Opening an app or making a new document
         never asks. Without a way to ask, tags that need a yes are dropped. A reply to screen data never
         remembers facts: those come from the user, never from the screen.
+
+        `screen`: the message being answered carried outside text: screen data, or other people's words in the
+        <today> block (an invite, ADR 0029), which don't stay in the conversation's taint. Every tag in the reply
+        follows the rule for a reply to the screen. `remember=False`: it was screen data, which never becomes a fact
+        and doesn't look again.
         """
-        if screen and parser.remembers:
+        if not remember and parser.remembers:
             log.info("not remembering %d fact(s) from a turn with screen data", len(parser.remembers))
-        elif parser.look is not None and not screen and self._eyes is not None:
+        elif parser.look is not None and remember and self._eyes is not None:
             # Look while the first words are spoken; thinking keeps Milo from resting in between.
             self._looking(True)
             self._ui.thinking = True
@@ -742,19 +777,20 @@ class LiveTalk:
         ask_tasks = (self._tainted or screen) and not at_mac
         # A routine is a recipe that may do a lot unattended: outside text can't start one without a yes.
         ask_routines = (self._tainted or screen) and not own_work
-        careful = (self._saw_screen or self._tainted) and not own_work
+        careful = (self._saw_screen or self._tainted or screen) and not own_work
         user_asked = own_work or (not self._tainted and not screen)
         lang = self._language.code
         effects: list[tuple[str, str, Callable[[], None], bool]] = []
         for request in held:  # opening asks only here, for what outside text may have named (see _open_now)
             effects.append((open_question(request, lang), request.url or request.path,
                             lambda request=request: self._start_open(request), True))
-        for fact in () if screen else parser.remembers:
+        for fact in parser.remembers if remember else ():
             effects.append((remember_question(fact, lang), "", lambda fact=fact: self._remember(fact),
-                            self._tainted))
+                            self._tainted or screen))
         for due, what in parser.reminders:  # open reminders go into later system prompts: screen text asks too
             effects.append((remind_question(due, what, lang), "",
-                            lambda due=due, what=what: self._remind(due, what), self._tainted or screen))
+                            lambda due=due, what=what: self._remind(due, what, parser.spoken),
+                            self._tainted or screen))
         for task in parser.tasks:
             question = task_question(task.description, title=task.title, language=lang)
             # The whole task shows under the short question in the window: the user approves all of it.
@@ -804,12 +840,17 @@ class LiveTalk:
         except Exception:
             log.exception("could not save to the profile")
 
-    def _remind(self, due: datetime, what: str) -> None:
+    def _remind(self, due: datetime, what: str, said: str = "") -> None:
         try:
-            self._reminders.add(due, what)
+            reminder = self._reminders.add(due, what)
             log.info("reminder set, %s", private(what))
         except Exception:
             log.exception("could not save the reminder")
+            return
+        if self._quick is not None:
+            self._quick.reminded(reminder, said)  # its card, with Undo
+        else:
+            self._ui.emit(ActionDone("reminder", what, when=due.isoformat(timespec="minutes")))
 
     def _hiccup(self) -> None:
         self._system = None  # the conversation may be broken: start a fresh one next turn

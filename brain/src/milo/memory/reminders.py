@@ -7,6 +7,7 @@ edit the file; the heartbeat fires them locally, so a reminder costs no tokens.
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -68,3 +69,22 @@ class MarkdownReminders:
             f.write(("\n" if existing and not existing.endswith(b"\n") else "") + line + "\n")
         self._mtime = None  # re-read next time even if the mtime did not visibly change
         return parse(line)[0]
+
+    def remove(self, id: str) -> bool:
+        """Take out the first line that is reminder `id`, leaving every other line as it is. The file is written
+        whole to a temporary file and renamed into place, so a crash leaves the old one."""
+        try:
+            text = self.path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return False
+        lines = text.splitlines(keepends=True)
+        for i, line in enumerate(lines):
+            found = parse(line)
+            if found and found[0].id == id:
+                del lines[i]
+                tmp = self.path.with_name(f".{self.path.name}.milo-tmp")
+                tmp.write_text("".join(lines), encoding="utf-8")
+                os.replace(tmp, self.path)
+                self._mtime = None
+                return True
+        return False

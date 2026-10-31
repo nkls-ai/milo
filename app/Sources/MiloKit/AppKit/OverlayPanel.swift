@@ -52,7 +52,17 @@ public final class OverlayPanel: NSPanel {
         host.onDrag = { [weak presence] in presence?.held = $0 }
         // The Stop button sits in Milo's square: a click on it is the button's, never a drag or a click on him.
         host.isControl = { [weak model] p in
-            model?.canStop == true && hypot(p.x - Self.stopCenter.x, p.y - Self.stopCenter.y) <= StopByMilo.size / 2 + 4
+            guard let model else { return false }
+            if model.canStop && hypot(p.x - Self.stopCenter.x, p.y - Self.stopCenter.y) <= StopByMilo.size / 2 + 4 {
+                return true
+            }
+            // A done card where it reaches into his square, and the check on its corner.
+            return Self.onCards(p, model.done.area)
+        }
+        // A panel that isn't key doesn't always hear the pointer come and go: the cards ask it.
+        model.done.pointing = { [weak host, weak model] in
+            guard let host, let model, !model.done.area.isEmpty else { return false }
+            return host.pointer(in: model.done.area)
         }
         host.onClick = { [weak presence] in presence?.summon() }
         presence.pointing = { [weak host] in host?.pointerOnCharacter ?? false }
@@ -66,6 +76,13 @@ public final class OverlayPanel: NSPanel {
                 orderFrontRegardless()
             }
         }
+    }
+
+    /// Whether `p` (from the panel's bottom-left corner) is on the done cards at `area` (top-left origin, as
+    /// SwiftUI lays them out), with a little room for the check on a card's corner.
+    static func onCards(_ p: NSPoint, _ area: CGRect) -> Bool {
+        guard !area.isEmpty else { return false }
+        return area.insetBy(dx: -6, dy: -6).contains(CGPoint(x: p.x, y: size.height - p.y))
     }
 
     public override var canBecomeKey: Bool { true }
@@ -123,6 +140,14 @@ final class DraggableHostingView<Content: View>: NSHostingView<Content> {
     var pointerOnCharacter: Bool {
         guard let window, window.isVisible else { return false }
         return isOnCharacter(convert(window.mouseLocationOutsideOfEventStream, from: nil))
+    }
+
+    /// The pointer is inside `area` now, in SwiftUI's top-left-origin points of this view.
+    func pointer(in area: CGRect) -> Bool {
+        guard let window, window.isVisible else { return false }
+        let p = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        let fromTop = isFlipped ? p.y - bounds.minY : bounds.maxY - p.y
+        return area.contains(CGPoint(x: p.x - bounds.minX, y: fromTop))
     }
 
     /// A press here drags Milo or clicks him: his square, less any control in it.

@@ -50,6 +50,9 @@ class ChatSettings:
     """A short "hm" when the answer is slow to come, so silence never feels like Milo didn't hear."""
     recap_tokens: int = 600
     """What picking an earlier conversation up again may add to the next message, at most."""
+    quick_actions: bool = True
+    """The talker puts events, to-dos, notes, timers, drafts and the rest in itself, at once, instead of starting a
+    helper, and knows today's and tomorrow's calendar (ADR 0029)."""
 
     def __post_init__(self):
         if self.updates not in UPDATES:
@@ -151,6 +154,8 @@ class ConnectionSettings:
     notes: bool = True
     shortcuts: bool = True
     files: bool = True
+    music: bool = True
+    """Play, pause and skip the music when the user asks (the talker's <music> tag)."""
 
 
 @dataclass(frozen=True)

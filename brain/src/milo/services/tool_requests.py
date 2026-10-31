@@ -22,9 +22,13 @@ log = logging.getLogger("milo.tool_requests")
 APP_OPS: dict[str, tuple[str, str]] = {
     "calendar.events": ("calendar", "read"),
     "calendar.add_event": ("calendar", "change"),
+    "calendar.event": ("calendar", "read"),
+    "calendar.update_event": ("calendar", "change"),
+    "calendar.delete_event": ("calendar", "delete"),  # the calendar has no trash: for good, so it asks (ADR 0023)
     "reminders.list": ("reminders", "read"),
     "reminders.add": ("reminders", "change"),
     "reminders.complete": ("reminders", "change"),
+    "reminders.delete": ("reminders", "delete"),
 }
 APPS = {"calendar": AppRef("Calendar", "com.apple.iCal"), "reminders": AppRef("Reminders", "com.apple.reminders")}
 # The apps an `approve` may name: the ones Milo's connection tools change things in (connect/server.py APPS).

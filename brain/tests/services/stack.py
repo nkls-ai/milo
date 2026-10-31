@@ -7,7 +7,11 @@ from concurrent.futures import Executor, Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from milo.adapters.connect.fake import _fake
 from milo.adapters.embed.hashing import HashEmbedder
+from milo.core.registry import AdapterContext
+from milo.services.app_ops import AppOps
+from milo.services.quick_actions import QuickActions
 from milo.brain import Brain
 from milo.config import UiSettings
 from milo.core.events import Bubble, StateChanged
@@ -104,6 +108,11 @@ class Stack:
     home: Path | None = None
     """The user's home for Undo (ADR 0026): Milo keeps its records in home/Milo/state/undo, and Excel's own folder is
     under it. None: no Undo, so the Mac tools run no scripts of Milo's own around the worker's."""
+    world: Path | None = None
+    """A folder for made-up connections (adapters/connect/fake.py, world.json): the talker's quick actions and its
+    <today> block work on them (ADR 0029). None: no quick actions."""
+    meetings: object | None = None
+    """What <meeting> tags start and stop: a MeetingService or a stand-in with recording, toggle and pause."""
     real_threads: bool = False
     """STT, TTS and memory each on a real single thread, like compose builds them, instead of inline. For tests
     that look for ordering bugs between the event loop and those threads (tests/test_races.py). close() ends them."""
@@ -161,11 +170,19 @@ class Stack:
             self.tasks.on_done.append(self.undo.finished)
         self.tasks.on_done.append(lambda helper: self.permits.end(helper.id))
         self.permits.user_asked = self.tasks.user_asked
+        self.quick = self.connections = None
+        if self.world is not None:
+            self.connections = _fake({"dir": str(self.world)}, AdapterContext(self.world, self.world / "state",
+                                                                              self.clock))
+            self.quick = QuickActions(AppOps(self.connections), self.connections, self.ui, self.speaker, self.clock,
+                                      approvals=self.approvals, undo=self.undo, reminders=self.reminders,
+                                      meetings=self.meetings, quiet=lambda: self.mic.active, wait_s=self.wait_s,
+                                      language=self.language.get, poll_s=0.005)
         self.live_talk = LiveTalk(self.model, self.speaker, self.ui, self.context, self.clock, self.profile,
                                   self.reminders, self.ledger, lambda: self.persona, self.idle_reset_s, self.tasks,
                                   eyes=self.eyes, approvals=self.approvals, memory=self.turn_memory,
                                   routines=self.routines, undo=self.undo, opener=self.opener,
-                                  language=self.language)
+                                  language=self.language, quick=self.quick)
         self.tasks.on_result = self.live_talk.note
         self.dictation = DictationService(UpperCleaner(), self.history, self.ui)
         self.listening = Listening(self.mic, self.transcriber, executor, self.ui, self.dictation, self.live_talk,

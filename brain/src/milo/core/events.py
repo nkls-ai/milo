@@ -135,7 +135,10 @@ class ReplyDelta(Event):
 
 @dataclass(frozen=True)
 class Activity(Event):
-    """A step of the running task `task_id` started or ended. The app replaces the step with the same id."""
+    """A step of the running task `task_id` started or ended. The app replaces the step with the same id.
+
+    Steps of Milo's hands on screen have ids starting with `hands_` (HandsService); the app shows the running one
+    under the working outline (ADR 0030)."""
 
     type: ClassVar[str] = "activity"
     task_id: str
@@ -478,6 +481,25 @@ class RemindersList(Event):
 
     type: ClassVar[str] = "reminders"
     reminders: list[dict]
+
+
+@dataclass(frozen=True)
+class ActionDone(Event):
+    """Milo just did something small for the user: the app shows it as a card that comes out of Milo.
+
+    `kind` is event, todo, reminder, note, timer, draft, shortcut, music or opened. `title` is what it is called
+    and `detail` one plain line more (a place, a list, a song), or "". `when` is an ISO time (an event's start, a
+    reminder's or timer's end), or "". `app` names the app it lives in ("Calendar", "Reminders", "Notes", "Mail"),
+    or "" for Milo's own reminders; the app opens the item there on a click. `undo` is the task id whose Undo
+    takes it back (`undo_task`, ADR 0026), or "" when there is none."""
+
+    type: ClassVar[str] = "action_done"
+    kind: str
+    title: str
+    detail: str = ""
+    when: str = ""
+    app: str = ""
+    undo: str = ""
 
 
 # ---- app -> brain
