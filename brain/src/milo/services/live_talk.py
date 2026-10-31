@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     from .quick_actions import QuickActions
     from .routines import Routines
     from .undo import Undo
+    from .writing import Writer
 
 log = logging.getLogger("milo.live")
 
@@ -231,8 +232,11 @@ class LiveTalk:
                  approvals: Approvals | None = None, memory: TurnMemory | None = None,
                  backchannel: Backchannel | None = None, routines: Routines | None = None,
                  meetings: MeetingService | None = None, undo: Undo | None = None, opener: Opener | None = None,
-                 language: SpokenLanguage | None = None, quick: QuickActions | None = None):
+                 language: SpokenLanguage | None = None, quick: QuickActions | None = None,
+                 writer: Writer | None = None):
         self._model = model
+        self._writer = writer
+        """Pastes what a <write> tag wrote where the user is (ADR 0033). None: the tag does nothing."""
         self._quick = quick
         """Does the everyday act tags itself and keeps the <today> block (ADR 0029). None: those tags do nothing."""
         self._opener = opener
@@ -437,14 +441,15 @@ class LiveTalk:
             parser = await self._reply(prompt, (), False, screen=False)
             if parser is not None and self._quick is not None:  # what the acts did goes along with the answer
                 done = await self._quick.lines(asyncio.current_task())
-                return " ".join(t for t in (parser.spoken.strip(), done) if t)
+                said = " ".join(t for t in (parser.spoken.strip(), done) if t)
+                return "\n\n".join(t for t in (said, *parser.writes) if t)  # a <write> goes as text from afar
         finally:
             if self._look_started is not None:  # no looking at the screen from afar
                 self._look_started.cancel()
                 self._look_started = None
                 self._looking(False)
                 self._ui.thinking = False
-        return None if parser is None else parser.spoken
+        return None if parser is None else "\n\n".join(t for t in (parser.spoken, *parser.writes) if t)
 
     async def warm(self) -> None:
         """Start the conversation ahead of the first turn. Raises HarnessError."""
@@ -522,6 +527,7 @@ class LiveTalk:
         first_at: float | None = None
         opened = 0
         acted = 0
+        wrote = 0
         notes, self._notes = self._notes, []
         earlier, self._earlier = self._earlier, []
         if speak and self._backchannel is not None:
@@ -550,6 +556,9 @@ class LiveTalk:
                 if tags and len(parser.acts) > acted:
                     self._act_now(parser.acts[acted:], screen=screen or outside)
                     acted = len(parser.acts)
+                if tags and len(parser.writes) > wrote:
+                    self._write_now(parser.writes[wrote:], screen=screen or outside)
+                    wrote = len(parser.writes)
                 if speak and utterance is None and parser.emotion is not None:
                     utterance = (self._backchannel.utterance(parser.emotion) if self._backchannel is not None
                                  else self._speaker.utterance(parser.emotion))
@@ -590,6 +599,8 @@ class LiveTalk:
             held += self._open_now(parser.opens[opened:], screen=screen or outside)
         if tags and len(parser.acts) > acted:
             self._act_now(parser.acts[acted:], screen=screen or outside)
+        if tags and len(parser.writes) > wrote:
+            self._write_now(parser.writes[wrote:], screen=screen or outside)
         if rest:
             shown = self._show(shown, parser, rest)
         self._end_reply(shown, parser)
@@ -690,6 +701,8 @@ class LiveTalk:
         parts.append(HELPER_RULES.strip())
         if self._quick is not None:
             parts.append(self._quick.rules().strip())
+        if self._writer is not None:
+            parts.append(self._writer.rules().strip())
         if self._memory is not None:
             parts.append(self._memory.rules.strip())
         if self._routines is not None:
@@ -747,6 +760,15 @@ class LiveTalk:
             log.info("ignoring %d act tag(s): quick actions are off", len(acts))
             return
         self._quick.start(acts, outside=self._tainted or screen, via=self._via)
+
+    def _write_now(self, texts: Sequence[str], *, screen: bool) -> None:
+        """Paste what <write> wrote the moment its tag closes (ADR 0033). After outside text it goes in only when the
+        user's own words asked for the writing; Writer decides that from them."""
+        if self._writer is None:
+            log.info("ignoring %d <write> tag(s): nothing to paste them with", len(texts))
+            return
+        self._writer.start(texts, outside=self._tainted or screen or self._saw_screen, request=self._request,
+                           via=self._via)
 
     def _start_open(self, request: OpenRequest) -> None:
         task = asyncio.create_task(self._opener.open(request, since=self._heard_at, language=self._language.code))

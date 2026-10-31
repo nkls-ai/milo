@@ -37,10 +37,13 @@ public struct TranscriptEntry: Equatable, Sendable, Identifiable {
     public var title: String
     /// task: files it named that exist, like "~/Reports/October.numbers".
     public var files: [String]
+    /// milo: text Milo wrote for the user to paste or copy (`<write>`, ADR 0033). The window shows it with Copy.
+    public var written: Bool
 
     public init(id: String, date: Date, kind: Kind, text: String, via: Via = .voice, emotion: Emotion = .neutral,
                 done: Bool = true, status: ActivityStep.Status = .done, result: String = "",
-                steps: [ActivityStep] = [], conversation: String = "", title: String = "", files: [String] = []) {
+                steps: [ActivityStep] = [], conversation: String = "", title: String = "", files: [String] = [],
+                written: Bool = false) {
         self.id = id
         self.date = date
         self.kind = kind
@@ -54,6 +57,7 @@ public struct TranscriptEntry: Equatable, Sendable, Identifiable {
         self.conversation = conversation
         self.title = title
         self.files = files
+        self.written = written
     }
 
     /// task: the title, or the first sentence of what it is.
@@ -90,7 +94,7 @@ public struct ActivityStep: Equatable, Sendable, Identifiable {
 
 extension TranscriptEntry: Decodable {
     private enum Key: String, CodingKey {
-        case id, ts, kind, text, via, emotion, done, status, result, steps, conversation, title, files
+        case id, ts, kind, text, via, emotion, done, status, result, steps, conversation, title, files, written
     }
 
     public init(from decoder: Decoder) throws {
@@ -108,6 +112,7 @@ extension TranscriptEntry: Decodable {
         conversation = try c.decodeIfPresent(String.self, forKey: .conversation) ?? ""
         title = try c.decodeIfPresent(String.self, forKey: .title) ?? ""
         files = try c.decodeIfPresent([String].self, forKey: .files) ?? []
+        written = try c.decodeIfPresent(Bool.self, forKey: .written) ?? false
     }
 
     /// The brain sends local time without a zone, e.g. "2026-10-30T09:12:03".

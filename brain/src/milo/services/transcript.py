@@ -181,6 +181,12 @@ class Transcript:
             self._start("chat", title_from(text), why="milo")
         self._add(EntryKind.MILO, text, finished=True, emotion=emotion)
 
+    def written(self, text: str) -> None:
+        """Text Milo wrote for the user (<write>, ADR 0033): an entry of its own, which the window can copy."""
+        if not self._open():
+            self._start("chat", title_from(text), why="milo")
+        self._add(EntryKind.MILO, text, finished=True, written=True)
+
     def titled(self, title: str) -> None:
         """Milo named the current conversation (his <title> tag). A name the user gave stays."""
         title = clean_title(title)[:MAX_TITLE]

@@ -55,6 +55,9 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .entry(TranscriptEntry(id: "e9a0f61b7d58", date: try day("2026-10-30T09:14:00"), kind: .milo, text: "",
                                    done: false)),
             .replyDelta(id: "e9a0f61b7d58", text: "Sure, "),
+            .entry(TranscriptEntry(id: "f0a1b2c3d4e5", date: try day("2026-10-30T09:15:02"), kind: .milo,
+                                   text: "Hi Anna,\n\nI'm running ten minutes late. See you soon!\n\nNiklas",
+                                   conversation: "c-5f2a9c1e04b7", written: true)),
             .activity(taskID: "c07b3e9d1a26", step: ActivityStep(
                 id: "item_2", kind: "edit", title: "Editing notes.md", detail: "update /Users/you/Milo/notes.md",
                 status: .failed)),
@@ -94,6 +97,7 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .actionDone(ActionDone(kind: .event, title: "Dentist", detail: "Thursday 5 November, 15:00 to 16:00",
                                    when: ActionDone.time("2026-11-05T15:00"), app: "Calendar", undo: "q-3f9a2c7d1e04")),
             .actionDone(ActionDone(kind: .shortcut, title: "Lights off")),
+            .actionDone(ActionDone(kind: .written, title: "Hi Anna,", app: "Mail", undo: "w-8a7b6c5d4e3f")),
             .handsBorrow(on: true, what: "mouse"),
             .access(AccessNote(need: .control, state: .ask,
                                text: "macOS will ask once whether I may use Microsoft Excel. Click Allow.", app: AccessApp(name: "Microsoft Excel", bundle: "com.microsoft.Excel"))),
@@ -115,6 +119,12 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             ])),
             .appRequest(id: "a53f", op: "access.places", args: .object([
                 "app": .string("Microsoft Excel"), "bundle": .string("com.microsoft.Excel"),
+            ])),
+            .appRequest(id: "a61f", op: "text.write", args: .object([
+                "text": .string("Hi Anna,\n\nI'm running ten minutes late.\n\nNiklas"), "paste": .bool(true),
+            ])),
+            .appRequest(id: "a62f", op: "text.unwrite", args: .object([
+                "field": .string("f-3"), "text": .string("Hi Anna,\n\nI'm running ten minutes late.\n\nNiklas"),
             ])),
             .facts([
                 MemoryFact(id: "01JBF6Z3Q8M2X4K7N9P0R5T6VW", text: "The user's name is Niklas.", topic: "basics",
@@ -315,6 +325,13 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .appResponse(id: "a53f", outcome: .success(.object([
                 "sandboxed": .bool(true), "places": .array([.string("/Users/you/Library/Containers/com.microsoft.Excel/Data")]),
             ]))),
+            .appResponse(id: "a61f", outcome: .success(.object([
+                "pasted": .bool(true), "app": .string("Mail"), "field": .string("f-3"),
+            ]))),
+            .appResponse(id: "a63f", outcome: .success(.object([
+                "pasted": .bool(false), "why": .string("terminal"), "app": .string("Terminal"),
+            ]))),
+            .appResponse(id: "a62f", outcome: .failure("The text there changed since. Press ⌘Z in Mail to take it back.")),
             .stopHelper(id: "c0ffee12ab34"),
             .undoTask(id: "f2f2f2f2f2f2"),
             .stopAll,

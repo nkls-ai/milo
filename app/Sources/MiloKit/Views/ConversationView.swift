@@ -318,7 +318,12 @@ struct EntryRow: View {
                 .frame(width: Layout.gutter, alignment: .trailing)
             switch entry.kind {
             case .user: UserLine(entry: entry)
-            case .milo: MiloLine(text: entry.text, emotion: entry.emotion, streaming: !entry.done)
+            case .milo:
+                if entry.written {
+                    WrittenBlock(text: entry.text)
+                } else {
+                    MiloLine(text: entry.text, emotion: entry.emotion, streaming: !entry.done)
+                }
             case .task:
                 if let openTask {
                     TaskCard(entry: entry, helper: helper, undo: entry.status == .running ? nil : undo,
@@ -380,6 +385,45 @@ struct MiloLine: View {
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+}
+
+/// Text Milo wrote for the user (ADR 0033), as he wrote it, with a button that copies it: it may have gone into
+/// their field, or be waiting here because it couldn't.
+struct WrittenBlock: View {
+    @Environment(\.miloTheme) private var theme
+    let text: String
+    @State private var copied = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(text)
+                .font(.system(size: 13.5))
+                .foregroundStyle(theme.ink)
+                .lineSpacing(2.5)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button(action: copy) {
+                Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
+                    .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(theme.primary)
+            .help("Copies the text, to paste it yourself")
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(theme.card))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(theme.rule))
+        .padding(.leading, 19)  // under Milo's words, past his dot
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Text Milo wrote")
+    }
+
+    private func copy() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        copied = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
     }
 }
 

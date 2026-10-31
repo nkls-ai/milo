@@ -402,13 +402,18 @@ def _quick(p: Parts):
 def _talk(p: Parts) -> None:
     """The live conversation, the two keys that feed it, and barge-in."""
     config, mem, helpers = p.config, p.mem, p.helpers
+    from .services.writing import Writer
+
     p.quick = _quick(p)
+    # After the quick actions: a written text's Undo step joins theirs on p.undo (ADR 0033).
+    writer = Writer(p.bridge.call, p.ui, p.speaker, transcript=p.transcript, undo=p.undo,
+                    quiet=p.attention.user_speaking, language=p.language.get)
     p.live_talk = live_talk = LiveTalk(
         p.live_model, p.speaker, p.ui, p.context, p.clock, p.profile, p.reminders, p.ledger,
         _persona(p.workspace.persona_path), config.chat.conversation_idle_reset_s, helpers, p.transcript,
         eyes=p.eyes, approvals=p.approvals, memory=mem.turns if mem is not None else None,
         backchannel=p.backchannel, routines=p.routines, meetings=p.meetings, undo=p.undo,
-        opener=Opener(AppHands(p.bridge), p.ui, p.clock), language=p.language, quick=p.quick)
+        opener=Opener(AppHands(p.bridge), p.ui, p.clock), language=p.language, quick=p.quick, writer=writer)
     p.attention.attach(turn=lambda: live_talk.busy)
     p.helpers.on_result = live_talk.note
     p.updates.speak = live_talk.speak_update

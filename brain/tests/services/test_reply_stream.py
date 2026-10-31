@@ -224,3 +224,30 @@ def test_the_first_sentence_is_never_held_back():
     assert parser.feed("[happy] Sure") == "Sure"
     assert parser.feed(", one sec. Th") == ", one sec. "
     assert parser.feed("ere.") == "There."
+
+
+EMAIL = "Hi Anna,\n\nI'm running ten minutes late. <3\n  See you [soon].\n\nNiklas"
+
+
+@pytest.mark.parametrize("head, tail", every_split(f"[happy] <write>{EMAIL}</write>"))
+def test_a_write_tag_keeps_its_lines_and_is_never_spoken(head, tail):
+    parser, out = stream(head, tail)
+    assert parser.writes == [EMAIL], "line breaks, blank lines, indents, a < and brackets all stay"
+    assert "".join(out) == ""
+    assert parser.acted, "writing does something: a trailing question is dropped"
+
+
+def test_a_write_tag_with_attributes_is_still_a_write():
+    parser, out = stream('[happy] <write what="email" to="Anna">\r\nHi Anna,\r\nlate.\r\n</write>')
+    assert parser.writes == ["Hi Anna,\nlate."]
+    assert "".join(out) == ""
+
+
+def test_an_empty_write_tag_writes_nothing():
+    parser, _ = stream("[happy] <write>  \n </write>")
+    assert parser.writes == []
+
+
+def test_a_space_after_the_write_tag_is_not_an_indent_but_a_line_of_its_own_keeps_it():
+    assert stream("[happy] <write> Hi Anna</write>")[0].writes == ["Hi Anna"]
+    assert stream("[happy] <write>\n    indented\n</write>")[0].writes == ["    indented"]

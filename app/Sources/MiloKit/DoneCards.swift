@@ -130,6 +130,7 @@ public enum DoneCardText {
         case .shortcut: return "Shortcut ran"
         case .music: return "Playing"
         case .opened: return action.app.isEmpty ? "Opened" : "In \(action.app)"
+        case .written: return action.app.isEmpty ? "Ready to copy" : "In \(action.app)"
         case .other: return "Done"
         }
     }
@@ -163,6 +164,7 @@ public enum DoneCardText {
         case .shortcut: "Shortcut ran"
         case .music: "Playing"
         case .opened: "Opened"
+        case .written: action.app.isEmpty ? "Written, ready to copy" : "Written"
         case .other: "Done"
         }
         var said = "\(what): \(action.title), \(line(action, now: now))"
@@ -177,6 +179,7 @@ public enum DoneCardText {
         switch action.kind {
         case .reminder where action.app.isEmpty: "Shows your reminders in the Milo window"
         case .opened: "Shows it"
+        case .written where action.app.isEmpty: "Shows it in the Milo window, to copy"
         default: action.app.isEmpty ? "Opens it" : "Opens it in \(action.app)"
         }
     }
@@ -194,6 +197,8 @@ public enum DonePlace: Equatable, Sendable {
     case page(String)
     /// The app it lives in.
     case app(String)
+    /// The conversation going on in the Milo window: text Milo wrote that waits there to be copied.
+    case conversation
     /// Nowhere to go.
     case none
 
@@ -203,6 +208,7 @@ public enum DonePlace: Equatable, Sendable {
         case .event: return .event(app: action.app.isEmpty ? "Calendar" : action.app, title: action.title,
                                    start: action.when)
         case .todo, .reminder: return .reminder(app: action.app.isEmpty ? "Reminders" : action.app, title: action.title)
+        case .written: return action.app.isEmpty ? .conversation : .app(action.app)
         case .opened:
             if let page = page(action.detail) ?? page(action.title) { return .page(page) }
             return action.app.isEmpty ? .none : .app(action.app)

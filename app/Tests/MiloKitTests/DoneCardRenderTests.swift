@@ -27,6 +27,8 @@ struct DoneCardRenderTests {
         ActionDone(kind: .shortcut, title: "Text Anna I'm late"),
         ActionDone(kind: .music, title: "Lofi beats", detail: "Spotify playlist"),
         ActionDone(kind: .opened, title: "YouTube", detail: "youtube.com", app: "Safari"),
+        ActionDone(kind: .written, title: "Hi Anna, I'm running ten…", app: "Mail", undo: "w1"),
+        ActionDone(kind: .written, title: "Quarter summary for Slack"),
     ]
 
     @Test func renderTheCards() throws {

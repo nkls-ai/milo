@@ -1,11 +1,13 @@
 import Foundation
 
 /// Something small Milo just did for the user, from the brain's `action_done` event: a calendar event, a to-do, a
-/// reminder, a note, a timer, a draft, a shortcut, music or a page he opened. The overlay shows it as a card that
-/// comes out of Milo (`DoneCards`).
+/// reminder, a note, a timer, a draft, a shortcut, music, a page he opened or text he wrote for the user. The overlay
+/// shows it as a card that comes out of Milo (`DoneCards`).
 public struct ActionDone: Equatable, Sendable, Decodable {
     public enum Kind: String, Sendable, Decodable, CaseIterable {
         case event, todo, reminder, note, timer, draft, shortcut, music, opened
+        /// Text Milo wrote (`<write>`, ADR 0033): pasted into `app`, or, with no app, waiting in his window to copy.
+        case written
         /// A kind a newer brain invents: a plain card with a check.
         case other
     }
