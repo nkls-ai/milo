@@ -53,9 +53,16 @@ class TagPolicy:
     @property
     def outside(self) -> bool:
         """The conversation has read outside text: every tag that takes effect at once waits for a yes. An <open> of
-        an address or a file the user's words didn't name, an act tag (as a careful action), <remember> and
-        <reminder>. <write> goes in only when the user's own words asked for writing (Writer decides)."""
+        a file, <remember> and <reminder> always; the ones that can be closed or undone as `ask_undoable` says."""
         return self.tainted or self.now or self.saw_screen
+
+    @property
+    def ask_undoable(self) -> bool:
+        """An <open> of an address the user's words didn't name, an act tag (as a careful action) and <write> (it
+        goes in only when the user's own words asked for writing; Writer decides). Each can be closed or undone, so
+        in auto mode at the Mac what the user asked for just happens, even after outside text (ADR 0022, 0028):
+        sending, deleting for good and paying still ask (Approvals)."""
+        return self.outside and not self.at_mac
 
     @property
     def careful(self) -> bool:

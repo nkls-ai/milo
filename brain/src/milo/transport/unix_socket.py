@@ -41,6 +41,9 @@ class UnixSocketServer:
         self._on_disconnect = on_disconnect
         self._clients: set[asyncio.StreamWriter] = set()
         self._ids: dict[asyncio.StreamWriter, int] = {}
+        self._observers: set[asyncio.StreamWriter] = set()
+        """Clients that said `{"type": "observe"}` first: a test driver (scripts/drive-milo) that sends commands and
+        watches events. It is never an app: requests skip it and it doesn't count as connected."""
         self._next_id = 0
         self._server: asyncio.Server | None = None
         self.on_client_gone: list[Callable[[int], None]] = []
@@ -48,7 +51,7 @@ class UnixSocketServer:
 
     def connected(self) -> bool:
         """Some app is connected and would see an event."""
-        return any(not w.is_closing() for w in self._clients)
+        return any(not w.is_closing() for w in self._clients if w not in self._observers)
 
     def emit(self, event: Event) -> None:
         """Queue `event` for every app. An app that stops reading gets no more levels once SOFT_LIMIT bytes
@@ -74,7 +77,7 @@ class UnixSocketServer:
     def request(self, event: Event) -> int | None:
         """AppLink: send `event` to the newest connected app only. Its connection id, or None if there is none.
         An older connection is usually an app on its way out (a restart) or a second copy that shouldn't act."""
-        live = [w for w in self._clients if not w.is_closing()]
+        live = [w for w in self._clients if not w.is_closing() and w not in self._observers]
         if not live:
             return None
         writer = max(live, key=lambda w: self._ids[w])
@@ -129,11 +132,15 @@ class UnixSocketServer:
                     continue
                 if not line:
                     break
+                if line.strip() == OBSERVE:
+                    self._observers.add(writer)
+                    continue
                 await self._handle_line(line)
         except ConnectionError:
             pass
         finally:
             self._clients.discard(writer)
+            self._observers.discard(writer)
             id = self._ids.pop(writer, None)
             writer.close()
             if self._server is not None and id is not None:
@@ -162,6 +169,10 @@ class UnixSocketServer:
             await self._on_command(command)
         except Exception:
             log.exception("handling %s failed", command.type)
+
+
+OBSERVE = b'{"type": "observe"}'
+"""The transport's own handshake for a test driver, not a protocol command (see `_observers`)."""
 
 
 def _encode(event: Event) -> bytes:

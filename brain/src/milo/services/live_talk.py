@@ -113,6 +113,9 @@ class LiveTalk:
         """Task results entered the running conversation, so outside text can steer every later reply in it."""
         self._request = ""
         """The user's own words in the turn being answered (auto mode reads them, ADR 0022)."""
+        self._recent: list[str] = []
+        """The user's own words in this conversation's last few turns: "open YouTube", then "search for cats" names
+        YouTube for the search."""
         self._via = ""
         """Where the turn came from: "voice" or "typed" at the Mac, "message" from the phone."""
         self._effects = ReplyEffects(ui, profile, reminders, tasks, start_open=self._start_open, approvals=approvals,
@@ -264,6 +267,7 @@ class LiveTalk:
         self._heard_at = self._clock.monotonic()
         await self._settle_interrupt()
         self._request = text
+        self._recent = [*self._recent[-2:], text]
         self._via = "message"
         self._language.hear(text)
         self._notes.extend(data)
@@ -318,6 +322,7 @@ class LiveTalk:
         self._heard_at = self._clock.monotonic()
         await self._settle_interrupt()
         self._request = text
+        self._recent = [*self._recent[-2:], text]
         self._via = via
         self._language.hear(text, language)
         looking = None
@@ -521,6 +526,7 @@ class LiveTalk:
                 self._system, self._last_turn_at, self._started_at = system, None, self._clock.monotonic()
                 self._saw_screen = False
                 self._tainted = False
+                self._recent = self._recent[-1:]  # the turn that started it
                 if self._memory is not None:
                     self._memory.new_conversation()
                 if self._today is not None:
@@ -563,15 +569,16 @@ class LiveTalk:
         """Open what the reply's <open> tags name, while the reply still streams, so the page is up by the time
         Milo has said "Opening YouTube in Chrome". An app always opens: that changes nothing. An address or a file
         opens at once when the user's own words named it ("go on YouTube") or the conversation read no outside
-        text; otherwise outside text may have put it there (a link on a page, in a mail), so it waits for a yes
-        after the reply. Returns those."""
+        text, or in auto mode at the Mac for an address (`TagPolicy.ask_undoable`); otherwise outside text may have
+        put it there (a link on a page, in a mail), so it waits for a yes after the reply. Returns those."""
         if self._opener is None:
             if requests:
                 log.info("ignoring %d <open> tag(s): nothing to open them with", len(requests))
             return []
         held = []
         for request in requests:
-            if (request.url or request.path) and rule.outside and not named_by(request, self._request):
+            ask = rule.outside if request.path else rule.ask_undoable  # a file from a mail could be a program
+            if (request.url or request.path) and ask and not named_by(request, " ".join(self._recent)):
                 held.append(request)
                 continue
             self._start_open(request)
@@ -583,7 +590,7 @@ class LiveTalk:
         if self._quick is None:
             log.info("ignoring %d act tag(s): quick actions are off", len(acts))
             return
-        self._quick.start(acts, outside=rule.outside, via=self._via)
+        self._quick.start(acts, outside=rule.ask_undoable, via=self._via)
 
     def _write_now(self, texts: Sequence[str], rule: TagPolicy) -> None:
         """Paste what <write> wrote the moment its tag closes (ADR 0033). After outside text it goes in only when the
@@ -591,7 +598,7 @@ class LiveTalk:
         if self._writer is None:
             log.info("ignoring %d <write> tag(s): nothing to paste them with", len(texts))
             return
-        self._writer.start(texts, outside=rule.outside, request=self._request,
+        self._writer.start(texts, outside=rule.ask_undoable, request=self._request,
                            via=self._via)
 
     def _start_open(self, request: OpenRequest) -> None:

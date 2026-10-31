@@ -333,6 +333,37 @@ def test_a_request_goes_to_the_newest_app_only_and_its_hanging_up_is_reported(so
     asyncio.run(run())
 
 
+def test_an_observer_sends_commands_but_never_gets_the_apps_requests(sock_path):
+    """A test driver (scripts/drive-milo) talks to the running brain while the real app keeps doing the work."""
+    seen: list = []
+
+    async def handle(command):
+        seen.append(command)
+
+    async def run():
+        server = UnixSocketServer(sock_path, handle, lambda: list(GREETING))
+        await server.start()
+        try:
+            app = await Client.connect(sock_path)
+            await app.read_greeting()
+            driver = await Client.connect(sock_path)
+            await driver.read_greeting()
+            driver.writer.write(b'{"type": "observe"}\n{"type": "text", "text": "open YouTube"}\n')
+            await driver.writer.drain()
+            await asyncio.sleep(0.05)
+            assert [c.type for c in seen] == ["text"], "observe is the transport's own, the text goes on"
+            assert server.request(Bubble("for the app")) == 1, "the app, though the driver is newer"
+            assert await app.read() == {"type": "bubble", "text": "for the app"}
+            await app.close()
+            await asyncio.sleep(0.05)
+            assert not server.connected() and server.request(Bubble("nobody")) is None, "an observer isn't an app"
+            await driver.close()
+        finally:
+            await server.close()
+
+    asyncio.run(run())
+
+
 def test_a_peer_whose_user_the_mac_cant_tell_is_refused(monkeypatch):
     # L3: macOS always answers LOCAL_PEERCRED, so no answer there means something is off: refuse.
     import sys

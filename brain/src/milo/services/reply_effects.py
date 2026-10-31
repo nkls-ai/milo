@@ -108,7 +108,7 @@ class ReplyEffects:
         for fact in parser.remembers if remember else ():
             effects.append((remember_question(fact, lang), "", lambda fact=fact: self._remember(fact),
                             rule.outside))
-        for due, what in parser.reminders:  # open reminders go into later system prompts: screen text asks too
+        for due, what in parser.reminders:  # open reminders go into every later <today>: screen text asks too
             effects.append((remind_question(due, what, lang), "",
                             lambda due=due, what=what: self._remind(due, what, parser.spoken),
                             rule.outside))

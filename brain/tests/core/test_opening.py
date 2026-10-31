@@ -56,6 +56,23 @@ def test_after_outside_text_only_the_sites_own_address_counts_as_named():
     assert named_by(OpenRequest(url="https://mail.google.com"), "check my gmail")
 
 
+def test_a_page_the_user_asked_for_opens_with_its_search_or_language_site():
+    """After outside text, the user's own request still opens without a question when every word in the address is
+    theirs: a site's language edition, a search for their words. A word they didn't say still asks."""
+    words = "Can you open a new tab and search for Wikipedia?"
+    assert named_by(OpenRequest(url="https://de.wikipedia.org"), words), "a site's own subdomain"
+    assert named_by(OpenRequest(url="https://www.google.com/search?q=wikipedia&hl=en"), words), "a search for it"
+    assert named_by(OpenRequest(url="https://www.youtube.com/results?search_query=lofi+beats"),
+                    "search YouTube for lofi beats")
+    assert named_by(OpenRequest(url="https://de.wikipedia.org/wiki/Katze"), "zeig mir Katze auf Wikipedia")
+    assert not named_by(OpenRequest(url="https://www.google.com/search?q=wikipedia+hunter2"), words), \
+        "a word the user didn't say could be what Milo read"
+    assert not named_by(OpenRequest(url="https://www.google.com/search?q=cats"), "open YouTube"), \
+        "a search engine counts only when they asked to search"
+    assert not named_by(OpenRequest(url="https://wikipedia.evil.example"), words)
+    assert not named_by(OpenRequest(url="https://sites.google.com/view/evil"), "search google for cats")
+
+
 def test_what_is_opened_reads_as_the_host_the_file_or_the_app():
     assert OpenRequest("Google Chrome", "https://www.youtube.com/watch?v=1").what == "www.youtube.com"
     assert OpenRequest(path="~/Documents/Budget.xlsx").what == "Budget.xlsx"
@@ -87,3 +104,6 @@ def test_a_short_message_keeps_the_conversations_language():
     assert language.hear("okay") == "de", "nothing to tell it by: stays German"
     assert language.hear("Okay", reported="eng") == "en", "what the transcriber heard wins"
     assert language.hear("open YouTube in Chrome") == "en"
+    assert language.hear("Can you open a new tab and search for Wikipedia?", reported="deu") == "en", \
+        "clear English words win over a transcriber that heard an accent as German"
+    assert language.hear("Kannst du Chrome öffnen?", reported="eng") == "de"
