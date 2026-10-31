@@ -278,9 +278,31 @@ class Memory:
         return next((e for e in self.episodes.between(start, end) if e.id == id), None)
 
 
+_PAST = re.compile(
+    r"\b(remember|recall|last time|earlier|the other day|ago|yesterday|last (night|week|month|year)|"
+    r"(did|has|have|had)\b[^.?!]{0,40}\b(say|write|send|tell|mention|ask|reply|answer|find|decide|happen)|"
+    r"said|wrote|written|sent|told|mentioned|replied|answered|found|happened|"
+    r"e-?mails?|mails?|inbox|messages?|newsletter|results?|"
+    r"erinner\w*|letzte[nsrm]? mal|neulich|vorhin|gestern|vorgestern|letzte[nsrm]? (woche|monat|jahr)|"
+    r"vor \w+ (tagen|wochen|monaten)|gesagt|geschrieben|geschickt|gesendet|erzählt|erwähnt|geantwortet|"
+    r"gefunden|beschlossen|passiert|meinte|schrieb|sagte|nachricht\w*|posteingang|ergebnis\w*)\b", re.IGNORECASE)
+
+
+def about_the_past(text: str) -> bool:
+    """Whether a turn asks about something from before or from outside: what someone said or wrote, a mail, a
+    result, "remember when", "yesterday". Only such a turn at the Mac recalls outside memories (ADR 0031)."""
+    return bool(_PAST.search(text))
+
+
 class TurnMemory:
     """The live chat's side of memory: a <memory> block in front of each turn, without repeating what the
-    conversation already holds (always-on facts in its system prompt, things recalled earlier in it)."""
+    conversation already holds (always-on facts in its system prompt, things recalled earlier in it).
+
+    At the Mac (voice or typed) a turn recalls outside memories (episodes of looks, task results, meetings) only
+    when it asks about the past (`about_the_past`): small talk then can't pull other people's words into the
+    conversation, so it stays trusted and its helpers aren't careful. A turn that does ask, and every turn from
+    the phone, gets them as data and the conversation counts as outside, as before (ADR 0010, 0031).
+    """
 
     rules = MEMORY_RULES
 
@@ -294,8 +316,10 @@ class TurnMemory:
         self._seen = {f.id for f in self.memory.facts.current() if f.always_on}
         self.outside = False
 
-    async def before_turn(self, text: str, app: str | None, *, outside: bool = False) -> Recalled:
-        context = TurnContext(self.memory.now(), app, frozenset(self._seen))
+    async def before_turn(self, text: str, app: str | None, *, outside: bool = False,
+                          at_mac: bool = False) -> Recalled:
+        context = TurnContext(self.memory.now(), app, frozenset(self._seen),
+                              include_untrusted=not at_mac or about_the_past(text))
         recall = await self.memory.recall(text, context)
         self._seen |= recall.ids
         self.outside = self.outside or outside or not recall.trusted

@@ -18,15 +18,25 @@ LATE_S = 0.05
 @pytest.fixture(autouse=True)
 def quick(monkeypatch):
     monkeypatch.setattr(backchannel, "LATE_S", LATE_S)
-    monkeypatch.setattr(backchannel, "SOON_S", 0.0)
+    monkeypatch.setattr(backchannel, "QUEUE_S", 0.0)
 
 
 def stack(model: FakeLiveModel, voice: FakeVoice | None = None, enabled: bool = True) -> tuple[Stack, Backchannel]:
+    """A conversation that has had its first turn already: the first turn never gets a backchannel."""
+    model.script.appendleft(["[happy] Yes?"])
     s = Stack(model=model, voice=voice or FakeVoice())
     chan = Backchannel(s.speaker, enabled=enabled)
     chan.warm()
-    s.voice.spoken.clear()
     s.live_talk._backchannel = chan
+    gate, model.gate = model.gate, None
+
+    async def first():
+        await s.live_talk.start("are you there")
+
+    asyncio.run(first())
+    model.gate = gate
+    s.voice.spoken.clear()
+    s.output.streams.clear()
     return s, chan
 
 
@@ -49,7 +59,7 @@ def test_a_late_reply_starts_with_one_backchannel_on_the_same_stream():
 
 
 def test_a_quick_reply_has_none_and_they_never_repeat_back_to_back():
-    s, chan = stack(FakeLiveModel(["[happy] Sure."], ["[happy] Fine."], ["[happy] Ok."]))
+    s, chan = stack(FakeLiveModel(["[happy] Sure."], ["[happy", "] Fine."], ["[happy] Ok."]))
     gate = asyncio.Event()
 
     async def run():
@@ -67,7 +77,7 @@ def test_a_quick_reply_has_none_and_they_never_repeat_back_to_back():
 
 def test_one_per_cooldown_and_the_next_one_is_a_different_clip(monkeypatch):
     monkeypatch.setattr(backchannel, "COOLDOWN_S", 0.0)
-    s, chan = stack(FakeLiveModel(["[happy] One."], ["[happy] Two."]))
+    s, chan = stack(FakeLiveModel(["[happy", "] One."], ["[happy", "] Two."]))
     picked = []
 
     async def run():
@@ -85,7 +95,7 @@ def test_one_per_cooldown_and_the_next_one_is_a_different_clip(monkeypatch):
 
 
 def test_a_cooldown_keeps_the_second_late_reply_quiet():
-    s, chan = stack(FakeLiveModel(["[happy] One."], ["[happy] Two."]))
+    s, chan = stack(FakeLiveModel(["[happy", "] One."], ["[happy", "] Two."]))
 
     async def run():
         for text in ("one", "two"):
@@ -164,7 +174,8 @@ def test_with_the_voice_off_there_is_no_hm_either():
     assert chan.played == 0 and s.voice.spoken == []
 
 
-def test_a_first_piece_still_synthesizing_gets_a_backchannel_ahead_of_it():
+def test_no_backchannel_once_the_first_text_is_in_even_if_the_voice_is_slow():
+    """The misfire: "Hm." landing a moment before the answer, because text was in but its audio wasn't yet."""
     class SlowVoice(FakeVoice):
         def synthesize(self, text):
             if text not in CLIPS:
@@ -178,13 +189,67 @@ def test_a_first_piece_still_synthesizing_gets_a_backchannel_ahead_of_it():
         chan.warm()
 
         async def run():
-            chan.arm()
+            chan.arm("what time is it")
             u = chan.utterance(Emotion.HAPPY)
             u.add("Sure, it is nine.")
             chan.release()  # the text is all in; the first piece is still synthesizing
             assert await u.finish() is True
 
         asyncio.run(run())
-    assert chan.played == 1
-    assert output.fed[0] == len(chan._clips[CLIPS[0]]), "the clip went out first"
+    assert chan.played == 0
     assert len(output.streams) == 1
+
+
+def test_text_arriving_while_the_clip_is_queued_cancels_it(monkeypatch):
+    monkeypatch.setattr(backchannel, "QUEUE_S", LATE_S * 4)
+    gate = asyncio.Event()
+    s, chan = stack(FakeLiveModel(["[happy", "] Sure, it is nine."], gate=gate))
+
+    async def run():
+        turn = s.live_talk.start("what time is it")
+        await asyncio.sleep(LATE_S * 2)  # past the deadline, the clip waits in the queue
+        gate.set()
+        await turn
+
+    asyncio.run(run())
+    assert chan.played == 0 and s.voice.spoken == ["Sure, it is nine."]
+
+
+def test_never_on_a_conversations_first_turn():
+    gate = asyncio.Event()
+    s = Stack(model=FakeLiveModel(["[happy", "] Sure, it is nine."], gate=gate))
+    chan = Backchannel(s.speaker)
+    chan.warm()
+    s.live_talk._backchannel = chan
+
+    async def run():
+        turn = s.live_talk.start("what time is it")
+        await asyncio.sleep(LATE_S * 4)
+        gate.set()
+        await turn
+
+    asyncio.run(run())
+    assert chan.played == 0
+
+
+@pytest.mark.parametrize("greeting", ["Hey, Milo", "hi milo, how are you?", "Guten Morgen!", "Hallo Milo"])
+def test_never_on_a_greeting(greeting):
+    gate = asyncio.Event()
+    s, chan = stack(FakeLiveModel(["[happy", "] Hi!"], gate=gate))
+
+    async def run():
+        turn = s.live_talk.start(greeting)
+        await asyncio.sleep(LATE_S * 4)
+        gate.set()
+        await turn
+
+    asyncio.run(run())
+    assert chan.played == 0
+
+
+def test_what_a_greeting_is():
+    from milo.services.backchannel import is_greeting
+
+    assert is_greeting("Hey, Milo.") and is_greeting("Moin") and is_greeting("good morning milo")
+    assert not is_greeting("Hey Milo, set a timer for ten minutes please")
+    assert not is_greeting("what time is it") and not is_greeting("")

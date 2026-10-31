@@ -24,10 +24,11 @@ from milo.core.ports import Clock, EventSink
 from milo.core.types import Decision, Emotion, HarnessError, Reply, Scope, Step
 
 from . import helpers as board_text
+from .approvals import MONEY_KINDS, Parked
 from .helpers import Helper, HelperStatus, plain_step, reads_outside, short_title
 from .quiet import POLL_S
 from .speaker import Speaker
-from .task_runner import NEEDS_SCREEN, TASK_FAILED, TaskRunner, follow_up_prompt, steer_prompt
+from .task_runner import NEEDS_SCREEN, TASK_FAILED, TaskRunner, answered_prompt, follow_up_prompt, steer_prompt
 from .transcript import Transcript, unrecorded
 from .updates import Milestones, Updates
 
@@ -40,6 +41,13 @@ COALESCE_S = 0.25
 """Step changes are sent to the app at most this often; status changes go at once."""
 KEEP = 30
 STOPPED_RESULT = "Stopped."
+SAID_NO = "You said no, so I left it."
+PARK_MARGIN_S = 20.0
+"""A question parks this long before the harness would end the helper's turn, so the worker can still say that it
+waits (ADR 0031)."""
+MAX_TOOL_WAIT_S = 200.0
+"""No question keeps a tool call waiting longer: Codex ends a tool call after 240 s (adapters/harness/codex.py)."""
+_YES = ("yes", "always", "allowed")
 
 # Words that mean working in an app on the screen, for tasks the talker didn't mark either way.
 _SCREEN_WORDS = re.compile(
@@ -253,6 +261,23 @@ class Orchestrator:
         """Whether the helper `id` is still at work on something the user asked for themselves."""
         return any(h.id == id and h.active and h.user_asked for h in self._helpers)
 
+    def question_wait(self, helper: Helper | None) -> float | None:
+        """How long a question from `helper`'s tools may keep its tool call waiting before it parks: until shortly
+        before the harness ends the turn. None: as long as it takes (no helper, or no limit to its turn)."""
+        left = self._runner.turn_left(helper) if helper is not None else None
+        return None if left is None else max(0.0, min(left - PARK_MARGIN_S, MAX_TOOL_WAIT_S))
+
+    def park(self, helper: Helper | None, question: str, answer: asyncio.Future[str], *, grant: bool) -> None:
+        """`helper`'s question outlived its turn: it stays open, and the supervisor goes on after the answer.
+        `grant`: a yes lets the same question from this helper through once in the next turn (Helper.granted)."""
+        if helper is None or not helper.active:
+            answer.cancel()
+            return
+        log.info("helper %d waits for the user's answer", helper.number)
+        helper.waiting, helper.waiting_for, helper.granted = answer, question, ""
+        helper.grantable = grant
+        self._changed(now=True)
+
     def answered(self, helper: Helper | None) -> None:
         if helper is None:
             return
@@ -318,6 +343,7 @@ class Orchestrator:
                 self._attempts[helper.id] = attempt
                 try:
                     reply = await attempt
+                    helper.granted = ""  # only the turn right after the yes
                 except asyncio.CancelledError:
                     if asyncio.current_task().cancelling() or not self._pending.get(helper.id):
                         raise  # stopped
@@ -331,6 +357,18 @@ class Orchestrator:
                     continue
                 if self._pending.get(helper.id):
                     prompt, session = self._continue(helper)  # changed just as the turn ended
+                    continue
+                if helper.waiting is not None:  # its turn ended on a question the user hasn't answered yet
+                    question, answer = helper.waiting_for, await helper.waiting
+                    helper.waiting, helper.waiting_for = None, ""
+                    self.answered(helper)
+                    if answer not in _YES:
+                        self._finish(helper, HelperStatus.STOPPED, SAID_NO)
+                        return
+                    log.info("helper %d goes on after the user's yes", helper.number)
+                    helper.granted = question if helper.grantable else ""
+                    prompt, session = (answered_prompt(question), helper.session_id) if helper.session_id else \
+                        (f"{self._runner.first_prompt(helper)}\n\n{answered_prompt(question)}", None)
                     continue
                 if reply.say.strip() == NEEDS_SCREEN and not helper.screen and self._runner.has_screen:
                     log.info("helper %d needs the screen after all, queueing it for the screen", helper.number)
@@ -350,6 +388,9 @@ class Orchestrator:
             log.exception("helper %d crashed", helper.number)
             self._failed(helper)
         finally:
+            if helper.waiting is not None and not helper.waiting.done():
+                helper.waiting.cancel()  # takes the question away
+            helper.waiting = None
             self._attempts.pop(helper.id, None)
             self._pending.pop(helper.id, None)
             self._supervisors.pop(helper.id, None)
@@ -482,13 +523,22 @@ class HelperQuestions:
 
     async def confirm(self, summary: str, *, detail: str = "", scope: Scope | None = None, undo: bool = False,
                       money: bool = False) -> bool:
+        """Raises Parked when the question outlives the helper's turn (ADR 0031)."""
         if undo and not money and not self._approvals.asks_undoable():
             return True  # can be undone and nobody asks about it in this mode: the helper doesn't need you
         helper = self._orchestrator().asking(screen=self._screen)
+        if self._granted(helper, summary, money=money):
+            return True
+        parked = False
         try:
-            return await self._approvals.confirm(summary, detail=detail, scope=scope, undo=undo, money=money)
+            return await self._approvals.confirm(summary, detail=detail, scope=scope, undo=undo, money=money,
+                                                 **self._waiting(helper, summary, grant=scope is None and not money))
+        except Parked:
+            parked = True
+            raise
         finally:
-            self._orchestrator().answered(helper)
+            if not parked:
+                self._orchestrator().answered(helper)
 
     async def approve(self, kind: str, summary: str, *, scope: Scope | None = None) -> Decision:
         """Approvals.approve, careful when the helper that asks is (see Orchestrator.careful). `scope` names the
@@ -500,10 +550,35 @@ class HelperQuestions:
         helper = self._orchestrator().asking(screen=self._screen)
         if scope is not None:
             scope = replace(scope, task=helper.id if helper is not None else "")
+        money = kind in MONEY_KINDS
+        if self._granted(helper, summary, money=money):
+            return Decision(True, self._approvals.policy.level(kind), "yes")
+        decision = None
         try:
-            return await self._approvals.approve(kind, summary, careful=careful, scope=scope)
+            decision = await self._approvals.approve(kind, summary, careful=careful, scope=scope,
+                                                     **self._waiting(helper, summary, grant=scope is None and not money))
+            return decision
         finally:
-            self._orchestrator().answered(helper)
+            if decision is None or decision.answer != "parked":
+                self._orchestrator().answered(helper)
+
+    def _waiting(self, helper: Helper | None, question: str, *, grant: bool) -> dict:
+        """The question may keep the helper's tool call waiting until shortly before its turn ends, then parks."""
+        orchestrator = self._orchestrator()
+        wait_s = orchestrator.question_wait(helper)
+        if wait_s is None:
+            return {}
+        return {"wait_s": wait_s, "parked": lambda answer: orchestrator.park(helper, question, answer, grant=grant)}
+
+    def _granted(self, helper: Helper | None, question: str, *, money: bool) -> bool:
+        """The worker tries again what the user said yes to while it waited: that yes counts, once, for this helper
+        in the turn after it. Never for money: only a new click answers that (ADR 0023)."""
+        if helper is None or money or not helper.granted or helper.granted != question:
+            return False
+        helper.granted = ""
+        self._orchestrator().answered(helper)
+        log.info("helper %d: the user's yes while it waited covers this", helper.number)
+        return True
 
     def __getattr__(self, name: str):
         return getattr(self._approvals, name)

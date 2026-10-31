@@ -1,6 +1,6 @@
 # 23. Stop for what can't be undone, and auto by default
 
-Date: 2026-10-31. Status: accepted. Changes [ADR 9](0009-approvals-and-action-levels.md) and [ADR 22](0022-one-question-per-piece-of-work.md).
+Date: 2026-10-31. Status: accepted. Changes [ADR 9](0009-approvals-and-action-levels.md) and [ADR 22](0022-one-question-per-piece-of-work.md). Changed by [ADR 31](0031-talk-as-naturally-as-dictation.md): no answer no longer means no by default; the question stays open and a parked helper goes on after a yes. Money still only counts a click.
 
 ## Context
 

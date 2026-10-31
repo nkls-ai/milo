@@ -155,6 +155,13 @@ def test_learned_words_join_the_keyterms_up_to_a_cap(tmp_path):
     assert scribe.keyterms == ("Milo",)
 
 
+def test_milo_is_a_keyterm_unless_the_config_says_otherwise():
+    """"Hey, Milo" was heard as "Hey, Manuel": his own name is always worth the keyterm."""
+    from milo.adapters.stt.elevenlabs_scribe import ScribeOptions
+
+    assert ScribeOptions().keyterms == ("Milo",)
+
+
 def test_the_committed_text_says_which_language_it_was(tmp_path):
     # Milo answers in the language of the message (ADR 0028): the session asks Scribe to detect it.
     async def attempt(fake):

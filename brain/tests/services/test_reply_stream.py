@@ -186,3 +186,41 @@ def test_routine_tags_are_collected_and_never_spoken():
                           RoutineRequest("create", "Monday report", "", "2", "every Monday at 9"),
                           RoutineRequest("schedule", "Tidy", "", "", ""),
                           RoutineRequest("rename", "A", to="B")]
+
+
+# ---- a trailing question after something done is dropped
+
+
+def test_a_trailing_question_after_a_done_action_is_not_said():
+    parser, out = stream("[happy] Done, the reminder is set. ", "Anything else I can do?",
+                         " <reminder>2026-11-01 09:00 Call Anna</reminder>")
+    assert parser.spoken == "Done, the reminder is set. "
+    assert "?" not in "".join(out) and parser.reminders
+
+
+@pytest.mark.parametrize("tag", ['<task title="Budget">Make a budget table in Excel.</task>',
+                                 "<remember>The user likes tea.</remember>", '<stop helper="2"/>', "<undo/>"])
+def test_every_action_tag_counts_as_done(tag):
+    parser, _ = stream("[happy] On it. Want me to tell you when it's ready? ", tag)
+    assert parser.spoken.strip() == "On it."
+
+
+def test_a_question_without_an_action_is_said():
+    assert spoken("[neutral] It's nine. Do you need the address too?") == "It's nine. Do you need the address too?"
+
+
+def test_a_question_in_the_middle_is_said_once_more_follows():
+    parser, out = stream("[happy] Done. ", "Funny, right? ", "It took a second. ", "<undo/>")
+    assert parser.spoken == "Done. Funny, right? It took a second. "
+
+
+def test_a_question_alone_is_said_even_with_an_action():
+    """Only a question after something already said can be trailing: a reply that is only a question keeps it."""
+    assert spoken("[thinking] Which file do you mean? <look/>") == "Which file do you mean? "
+
+
+def test_the_first_sentence_is_never_held_back():
+    parser = ReplyParser()
+    assert parser.feed("[happy] Sure") == "Sure"
+    assert parser.feed(", one sec. Th") == ", one sec. "
+    assert parser.feed("ere.") == "There."

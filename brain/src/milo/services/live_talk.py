@@ -48,7 +48,11 @@ You talk out loud. Your reply is spoken while you are still writing it.
 
 - Start every reply with exactly one emotion tag: [neutral], [happy], [excited], [thinking], [concerned], \
 [sad], [sleepy] or [confused].
-- Then speak: one to three short sentences in plain spoken language. No markdown, lists, code, emoji or URLs.
+- Then speak in plain spoken language. No markdown, lists, code, emoji or URLs.
+- Small talk and confirmations are one sentence of at most about 15 words: "Done, it's set for nine." \
+A real question gets at most three short sentences.
+- Don't end with a question unless you can't go on without the answer. No "Anything else?", no "Want me to…?".
+- When the user asks for something, do it now with the tag and say it's happening. Never ask "Shall I look?" first.
 - Each user message starts with [weekday date time, frontmost app, language]. That is context, not something \
 the user said. Reply in exactly that language, every sentence, even when memories, task results, helpers or \
 earlier turns are in another one. Write a task's first sentence and its title in it too. Without a language \
@@ -267,6 +271,8 @@ class LiveTalk:
         self._system: str | None = None
         """The system prompt the running conversation started with. None: start one before the next turn."""
         self._last_turn_at: float | None = None
+        self._started_at: float | None = None
+        """When the running conversation started. One nobody talked to goes stale after `idle_reset_s` too."""
         self._starting = asyncio.Lock()  # warm() at boot and the first turn may race
         self._notes: list[str] = []
         self._earlier: list[str] = []
@@ -519,7 +525,8 @@ class LiveTalk:
         notes, self._notes = self._notes, []
         earlier, self._earlier = self._earlier, []
         if speak and self._backchannel is not None:
-            self._backchannel.arm()
+            self._backchannel.arm(text, first=self._last_turn_at is None or
+                                  self._clock.monotonic() - self._last_turn_at > self._idle_reset_s)
         try:
             await self._ensure_conversation()
             meeting = await self._meeting(text) if tags and not screen else ""
@@ -655,8 +662,10 @@ class LiveTalk:
 
     def _needs_fresh_conversation(self, system: str | None = None) -> bool:
         system = self._system_prompt() if system is None else system
-        idle = self._last_turn_at is not None and self._clock.monotonic() - self._last_turn_at > self._idle_reset_s
-        # A conversation nobody has talked to yet (warmed at boot) is kept unless its prompt went stale.
+        last = self._last_turn_at if self._last_turn_at is not None else self._started_at
+        idle = last is not None and self._clock.monotonic() - last > self._idle_reset_s
+        # A conversation nobody has talked to yet (warmed at boot) is kept unless its prompt changed or it sat
+        # unused past idle_reset_s: by then the model's prompt cache has expired too.
         unused_but_stale = self._last_turn_at is None and system != self._system
         return self._system is None or idle or unused_but_stale
 
@@ -665,7 +674,7 @@ class LiveTalk:
             system = self._system_prompt()
             if self._needs_fresh_conversation(system):
                 await self._model.start(system)
-                self._system, self._last_turn_at = system, None
+                self._system, self._last_turn_at, self._started_at = system, None, self._clock.monotonic()
                 self._saw_screen = False
                 self._tainted = False
                 if self._memory is not None:
@@ -708,7 +717,8 @@ class LiveTalk:
             if self._memory is not None:
                 self._memory.outside = True  # the reply may quote the screen
             return Recalled("", True)
-        return await self._memory.before_turn(text, self._context.app, outside=outside)
+        return await self._memory.before_turn(text, self._context.app, outside=outside,
+                                              at_mac=self._via in ("voice", "typed"))
 
     def _open_now(self, requests: Sequence[OpenRequest], *, screen: bool) -> list[OpenRequest]:
         """Open what the reply's <open> tags name, while the reply still streams, so the page is up by the time

@@ -30,6 +30,9 @@ _MAX_BRACKET = 16
 _EMOTIONS = frozenset(e.value for e in Emotion)
 _NOISE = re.compile(r"[*#`]")
 _REMINDER = re.compile(r"^(\d{4}-\d{2}-\d{2})[ T](\d{1,2}:\d{2})\s+(.+)$", re.S)
+_SENTENCE_END = re.compile(r"([.!?…]+)[\"'”’)\]]*(?:\s+|$)")
+_NOT_ACTIONS = ("look", "title")
+"""Tags that don't do anything for the user: a question after them may still be needed."""
 
 
 @dataclass(frozen=True)
@@ -77,6 +80,11 @@ class ReplyParser:
     `<look>what for</look>`) to see the screen. feed() returns only text
     that is safe to speak: a tag is never spoken, even when it arrives split across deltas, because text
     that could still become one is held back until it can't.
+
+    The first sentence goes out as it comes. After it, a sentence is released once it ends, and a question only
+    once something follows it: a reply that did something (any tag but <look> and <title>) doesn't end on a
+    question ("Done, it's set. Anything else?" says "Done, it's set."). The model is told the same; this catches
+    the rest. A streaming voice sends whole sentences anyway, so holding one until it ends costs no time.
     """
 
     def __init__(self):
@@ -105,6 +113,10 @@ class ReplyParser:
         """Set when the model asked to see the screen: what it wants to look at, often ""."""
         self.spoken = ""
         """Everything feed() and finish() returned so far."""
+        self.acted = False
+        """The reply set a tag that does something (everything but <look> and <title>)."""
+        self._held = ""
+        """Speech after the first sentence that isn't released yet: an unfinished sentence, or a question."""
         self._buf = ""
         self._tag: str | None = None
         self._tag_text = ""
@@ -122,14 +134,30 @@ class ReplyParser:
             self._tag, self._tag_text = None, ""
         if self.emotion is None:
             self.emotion = Emotion.NEUTRAL
-        return self._emit(out)
+        return self._emit(out, final=True)
 
-    def _emit(self, text: str) -> str:
+    def _emit(self, text: str, *, final: bool = False) -> str:
         text = _NOISE.sub("", text)
-        if not self.spoken:
+        if not self.spoken and not self._held:
             text = text.lstrip()
-        self.spoken += text
-        return text
+        pending, self._held, out = self._held + text, "", ""
+        if not _SENTENCE_END.search(self.spoken):  # the first sentence isn't held back
+            first = _SENTENCE_END.search(pending)
+            if first is None:
+                self.spoken += pending
+                return pending
+            out, pending = pending[:first.end()], pending[first.end():]
+        cut = max((m.end() for m in _SENTENCE_END.finditer(pending) if "?" not in m.group(1)), default=0)
+        cut += len(pending[cut:]) - len(pending[cut:].lstrip())  # spaces before what is held go out now
+        out, self._held = out + pending[:cut], pending[cut:]
+        if final:
+            if self.acted and self._held.rstrip().endswith("?"):
+                log.info("not saying a trailing question after the reply did something: %s", private(self._held))
+            else:
+                out += self._held
+            self._held = ""
+        self.spoken += out
+        return out
 
     def _drain(self, *, final: bool) -> str:
         out: list[str] = []
@@ -235,6 +263,7 @@ class ReplyParser:
 
     def _collect(self, tag: str, content: str) -> None:
         attrs, self._attrs = self._attrs, {}
+        self.acted = self.acted or tag not in _NOT_ACTIONS
         if tag in ACTS:  # a note's or a draft's text keeps its lines
             lines = [" ".join(line.split()) for line in content.strip().splitlines()]
             self.acts.append(ActRequest(tag, attrs, "\n".join(lines).strip()))

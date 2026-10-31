@@ -11,7 +11,7 @@ from milo.core.events import Confirm, ConfirmDone
 from milo.core.logtext import private
 from milo.core.ports import QuestionRelay, Relayed
 from milo.core.registry import ConfigError
-from milo.core.types import ActionLevel, Decision, Emotion
+from milo.core.types import ActionLevel, Decision, Emotion, HandsError
 
 from .permits import Permits, Scope
 from .speaker import Speaker
@@ -20,9 +20,24 @@ from .ui_state import UiState
 
 log = logging.getLogger("milo.approvals")
 
-DEFAULT_TIMEOUT_S = 60.0
+DEFAULT_TIMEOUT_S = 0.0
+"""0: a question at the Mac waits until it is answered (ADR 0031). A number: after that long no answer means no."""
+REASK_S = 20.0
+"""An unanswered question is said once more after this long."""
 NO_ANSWER = "No answer, so I left it."
 NO_ANSWER_DE = "Keine Antwort, also habe ich es gelassen."
+PARKED = ("The user hasn't answered yet; the question stays open for them. Don't do it another way: end your turn "
+          "now and say in one short sentence that you're waiting for their answer. If they say yes, you'll be told "
+          "to go on.")
+"""What the worker hears when its question outlasts its turn (Parked)."""
+
+
+class Parked(HandsError):
+    """The question outlived the asker's turn: it stays open, and the asker hears the answer later (ADR 0031)."""
+
+    def __init__(self):
+        super().__init__(PARKED)
+
 ALLOWED = ("yes", "always", "allowed")
 """Answers that let the action go ahead: "allowed" is work the user allowed before, so nobody was asked."""
 REMOTE = "message"
@@ -111,6 +126,16 @@ def yes_or_no(text: str) -> bool | None:
 
 
 
+Parker = Callable[[asyncio.Future[str]], None]
+POLL_S = 0.1
+
+
+def _yes(answer: str) -> bool:
+    if answer == "parked":
+        raise Parked()
+    return answer in ALLOWED
+
+
 QUESTION_MAX = 240
 """The longest question the bubble shows whole."""
 BUBBLE_LINES = 8
@@ -154,8 +179,15 @@ class Approvals:
     is busy talking (`quiet()`). It is answered by a click (`answer`), or by a short spoken or typed
     "yes"/"no" (`answer_text`, called by LiveTalk before it starts a turn) as long as the question is
     still the last thing Milo said: once the bubble shows anything else (a reply, a task result, a
-    nudge), a bare "yes" could mean that, so only the buttons count. No answer within `timeout_s` means no. One question at a time;
-    later ones wait their turn.
+    nudge), a bare "yes" could mean that, so only the buttons count. One question at a time; later ones wait their
+    turn.
+
+    An unanswered question stays open, in the bubble and on Today, and is said once more after `reask_s` (ADR 0031).
+    A caller with a deadline of its own (a helper whose turn the harness ends) passes `wait_s` and `parked`: when
+    the time is up the question stays open, the caller gets "parked" at once, and `parked` gets a future for the
+    answer still to come; cancelling it takes the question away. `timeout_s` > 0 brings back
+    the old rule (no answer in that time means no), and a question only the phone may answer waits as long as the
+    relay says.
 
     `relays` pass questions on, like to the owner's phone when they are away (messages.py). A relayed
     question waits as long as the relay asks; one the relay takes `only` can't be answered at the Mac at
@@ -175,13 +207,15 @@ class Approvals:
     def __init__(self, ui: UiState, speaker: Speaker, policy: ActionPolicy | None = None, *,
                  timeout_s: float = DEFAULT_TIMEOUT_S, speak: bool = True, quiet: Callable[[], bool] = lambda: False,
                  transcript: Transcript | None = None, permits: Permits | None = None,
-                 language: Callable[[], str] = lambda: ""):
+                 language: Callable[[], str] = lambda: "", reask_s: float = REASK_S):
         self._ui = ui
         self._language = language
         """The code of the language the user last spoke in: Milo's own lines here follow it (German or English)."""
         self._speaker = speaker
         self.policy = policy or ActionPolicy()
         self._timeout_s = timeout_s
+        self._reask_s = reask_s
+        self._expired: set[asyncio.Task] = set()
         self._speak = speak
         self._quiet = quiet
         self._transcript = transcript or unrecorded()
@@ -220,10 +254,11 @@ class Approvals:
         `trash` stricter than a change."""
         return self.permits.ask == "step" or self.policy.level("trash") in (ActionLevel.ASK_FIRST, ActionLevel.NEVER)
 
-    async def approve(self, kind: str, summary: str, *, careful: bool = False,
-                      scope: Scope | None = None) -> Decision:
+    async def approve(self, kind: str, summary: str, *, careful: bool = False, scope: Scope | None = None,
+                      wait_s: float | None = None, parked: Parker | None = None) -> Decision:
         """Apply the level for `kind`, asking `summary` if asks() says so. `scope`: the app the action works in,
-        which only a careful helper's `change` uses: an ask_first kind (send, delete, buy...) asks every time."""
+        which only a careful helper's `change` uses: an ask_first kind (send, delete, buy...) asks every time.
+        `wait_s` and `parked`: see the class docstring; the answer is then "parked"."""
         level = self.policy.level(kind)
         if level is ActionLevel.NEVER:
             log.info("refused a %s action", kind)
@@ -231,15 +266,17 @@ class Approvals:
         if not self.asks(kind, careful=careful):
             return Decision(True, level, "auto")
         answer = await self._ask(summary, scope=scope if level is ActionLevel.CHANGE else None,
-                                 money=kind in MONEY_KINDS)
+                                 money=kind in MONEY_KINDS, wait_s=wait_s, parked=parked)
         return Decision(answer in ALLOWED, level, answer)
 
     async def confirm(self, summary: str, *, detail: str = "", speak: bool = True, scope: Scope | None = None,
-                      undo: bool = False, money: bool = False) -> bool:
+                      undo: bool = False, money: bool = False, wait_s: float | None = None,
+                      parked: Parker | None = None) -> bool:
         """Confirmer: ask, unless `scope` is work the user already allowed. `detail` shows under the question in
         the Milo window, e.g. the whole task. speak=False only shows it, for a question asked while the user is in
         a call. `undo`: the action can be undone, so only "Every step" mode asks. `money`: it buys or pays, so it
-        asks every time and only a click on Yes counts."""
+        asks every time and only a click on Yes counts. `wait_s` and `parked`: see the class docstring; a question
+        that parks raises Parked."""
         if undo and not money:
             # Screen actions follow the classifier, but a stricter `trash` level in config.toml still counts.
             level = self.policy.level("trash")
@@ -247,11 +284,12 @@ class Approvals:
                 log.info("refused moving something to the Trash ([approvals.levels] trash)")
                 return False
             if level is ActionLevel.ASK_FIRST:
-                return await self._ask(summary, detail, speak) in ALLOWED
+                return _yes(await self._ask(summary, detail, speak, wait_s=wait_s, parked=parked))
             if not self.asks_undoable():
                 log.info("can be undone, so not asking: %s", private(summary))
                 return True
-        return await self._ask(summary, detail, speak, scope=None if money else scope, money=money) in ALLOWED
+        return _yes(await self._ask(summary, detail, speak, scope=None if money else scope, money=money,
+                                    wait_s=wait_s, parked=parked))
 
     async def choose(self, question: str, choices: Sequence[tuple[str, str]], *, speak: bool = True) -> str:
         """Ask with buttons of its own, (id, label) each, instead of Yes and No. Returns the id clicked; "yes" or
@@ -311,12 +349,42 @@ class Approvals:
         return bool(shown) and question.startswith(shown)
 
     async def _ask(self, question: str, detail: str = "", speak: bool = True, *, scope: Scope | None = None,
-                   money: bool = False, choices: tuple[tuple[str, str], ...] = ()) -> str:
-        """Returns "yes", "always", "no", "timeout", "allowed" when `scope` was allowed before, or the id of one of
-        `choices`. A `money` question has no scope, and while the owner is away it is "no" without asking. A
-        question with `choices` shows only those buttons, so it takes no scope (no Allow always) and no money."""
+                   money: bool = False, choices: tuple[tuple[str, str], ...] = (), wait_s: float | None = None,
+                   parked: Parker | None = None) -> str:
+        """Returns "yes", "always", "no", "timeout", "allowed" when `scope` was allowed before, "parked" (see the
+        class docstring), or the id of one of `choices`. A `money` question has no scope, and while the owner is away
+        it is "no" without asking. A question with `choices` shows only those buttons, so it takes no scope (no Allow
+        always) and no money."""
         if choices:
             scope, money = None, False
+        if self._timeout_s > 0:
+            wait_s, parked = None, None  # the old rule: no answer in `timeout_s` means no
+        flow = asyncio.ensure_future(self._question(question, detail, speak, scope=scope, money=money,
+                                                    choices=choices))
+        try:
+            await asyncio.wait({flow}, timeout=wait_s)
+        except asyncio.CancelledError:
+            flow.cancel()
+            raise
+        if flow.done():
+            return flow.result()
+        if parked is None:
+            self._expired.add(flow)
+            flow.cancel()
+            await asyncio.wait({flow})
+            self._expired.discard(flow)
+            return "timeout"
+        log.info("the asker can't wait longer; the question stays open: %s", private(question))
+        answer: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+        flow.add_done_callback(lambda f: answer.done() or answer.set_result(
+            "no" if f.cancelled() or f.exception() is not None else f.result()))
+        answer.add_done_callback(lambda a: flow.cancel() if a.cancelled() else None)
+        parked(answer)
+        return "parked"
+
+    async def _question(self, question: str, detail: str, speak: bool, *, scope: Scope | None, money: bool,
+                        choices: tuple[tuple[str, str], ...]) -> str:
+        """Show and say one question once it is its turn, and wait for its answer."""
         async with self._one_at_a_time:
             # Checked in the lock: the yes to a question waiting before this one may cover it.
             covered = self.permits.covers(scope) if scope is not None else ""
@@ -340,7 +408,9 @@ class Approvals:
             if not money:
                 relayed = self._relay(id, question, detail)
             self._remote_only = any(r.only for r in relayed)
-            timeout_s = max([self._timeout_s, *(r.wait_s for r in relayed)])
+            waits = [r.wait_s for r in relayed]
+            timeout_s = (max(waits) if self._remote_only and waits else
+                         max([self._timeout_s, *waits]) if self._timeout_s > 0 else None)
             question, detail = fit_bubble(question, detail, self._language())
             text = f"{question}\n\n{detail}" if detail else question
             if self._remote_only:
@@ -354,8 +424,16 @@ class Approvals:
                 self._speaker.say(question, Emotion.THINKING, speak=speak and self._speak and not self._quiet())
             answer = "no"
             try:
+                if not self._remote_only and speak and self._speak:
+                    await self._ask_again(future, question, timeout_s)
                 answer = await asyncio.wait_for(future, timeout_s)
             except TimeoutError:
+                answer = "timeout"
+                self._transcript.say(NO_ANSWER_DE if self._language() == "de" else NO_ANSWER, Emotion.NEUTRAL)
+            except asyncio.CancelledError:
+                if asyncio.current_task() not in self._expired:
+                    raise
+                self._expired.discard(asyncio.current_task())
                 answer = "timeout"
                 self._transcript.say(NO_ANSWER_DE if self._language() == "de" else NO_ANSWER, Emotion.NEUTRAL)
             finally:
@@ -374,6 +452,17 @@ class Approvals:
             if scope is not None and answer in ("yes", "always"):
                 self.permits.allowed(scope, always=answer == "always")
             return answer
+
+    async def _ask_again(self, future: asyncio.Future[str], question: str, timeout_s: float | None) -> None:
+        """Say an unanswered question once more after `reask_s`, once the user isn't talking and Milo is quiet."""
+        if self._reask_s <= 0 or (timeout_s is not None and timeout_s <= self._reask_s):
+            return
+        await asyncio.wait({future}, timeout=self._reask_s)
+        while not future.done() and (self._quiet() or self._speaker.active):
+            await asyncio.wait({future}, timeout=POLL_S)
+        if not future.done():
+            log.info("no answer yet; asking once more")
+            self._speaker.say(question, Emotion.THINKING)
 
     def _relay(self, id: str, question: str, detail: str, *, money: bool = False) -> list[Relayed]:
         relayed = []

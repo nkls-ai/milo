@@ -190,3 +190,14 @@ def validate(tool: str, args: object) -> tuple[Tool, dict]:
     for name, value in args.items():
         _check(tool, name, value, spec.properties[name])
     return spec, dict(args)
+
+
+OPENERS = frozenset({"cmd+t", "cmd+n", "cmd+shift+n", "cmd+l", "cmd+tab", "cmd+space"})
+"""Combos for the key tool that open a tab, a window or the search field, or move the focus: nothing to put back."""
+_MODIFIERS = {"cmd": "cmd", "command": "cmd", "⌘": "cmd", "shift": "shift", "⇧": "shift"}
+
+
+def only_opens(combo: str) -> bool:
+    """Whether pressing `combo` (the key tool's argument) only opens something, so Undo has nothing to put back."""
+    *mods, key = [p for p in combo.lower().replace("+", " ").split() if p] or [""]
+    return "+".join([*sorted({_MODIFIERS.get(m, m) for m in mods}), key]) in OPENERS

@@ -48,7 +48,7 @@ _COMMIT = object()
 class ScribeOptions:
     key_file: str = ""  # empty: <workspace>/secrets/elevenlabs.key
     languages: tuple[str, ...] = ("de", "en")  # what you speak; helps it tell the languages apart. Empty: any
-    keyterms: tuple[str, ...] = ()  # names it should get right (costs a little more)
+    keyterms: tuple[str, ...] = ("Milo",)  # names it should get right (costs a little more)
     server: str = "wss://api.elevenlabs.io"
 
 

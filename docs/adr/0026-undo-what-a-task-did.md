@@ -1,6 +1,6 @@
 # 26. Undo what a task did
 
-Date: 2026-10-31. Status: accepted. Builds on [ADR 11](0011-helpers-and-the-orchestrator.md), [ADR 12](0012-background-delivery.md) and [ADR 23](0023-stop-for-what-cant-be-undone.md).
+Date: 2026-10-31. Status: accepted. Builds on [ADR 11](0011-helpers-and-the-orchestrator.md), [ADR 12](0012-background-delivery.md) and [ADR 23](0023-stop-for-what-cant-be-undone.md). Changed by [ADR 31](0031-talk-as-naturally-as-dictation.md): a record that only opened windows or tabs, or has only notes, starts no helper.
 
 ## Context
 

@@ -160,8 +160,11 @@ class ConnectionSettings:
 
 @dataclass(frozen=True)
 class ApprovalSettings:
-    timeout_s: float = 60.0
-    """How long Milo waits for a yes. No answer means no."""
+    timeout_s: float = 0.0
+    """0: a question stays open until it is answered, and a helper whose turn would end waits for the answer as
+    "waiting for your answer" (ADR 0031). A number: after that long no answer means no, as before."""
+    reask_s: float = 20.0
+    """An unanswered question is said once more after this long. 0: never."""
     speak: bool = True
     """Say the question aloud, besides showing it."""
     ask: str = "auto"
@@ -175,6 +178,8 @@ class ApprovalSettings:
     def __post_init__(self):
         if self.ask not in ASK:
             raise ConfigError(f"[approvals] ask must be one of {', '.join(ASK)}")
+        if self.timeout_s < 0 or self.reask_s < 0:
+            raise ConfigError("[approvals] timeout_s and reask_s can't be negative")
 
 
 MAX_ROUTINE_RUNS = 50

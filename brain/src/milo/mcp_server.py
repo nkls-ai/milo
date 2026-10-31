@@ -22,7 +22,7 @@ from typing import IO
 from milo.core.hands import INSTRUCTIONS, SERVER_NAME, TOOLS
 
 PROTOCOL_VERSION = "2025-06-18"
-CALL_TIMEOUT_S = 120.0  # a confirm question alone may wait a minute
+CALL_TIMEOUT_S = 3700.0  # a question may wait until shortly before the worker's turn ends: the brain answers itself
 NO_BRAIN = "Milo's brain isn't reachable, so the Mac tools are off."
 
 

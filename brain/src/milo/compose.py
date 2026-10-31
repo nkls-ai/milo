@@ -259,7 +259,8 @@ def _presence(p: Parts) -> None:
     p.permits = Permits(config.approvals.ask, config.approvals.allowed_apps)  # saves once Settings exists
     p.language = language = SpokenLanguage()  # the latest message's language: replies, helpers, questions follow it
     p.approvals = approvals = Approvals(ui, speaker, ActionPolicy(config.approval_levels),
-                                        timeout_s=config.approvals.timeout_s, speak=config.approvals.speak,
+                                        timeout_s=config.approvals.timeout_s, reask_s=config.approvals.reask_s,
+                                        speak=config.approvals.speak,
                                         quiet=attention.in_conversation, transcript=p.transcript,
                                         permits=p.permits, language=language.get)
     attention.attach(question=lambda: approvals.pending)

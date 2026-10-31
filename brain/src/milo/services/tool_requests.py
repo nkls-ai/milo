@@ -11,7 +11,7 @@ from milo.core.wording import question, when
 
 from .access import AccessGate
 from .app_bridge import AppBridge, AppError
-from .approvals import Approvals
+from .approvals import PARKED, Approvals, Parked
 from .memory_requests import MemoryRequests
 from .sharing import NotShareable
 from .undo import Undo
@@ -37,7 +37,7 @@ APPROVE_APPS = {"Notes": AppRef("Notes", "com.apple.Notes"), "Finder": AppRef("F
 # The apps the connection tools script (adapters/connect, `controls`): the only ones `access` checks.
 ACCESS_APPS = {"Mail": AppRef("Mail"), "Notes": AppRef("Notes")}
 REFUSED = {"no": "The user said no.", "timeout": "The user didn't answer, so it wasn't done.",
-           "refused": "Milo isn't allowed to do this."}
+           "refused": "Milo isn't allowed to do this.", "parked": PARKED}
 
 
 class Phone(Protocol):
@@ -142,6 +142,8 @@ class ToolRequests:
                     return await self._remind(request)
                 case str() if op.startswith("memory.") and self._memory is not None:
                     return await self._memory.handle(op, request)
+        except Parked as e:
+            return _error(str(e))
         except (AppError, NotShareable, ChannelError) as e:
             return _error(str(e))
         except KeyError as e:

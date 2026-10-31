@@ -21,6 +21,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from milo.core.events import UndoPoints
+from milo.core.hands import only_opens
 from milo.core.ports import AppHands, Clock, Confirmer, EventSink, UndoShelf
 from milo.core.types import Emotion, HandsError
 
@@ -261,7 +262,9 @@ class Undo:
                 log.warning("undo: could not put a file back: %s", e)
                 failed.append(Path(kept["path"]).name)
         rest = [c for c in record["changes"] if not c["covered"]]
-        helper = self._hand_on(task, record, rest) if rest or record["notes"] else None
+        # Notes alone record how things were, not that they changed: every change Milo saw is in `rest`. Opening a
+        # window or a tab changed nothing that needs putting back. Neither starts a helper (ADR 0026).
+        helper = self._hand_on(task, record, rest) if any(not _only_opens(c) for c in rest) else None
         if helper is None:
             self._set(task, record, "undone" if not failed else "ready")
         parts = []
@@ -274,7 +277,10 @@ class Undo:
         if helper is not None:
             parts.append("A helper is putting back the rest." if restored else
                          f"I'm undoing “{title}”: a helper is putting things back.")
-        await self._tell(" ".join(parts) or f"Undid “{title}”.")
+        if not parts:
+            parts.append(f"Nothing to undo for “{title}”: it only opened windows or tabs. Close them if you don't "
+                         f"need them." if rest else f"Nothing to undo for “{title}”: it didn't change anything.")
+        await self._tell(" ".join(parts))
 
     async def _run_back(self, task: str, record: dict, title: str) -> None:
         """A quick action's steps, newest first. A step done stays done, so trying again goes on where it stopped."""
@@ -437,6 +443,19 @@ _ACTIVE = f"""{snapshots.MARK} name
 with timeout of 20 seconds
 tell application "{snapshots.EXCEL}" to return "document" & tab & (name of active workbook)
 end timeout"""
+
+
+def _only_opens(change: dict) -> bool:
+    """A recorded step that only opened something: an app, a page, a new tab or window."""
+    tool, _, args = str(change.get("detail") or "").partition(" ")
+    if tool in ("open_app", "open_url"):
+        return True
+    if tool != "key":
+        return False
+    try:
+        return only_opens(str(json.loads(args).get("combo") or ""))
+    except (ValueError, AttributeError):
+        return False
 
 
 def _detail(tool: str, args: dict) -> str:

@@ -127,7 +127,7 @@ def test_a_warmed_conversation_is_kept_unless_its_prompt_changed():
 
     async def run():
         await s.live_talk.warm()
-        s.clock.advance(hours=2)
+        s.clock.advance(minutes=5)
         await s.live_talk.start("hi")
         s.profile.remember("Likes jazz")
         s.clock.advance(hours=2)
@@ -135,6 +135,23 @@ def test_a_warmed_conversation_is_kept_unless_its_prompt_changed():
 
     asyncio.run(run())
     assert len(s.model.system_prompts) == 2, "warm, then a restart only after idle"
+
+
+def test_a_conversation_warmed_long_ago_is_warmed_again_while_the_user_speaks():
+    """Warmed at boot at 02:01 and first used at 10:54: 0 of 3303 tokens cached, 1.8 s to the first word. The
+    model's prompt cache lasts minutes, so an unused conversation goes stale like a used one."""
+    s = Stack()
+
+    async def run():
+        await s.live_talk.warm()
+        s.clock.advance(hours=8)
+        s.live_talk.prepare()
+        await settle()
+        assert len(s.model.system_prompts) == 2, "started again before the words are in"
+        await s.live_talk.start("hi")
+
+    asyncio.run(run())
+    assert len(s.model.system_prompts) == 2, "the turn found it ready"
 
 
 def test_persona_edits_apply_on_the_next_conversation():

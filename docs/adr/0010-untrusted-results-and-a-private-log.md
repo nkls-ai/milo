@@ -1,6 +1,6 @@
 # 10. Task results are untrusted data, and the log keeps no words
 
-Date: 2026-10-30. Status: accepted. Fixes two findings from the review of the live talk commit.
+Date: 2026-10-30. Status: accepted. Fixes two findings from the review of the live talk commit. Changed by [ADR 31](0031-talk-as-naturally-as-dictation.md): at the Mac, a turn recalls outside episodes only when it asks about the past or about outside text, so small talk stays trusted.
 
 ## Context
 

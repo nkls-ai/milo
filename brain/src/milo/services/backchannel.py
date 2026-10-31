@@ -1,17 +1,21 @@
 """A short "Hm." when Milo's first word is late, so a slow reply doesn't feel like nobody heard.
 
 The clips are rendered once, at warm-up, in Milo's own voice, so playing one costs nothing. Each reply arms
-a timer (`arm`). If no sound has gone out `LATE_S` after the user's words came in, and the first piece isn't about
-to be ready either, one clip plays on the reply's own stream, ahead of the answer: "Hm. Sure, it's nine."
+a timer (`arm`). Only if none of the model's text has come in `LATE_S` after the reply started does a clip queue
+up, and only if still none comes in the next `QUEUE_S` does it play, on the stream the reply then goes on:
+"Hm. Sure, it's nine." Text that is in already means the answer is close, so a clip would only land just before it
+(it did, 0.1 to 0.3 s ahead, in 7 of the first 11).
 
-Never more than one per turn, never within `COOLDOWN_S` of the last, never the same clip twice in a row,
-and never while Milo is held or someone else is speaking. `[chat] backchannels = false` turns them off.
+Never on a conversation's first turn or a greeting, never more than one per turn, never within `COOLDOWN_S` of the
+last, never the same clip twice in a row, and never while Milo is held or someone else is speaking.
+`[chat] backchannels = false` turns them off.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import re
 
 from milo.core.types import Audio, Emotion
 
@@ -21,9 +25,17 @@ from .speech_audio import shape
 log = logging.getLogger("milo.backchannel")
 
 CLIPS = ("Hm.", "Mm.", "Hmm.", "One sec.")
-LATE_S = 2.0  # from the end of what the user said to Milo's first sound
-SOON_S = 0.7  # the first piece will be ready within this: let it come
+LATE_S = 1.8  # from the start of the reply to a clip queueing up, if no text came
+QUEUE_S = 0.25  # the clip waits this long more; text in the meantime cancels it
 COOLDOWN_S = 30.0
+GREETING_WORDS = 5
+_GREETING = re.compile(r"^\W*(hey|hi|hello|hallo|hallöchen|moin|servus|grüß dich|na|yo|good (morning|afternoon|evening)|"
+                       r"guten (morgen|tag|abend))\b", re.IGNORECASE)
+
+
+def is_greeting(text: str) -> bool:
+    """"Hey, Milo", "Hi Milo, how are you?", "Guten Morgen": a short turn that opens with a greeting."""
+    return bool(_GREETING.match(text)) and len(text.split()) <= GREETING_WORDS
 
 
 class Backchannel:
@@ -53,11 +65,12 @@ class Backchannel:
             except Exception:
                 log.exception("could not render the backchannel %r", text)
 
-    def arm(self) -> None:
-        """A reply started: listen for it being late."""
+    def arm(self, text: str = "", *, first: bool = False) -> None:
+        """A reply to `text` started: listen for it being late. `first`: the conversation's first turn, which
+        never gets a clip (nor does a greeting)."""
         self.disarm()
         self._open, self._filler, self._reply = True, None, None
-        if self.enabled and self._clips:
+        if self.enabled and self._clips and not first and not is_greeting(text):
             self._timer = asyncio.create_task(self._wait())
 
     def disarm(self) -> None:
@@ -77,11 +90,10 @@ class Backchannel:
         return u
 
     def release(self) -> None:
-        """The reply's text is all in. The timer goes on watching its audio; a filler the reply never took
-        (it was silent or failed) finishes on its own."""
+        """The reply's text is all in. A filler the reply never took (it was silent or failed) finishes on its
+        own."""
         self._open = False
-        if self._reply is None:
-            self.disarm()
+        self.disarm()
         u = self._filler
         if u is not None and u is not self._reply and not u.done:
             finishing = asyncio.create_task(u.finish())
@@ -90,23 +102,24 @@ class Backchannel:
 
     async def _wait(self) -> None:
         await asyncio.sleep(LATE_S)
-        speaker = self._speaker
-        now = asyncio.get_running_loop().time()
-        if speaker.held or speaker.silent or (self._last_at is not None and now - self._last_at < COOLDOWN_S):
+        if not self._late():
             return
-        target = self._reply
-        if target is not None:
-            if target.done or target.first_sound_at is not None or target.ready_in() < SOON_S:
-                return
-        elif self._open and not speaker.active:
-            target = self._filler = speaker.utterance(Emotion.THINKING)
-        else:
+        await asyncio.sleep(QUEUE_S)  # queued: text arriving now cancels it
+        if not self._late():
             return
+        target = self._filler = self._speaker.utterance(Emotion.THINKING)
         text = next(t for t in self._order() if t in self._clips)
         if target.interject(text, self._clips[text]):
-            self._last, self._last_at = text, now
+            self._last, self._last_at = text, asyncio.get_running_loop().time()
             self.played += 1
-            log.info("backchannel %r: the reply is late", text)
+            log.info("backchannel %r: no text from the model yet", text)
+
+    def _late(self) -> bool:
+        """Still nothing from the model, and a clip may play now."""
+        speaker = self._speaker
+        now = asyncio.get_running_loop().time()
+        return (self._open and self._reply is None and not speaker.active and not speaker.held and not speaker.silent
+                and (self._last_at is None or now - self._last_at >= COOLDOWN_S))
 
     def _order(self) -> list[str]:
         """The clips, starting after the last one played."""

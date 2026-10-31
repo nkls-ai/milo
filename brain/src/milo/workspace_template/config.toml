@@ -68,8 +68,10 @@ music = true                      # play, pause and skip the music
 files_scope = "~"                 # files outside this folder are never searched or read
 
 [approvals]
-# How long Milo waits for your yes. No answer means no.
-timeout_s = 60
+# A question stays open until you answer it, and is said once more after reask_s. A task waiting for it
+# pauses as "waiting for your answer" and goes on after a yes. timeout_s > 0: no answer in that time means no.
+timeout_s = 0
+reask_s = 20
 speak = true                      # say the question out loud, besides showing it
 # How often Milo asks before he acts (ADR 22, 23): "auto" (what you asked for needs no question), "task" (one
 # Allow covers the rest of that task in that app) or "step" (every step that would ask). In every mode he stops
@@ -131,7 +133,7 @@ cloud_dictation = false           # true sends dictation there too (not with str
 
 [stt.elevenlabs]
 languages = ["de", "en"]          # the languages you speak, so it tells them apart
-keyterms = []                     # names it should get right, like ["Milo"]; costs a little more
+keyterms = ["Milo"]               # names it should get right; costs a little more
 
 [stt.mlx_whisper]
 model = "mlx-community/whisper-large-v3-turbo"
