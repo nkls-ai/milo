@@ -5,8 +5,7 @@ import SwiftUI
 
 /// Milo's cursor as a click-through overlay panel, above everything and on every space. It never touches the
 /// system cursor. `glide` animates the panel along `CursorGlide` 60 times a second while moving and not at all
-/// at rest. Implements `CursorDisplay`, called on the main queue. With a model it wears Milo's colours and
-/// changes with `[ui] character`.
+/// at rest. Implements `CursorDisplay`, called on the main queue. It wears Milo's colours.
 public final class CursorOverlay: CursorDisplay {
     private let panel: NSPanel
     private let hosted: NSHostingView<MiloCursorView>
@@ -15,8 +14,7 @@ public final class CursorOverlay: CursorDisplay {
     private var gesture: MiloCursorView.Gesture = .none { didSet { render() } }
     private var presence = 0.0 { didSet { render() } }
     private var clickTick = 0 { didSet { render() } }
-    private var theme = Theme.for(.milo) { didSet { render() } }
-    private var restyle: AnyCancellable?
+    private let theme = Theme.milo
     private var timer: Timer?
     private var restTimer: Timer?
 
@@ -31,7 +29,6 @@ public final class CursorOverlay: CursorDisplay {
         panel.level = .screenSaver
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         panel.contentView = hosted
-        restyle = model?.$character.removeDuplicates().sink { [weak self] in self?.theme = Theme.for($0) }
     }
 
     public func glide(to point: CGPoint, arrived: @escaping () -> Void) {

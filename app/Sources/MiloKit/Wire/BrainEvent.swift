@@ -20,10 +20,10 @@ public enum BrainEvent: Equatable, Sendable {
     /// Push-to-talk key names: "fn", "right_option", "right_command", "right_control".
     /// `handsFreeMaxSeconds` caps a recording locked on by a double tap; nil keeps the app's default.
     /// `whatsThisKey` is the "What's this?" shortcut, e.g. "ctrl+option+m"; "" turns it off, nil keeps it.
-    /// `character` is nil when missing or unknown, which keeps the current look. `meetingKey` starts or stops
-    /// meeting notes, like `whatsThisKey`.
+    /// `meetingKey` starts or stops meeting notes, like `whatsThisKey`. An older brain's `character` is ignored:
+    /// there is one Milo.
     case uiConfig(dictateKey: String, talkKey: String, handsFreeMaxSeconds: Double? = nil, whatsThisKey: String? = nil,
-                  character: CharacterStyle? = nil, meetingKey: String? = nil)
+                  meetingKey: String? = nil)
     /// The recent conversation for the Milo window, oldest first.
     case history([TranscriptEntry])
     /// A transcript entry was added or changed; replaces the one with the same id.
@@ -105,7 +105,6 @@ extension BrainEvent: Decodable {
         case dictateKey = "dictate_key"
         case talkKey = "talk_key"
         case handsFreeMaxSeconds = "hands_free_max_s"
-        case character
         case helpers, points
         case routines, drafts
         case settings, restart, error
@@ -132,8 +131,6 @@ extension BrainEvent: Decodable {
                              talkKey: try c.decode(String.self, forKey: .talkKey),
                              handsFreeMaxSeconds: try c.decodeIfPresent(Double.self, forKey: .handsFreeMaxSeconds),
                              whatsThisKey: try c.decodeIfPresent(String.self, forKey: .whatsThisKey),
-                             character: try c.decodeIfPresent(String.self, forKey: .character)
-                                .flatMap(CharacterStyle.init(wire:)),
                              meetingKey: try c.decodeIfPresent(String.self, forKey: .meetingKey))
         case "history": self = .history(try c.decode([TranscriptEntry].self, forKey: .entries))
         case "entry": self = .entry(try c.decode(TranscriptEntry.self, forKey: .entry))

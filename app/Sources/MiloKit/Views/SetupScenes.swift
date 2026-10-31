@@ -61,7 +61,7 @@ private struct Actor: View {
     var at: CGPoint
 
     var body: some View {
-        CharacterFigure(for: theme.style, state: state, emotion: emotion, pose: LifePose(gaze: gaze), size: size)
+        CharacterFigure(state: state, emotion: emotion, pose: LifePose(gaze: gaze), size: size)
             .frame(width: size, height: size)
             .position(at)
     }

@@ -54,7 +54,6 @@ public struct SetupView: View {
         .animation(theme.motion.animation(reduced: reduceMotion), value: setup.rows)
         .animation(theme.motion.animation(reduced: reduceMotion), value: setup.stuck)
         .animation(theme.motion.animation(reduced: reduceMotion), value: setup.restartForScreen)
-        .animation(theme.motion.gentle, value: theme)
         .frame(minWidth: 520, idealWidth: 560, minHeight: 600, idealHeight: 820)
     }
 
@@ -67,7 +66,7 @@ public struct SetupView: View {
 
     private var header: some View {
         HStack(spacing: 14) {
-            CharacterFigure(for: theme.style, emotion: setup.needsAttention ? .happy : .excited, size: 74)
+            CharacterFigure(emotion: setup.needsAttention ? .happy : .excited, size: 74)
                 .frame(width: 74, height: 74)
                 .background(Circle().fill(RadialGradient(colors: [theme.glow.opacity(0.45), theme.glow.opacity(0)], center: .center, startRadius: 4, endRadius: 50)).frame(width: 110, height: 110))
             VStack(alignment: .leading, spacing: 5) {

@@ -22,7 +22,7 @@ public final class StatusMenu: NSObject, NSMenuDelegate, NSMenuItemValidation {
     private var visibleItem: NSMenuItem!
     private lazy var knowledge = KnowledgeWindow(controller: controller)
     private var styleMenu: NSMenu!
-    private var restyle: AnyCancellable?
+    private var watching: AnyCancellable?
     private var notesItem: NSMenuItem?
     /// "Auto mode is on" and its switch: shown only while Milo acts without asking (ADR 22).
     private var autoItems: [NSMenuItem] = []
@@ -63,9 +63,8 @@ public final class StatusMenu: NSObject, NSMenuDelegate, NSMenuItemValidation {
         let auto = controller.settingsModel.$report
             .map { $0?["approvals", "ask"]?.value.string == "auto" }
             .removeDuplicates()
-        restyle = controller.model.$character
-            .combineLatest(controller.model.$recording.removeDuplicates(), auto)
-            .sink { [weak self] style, recording, auto in self?.showIcon(style, recording: recording, auto: auto) }
+        watching = controller.model.$recording.removeDuplicates().combineLatest(auto)
+            .sink { [weak self] recording, auto in self?.showIcon(recording: recording, auto: auto) }
         let menu = NSMenu()
         hintItem.isEnabled = false
         menu.addItem(hintItem)
@@ -148,7 +147,7 @@ public final class StatusMenu: NSObject, NSMenuDelegate, NSMenuItemValidation {
         remoteForgetItem.isHidden = remote.state != .paired
     }
 
-    private func showIcon(_ style: CharacterStyle, recording: Bool, auto: Bool) {
+    private func showIcon(recording: Bool, auto: Bool) {
         notesItem?.title = recording ? "Stop taking notes" : "Take meeting notes"
         autoItems.forEach { $0.isHidden = !auto }
         guard let button = statusItem.button else { return }

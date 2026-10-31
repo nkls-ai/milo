@@ -8,8 +8,8 @@ struct WorkingOutlineView: View {
     static let label = String(localized: "Milo is working here",
                               comment: "Tag on the outline of the window Milo is using")
 
-    /// His theme; the outline passes a new one when `[ui] character` changes.
-    var theme = Theme.for(.milo)
+    /// His colours.
+    var theme = Theme.milo
     /// What he does right now, in plain words (`MiloModel.workingStep`); nil shows no caption.
     var caption: String?
     /// The panel has `captionRoom` points below the window: the caption sits on the bottom edge, half outside.

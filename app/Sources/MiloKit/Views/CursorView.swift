@@ -12,8 +12,8 @@ struct MiloCursorView: View {
     var presence: Double
     /// Rises each time a click lands, to retrigger the ripple.
     var clickTick: Int
-    /// The skin he wears; the overlay passes a new one when `[ui] character` changes.
-    var theme = Theme.for(.milo)
+    /// The colours he wears.
+    var theme = Theme.milo
 
     var body: some View {
         ZStack(alignment: .topLeading) {

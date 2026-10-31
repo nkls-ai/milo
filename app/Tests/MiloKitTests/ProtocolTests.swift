@@ -38,7 +38,7 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .status("Mic unavailable: no input device"),
             .partial("Sounds good, sh"),
             .uiConfig(dictateKey: "fn", talkKey: "right_option", handsFreeMaxSeconds: 300, whatsThisKey: "ctrl+option+m",
-                      character: .milo, meetingKey: "ctrl+option+n"),
+                      meetingKey: "ctrl+option+n"),
             .history([
                 TranscriptEntry(id: "5f2a9c1e04b7", date: try day("2026-10-30T09:12:03"), kind: .user,
                                 text: "rename the photos from Friday", via: .voice, conversation: "c-5f2a9c1e04b7"),
@@ -387,17 +387,11 @@ private func entries(_ key: String) throws -> [[String: Any]] {
         #expect(try decoder.decode(BrainEvent.self, from: Data(#"{"type":"emotion","emotion":"smug"}"#.utf8)) == .emotion(.neutral))
     }
 
-    @Test func uiConfigWithAnUnknownCharacterDecodesAsNone() throws {
-        let json = #"{"type":"ui_config","dictate_key":"fn","talk_key":"right_option","character":"unicorn"}"#
-        #expect(try JSONDecoder().decode(BrainEvent.self, from: Data(json.utf8))
-                == .uiConfig(dictateKey: "fn", talkKey: "right_option", character: nil))
-    }
-
-    @Test func aRetiredLookFromAnOldConfigMeansMilo() throws {
-        for name in ["pip", "classic", "dragon", "kit", "glow", "milo"] {
+    @Test func anOlderBrainsCharacterIsIgnored() throws {
+        for name in ["pip", "milo", "unicorn"] {
             let json = #"{"type":"ui_config","dictate_key":"fn","talk_key":"right_option","character":"\#(name)"}"#
             #expect(try JSONDecoder().decode(BrainEvent.self, from: Data(json.utf8))
-                    == .uiConfig(dictateKey: "fn", talkKey: "right_option", character: .milo))
+                    == .uiConfig(dictateKey: "fn", talkKey: "right_option"))
         }
     }
 

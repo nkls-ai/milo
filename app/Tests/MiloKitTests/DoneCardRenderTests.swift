@@ -63,7 +63,7 @@ struct DoneCardRenderTests {
     /// Every kind of card, still, in a column.
     private func renderEvery(name: String, dark: Bool) throws {
         let done = DoneCards(scheduler: ManualScheduler())
-        let theme = Theme.for(.milo)
+        let theme = Theme.milo
         let view = ZStack {
             Wallpaper(dark: dark)
             VStack(spacing: 14) {

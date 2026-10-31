@@ -76,7 +76,7 @@ struct TodayView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 8)
-            CharacterFigure(for: theme.style, emotion: model.question != nil ? .thinking : working.isEmpty ? .happy : .excited,
+            CharacterFigure(emotion: model.question != nil ? .thinking : working.isEmpty ? .happy : .excited,
                             size: 58)
                 .frame(width: 58, height: 58)
                 .background(Circle().fill(RadialGradient(colors: [theme.glow.opacity(0.5), theme.glow.opacity(0)],

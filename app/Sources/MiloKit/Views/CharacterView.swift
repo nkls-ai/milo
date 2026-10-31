@@ -33,7 +33,7 @@ struct CharacterView: View {
     }
 
     var body: some View {
-        CharacterFigure(for: model.character, state: state, emotion: model.emotion, asleep: asleep,
+        CharacterFigure(state: state, emotion: model.emotion, asleep: asleep,
                         connected: model.connected, pose: life.pose, flight: flight,
                         words: Self.words(in: model.partial), asking: model.question != nil,
                         working: model.workingWindow != nil || model.handsActive, noting: noting, size: 120,

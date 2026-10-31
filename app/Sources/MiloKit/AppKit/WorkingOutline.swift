@@ -15,10 +15,10 @@ public final class WorkingOutline {
     private let panel: NSPanel
     private let model: MiloModel
     private var subscription: AnyCancellable?
-    private var restyle: AnyCancellable?
+    private var captioning: AnyCancellable?
     private var timer: Timer?
     private var hosting: NSHostingView<WorkingOutlineView>?
-    private var theme = Theme.for(.milo)
+    private let theme = Theme.milo
     private var caption: String?
     /// The panel reaches below the window for the caption; false where the window goes down to the screen's edge.
     private var below = true
@@ -36,12 +36,11 @@ public final class WorkingOutline {
         hosting.sizingOptions = []
         self.hosting = hosting
         panel.contentView = hosting
-        // Milo's colours and the step he is on, changed only when one of them is.
-        restyle = model.$character.removeDuplicates().combineLatest(model.$workingStep.removeDuplicates())
+        // The step he is on, changed only when it is.
+        captioning = model.$workingStep.removeDuplicates()
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] character, step in
+            .sink { [weak self] step in
                 guard let self else { return }
-                theme = Theme.for(character)
                 caption = step
                 redraw()
             }

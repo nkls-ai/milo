@@ -29,13 +29,12 @@ public struct SettingsView: View {
         }
         .frame(minWidth: 480, idealWidth: 520, maxWidth: .infinity, minHeight: 420, idealHeight: 760, maxHeight: .infinity)
         .background(theme.tint)
-        .animation(theme.motion.gentle, value: theme)
         .animation(theme.motion.animation(reduced: reduceMotion), value: settings.report)
     }
 
     private var waiting: some View {
         VStack(spacing: 12) {
-            CharacterFigure(for: theme.style, state: .thinking, emotion: .thinking, size: 72)
+            CharacterFigure(state: .thinking, emotion: .thinking, size: 72)
                 .frame(width: 72, height: 72)
             Text(model.connected ? "Getting my settings…" : "I'm just waking up…")
                 .font(.system(size: 14, weight: .medium, design: .rounded))

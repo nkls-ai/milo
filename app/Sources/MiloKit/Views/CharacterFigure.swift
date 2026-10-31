@@ -32,9 +32,8 @@ struct FigureInput: Equatable {
 }
 
 /// Draws Milo, the wren. The overlay, the helpers, the windows and the setup scenes all use this:
-/// `CharacterFigure(for: model.character, size: 36)`.
+/// `CharacterFigure(state: model.state, size: 36)`.
 struct CharacterFigure: View {
-    var style: CharacterStyle
     var input: FigureInput
     /// The figure's box in points. He is framed for 120, with his feet near the bottom.
     var size: CGFloat
@@ -43,19 +42,18 @@ struct CharacterFigure: View {
     /// The overlay's live level: the rig follows it directly, without redrawing this view 20 times a second.
     var live: LiveLevel?
 
-    init(for style: CharacterStyle = .milo, state: MiloState = .idle, emotion: Emotion = .neutral, asleep: Bool = false,
+    init(state: MiloState = .idle, emotion: Emotion = .neutral, asleep: Bool = false,
          level: Double = 0, connected: Bool = true, pose: LifePose = LifePose(), flight: Flight = .perched,
          words: Int = 0, asking: Bool = false, working: Bool = false, noting: Bool = false, size: CGFloat = 120,
          time: Double? = nil, live: LiveLevel? = nil) {
-        self.init(for: style, input: FigureInput(state: state, emotion: emotion, asleep: asleep, level: level,
-                                                 connected: connected, pose: pose, flight: flight, words: words,
-                                                 asking: asking, working: working, noting: noting),
+        self.init(input: FigureInput(state: state, emotion: emotion, asleep: asleep, level: level,
+                                     connected: connected, pose: pose, flight: flight, words: words,
+                                     asking: asking, working: working, noting: noting),
                   size: size, time: time)
         self.live = live
     }
 
-    init(for style: CharacterStyle = .milo, input: FigureInput, size: CGFloat = 120, time: Double? = nil) {
-        self.style = style
+    init(input: FigureInput, size: CGFloat = 120, time: Double? = nil) {
         self.input = input
         self.size = size
         self.time = time
