@@ -24,6 +24,8 @@ import Testing
         ("pointing", FigureInput(flight: .pointing(toward: CGVector(dx: -0.97, dy: -0.24)))),
         ("habit", FigureInput(pose: LifePose(habit: .bob))),
         ("turned", FigureInput(pose: LifePose(side: 1))),
+        ("noting", FigureInput(noting: true)),
+        ("noting, talked to", FigureInput(state: .listening, level: 0.5, noting: true)),
     ]
 
     /// The most any channel moves in one 60 fps frame, as a share of its usual range.
@@ -32,6 +34,7 @@ import Testing
         .lidL: 1, .lidR: 1, .lowerL: 1, .lowerR: 1, .eyeL: 0.3, .eyeR: 0.3, .browL: 1.5, .browR: 1.5,
         .browTiltL: 1.5, .browTiltR: 1.5, .beak: 1, .blush: 1, .wingL: 120, .wingR: 120, .openL: 1, .openR: 1,
         .fly: 1, .tail: 60, .tailFan: 1, .scarf: 100, .scarfToss: 1, .scarfUp: 1, .feet: 1, .crest: 2, .crestSway: 60,
+        .pad: 1, .pen: 2.4,
     ]
 
     @Test func everyChangeOfStateBlendsWithoutAPop() {

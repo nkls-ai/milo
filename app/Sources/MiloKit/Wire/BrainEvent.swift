@@ -42,8 +42,9 @@ public enum BrainEvent: Equatable, Sendable {
     case handsSession(Bool)
     /// Where Milo is about to act; nil sends him home.
     case flyTo(ScreenPoint?)
-    /// Milo asks a yes-or-no question before an action; shown with Yes and No until `confirmDone`.
-    case confirm(id: String, question: String)
+    /// Milo asks a yes-or-no question before an action; shown with Yes and No until `confirmDone`. `choices`, when
+    /// there are any, are the buttons instead of Yes and No.
+    case confirm(id: String, question: String, choices: [ConfirmChoice] = [])
     /// The question `id` is over: "yes", "no" or "timeout".
     case confirmDone(id: String, answer: String)
     /// Work only the app may do (EventKit). Answered with `BrainCommand.appResponse` and the same id.
@@ -65,6 +66,12 @@ public enum BrainEvent: Equatable, Sendable {
     case remote(RemoteStatus)
     /// Record meeting `id` into `dir` (two tracks in 30 s chunks), or stop recording it.
     case meetingRecord(id: String, dir: String, on: Bool)
+    /// Where meeting notes are: recording, paused, writing, done, or nothing.
+    case meetingStatus(MeetingStatus)
+    /// Transcript lines of meeting `id`: new ones, or all of them when `reset`.
+    case meetingLines(id: String, lines: [MeetingLine], reset: Bool)
+    /// A finished meeting's notes for its page.
+    case meetingNotes(MeetingNotes)
     /// The window's list: conversations latest first, the one going on ("" for none), and whether older ones exist.
     case conversations([ConversationInfo], current: String, more: Bool)
     /// One conversation the user opened, its entries oldest first.
@@ -92,6 +99,7 @@ extension BrainEvent: Decodable {
         case routines, drafts
         case settings, restart, error
         case conversations, current, more, info, query, results, reminders
+        case choices, lines, reset
     }
 
     public init(from decoder: Decoder) throws {
@@ -131,7 +139,8 @@ extension BrainEvent: Decodable {
         case "hands_session": self = .handsSession(try c.decode(Bool.self, forKey: .on))
         case "fly_to": self = .flyTo(try c.decodeIfPresent(ScreenPoint.self, forKey: .point))
         case "confirm": self = .confirm(id: try c.decode(String.self, forKey: .id),
-                                        question: try c.decode(String.self, forKey: .question))
+                                        question: try c.decode(String.self, forKey: .question),
+                                        choices: try c.decodeIfPresent([ConfirmChoice].self, forKey: .choices) ?? [])
         case "confirm_done": self = .confirmDone(id: try c.decode(String.self, forKey: .id),
                                                  answer: try c.decode(String.self, forKey: .answer))
         case "app_request":
@@ -155,6 +164,12 @@ extension BrainEvent: Decodable {
             self = .meetingRecord(id: try c.decode(String.self, forKey: .id),
                                   dir: try c.decodeIfPresent(String.self, forKey: .dir) ?? "",
                                   on: try c.decode(Bool.self, forKey: .on))
+        case "meeting_status": self = .meetingStatus(try MeetingStatus(from: decoder))
+        case "meeting_lines":
+            self = .meetingLines(id: try c.decode(String.self, forKey: .id),
+                                 lines: try c.decodeIfPresent([MeetingLine].self, forKey: .lines) ?? [],
+                                 reset: try c.decodeIfPresent(Bool.self, forKey: .reset) ?? false)
+        case "meeting_notes": self = .meetingNotes(try MeetingNotes(from: decoder))
         case "conversations":
             self = .conversations(try c.decodeIfPresent([ConversationInfo].self, forKey: .conversations) ?? [],
                                   current: try c.decodeIfPresent(String.self, forKey: .current) ?? "",

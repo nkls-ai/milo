@@ -24,6 +24,13 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
     private var styleMenu: NSMenu!
     private var restyle: AnyCancellable?
     private var notesItem: NSMenuItem?
+    /// While a meeting goes on: what it is, Pause, Open, the note for the chat.
+    private var meetingItems: [NSMenuItem] = []
+    private var meetingTitleItem: NSMenuItem?
+    private var meetingPauseItem: NSMenuItem?
+    private var meetingWatch: AnyCancellable?
+    /// Ticks the time in the menu bar once a second, only while a meeting is noted.
+    private var clock: Timer?
     /// Milo by message: hidden while messages are off.
     private var remoteItems: [NSMenuItem] = []
     private var remoteStatusItem: NSMenuItem!
@@ -54,7 +61,17 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
         add(menu, "What's this?", #selector(whatsThis))
         add(menu, "What Milo knows…", #selector(showKnowledge))
         if controller.meetings != nil {
+            let title = menu.addItem(withTitle: "", action: nil, keyEquivalent: "")
+            title.isEnabled = false
+            meetingTitleItem = title
             notesItem = add(menu, "Take meeting notes", #selector(toggleNotes))
+            meetingPauseItem = add(menu, "Pause notes", #selector(togglePause))
+            let open = add(menu, "Open the meeting", #selector(openMeeting))
+            let consent = add(menu, "Copy a note for the chat", #selector(copyConsent))
+            consent.toolTip = "A line telling the others that Milo takes notes, to paste into the call's chat"
+            meetingItems = [title, meetingPauseItem!, open, consent]
+            meetingWatch = controller.model.meeting.$status.removeDuplicates()
+                .sink { [weak self] in self?.showMeeting($0) }
         }
         muteItem = add(menu, "Pause nudges", #selector(toggleMute))
         muteItem.toolTip = "Milo stops bringing things up by himself. He still answers when you ask."
@@ -118,6 +135,39 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
         }
     }
 
+    /// The meeting in the menu bar: the time next to the red dot while it records, and its items in the menu.
+    private func showMeeting(_ status: MeetingStatus) {
+        meetingItems.forEach { $0.isHidden = !status.live }
+        meetingPauseItem?.title = status.phase == .paused ? "Go on taking notes" : "Pause notes"
+        clock?.invalidate()
+        clock = nil
+        if status.live {
+            let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
+            RunLoop.main.add(timer, forMode: .common)
+            clock = timer
+        }
+        tick()
+    }
+
+    private func tick() {
+        let meeting = controller.model.meeting
+        let status = meeting.status
+        let time = MeetingModel.clock(meeting.elapsed())
+        meetingTitleItem?.title = status.phase == .paused ? "Notes paused at \(time)" : "Taking notes · \(time)"
+        guard let button = statusItem.button else { return }
+        if status.live {
+            statusItem.length = NSStatusItem.variableLength
+            button.imagePosition = .imageLeading
+            button.title = " " + time
+            button.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize - 1, weight: .medium)
+            button.setAccessibilityLabel(status.phase == .paused ? "Milo's notes are paused" : "Milo is taking notes, \(time)")
+        } else {
+            button.title = ""
+            statusItem.length = NSStatusItem.squareLength
+            button.setAccessibilityLabel(nil)
+        }
+    }
+
     /// Updates the "Hold … to dictate" line.
     public func show(_ bindings: HotkeyBindings) {
         hintItem.title = bindings.hint
@@ -176,6 +226,9 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
     @objc private func whatsThis() { controller.screen?.whatsThis() }
     @objc private func showKnowledge() { knowledge.show() }
     @objc private func toggleNotes() { controller.meetings?.toggle() }
+    @objc private func togglePause() { controller.model.meeting.pause(controller.model.meeting.status.phase != .paused) }
+    @objc private func openMeeting() { controller.model.meeting.open(controller.model.meeting.status.id) }
+    @objc private func copyConsent() { controller.model.meeting.copyConsent() }
     @objc private func resetPosition() { panel.placeBottomRight() }
     @objc private func openHome() { NSWorkspace.shared.open(paths.home) }
     @objc private func openDictionary() { Self.openText(paths.dictionary) }

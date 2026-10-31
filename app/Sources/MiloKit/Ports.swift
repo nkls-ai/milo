@@ -209,6 +209,8 @@ public protocol MeetingRecorder: AnyObject {
     var onTracks: ((_ tracks: [String], _ error: String) -> Void)? { get set }
     /// What is recorded right now.
     var tracks: [String] { get }
+    /// Paused: both tracks go on as silence, so the times stay right and nothing said is kept.
+    var paused: Bool { get set }
     func start(dir: URL)
     /// Stops, writes and reports the last chunks, then calls `done`.
     func stop(done: @escaping () -> Void)

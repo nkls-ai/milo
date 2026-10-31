@@ -91,6 +91,40 @@ struct OverlayRenderTests {
         Moment(name: "17-offline") { m in
             m.connected = false
         },
+        Moment(name: "20-meeting-ask") { m in
+            m.apply(.confirm(id: "q", question: "Looks like a meeting. Should I take notes?", choices: [
+                ConfirmChoice(id: "yes", label: "Take notes"), ConfirmChoice(id: "no", label: "Not this time"),
+                ConfirmChoice(id: "always", label: "Always for Zoom"), ConfirmChoice(id: "never", label: "Never for Zoom"),
+            ]))
+        },
+        Moment(name: "21-meeting-started") { m in
+            m.recording = true
+            m.apply(.bubble("Taking notes. Stop me any time with the button next to me."))
+            m.apply(.meetingStatus(MeetingRenders.status(.recording, elapsed: 4)))
+        },
+        Moment(name: "22-meeting-recording") { m in
+            m.recording = true
+            m.apply(.meetingStatus(MeetingRenders.status(.recording, elapsed: 754)))
+        },
+        Moment(name: "23-meeting-paused") { m in
+            m.recording = true
+            m.apply(.meetingStatus(MeetingRenders.status(.paused, elapsed: 1322)))
+        },
+        Moment(name: "24-meeting-error") { m in
+            m.recording = true
+            var status = MeetingRenders.status(.recording, elapsed: 65)
+            status.error = "I can hear you, but not the others in the call. Milo needs “Screen & System Audio Recording”."
+            status.fix = .callAudio
+            m.apply(.meetingStatus(status))
+        },
+        Moment(name: "25-meeting-writing") { m in
+            m.apply(.meetingStatus(MeetingRenders.status(.writing, elapsed: 1934, step: "Writing the summary")))
+        },
+        Moment(name: "26-meeting-ready") { m in
+            m.apply(.meetingStatus(MeetingRenders.status(.writing, elapsed: 1934, step: "Writing the summary")))
+            m.apply(.meetingStatus(MeetingRenders.status(
+                .done, elapsed: 1934, step: "Your notes from “Weekly sync” are ready. Two to-dos for you.")))
+        },
     ]
 
     @Test func renderEveryMoment() throws {
@@ -124,5 +158,70 @@ struct OverlayRenderTests {
         host.cacheDisplay(in: host.bounds, to: rep)
         let png = try #require(rep.representation(using: .png, properties: [:]))
         try png.write(to: dir.appendingPathComponent("\(name).png"))
+    }
+}
+
+/// A meeting as the brain describes it, for renders.
+enum MeetingRenders {
+    static let id = "2026-10-29-1400-weekly-sync"
+
+    static let lines: [MeetingLine] = [
+        MeetingLine(at: 4, end: 9, who: "Anna", text: "Okay, let's start. Ben, how's the launch looking?"),
+        MeetingLine(at: 11, end: 26, who: "Ben",
+                    text: "Mostly fine. The app review came back with one question about the login screen, so Thursday is tight."),
+        MeetingLine(at: 28, end: 33, who: "You", me: true, text: "Can we answer it today?"),
+        MeetingLine(at: 34, end: 47, who: "Ben", text: "I think so, but then we'd still need a day for the store to approve it."),
+        MeetingLine(at: 50, end: 58, who: "Anna", text: "Then let's move the launch to Friday. Better than rushing it."),
+        MeetingLine(at: 60, end: 64, who: "You", me: true, text: "Agreed. I'll tell the customer."),
+        MeetingLine(at: 66, end: 80, who: "Anna",
+                    text: "Good. I'll send the slides around by Thursday so everyone sees the new date."),
+        MeetingLine(at: 83, end: 95, who: "Ben", text: "And I'll answer the review question this afternoon."),
+    ]
+
+    static let markdown = """
+        # Weekly sync
+
+        Thursday 29 October 2026, 14:00–14:32 · Zoom · with Anna and Ben
+
+        ## Summary
+
+        The app review asked about the login screen, so the launch moves from Thursday to **Friday**. Ben answers \
+        the review today; Anna sends the slides with the new date.
+
+        ## Decisions
+
+        - Launch on Friday instead of Thursday
+        - Answer the review question today rather than changing the screen
+
+        ## To-dos
+
+        - [ ] You: Tell the customer about Friday (today)
+        - [ ] Anna: Send the slides around (Thursday)
+        - [ ] Ben: Answer the app review question
+
+        ## Follow-up mail
+
+        Hi all, thanks for today. The launch moves to Friday; Anna sends the slides by Thursday.
+
+        [The whole transcript](transcript.md)
+        """
+
+    static var notes: MeetingNotes {
+        MeetingNotes(id: id, title: "Weekly sync", started: Day.at(-19 * 3600), duration: 1920, markdown: markdown,
+                     summary: "The app review asked about the login screen, so the launch moves from Thursday to Friday.",
+                     decisions: ["Launch on Friday instead of Thursday"],
+                     todos: [MeetingNotes.Todo(text: "Tell the customer about Friday", due: "today", mine: true),
+                             MeetingNotes.Todo(text: "Send the slides around", owner: "Anna", due: "Thursday",
+                                               added: false),
+                             MeetingNotes.Todo(text: "Answer the app review question", owner: "Ben")],
+                     followup: "Hi all, thanks for today.", people: ["Anna", "Ben"], app: "Zoom", conversation: "c-sync",
+                     folder: "/Users/you/Milo/meetings/\(id)", reminders: true, mail: true)
+    }
+
+    static func status(_ phase: MeetingStatus.Phase, elapsed: Double, step: String = "") -> MeetingStatus {
+        MeetingStatus(id: Self.id, phase: phase, title: "Weekly sync", app: "Zoom",
+                      started: Day.at(-elapsed), elapsed: elapsed, conversation: "c-sync",
+                      speakers: ["You", "Anna", "Ben"], step: step,
+                      consent: "Milo is taking notes for me. They stay on my computer.")
     }
 }

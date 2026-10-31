@@ -25,6 +25,7 @@ public final class MacMeetingRecorder: MeetingRecorder {
     // On `queue`:
     private var writers: [String: ChunkWriter] = [:]
     private var lastSound: TimeInterval = 0
+    private var muted = false
     // On the main queue:
     private var startHost: UInt64 = 0
     private var mic: MicCapture?
@@ -37,6 +38,11 @@ public final class MacMeetingRecorder: MeetingRecorder {
     public init(brainLock: URL?, silentAfter: TimeInterval = 45) {
         self.brainLock = brainLock
         self.silentAfter = silentAfter
+    }
+
+    public var paused: Bool {
+        get { queue.sync { muted } }
+        set { queue.async { [weak self] in self?.muted = newValue } }
     }
 
     public func start(dir: URL) {
@@ -134,8 +140,10 @@ public final class MacMeetingRecorder: MeetingRecorder {
         let time = AVAudioTime.seconds(forHostTime: host) - AVAudioTime.seconds(forHostTime: startHost)
         queue.async { [weak self] in
             guard let self, let writer = writers[track] else { return }
-            if track == "them", samples.contains(where: { $0 != 0 }) { lastSound = max(time, 0.001) }
-            do { try writer.append(samples, at: max(0, time)) } catch { NSLog("Milo: writing the meeting failed: \(error)") }
+            // Paused: silence keeps the times right, and a quiet call while paused is no reason to worry.
+            if track == "them", muted || samples.contains(where: { $0 != 0 }) { lastSound = max(time, 0.001) }
+            let kept = muted ? [Float](repeating: 0, count: samples.count) : samples
+            do { try writer.append(kept, at: max(0, time)) } catch { NSLog("Milo: writing the meeting failed: \(error)") }
         }
     }
 

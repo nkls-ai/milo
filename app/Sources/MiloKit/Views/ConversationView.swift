@@ -92,7 +92,7 @@ public struct ConversationView: View {
 
     private var sidebar: some View {
         ConversationsSidebar(transcript: transcript, route: route, waiting: waiting, actions: actions,
-                             searchFocus: $searching)
+                             searchFocus: $searching, meeting: model.meeting)
             .frame(width: Self.sidebarWidth)
     }
 
@@ -148,9 +148,14 @@ public struct ConversationView: View {
         }
     }
 
-    private func conversation(_ id: String) -> some View {
-        ConversationPage(transcript: transcript, model: model, settings: settings, route: route, id: id,
-                         actions: actions)
+    @ViewBuilder private func conversation(_ id: String) -> some View {
+        if let info = transcript.info(id), info.kind == .meeting, case let meeting = MeetingPageID.meeting(of: info),
+           !meeting.isEmpty {
+            MeetingPage(meeting: model.meeting, transcript: transcript, id: meeting, conversation: id, actions: actions)
+        } else {
+            ConversationPage(transcript: transcript, model: model, settings: settings, route: route, id: id,
+                             actions: actions)
+        }
     }
 
     /// In a narrow window: the sidebar button, the way back, and where you are.
@@ -458,6 +463,7 @@ struct QuestionBar: View {
     let question: PendingQuestion
     let talkKey: String
     let answer: (Bool) -> Void
+    var choose: (ConfirmChoice) -> Void = { _ in }
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
@@ -471,7 +477,7 @@ struct QuestionBar: View {
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            AnswerButtons(answer: answer)
+            AnswerButtons(choices: question.choices, answer: answer, choose: choose)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)

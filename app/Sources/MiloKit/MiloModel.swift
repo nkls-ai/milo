@@ -5,10 +5,13 @@ import Combine
 public struct PendingQuestion: Equatable, Sendable {
     public let id: String
     public let text: String
+    /// Buttons of its own instead of Yes and No, like "Always for Zoom".
+    public let choices: [ConfirmChoice]
 
-    public init(id: String, text: String) {
+    public init(id: String, text: String, choices: [ConfirmChoice] = []) {
         self.id = id
         self.text = text
+        self.choices = choices
     }
 }
 
@@ -53,8 +56,11 @@ public final class MiloModel: ObservableObject {
     @Published public internal(set) var flight: Flight = .perched
     /// Shown with Yes and No in the bubble and the Milo window until answered or over.
     @Published public private(set) var question: PendingQuestion?
-    /// Called with the user's click on Yes (true) or No. Set by the controller.
-    public var onAnswer: ((PendingQuestion, Bool) -> Void)?
+    /// Called with the user's click on Yes (true) or No, and the choice if the question has its own. Set by the
+    /// controller.
+    public var onAnswer: ((PendingQuestion, Bool, String) -> Void)?
+    /// Meeting notes: the capsule by Milo, the menu bar and the meeting's page follow it.
+    public let meeting: MeetingModel
     /// The helpers working for Milo, oldest first, from the brain's `helpers` event.
     @Published public private(set) var helpers: [HelperInfo] = []
     /// Called when the user clicks Stop on a helper. Set by the controller.
@@ -94,6 +100,7 @@ public final class MiloModel: ObservableObject {
     public init(scheduler: Scheduler, clock: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
         self.scheduler = scheduler
         now = clock
+        meeting = MeetingModel(clock: clock)
     }
 
     /// How long "Got it" stays after the key comes up. Long enough to read, short enough not to hold anything up.
@@ -143,8 +150,8 @@ public final class MiloModel: ObservableObject {
             partial = text.isEmpty ? nil : text
         case let .looking(on):
             looking = on
-        case let .confirm(id, text):
-            question = PendingQuestion(id: id, text: text)
+        case let .confirm(id, text, choices):
+            question = PendingQuestion(id: id, text: text, choices: choices)
             scheduleBubbleHide()
         case let .confirmDone(id, _):
             guard question?.id == id else { return }
@@ -157,6 +164,12 @@ public final class MiloModel: ObservableObject {
             if waiting != drafts { drafts = waiting }
         case let .remote(status):
             remote = status
+        case let .meetingStatus(status):
+            let before = meeting.status
+            meeting.apply(event)
+            meetingChanged(from: before, to: status)
+        case .meetingLines, .meetingNotes:
+            meeting.apply(event)
         case .dictation, .uiConfig, .history, .entry, .replyDelta, .activity, .lookRequest, .handsRequest,
              .handsSession, .flyTo, .appRequest, .handsBorrow, .facts, .settings, .usage, .meetingRecord,
              .conversations, .conversation, .searchResults, .reminders, .unknown:
@@ -168,8 +181,32 @@ public final class MiloModel: ObservableObject {
     public func answer(_ yes: Bool) {
         guard let question else { return }
         self.question = nil
-        onAnswer?(question, yes)
+        onAnswer?(question, yes, "")
         scheduleBubbleHide()
+    }
+
+    /// The user clicked one of the question's own buttons.
+    public func answer(_ choice: ConfirmChoice) {
+        guard let question else { return }
+        self.question = nil
+        onAnswer?(question, choice.yes, choice.id)
+        scheduleBubbleHide()
+    }
+
+    /// What Milo says by himself when meeting notes start, can't hear something, or are ready: each with the button
+    /// that helps next.
+    private func meetingChanged(from before: MeetingStatus, to now: MeetingStatus) {
+        let same = before.id == now.id
+        if now.phase == .recording && !(same && before.live) {
+            show(bubble ?? "Taking notes.", action: .copyConsent)
+        }
+        if now.live && !now.error.isEmpty && !(same && before.error == now.error) {
+            show(now.error, action: now.fix == .microphone ? .microphone : .callAudio)
+        }
+        if now.phase == .done && !(same && before.phase == .done) {
+            show(now.step.isEmpty ? "Your notes from “\(now.title)” are ready." : now.step,
+                 action: .openMeeting(now.id))
+        }
     }
 
     /// The user clicked Stop on the helper `id`.
@@ -208,8 +245,16 @@ public final class MiloModel: ObservableObject {
     /// The user clicked the bubble's button.
     public func performBubbleAction() {
         guard let bubbleAction else { return }
+        if bubbleAction == .copyConsent {
+            // Done here, so the bubble can say it worked.
+            meeting.copyConsent()
+            return show(Self.copiedConsent)
+        }
         onBubbleAction?(bubbleAction)
     }
+
+    /// What the bubble says once the note for the call's chat is on the clipboard.
+    public static let copiedConsent = "Copied. Paste it into the call's chat."
 
     // MARK: The keys, a frame ahead of the brain
 
@@ -283,10 +328,20 @@ public final class LiveLevel: ObservableObject {
 public enum BubbleAction: Equatable, Sendable {
     /// Opens the permissions window, where each missing switch has its own button.
     case permissions
+    /// Opens System Settings at the microphone's switches.
+    case microphone
+    /// Opens System Settings where Milo may hear the others in a call (System Audio Recording).
+    case callAudio
+    /// Puts the line for the call's chat on the clipboard.
+    case copyConsent
+    /// Shows a meeting's notes in the Milo window.
+    case openMeeting(String)
 
     public var title: String {
         switch self {
-        case .permissions: "Fix it"
+        case .permissions, .microphone, .callAudio: "Fix it"
+        case .copyConsent: "Copy a note for the chat"
+        case .openMeeting: "Open notes"
         }
     }
 
@@ -294,6 +349,10 @@ public enum BubbleAction: Equatable, Sendable {
     public var hint: String {
         switch self {
         case .permissions: "Opens Milo's permissions window"
+        case .microphone: "Opens the microphone settings in System Settings"
+        case .callAudio: "Opens the screen and system audio recording settings in System Settings"
+        case .copyConsent: "Copies a line telling the others that Milo takes notes, to paste into the call's chat"
+        case .openMeeting: "Shows the meeting's notes in the Milo window"
         }
     }
 }

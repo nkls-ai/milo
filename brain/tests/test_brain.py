@@ -162,13 +162,16 @@ def check_hands_stop(s: Stack, msg: dict) -> None:
 
 def check_confirm_answer(s: Stack, msg: dict) -> None:
     async def go():
-        asking = asyncio.create_task(s.approvals.confirm("Send it?"))
+        if "choice" in msg:
+            asking = asyncio.create_task(s.approvals.choose("Take notes?", [("yes", "Yes"), (msg["choice"], "That")]))
+        else:
+            asking = asyncio.create_task(s.approvals.confirm("Send it?"))
         await settle()
         s.approvals._pending = (msg["id"], *s.approvals._pending[1:])  # the fixture's id
         await s.brain.handle(parse_command(msg))
         return await asking
 
-    assert asyncio.run(go()) is msg["yes"]
+    assert asyncio.run(go()) == msg.get("choice", msg["yes"])
 
 
 def check_app_response(s: Stack, msg: dict) -> None:
@@ -442,6 +445,10 @@ CHECKS = {
     "meeting_chunk": check_meeting,
     "meeting_recording": check_meeting,
     "meeting_toggle": check_meeting,
+    "meeting_pause": check_meeting,
+    "open_meeting": check_meeting,
+    "meeting_todo": check_meeting,
+    "meeting_mail": check_meeting,
     "stop_helper": check_stop_helper,
     "get_facts": check_get_facts,
     "forget_fact": check_forget_fact,

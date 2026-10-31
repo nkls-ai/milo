@@ -31,6 +31,8 @@ from milo.core.types import STT_SAMPLE_RATE, Audio
 log = logging.getLogger(__name__)
 
 _CHUNK = re.compile(r"^(me|them)-(\d{4,})\.wav$")
+_ID = re.compile(r"^[0-9A-Za-z][0-9A-Za-z_-]*$")
+"""A meeting's folder name, as meeting_id() makes it: nothing that reaches outside the meetings folder."""
 _HEADER = 44
 _BYTES = 2  # 16-bit samples
 
@@ -131,15 +133,41 @@ class FileMeetingStore:
                 log.warning("skipping a meeting whose meeting.json can't be read: %s", meta.parent.name)
         return ids
 
-    def close(self, meeting_id: str, notes: MeetingNotes, markdown: str, *, keep_audio: bool = False) -> Path:
+    def close(self, meeting_id: str, notes: MeetingNotes, markdown: str, *, keep_audio: bool = False,
+              extra: dict | None = None) -> Path:
         path = self.folder(meeting_id) / "notes.md"
         write_atomic(path, markdown)
         meta = self._meta(meeting_id)
-        meta |= {"done": True, "notes": notes.to_dict()}
+        meta |= {**(extra or {}), "done": True, "notes": notes.to_dict()}
         self._write_meta(meeting_id, meta)
         if not keep_audio:
             shutil.rmtree(self.audio_dir(meeting_id), ignore_errors=True)
         return path
+
+    def record(self, meeting_id: str) -> dict:
+        if not _ID.match(meeting_id):
+            raise KeyError(meeting_id)
+        try:
+            meta = self._meta(meeting_id)
+        except FileNotFoundError:
+            raise KeyError(meeting_id) from None
+        if not meta.get("done"):
+            return {}
+        try:
+            markdown = (self.folder(meeting_id) / "notes.md").read_text(encoding="utf-8")
+        except OSError:
+            markdown = ""
+        return {"notes": meta.get("notes") or {}, "duration": float(meta.get("duration") or 0.0),
+                "people": list(meta.get("people") or []), "mail": bool(meta.get("mail")), "markdown": markdown}
+
+    def mark(self, meeting_id: str, *, todo: int | None = None, mail: bool = False) -> None:
+        meta = self._meta(meeting_id)
+        todos = (meta.get("notes") or {}).get("todos") or []
+        if todo is not None and 0 <= todo < len(todos):
+            todos[todo]["added"] = True
+        if mail:
+            meta["mail"] = True
+        self._write_meta(meeting_id, meta)
 
     # ---- audio
 

@@ -102,7 +102,10 @@ public final class MiloController {
     }
 
     public func start() {
-        model.onAnswer = { [weak self] question, yes in self?.brain.send(.confirmAnswer(id: question.id, yes: yes)) }
+        model.onAnswer = { [weak self] question, yes, choice in
+            self?.brain.send(.confirmAnswer(id: question.id, yes: yes, choice: choice))
+        }
+        model.meeting.send = { [weak self] in self?.brain.send($0) }
         model.onStopHelper = { [weak self] id in self?.brain.send(.stopHelper(id: id)) }
         model.onRoutine = { [weak self] id, action in self?.brain.send(.routine(id: id, action: action)) }
         model.onDraftAnswer = { [weak self] id, save in self?.brain.send(.routineDraftAnswer(id: id, save: save)) }

@@ -36,18 +36,71 @@ struct WindowRenderTests {
                        sidebar: true)
             try render(.usage, name: "usage-\(mode)", dark: dark, usage: UsageModel(report: Month.report()),
                        size: CGSize(width: 900, height: 1100))
+            try renderMeetings(mode: mode, dark: dark)
             try render(.usage, name: "usage-new-\(mode)", dark: dark, usage: UsageModel(report: Month.report(empty: true)))
             try render(.usage, name: "usage-narrow-\(mode)", dark: dark, usage: UsageModel(report: Month.report()),
                        size: CGSize(width: 440, height: 1300))
         }
     }
 
+    /// A meeting's page while it records, while the notes are written, and its notes, to-dos and transcript after.
+    private func renderMeetings(mode: String, dark: Bool) throws {
+        let questions = [
+            TranscriptEntry(id: "m0", date: Day.at(-19 * 3600), kind: .milo,
+                            text: "Taking notes. Stop me any time with the button next to me.", conversation: "c-sync"),
+            TranscriptEntry(id: "m1", date: Day.at(-19 * 3600 + 120), kind: .user, text: "What did I miss?",
+                            via: .typed, conversation: "c-sync"),
+            TranscriptEntry(id: "m2", date: Day.at(-19 * 3600 + 124), kind: .milo,
+                            text: "The launch moves to Friday because of the app review. Anna sends the slides.",
+                            conversation: "c-sync"),
+        ]
+        let transcript = { TranscriptModel(entries: Day.budget, conversations: Day.conversations, current: "c-budget",
+                                           opened: ["c-sync": questions]) }
+        let live: (MiloModel, MeetingStatus.Phase, Int) -> Void = { model, phase, count in
+            model.recording = phase != .writing
+            model.apply(.meetingStatus(MeetingRenders.status(phase, elapsed: 754,
+                                                             step: phase == .writing ? "Writing the summary" : "")))
+            model.apply(.meetingLines(id: MeetingRenders.id, lines: Array(MeetingRenders.lines.prefix(count)), reset: true))
+        }
+        try render(.conversation("c-sync"), name: "meeting-live-\(mode)", dark: dark, transcript: transcript()) {
+            live($0, .recording, 7)
+        }
+        try render(.conversation("c-sync"), name: "meeting-start-\(mode)", dark: dark,
+                   transcript: TranscriptModel(entries: Day.budget, conversations: Day.conversations,
+                                               current: "c-budget", opened: ["c-sync": [questions[0]]])) {
+            live($0, .recording, 0)
+        }
+        try render(.conversation("c-sync"), name: "meeting-paused-\(mode)", dark: dark, transcript: transcript()) {
+            live($0, .paused, 8)
+        }
+        try render(.conversation("c-sync"), name: "meeting-writing-\(mode)", dark: dark, transcript: transcript()) {
+            live($0, .writing, 8)
+        }
+        try render(.conversation("c-sync"), name: "meeting-live-narrow-\(mode)", dark: dark,
+                   size: CGSize(width: 440, height: 580), transcript: transcript()) { live($0, .recording, 7) }
+        let done: (MiloModel) -> Void = { model in
+            model.apply(.meetingNotes(MeetingRenders.notes))
+            model.apply(.meetingLines(id: MeetingRenders.id, lines: MeetingRenders.lines, reset: true))
+        }
+        defer { MeetingPage.startTab = .notes }
+        for tab in MeetingPage.Tab.allCases {
+            MeetingPage.startTab = tab
+            try render(.conversation("c-sync"), name: "meeting-\(tab.rawValue.lowercased())-\(mode)", dark: dark,
+                       transcript: transcript(), setup: done)
+        }
+        MeetingPage.startTab = .notes
+        try render(.conversation("c-sync"), name: "meeting-notes-narrow-\(mode)", dark: dark,
+                   size: CGSize(width: 440, height: 580), transcript: transcript(), setup: done)
+    }
+
     private func render(_ page: WindowPage, name: String, dark: Bool, busy: Bool = false, empty: Bool = false,
                         search: String = "", usage: UsageModel = UsageModel(),
-                        size: CGSize = CGSize(width: 780, height: 580), sidebar: Bool = false) throws {
+                        size: CGSize = CGSize(width: 780, height: 580), sidebar: Bool = false,
+                        transcript given: TranscriptModel? = nil, setup: (MiloModel) -> Void = { _ in }) throws {
         let model = MiloModel(scheduler: ManualScheduler())
         model.connected = true
-        let transcript = empty ? TranscriptModel() : Day.transcript()
+        setup(model)
+        let transcript = given ?? (empty ? TranscriptModel() : Day.transcript())
         if busy {
             model.apply(.helpers([
                 HelperInfo(id: "t-excel", title: "Budget table in Excel", status: .working,

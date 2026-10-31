@@ -9,7 +9,7 @@ import Testing
 @Suite(.enabled(if: ProcessInfo.processInfo.environment["MILO_RENDER_DIR"] != nil))
 @MainActor
 struct SettingsRenderTests {
-    static let size = CGSize(width: 520, height: 1020)
+    static let size = CGSize(width: 520, height: 1280)
     let dir = URL(fileURLWithPath: ProcessInfo.processInfo.environment["MILO_RENDER_DIR"] ?? "/tmp")
 
     /// What the brain reports, as in brain/src/milo/settings.py.
@@ -30,6 +30,10 @@ struct SettingsRenderTests {
                 labels: ["Control-Option-M", "Control-Option-W", "Control-Shift-M", "Off"]),
         Setting(section: "ui", key: "voice", value: true),
         Setting(section: "hands", key: "show_window", value: true),
+        Setting(section: "meetings", key: "auto", value: "ask", options: ["ask", "calendar", "off"],
+                labels: ["Ask me", "Without asking when my calendar has a meeting", "Never ask"]),
+        Setting(section: "meetings", key: "always", value: "Zoom, Microsoft Teams"),
+        Setting(section: "meetings", key: "never", value: "WhatsApp"),
     ])
 
     @Test func renderTheWindow() throws {

@@ -52,6 +52,27 @@ public final class ConversationWindow: NSWindow {
         settings.focus = id
     }
 
+    /// Show it with meeting `id`'s page: the live transcript while it goes on, the notes once they're written.
+    public func show(meeting id: String) {
+        let meeting = controller.model.meeting
+        let conversation = [meeting.status.id == id ? meeting.status.conversation : "",
+                            meeting.notes[id]?.conversation ?? "",
+                            controller.transcript.conversations.first { $0.source == "meeting:\(id)" }?.id ?? ""]
+            .first { !$0.isEmpty }
+        if !isVisible {
+            controller.requestHistory()
+            NSApp.activate(ignoringOtherApps: true)
+            makeKeyAndOrderFront(nil)
+        } else {
+            NSApp.activate(ignoringOtherApps: true)
+            makeKeyAndOrderFront(nil)
+        }
+        meeting.request(id)
+        guard let conversation else { return }
+        controller.windowActions.open(conversation)
+        route.go(.conversation(conversation))
+    }
+
     /// Show it, or hide it if it is open.
     public func toggle() {
         if isVisible {

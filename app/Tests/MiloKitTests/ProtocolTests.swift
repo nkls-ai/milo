@@ -65,6 +65,10 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .flyTo(ScreenPoint(x: 812, y: 430.5)),
             .flyTo(nil),
             .confirm(id: "3b9e7a01c4d2", question: "I'm about to run your shortcut “Text Anna I'm late”. Go ahead?"),
+            .confirm(id: "7c1d2e3f4a5b", question: "Looks like a meeting. Should I take notes?", choices: [
+                ConfirmChoice(id: "yes", label: "Take notes"), ConfirmChoice(id: "no", label: "Not this time"),
+                ConfirmChoice(id: "always", label: "Always for Zoom"), ConfirmChoice(id: "never", label: "Never for Zoom"),
+            ]),
             .confirmDone(id: "3b9e7a01c4d2", answer: "yes"),
             .appRequest(id: "a41f", op: "calendar.add_event", args: .object([
                 "title": .string("Doctor"), "start": .string("2026-11-05T15:00:00"), "end": .string("2026-11-05T16:00:00"),
@@ -137,6 +141,51 @@ private func entries(_ key: String) throws -> [[String: Any]] {
                                  detail: "Message @milo_mac_bot from your phone to connect.")),
             .meetingRecord(id: "2026-10-30-1400-weekly-sync",
                            dir: "/Users/you/Milo/meetings/2026-10-30-1400-weekly-sync/audio", on: true),
+            .meetingStatus(MeetingStatus(
+                id: "2026-10-30-1400-weekly-sync", phase: .recording, title: "Weekly sync", app: "Zoom",
+                started: try day("2026-10-30T14:00:12"), elapsed: 754.2, conversation: "c-7d6e5f4a3b2c",
+                speakers: ["You", "Anna", "Speaker 2"],
+                error: "I can only hear you, not the others. Turn on System Audio Recording for Milo in System Settings › Privacy & Security.",
+                fix: .callAudio, consent: "Milo is taking notes for me. They stay on my computer.")),
+            .meetingStatus(MeetingStatus(
+                id: "2026-10-30-1400-weekly-sync", phase: .writing, title: "Weekly sync", app: "Zoom",
+                started: try day("2026-10-30T14:00:12"), elapsed: 1810, conversation: "c-7d6e5f4a3b2c",
+                speakers: ["You", "Anna"], step: "Writing the summary",
+                consent: "Milo is taking notes for me. They stay on my computer.")),
+            .meetingStatus(MeetingStatus()),
+            .meetingLines(id: "2026-10-30-1400-weekly-sync", lines: [
+                MeetingLine(at: 1.2, end: 4.8, who: "Anna", text: "Shall we move the launch to Friday?"),
+                MeetingLine(at: 5.4, end: 7.1, who: "You", me: true, text: "Friday works for me."),
+            ], reset: false),
+            .meetingNotes(MeetingNotes(
+                id: "2026-10-30-1400-weekly-sync", title: "Weekly sync", started: try day("2026-10-30T14:00:12"),
+                duration: 1810, markdown: """
+                    # Weekly sync
+
+                    Thursday 30 October 2026, 14:00–14:30 · Zoom · with Anna
+
+                    ## Summary
+
+                    The launch moves to Friday.
+
+                    ## Decisions
+
+                    - Launch on Friday
+
+                    ## To-dos
+
+                    - [ ] You: Write to the customer (Friday)
+                    - [ ] Anna: Send the slides
+
+                    [The whole transcript](transcript.md)
+
+                    """,
+                summary: "The launch moves to Friday.", decisions: ["Launch on Friday"], todos: [
+                    MeetingNotes.Todo(text: "Write to the customer", due: "Friday", mine: true),
+                    MeetingNotes.Todo(text: "Send the slides", owner: "Anna", added: true),
+                ], followup: "Hi Anna, thanks for today.", people: ["Anna"], app: "Zoom",
+                conversation: "c-7d6e5f4a3b2c", folder: "/Users/you/Milo/meetings/2026-10-30-1400-weekly-sync",
+                reminders: true, mail: true)),
             .conversations([
                 ConversationInfo(id: "c-5f2a9c1e04b7", started: try day("2026-10-30T09:12:03"),
                                  last: try day("2026-10-30T09:14:10"), title: "Photos from Friday", via: [.voice],
@@ -203,6 +252,7 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .handsResult(id: "hands-5", ok: false, result: [:], error: "There is no element e99. Call ax_tree again."),
             .handsStop(reason: "escape"),
             .confirmAnswer(id: "3b9e7a01c4d2", yes: true),
+            .confirmAnswer(id: "7c1d2e3f4a5b", yes: true, choice: "always"),
             .appResponse(id: "a41f", outcome: .success(.object([
                 "id": .string("E1F2-77"), "title": .string("Doctor"), "start": .string("2026-11-05T15:00:00"),
                 "end": .string("2026-11-05T16:00:00"), "calendar": .string("Home"),
@@ -230,6 +280,11 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .meetingRecording(id: "2026-10-30-1400-weekly-sync", on: true, tracks: ["me"],
                               error: "I can only hear you, not the others. Turn on System Audio Recording for Milo in System Settings › Privacy & Security."),
             .meetingToggle(false),
+            .meetingPause(true),
+            .openMeeting(id: "2026-10-30-1400-weekly-sync"),
+            .meetingTodo(id: "2026-10-30-1400-weekly-sync", index: 0),
+            .meetingTodo(id: "2026-10-30-1400-weekly-sync", index: -1),
+            .meetingMail(id: "2026-10-30-1400-weekly-sync"),
             .dictationFixed([DictationFix(heard: "Cloud Code", meant: "Claude Code"),
                              DictationFix(heard: "Nicholas", meant: "Niklas")]),
         ]

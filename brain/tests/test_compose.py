@@ -307,3 +307,18 @@ def test_a_step_moved_before_what_it_needs_fails_at_build_naming_the_part(build,
     monkeypatch.setattr(compose, "BUILD_STEPS", tuple(steps))
     with pytest.raises(compose.BuildOrder, match="'helpers' is used before the step that builds it"):
         build(cheap())
+
+
+def test_always_and_never_for_an_app_go_into_config_toml_through_settings(build):
+    runtime, home = build(cheap(**{"meetings.never": "Zoom"}))
+    meetings = runtime.meetings
+    if meetings is None:
+        pytest.skip("no transcriber with timings here, so no meeting notes")
+    assert meetings.options.never == ("Zoom",)
+    meetings.remember("always", "Zoom")
+    meetings.remember("always", "Microsoft Teams")
+    meetings.remember("always", "zoom")
+    text = (home / "config.toml").read_text()
+    assert 'always = "Zoom, Microsoft Teams"' in text and 'never = ""' in text
+    assert meetings.options.always == ("Zoom", "Microsoft Teams") and meetings.options.never == ()
+    assert meetings.options.says("ZOOM") == "always"

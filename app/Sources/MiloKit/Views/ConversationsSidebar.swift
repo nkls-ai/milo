@@ -10,6 +10,8 @@ struct ConversationsSidebar: View {
     let waiting: Int
     let actions: WindowActions
     var searchFocus: FocusState<Bool>.Binding
+    /// Meeting notes: a meeting's row says it is taking notes, or how long it was and what was decided.
+    @ObservedObject var meeting: MeetingModel
     @Namespace private var selection
     /// The time the rows are drawn against, for offscreen renders.
     static var now: () -> Date = Date.init
@@ -126,6 +128,23 @@ struct ConversationsSidebar: View {
         }
     }
 
+    /// What a meeting's row says under its title: "Taking notes now", or "32 min · The launch moves to Friday."
+    private func meetingLine(_ conversation: ConversationInfo) -> MeetingRowLine? {
+        guard conversation.kind == .meeting else { return nil }
+        let id = MeetingPageID.meeting(of: conversation)
+        if meeting.isCurrent(id) || (meeting.status.conversation == conversation.id && meeting.status.live) {
+            return MeetingRowLine(text: meeting.status.phase == .writing ? "Writing the notes…"
+                                  : meeting.status.phase == .paused ? "Notes paused" : "Taking notes now",
+                                  live: meeting.status.live)
+        }
+        let summary = MeetingPageID.summary(of: conversation.preview)
+        if let notes = meeting.notes[id], notes.duration > 0 {
+            let first = notes.summary.isEmpty ? summary : MeetingPageID.firstSentence(notes.summary)
+            return MeetingRowLine(text: "\(MeetingModel.length(notes.duration)) · \(first)", live: false)
+        }
+        return summary.isEmpty ? nil : MeetingRowLine(text: summary, live: false)
+    }
+
     private func row(_ conversation: ConversationInfo, first: Bool, last: Bool) -> some View {
         let live = conversation.id == transcript.current
         let selected = route.page == .conversation(conversation.id) || (live && route.page == .live)
@@ -136,7 +155,7 @@ struct ConversationsSidebar: View {
             }
         } label: {
             ConversationRow(conversation: conversation, live: live, selected: selected, first: first, last: last,
-                            now: Self.now())
+                            now: Self.now(), meeting: meetingLine(conversation))
         }
         .contextMenu {
             Button("Open") { actions.open(conversation.id); route.go(.conversation(conversation.id)) }
@@ -262,6 +281,7 @@ struct ConversationRow: View {
     let first: Bool
     let last: Bool
     let now: Date
+    var meeting: MeetingRowLine?
 
     var body: some View {
         HStack(alignment: .top, spacing: 9) {
@@ -281,10 +301,15 @@ struct ConversationRow: View {
                         .foregroundStyle(theme.ink.opacity(0.42))
                         .layoutPriority(1)
                 }
-                Text(subtitle)
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(theme.ink.opacity(live && conversation.working ? 0.7 : 0.52))
-                    .lineLimit(1)
+                HStack(spacing: 5) {
+                    if meeting?.live == true {
+                        Circle().fill(MeetingColors.live).frame(width: 6, height: 6)
+                    }
+                    Text(subtitle)
+                        .font(.system(size: 11.5, weight: meeting?.live == true ? .medium : .regular))
+                        .foregroundStyle(theme.ink.opacity(live && conversation.working || meeting?.live == true ? 0.7 : 0.52))
+                        .lineLimit(1)
+                }
             }
             .padding(.vertical, 7)
             .padding(.trailing, 8)
@@ -315,6 +340,7 @@ struct ConversationRow: View {
     }
 
     private var subtitle: String {
+        if let meeting { return meeting.text }
         if let running = conversation.tasks.last(where: { $0.status == .running }) {
             return running.title == conversation.title ? "Working on it…" : "Working on “\(running.title)”…"
         }
@@ -335,6 +361,12 @@ struct ConversationRow: View {
         parts.append(subtitle)
         return parts.joined(separator: ", ")
     }
+}
+
+/// The line under a meeting's title, and whether it is going on.
+struct MeetingRowLine: Equatable {
+    var text: String
+    var live: Bool
 }
 
 /// The small sign before a title: a phone, two people for a meeting, a loop for a routine.

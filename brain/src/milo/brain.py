@@ -11,7 +11,8 @@ from .core.events import (AppResponse, CallEnded, CallStarted, Command, ConfirmA
                           EmotionChanged, Event, Facts, ForgetFact, GetConversations, GetFacts, GetHistory,
                           GetSettings, GetUsage, HandsResult, HandsStop, ListenCancel, ListenConfirm, ListenStart,
                           ListenStop,
-                          LookResult, MeetingChunk, MeetingRecording, MeetingToggle, Mute, NewConversation,
+                          LookResult, MeetingChunk, MeetingMail, MeetingPause, MeetingRecording, MeetingTodo,
+                          MeetingToggle, Mute, OpenMeeting, NewConversation,
                           OpenConversation, RemoteForget, RemotePause, RenameConversation, RoutineAction,
                           RoutineDraftAnswer, SearchConversations, SetSetting, StateChanged, StopHelper, TextInput,
                           UiConfig, WhatsThis)
@@ -81,6 +82,7 @@ class Brain:
         return [StateChanged(self._ui.state), EmotionChanged(self._ui.emotion), self._ui_config(),
                 *([self._settings.report()] if self._settings is not None else []),
                 *self._history(), *([self._helpers.snapshot()] if self._helpers is not None else []),
+                *([self._meetings.status_event()] if self._meetings is not None else []),
                 *([self._messages.status()] if self._messages is not None else [])]
 
     def app_gone(self) -> None:
@@ -160,8 +162,8 @@ class Brain:
                 log.info("proactive nudges %s", "muted" if on else "on")
                 if self._heartbeat is not None:
                     self._heartbeat.muted = on
-            case ConfirmAnswer(id, yes):
-                if self._approvals is not None and not self._approvals.answer(id, yes):
+            case ConfirmAnswer(id, yes, choice):
+                if self._approvals is not None and not self._approvals.answer(id, yes, choice=choice):
                     log.info("an answer came for a question that is over")
             case StopHelper(id):
                 if self._helpers is not None and not self._helpers.stop(id):
@@ -184,7 +186,8 @@ class Brain:
             case AppResponse():
                 if self._bridge is not None:
                     self._bridge.resolve(command)
-            case CallStarted() | CallEnded() | MeetingChunk() | MeetingRecording() | MeetingToggle():
+            case (CallStarted() | CallEnded() | MeetingChunk() | MeetingRecording() | MeetingToggle() | MeetingPause()
+                  | OpenMeeting() | MeetingTodo() | MeetingMail()):
                 if self._meetings is not None:
                     self._meetings.handle(command)
             case DictationFixed(fixes):

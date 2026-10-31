@@ -15,6 +15,7 @@ public struct OverlayView: View {
             // A question to the user shows in the bubble, with Yes and No.
             BubbleView(model: model)
             VoiceCapsule(model: model)
+            MeetingCapsule(meeting: model.meeting)
             HStack(alignment: .bottom, spacing: 0) {
                 // Left of the square DraggableHostingView keeps for Milo, so a click on a bird is the bird's.
                 HelperFlock(model: model)
@@ -22,7 +23,6 @@ public struct OverlayView: View {
                 CharacterView(model: model)
                     .frame(width: 132, height: 132)
                     .overlay(alignment: .topLeading) { LookingBadge(model: model) }
-                    .overlay(alignment: .topTrailing) { RecordingBadge(model: model) }
                     .padding(.trailing, 8)
             }
             // A fixed answer, so the stack never walks into the figure to align it: every frame of
@@ -37,7 +37,6 @@ public struct OverlayView: View {
         .animation(model.voicePhase == nil ? .easeOut(duration: 0.12) : motion, value: model.voicePhase)
         .animation(motion, value: model.question)
         .animation(motion, value: model.looking)
-        .animation(motion, value: model.recording)
         .themed(by: model)
     }
 

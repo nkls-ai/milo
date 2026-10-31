@@ -25,7 +25,7 @@ struct BubbleView: View {
         let phase = model.voicePhase
         if phase?.recording == true { return nil }
         if let question = model.question {
-            return AnyView(QuestionView(question: question, answer: model.answer))
+            return AnyView(QuestionView(question: question, answer: model.answer, choose: model.answer))
         }
         if case .transcribing = phase { return nil }
         guard let text = model.bubble else { return nil }
@@ -116,10 +116,12 @@ struct QuestionView: View {
     @Environment(\.miloTheme) private var theme
     let question: PendingQuestion
     let answer: (Bool) -> Void
+    var choose: (ConfirmChoice) -> Void = { _ in }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Okay to go ahead?", systemImage: "hand.raised.fill")
+            Label(question.choices.isEmpty ? "Okay to go ahead?" : "Up to you",
+                  systemImage: question.choices.isEmpty ? "hand.raised.fill" : "questionmark.bubble.fill")
                 .font(.system(size: 10.5, weight: .semibold, design: .rounded))
                 .foregroundStyle(theme.accent)
                 .labelStyle(TightLabel())
@@ -131,7 +133,7 @@ struct QuestionView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
                 .help(question.text)
-            AnswerButtons(answer: answer)
+            AnswerButtons(choices: question.choices, answer: answer, choose: choose)
                 .padding(.top, 2)
         }
         .accessibilityElement(children: .contain)
@@ -149,18 +151,71 @@ struct TightLabel: LabelStyle {
     }
 }
 
+/// Yes and No, or the question's own buttons: its yes and no first, the rest, like "Always for Zoom", smaller
+/// under them.
 struct AnswerButtons: View {
+    var choices: [ConfirmChoice] = []
     let answer: (Bool) -> Void
+    var choose: (ConfirmChoice) -> Void = { _ in }
 
     var body: some View {
-        HStack(spacing: 8) {
-            Button("Yes") { answer(true) }
-                .buttonStyle(AnswerButtonStyle(prominent: true))
-                .accessibilityHint("Milo goes ahead")
-            Button("No") { answer(false) }
-                .buttonStyle(AnswerButtonStyle(prominent: false))
-                .accessibilityHint("Milo leaves it")
+        if choices.isEmpty {
+            HStack(spacing: 8) {
+                Button("Yes") { answer(true) }
+                    .buttonStyle(AnswerButtonStyle(prominent: true))
+                    .accessibilityHint("Milo goes ahead")
+                Button("No") { answer(false) }
+                    .buttonStyle(AnswerButtonStyle(prominent: false))
+                    .accessibilityHint("Milo leaves it")
+            }
+        } else {
+            let main = choices.filter { $0.id == "yes" || $0.id == "no" }
+            let more = choices.filter { $0.id != "yes" && $0.id != "no" }
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(spacing: 8) {
+                    ForEach(main, id: \.id) { choice in
+                        Button(choice.label) { choose(choice) }
+                            .buttonStyle(AnswerButtonStyle(prominent: choice.id == "yes"))
+                    }
+                }
+                if !more.isEmpty {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 6) { quiet(more) }
+                        VStack(alignment: .leading, spacing: 6) { quiet(more) }
+                    }
+                }
+            }
         }
+    }
+
+    private func quiet(_ list: [ConfirmChoice]) -> some View {
+        ForEach(list, id: \.id) { choice in
+            Button(choice.label) { choose(choice) }
+                .buttonStyle(QuietChoiceStyle())
+                .accessibilityHint(choice.id == "always" ? "Milo won't ask again and takes notes every time"
+                                   : choice.id == "never" ? "Milo won't ask again for this app" : "")
+        }
+    }
+}
+
+/// A small, quiet button for a choice past Yes and No: "Always for Zoom".
+struct QuietChoiceStyle: ButtonStyle {
+    @Environment(\.miloTheme) private var theme
+    @State private var hovered = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12, weight: .medium, design: .rounded))
+            .foregroundStyle(theme.ink.opacity(0.8))
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.vertical, 5)
+            .padding(.horizontal, 9)
+            .background(Capsule(style: .continuous).fill(theme.ink.opacity(hovered ? 0.1 : 0.055)))
+            .scaleEffect(configuration.isPressed ? 0.95 : 1)
+            .animation(theme.motion.spring, value: configuration.isPressed)
+            .contentShape(Capsule())
+            .onHover { hovered = $0 }
     }
 }
 

@@ -5,7 +5,7 @@ import logging
 import re
 import unicodedata
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 
 from milo.core.events import Confirm, ConfirmDone
 from milo.core.logtext import private
@@ -144,7 +144,8 @@ class Approvals:
         self._quiet = quiet
         self._transcript = transcript or unrecorded()
         self._one_at_a_time = asyncio.Lock()
-        self._pending: tuple[str, str, asyncio.Future[bool]] | None = None
+        self._pending: tuple[str, str, asyncio.Future[str]] | None = None
+        self._choices: tuple[tuple[str, str], ...] = ()
         self._remote_only = False
         self.relays: list[QuestionRelay] = []
 
@@ -174,15 +175,23 @@ class Approvals:
         speak=False only shows it, for a question asked while the user is in a call."""
         return await self._ask(summary, detail, speak) == "yes"
 
-    def answer(self, id: str, yes: bool, *, via: str = "button") -> bool:
-        """Answer the waiting question `id`. False if it isn't the one waiting (already answered, timed out)."""
+    async def choose(self, question: str, choices: Sequence[tuple[str, str]], *, speak: bool = True) -> str:
+        """Ask with buttons of its own, (id, label) each, instead of Yes and No. Returns the id clicked; "yes" or
+        "no" for a spoken or typed answer, a choice-less button or the phone; "timeout" if nobody answered."""
+        return await self._ask(question, "", speak, tuple(choices))
+
+    def answer(self, id: str, yes: bool, *, via: str = "button", choice: str = "") -> bool:
+        """Answer the waiting question `id`, with one of its choices if it has them. False if it isn't the one
+        waiting (already answered, timed out)."""
         if self._pending is None or self._pending[0] != id or self._pending[2].done():
             return False
         if self._remote_only and via != REMOTE:
             log.info("an answer at the Mac to a question only the phone may answer")
             return False
-        self._transcript.user("Yes" if yes else "No", via)
-        self._pending[2].set_result(yes)
+        labels = dict(self._choices)
+        choice = choice if choice in labels else ""
+        self._transcript.user(labels[choice] if choice else "Yes" if yes else "No", via)
+        self._pending[2].set_result(choice or ("yes" if yes else "no"))
         return True
 
     def answer_text(self, text: str, *, via: str = "voice") -> bool:
@@ -200,12 +209,14 @@ class Approvals:
         shown = self._ui.bubble.strip()
         return bool(shown) and question.startswith(shown)
 
-    async def _ask(self, question: str, detail: str = "", speak: bool = True) -> str:
-        """Returns "yes", "no" or "timeout"."""
+    async def _ask(self, question: str, detail: str = "", speak: bool = True,
+                   choices: tuple[tuple[str, str], ...] = ()) -> str:
+        """Returns "yes", "no", "timeout" or the id of one of `choices`."""
         async with self._one_at_a_time:
             id = uuid.uuid4().hex[:12]
-            future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
+            future: asyncio.Future[str] = asyncio.get_running_loop().create_future()
             self._pending = (id, question, future)
+            self._choices = choices
             log.info("asking before an action: %s", private(question))
             relayed = self._relay(id, question, detail)
             self._remote_only = any(r.only for r in relayed)
@@ -217,17 +228,18 @@ class Approvals:
                 self._transcript.say(f"Asked on your phone: {text}", Emotion.THINKING)
                 self._speaker.say(f"Asked on your phone: {question}", Emotion.THINKING, speak=False)
             else:
-                self._ui.emit(Confirm(id, question))
+                self._ui.emit(Confirm(id, question, tuple({"id": c, "label": label} for c, label in choices)))
                 self._transcript.say(text, Emotion.THINKING)
                 self._speaker.say(question, Emotion.THINKING, speak=speak and self._speak and not self._quiet())
             answer = "no"
             try:
-                answer = "yes" if await asyncio.wait_for(future, timeout_s) else "no"
+                answer = await asyncio.wait_for(future, timeout_s)
             except TimeoutError:
                 answer = "timeout"
                 self._transcript.say(NO_ANSWER, Emotion.NEUTRAL)
             finally:
                 self._pending = None
+                self._choices = ()
                 if not self._remote_only:
                     self._ui.emit(ConfirmDone(id, answer))
                 self._remote_only = False

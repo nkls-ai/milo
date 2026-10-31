@@ -7,7 +7,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
-from .config import KEY_NAMES, UPDATES, Config
+from .config import KEY_NAMES, MEETING_AUTO, UPDATES, Config
 from .core.events import SettingsReport
 from .core.ports import EventSink
 from .core.registry import ConfigError
@@ -44,6 +44,10 @@ SETTINGS = (
             ("Control-Option-N", "Control-Shift-N", "Control-Option-R", "Off")),
     Setting("ui", "voice"),
     Setting("hands", "show_window"),
+    Setting("meetings", "auto", MEETING_AUTO,
+            ("Ask me", "Without asking when my calendar has a meeting", "Never ask")),
+    Setting("meetings", "always"),
+    Setting("meetings", "never"),
 )
 
 assert all(len(s.options) == len(s.labels) for s in SETTINGS)
