@@ -157,6 +157,10 @@ class QuickActions:
         follow it."""
         self._wait_s = wait_s
         self._poll_s = poll_s
+        self.message_wait_s = MESSAGE_WAIT_S
+        self.to_phone: Callable[[str], object] | None = None
+        """Sends a line to the owner's phone on its own (MessageService.tell): one that comes after the reply by
+        message went, because its act waited for a yes. None: such a line only shows at the Mac."""
         self._timers: dict[str, _Timer] = {}
         self._running: set[asyncio.Task] = set()
         self._by_turn: dict[asyncio.Task, list[asyncio.Task]] = {}
@@ -201,12 +205,13 @@ class QuickActions:
                      when=_iso(reminder.due), app="Milo", reverse=[{"op": "reminder.remove", "id": reminder.id}])
         self._card(done, self._record(done))
 
-    async def lines(self, turn: asyncio.Task | None, timeout_s: float = MESSAGE_WAIT_S) -> str:
-        """For a reply by message: wait for the turn's acts and return their lines, to send along."""
+    async def lines(self, turn: asyncio.Task | None) -> str:
+        """For a reply by message: wait (up to `message_wait_s`) for the turn's acts and return their lines, to send
+        along. A line that comes later goes to the phone on its own (`to_phone`)."""
         tasks = self._by_turn.pop(turn, []) if turn is not None else []
         if tasks:
-            await asyncio.wait(tasks, timeout=timeout_s)
-        return " ".join(self._lines.pop(turn, []))  # a line that comes later only shows at the Mac
+            await asyncio.wait(tasks, timeout=self.message_wait_s)
+        return " ".join(self._lines.pop(turn, []))
 
     async def idle(self) -> None:
         """Wait until no act is running. For tests."""
@@ -282,6 +287,8 @@ class QuickActions:
             self._lines.setdefault(turn, []).append(text)
             self._transcript.say(text, emotion)
             return
+        if via == "message" and self.to_phone is not None:  # the reply went without it
+            self.to_phone(text)
         if turn is not None and turn is not asyncio.current_task():
             await asyncio.wait({turn})  # the act started while the reply streamed: its line comes after the reply
         loop = asyncio.get_running_loop()

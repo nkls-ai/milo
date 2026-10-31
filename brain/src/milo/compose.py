@@ -459,6 +459,8 @@ def _messages(p: Parts) -> None:
         transcript=transcript, home=Path.home(), milo=p.home)
     p.approvals.relays.append(messages)
     helpers.watchers.append(messages.helper_changed)
+    if p.quick is not None:  # an act's line that comes after its reply by message went
+        p.quick.to_phone = messages.tell
 
 
 def _tool_socket(p: Parts) -> None:

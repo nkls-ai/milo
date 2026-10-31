@@ -542,6 +542,40 @@ def test_a_message_from_the_phone_gets_the_line_with_its_answer(tmp_path):
     assert world(s)["reminders"][0]["title"] == "Milk"
 
 
+def test_a_line_that_comes_after_the_answer_was_sent_goes_to_the_phone_on_its_own(tmp_path):
+    """A shortcut asks every time. From the phone the question goes to the chat, and the user may answer after the
+    reply has gone (it waits only so long for its acts). The line then follows as a message of its own."""
+    from tests.fakes import FakeChannel, MemoryRemoteState
+    from tests.services.test_messages import OWNER, me
+
+    s = stack(tmp_path, ['[happy] Sure. <shortcut name="Lights off"/>'],
+              world={"shortcuts": [{"name": "Lights off"}]}, channel=FakeChannel(), remote=MemoryRemoteState(OWNER))
+    s.quick.message_wait_s = 0.05
+
+    async def run():
+        work = asyncio.create_task(s.messages.run())
+        s.channel.push(me("lights off please"))
+        for _ in range(400):
+            await asyncio.sleep(0.005)
+            if "Sure." in s.channel.texts("42"):
+                break
+        sent_before = list(s.channel.texts("42"))
+        [(_, id, question)] = s.channel.questions
+        assert question.startswith("Run the shortcut “Lights off”?"), "the question still waits, on the phone"
+        s.channel.push(me(answer=f"yes:{id}", ref="cb1"))
+        await s.quick.idle()
+        await settle(200)
+        work.cancel()
+        await asyncio.gather(work, return_exceptions=True)
+        return sent_before
+
+    before = asyncio.run(run())
+    assert "Done: Lights off." not in " ".join(before)
+    assert world(s)["shortcut_runs"] == [{"name": "Lights off", "input": ""}]
+    assert s.channel.texts("42")[-1] == "Done: Lights off."
+    assert said(s) == "", "nothing is said out loud for the phone"
+
+
 # ---- the parts
 
 

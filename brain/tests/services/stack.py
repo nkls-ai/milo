@@ -208,6 +208,8 @@ class Stack:
             self.approvals.relays.append(self.messages)
             self.tasks.watchers.append(self.messages.helper_changed)
             self.heartbeat.after_tick.append(self.messages.tick)
+            if self.quick is not None:
+                self.quick.to_phone = self.messages.tell
         self.brain = Brain(self.ui, self.listening, self.live_talk, self.context, self.heartbeat, UiSettings(),
                            approvals=self.approvals, bridge=self.bridge, hands=self.hands, screens=self.screens,
                            helpers=self.tasks, memory=self.memory, routines=self.routines,

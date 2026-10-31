@@ -391,6 +391,11 @@ class MessageService:
         elif reply.strip():
             await self._send(reply.strip())
 
+    def tell(self, text: str) -> None:
+        """A line for the owner that comes after the reply went (a quick action whose yes came late)."""
+        if self.owner is not None and not self.paused:
+            self._spawn(self._send(text))
+
     async def _typing(self) -> None:
         owner = self.owner
         while owner is not None:
