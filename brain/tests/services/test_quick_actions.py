@@ -467,7 +467,7 @@ def test_music_pauses_and_undo_plays_again(tmp_path):
 def test_the_music_card_speaks_the_users_language(tmp_path):
     s = stack(tmp_path, ['[happy] <music do="next"/>'], world={"music": "playing"})
     asyncio.run(say(s, "spiel mir bitte das nächste Lied, das hier mag ich nicht"))
-    assert [c.title for c in cards(s)] == ["Nächster"]
+    assert [(c.title, c.lang) for c in cards(s)] == [("Nächster", "de")], "the app writes its own words in it too"
 
 
 def test_after_a_task_result_an_act_asks_like_a_reminder(tmp_path):

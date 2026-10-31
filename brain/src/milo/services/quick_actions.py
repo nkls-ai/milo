@@ -204,7 +204,7 @@ class QuickActions:
         # No app: Milo's own, so a click shows Today. The card writes the day and time from `when` (ADR 0030).
         done = _Done("reminder", reminder.text, said, when=_iso(reminder.due),
                      reverse=[{"op": "reminder.remove", "id": reminder.id}])
-        self._card(done, self._record(done))
+        self._card(done, self._record(done), self._lang())
 
     async def lines(self, turn: asyncio.Task | None) -> str:
         """For a reply by message: wait (up to `message_wait_s`) for the turn's acts and return their lines, to send
@@ -264,7 +264,7 @@ class QuickActions:
         log.info("quick %s done in %.2fs: %s", act.kind, self._clock.monotonic() - started, private(done.title))
         task = self._record(done) if (done.reverse or done.changes) else ""
         if done.kind:
-            self._card(done, task)
+            self._card(done, task, lang)
         await self._say(done.line, via, turn, Emotion.HAPPY)
 
     def _record(self, done: _Done) -> str:
@@ -278,8 +278,8 @@ class QuickActions:
             return ""
         return task
 
-    def _card(self, done: _Done, task: str) -> None:
-        self._ui.emit(ActionDone(done.kind, done.title, done.detail, done.when, done.app, task))
+    def _card(self, done: _Done, task: str, lang: str) -> None:
+        self._ui.emit(ActionDone(done.kind, done.title, done.detail, done.when, done.app, task, lang))
 
     async def _say(self, text: str, via: str, turn: asyncio.Task | None, emotion: Emotion) -> None:
         """The line once Milo is done speaking and the user isn't talking; after `wait_s` it only shows. A reply by

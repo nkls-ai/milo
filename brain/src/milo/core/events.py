@@ -491,7 +491,8 @@ class ActionDone(Event):
     and `detail` one plain line more (a place, a list, a song), or "". `when` is an ISO time (an event's start, a
     reminder's or timer's end), or "". `app` names the app it lives in ("Calendar", "Reminders", "Notes", "Mail"),
     or "" for Milo's own reminders; the app opens the item there on a click. `undo` is the task id whose Undo
-    takes it back (`undo_task`, ADR 0026), or "" when there is none."""
+    takes it back (`undo_task`, ADR 0026), or "" when there is none. `lang` is the language Milo said it in ("en",
+    "de"; the one the title is in), so the app writes the card's own words in it too; "" leaves that to the app."""
 
     type: ClassVar[str] = "action_done"
     kind: str
@@ -500,6 +501,7 @@ class ActionDone(Event):
     when: str = ""
     app: str = ""
     undo: str = ""
+    lang: str = ""
 
 
 # ---- app -> brain

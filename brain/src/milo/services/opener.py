@@ -62,5 +62,6 @@ class Opener:
                  f" in {request.app}" if request.app and (request.url or request.path) else "", done - started,
                  after, front)
         # A card for it (ADR 0030): a click on it opens the page again, or the app it opened in.
-        self._sink.emit(ActionDone("opened", request.what, request.url, app=str(result.get("app") or request.app)))
+        self._sink.emit(ActionDone("opened", request.what, request.url, app=str(result.get("app") or request.app),
+                                   lang="de" if language == "de" else "en"))
         return True

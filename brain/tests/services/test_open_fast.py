@@ -46,6 +46,7 @@ def test_what_milo_opened_gets_a_card_that_opens_it_again():
     assert [(c.kind, c.title, c.detail, c.app, c.undo) for c in s.sink.of(ActionDone)] == [
         ("opened", "www.youtube.com", "https://www.youtube.com", "Google Chrome", ""),
         ("opened", "Notes", "", "Notes", ""), ("opened", "Downloads", "", "Finder", "")]
+    assert {c.lang for c in s.sink.of(ActionDone)} == {"en"}
 
 
 def test_the_page_opens_while_the_reply_is_still_streaming():
