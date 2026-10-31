@@ -9,6 +9,8 @@ public enum AccessNeed: String, Equatable, Sendable {
     case ui
     /// See the screen's pixels: Screen Recording.
     case screen
+    /// Read the address book, to find who a message or a call is for (ADR 39): Contacts, asked once in a dialog.
+    case contacts
 }
 
 public enum AccessState: String, Equatable, Sendable {

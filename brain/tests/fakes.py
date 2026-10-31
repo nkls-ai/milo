@@ -1018,14 +1018,17 @@ class FakeAccess:
     """AppAccess (ADR 0025). `apps[name]` is what a check says about controlling that app (default yes) and
     `clicks[name]` what the user clicks when the system asks (default yes). `ui` and `screen` answer those needs.
     `places[name]` is where that app may write without asking (default anywhere). `sink`, if given, is looked at
-    whenever the system asks, so a test can see what Milo had shown by then (`shown`)."""
+    whenever the system asks, so a test can see what Milo had shown by then (`shown`). `contacts` answers reading
+    the address book, and `contacts_click` is what the user clicks when the system asks about it."""
 
     def __init__(self, apps: dict | None = None, clicks: dict | None = None, ui: str = "yes", screen: str = "yes",
-                 places: dict | None = None, sink: "RecordingSink | None" = None):
+                 places: dict | None = None, sink: "RecordingSink | None" = None, contacts: str = "yes",
+                 contacts_click: str = "yes"):
         from milo.core.access import Access
         self.apps = {k: Access(v) for k, v in (apps or {}).items()}
         self.clicks = {k: Access(v) for k, v in (clicks or {}).items()}
         self.ui, self.screen = Access(ui), Access(screen)
+        self.contacts, self.contacts_click = Access(contacts), Access(contacts_click)
         self.places_by_app = places or {}
         self.sink = sink
         self.calls: list[tuple[str, str, str]] = []
@@ -1044,7 +1047,8 @@ class FakeAccess:
     async def check(self, need, app=None):
         from milo.core.access import Access, Need
         self.calls.append(("check", need.value, app.name if app else ""))
-        state = {Need.UI: self.ui, Need.SCREEN: self.screen}.get(need) or self.apps.get(app.name, Access.YES)
+        state = ({Need.UI: self.ui, Need.SCREEN: self.screen, Need.CONTACTS: self.contacts}.get(need)
+                 or self.apps.get(app.name, Access.YES))
         return self._answer(need, app, state)
 
     async def request(self, need, app=None):
@@ -1054,6 +1058,8 @@ class FakeAccess:
             self.shown.append(list(self.sink.events))
         if need is Need.CONTROL and self.apps.get(app.name) is Access.ASK:
             self.apps[app.name] = self.clicks.get(app.name, Access.YES)  # the system remembers the click
+        if need is Need.CONTACTS and self.contacts is Access.ASK:
+            self.contacts = self.contacts_click
         return await self.check(need, app)
 
     async def places(self, app):

@@ -250,6 +250,8 @@ public protocol HotkeySource: AnyObject {
 /// A macOS permission the setup window walks through.
 public enum Permission: String, CaseIterable, Sendable {
     case microphone, accessibility, screenRecording, calendars, reminders, automation
+    /// The address book, to find who a message or a call is for (ADR 39).
+    case contacts
 }
 
 public enum PermissionState: Equatable, Sendable {

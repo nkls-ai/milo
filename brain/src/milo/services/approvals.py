@@ -51,6 +51,7 @@ DEFAULT_LEVELS: dict[str, ActionLevel] = {
     "trash": ActionLevel.CHANGE,  # to the Trash or Recently Deleted: can be undone, asks only in "Every step" mode
     "install": ActionLevel.CHANGE,  # a program from a package manager: asks unless the user named it
     "send": ActionLevel.ASK_FIRST,  # mail, messages
+    "call": ActionLevel.ASK_FIRST,  # a phone or video call to someone (ADR 0039)
     "share": ActionLevel.ASK_FIRST,  # anything going to another person
     "delete": ActionLevel.ASK_FIRST,  # for good: emptying the Trash, places without one, uninstalling
     "discard": ActionLevel.ASK_FIRST,  # Don't Save: unsaved changes are gone

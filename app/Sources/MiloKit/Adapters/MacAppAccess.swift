@@ -1,10 +1,12 @@
 import AppKit
+import Contacts
 import CoreGraphics
 import Security
 
 /// AccessSource on macOS (ADR 25): Automation per app through `AEDeterminePermissionToAutomateTarget`, which can
 /// ask the user once and otherwise answers at once; Accessibility and Screen Recording as the setup window checks
-/// them; and where a sandboxed app may save without macOS asking, from its signed entitlements.
+/// them; Contacts, which macOS asks about once (ADR 39); and where a sandboxed app may save without macOS asking,
+/// from its signed entitlements.
 public final class MacAppAccess: AccessSource {
     /// The button in macOS's Automation question that says yes.
     static let allowButton = "Allow"
@@ -23,13 +25,23 @@ public final class MacAppAccess: AccessSource {
         case .ui: AccessAnswer(AXIsProcessTrusted() ? .yes : .no, system: "macOS", label: "Accessibility")
         case .screen: AccessAnswer(CGPreflightScreenCaptureAccess() ? .yes : .no, system: "macOS", label: "Screen Recording")
         case .control: control(app, ask: false, launch: launch)
+        case .contacts: AccessAnswer(Self.contacts(), system: "macOS", label: "Contacts")
         }
     }
 
     public func request(_ need: AccessNeed, app: AccessApp?) -> AccessAnswer {
         // Accessibility and Screen Recording are switched on in System Settings, from the permissions window that
-        // Fix it opens; nothing here pops up a dialog for them.
-        need == .control ? control(app, ask: true, launch: true) : check(need, app: app, launch: false)
+        // Fix it opens; nothing here pops up a dialog for them. Contacts has macOS's own question, once.
+        switch need {
+        case .control: return control(app, ask: true, launch: true)
+        case .contacts:
+            guard Self.contacts() == .ask else { return check(need, app: app, launch: false) }
+            let answered = DispatchSemaphore(value: 0)
+            CNContactStore().requestAccess(for: .contacts) { _, _ in answered.signal() }
+            answered.wait()
+            return check(need, app: app, launch: false)
+        default: return check(need, app: app, launch: false)
+        }
     }
 
     public func places(for app: AccessApp) -> [String]? {
@@ -49,10 +61,22 @@ public final class MacAppAccess: AccessSource {
         case .control: "Privacy_Automation"
         case .ui: "Privacy_Accessibility"
         case .screen: "Privacy_ScreenCapture"
+        case .contacts: "Privacy_Contacts"
         }
         // There is no link to one app's row: the page lists Milo with a switch per app under him.
         guard let url = URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?\(page)") else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    // MARK: Contacts
+
+    static func contacts() -> AccessState {
+        switch CNContactStore.authorizationStatus(for: .contacts) {
+        case .authorized: .yes
+        case .notDetermined: .ask
+        case .denied, .restricted: .no
+        @unknown default: .yes  // newer kinds of access (limited) still read the contacts the user picked
+        }
     }
 
     // MARK: Automation

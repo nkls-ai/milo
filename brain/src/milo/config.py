@@ -151,6 +151,12 @@ class ConnectionSettings:
     files: bool = True
     music: bool = True
     """Play, pause and skip the music when the user asks (the talker's <music> tag)."""
+    contacts: bool = True
+    """Find who the user means in their address book, for a message or a call (ADR 0039)."""
+    messages: bool = True
+    """Send a text message when the user asks (the talker's <message> tag). It asks before every one."""
+    calls: bool = True
+    """Start a call when the user asks (the talker's <call> tag). It asks before every one."""
 
 
 @dataclass(frozen=True)

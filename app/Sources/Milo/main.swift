@@ -20,9 +20,12 @@ let defaults = environment["MILO_HOME"].flatMap { home in
 // What macOS lets Milo do, checked before he first needs it (ADR 25), and the apps he asked about.
 let access = MacAppAccess()
 let controlledApps = ControlledApps(defaults: defaults)
-// The music player before Calendar and Reminders: its ops need no EventKit (ADR 29).
+// The music player before Calendar and Reminders: its ops need no EventKit (ADR 29). The address book for
+// messages and calls (ADR 39) needs none either.
 let accessRequests = AccessRequests(source: access, apps: controlledApps,
-                                    next: MediaRequests(player: SystemMediaPlayer(), next: EventKitConnections()))
+                                    next: MediaRequests(player: SystemMediaPlayer(),
+                                                        next: ContactsRequests(book: SystemContactBook(),
+                                                                               next: EventKitConnections())))
 let brain = UnixSocketBrainClient(socketPath: paths.socket.path)
 // Dictation and the text Milo writes (ADR 33) paste through one inserter, so a clipboard saved by one is the one restored.
 let inserter = PasteboardInserter(scheduler: scheduler)
@@ -98,9 +101,10 @@ let lifecycle = AppLifecycle(
             case .callAudio: SystemPermissions().openSettings(.screenRecording)
             case .copyConsent: break  // MiloModel copies it itself
             case let .openMeeting(id): window.show(meeting: id)
-            // Automation has a switch per app under Milo; Accessibility and Screen Recording have the
-            // permissions window, with its drag tile and restart.
-            case let .access(need, app): need == .control ? access.openSettings(need, app: app) : setupWindow.open()
+            // Automation has a switch per app under Milo, Contacts one switch; Accessibility and Screen Recording
+            // have the permissions window, with its drag tile and restart.
+            case let .access(need, app):
+                need == .control || need == .contacts ? access.openSettings(need, app: app) : setupWindow.open()
             case .undo, .copy: break  // MiloModel does these itself
             }
         }

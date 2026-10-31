@@ -12,7 +12,7 @@ from milo.core.types import Emotion
 
 log = logging.getLogger("milo.reply")
 
-ACTS = ("event", "todo", "note", "timer", "draft", "shortcut", "music", "meeting")
+ACTS = ("event", "todo", "note", "timer", "draft", "shortcut", "music", "meeting", "message", "call")
 """Things the talker does at once, without a helper (services/quick_actions.py, ADR 0029)."""
 TAGS = ("remember", "reminder", "task", "look", "steer", "stop", "undo", "routine", "title", "open", "write", "copy",
         *ACTS)

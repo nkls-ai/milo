@@ -139,6 +139,8 @@ public enum DoneCardText {
         case .opened: return inApp("Opened")
         case .written: return inApp("Ready to copy")
         case .copied: return w("On your clipboard")
+        case .message: return w("Sent")
+        case .call: return w("Called")
         case .other: return w("Done")
         }
     }
@@ -177,6 +179,8 @@ public enum DoneCardText {
         case .opened: w("Opened")
         case .written: action.app.isEmpty ? w("Written, ready to copy") : w("Written")
         case .copied: w("Copied")
+        case .message: w("Message sent")
+        case .call: w("Call")
         case .other: w("Done")
         }
         var said = "\(what): \(action.title), \(line(action, now: now, locale: locale))"
@@ -230,6 +234,7 @@ public enum DoneCardText {
             "Ready to copy": "Bereit zum Kopieren", "Written": "Geschrieben", "Written, ready to copy": "Geschrieben, bereit zum Kopieren",
             "On your clipboard": "In der Zwischenablage", "Copied": "Kopiert",
             "Shows it in the Milo window, to copy": "Zeigt es im Milo-Fenster, zum Kopieren",
+            "Sent": "Gesendet", "Called": "Angerufen", "Message sent": "Nachricht gesendet", "Call": "Anruf",
         ]
     }
 }
@@ -272,6 +277,7 @@ public enum DonePlace: Equatable, Sendable {
     /// The app a kind lives in when the brain names none.
     static let defaultApp: [ActionDone.Kind: String] = [
         .note: "Notes", .draft: "Mail", .shortcut: "Shortcuts", .music: "Music", .timer: "Clock",
+        .message: "Messages", .call: "FaceTime",
     ]
 
     /// "https://youtube.com/…" as it is, "youtube.com" as https; anything else nil.

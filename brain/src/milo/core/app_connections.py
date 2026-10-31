@@ -1,4 +1,4 @@
-"""Calendar, Reminders and the music player held by Milo's app, as Connections ports (ADR 0029, 0034).
+"""Calendar, Reminders, the music player and the address book held by Milo's app, as Connections ports (ADR 0029, 0034).
 
 The app answers `app_request` ops (`calendar.events`, `reminders.add`, `media.state`, ...; protocol/messages.json).
 These classes turn the ports' calls into those ops over any `call(op, args)`. The worker's tools give them one that
@@ -71,6 +71,13 @@ class AppReminders(_App):
 
     def delete(self, id: str) -> dict:
         return self._call("reminders.delete", {"id": id})
+
+
+class AppContacts(_App):
+    """The address book, as the app reads it (`contacts.find`, ADR 0039). Read only."""
+
+    def find(self, name: str, relation: str = "") -> list[dict]:
+        return self._call("contacts.find", {"name": name, **({"relation": relation} if relation else {})})
 
 
 class AppPlayer(_App):

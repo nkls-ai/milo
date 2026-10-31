@@ -513,6 +513,7 @@ public enum BubbleAction: Equatable, Sendable {
             switch need {
             case .control: "Opens System Settings where you let Milo control \(app?.label ?? "the app")"
             case .ui, .screen: "Opens Milo's permissions window"
+            case .contacts: "Opens System Settings where you let Milo look in your contacts"
             }
         case .undo: "Puts back what Milo changed in this task"
         case .copy: "Copies the text Milo wrote, to paste it yourself"

@@ -63,6 +63,7 @@ public final class SetupModel: ObservableObject {
         (.calendars, "Calendars", "Milo tells you what's coming up and puts appointments in your calendar.", true),
         (.reminders, "Reminders", "Milo reads your reminders and adds new ones when you ask.", true),
         (.automation, "Mail and Notes", "Milo reads your mail and notes and writes drafts. He never sends anything.", true),
+        (.contacts, "Contacts", "Milo finds who you mean when you ask him to text or call someone. He asks before each one.", true),
     ]
 
     /// Permissions whose System Settings list takes an app dragged in.
@@ -143,7 +144,7 @@ public final class SetupModel: ObservableObject {
     }
 
     /// Where macOS shows a dialog on `register` while it hasn't been asked.
-    static let asksInADialog: Set<Permission> = [.microphone, .calendars, .reminders, .automation]
+    static let asksInADialog: Set<Permission> = [.microphone, .calendars, .reminders, .automation, .contacts]
 
     private func openSettings(_ permission: Permission) {
         permissions.openSettings(permission)

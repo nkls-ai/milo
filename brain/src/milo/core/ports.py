@@ -782,6 +782,36 @@ class Music(Protocol):
         ...
 
 
+@runtime_checkable
+class Contacts(Protocol):
+    """The user's address book, read only (ADR 0039)."""
+
+    def find(self, name: str, relation: str = "") -> list[dict]:
+        """People whose name, a word of it or their nickname starts like `name`, each {name, nickname?, relation?,
+        phones: [{label, value}], emails: [{label, value}]}. `relation` ("mother", "brother", "partner"): also the
+        people the user's own card names with that relation, marked with it. Raises ToolError."""
+        ...
+
+
+@runtime_checkable
+class Messages(Protocol):
+    """Text messages to other people (ADR 0039). The brain asks the user before every send."""
+
+    def send(self, to: str, text: str) -> dict:
+        """Send `text` to the phone number or address `to`. Returns {to, service?, app?}. Raises ToolError."""
+        ...
+
+
+@runtime_checkable
+class Calls(Protocol):
+    """Calls to other people (ADR 0039). The brain asks the user before every call."""
+
+    def call(self, to: str, how: str = "phone") -> dict:
+        """Start a call to the phone number or address `to`. `how`: "phone", "audio" (an internet audio call) or
+        "video". Returns {to, how, app?}. Raises ToolError."""
+        ...
+
+
 @dataclass(frozen=True)
 class Connections:
     """One implementation of each connection. None: switched off in config.toml or not available."""
@@ -794,6 +824,9 @@ class Connections:
     files: Files | None = None
     phone: Phone | None = None
     music: Music | None = None
+    contacts: Contacts | None = None
+    messages: Messages | None = None
+    calls: Calls | None = None
 
 
 # ---- memory: episodes, facts and the user's things (docs/design/memory.md)
