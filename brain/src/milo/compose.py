@@ -627,11 +627,15 @@ def _mac_locale() -> str:
 
 
 def _persona(path: Path):
-    """Read persona.md on every conversation start, so the user's edits apply without a restart."""
+    """persona.md as it is now, so the user's edits apply without a restart. Read again only when it changed: the
+    system prompt is built on every press of the talk key."""
+    from .memory.text_file import TextFile
+
+    file = TextFile(path)
 
     def read() -> str:
         try:
-            return path.read_text(encoding="utf-8")
+            return file.read()
         except OSError as e:
             log.warning("could not read %s, talking without a persona: %s", path, e)
             return ""
