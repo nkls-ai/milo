@@ -91,7 +91,7 @@ TOOLS: tuple[Tool, ...] = (
     Tool("open_app", "Open an app, or bring it to the front if it is already open, with a window. Waits until it "
          "is in front. For a web page use open_url instead.",
          {"name": _s("The app's name, e.g. \"Numbers\".")}, ("name",), acts=True),
-    Tool("sheet_write", "Fill cells in Excel or Numbers in one go: values, formulas, bold rows, money and two "
+    Tool("sheet_write", "Fill or colour cells in Excel or Numbers in one go: values, formulas, bold rows, colours, money and two "
          "decimals. Put the whole table and its formatting in one call; don't format through menus. With new_document it opens the app and makes a new blank document first, so a whole table "
          "is one call. Without it, it writes into the front sheet of the front document; replacing cells that "
          "already hold something waits for the user's yes. Several calls can build on each other.",
@@ -100,8 +100,11 @@ TOOLS: tuple[Tool, ...] = (
           "header": _b("Make the first row bold, as a header. Default false."),
           "bold": _s("Ranges to make bold, like \"A9:B9\"; several joined with commas."),
           "money": _s("Ranges to show as money in the user's currency, like \"B2:B9\"."),
-          "decimals": _s("Ranges to show with two decimals, like \"C2:C9\".")},
-         ("app", "rows"), acts=True),
+          "decimals": _s("Ranges to show with two decimals, like \"C2:C9\"."),
+          "fill": _s("Background colours: a range, \"header\" or \"sheet\" (every used cell) and a colour, like "
+                     "\"A1:D1 blue\" or \"sheet red\"; several joined with commas. Without rows it only colours."),
+          "font_color": _s("Text colours, the same way: \"header white\".")},
+         ("app",), acts=True),
     Tool("sheet_read", "Read the cells of the front sheet in Excel or Numbers, with column letters and row "
          "numbers; formulas show as formulas in Excel." + _UNTRUSTED,
          {"app": _SHEET_APP, "range": _s("A range like \"A1:D20\". Default: every used cell.")}, ("app",)),

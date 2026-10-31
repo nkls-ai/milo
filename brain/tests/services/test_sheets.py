@@ -110,3 +110,49 @@ def test_tab_and_linefeed_are_never_said_to_an_app(script):
     documents.write_script("TextEdit", "hi"), documents.write_script("Pages", "hi")])
 def test_the_app_comes_to_the_front_only_after_the_new_document_is_made(script):
     assert script.index("make new") < script.index("activate")
+
+
+# ---- colours (ADR 0032)
+
+
+def test_colours_are_named_or_hex_in_english_or_german():
+    assert sheets.colours("A1:D1 blue, sheet light green") == [("A1:D1", (0, 112, 192)), ("sheet", (146, 208, 80))]
+    assert sheets.colours("header rot") == [("header", (255, 0, 0))]
+    assert sheets.colours("b2:b9 #FFCC00") == [("B2:B9", (255, 204, 0))]
+    for bad in ("A1 blurple", "everything red", "A1:B2"):
+        with pytest.raises(HandsError):
+            sheets.colours(bad)
+
+
+def test_the_whole_sheet_is_its_used_range_never_every_cell():
+    script = write_script(EXCEL, [], fill="sheet red", font_color="sheet white")
+    assert "set color of interior object of (used range of ws) to {255, 0, 0}" in script
+    assert "set color of font object of (used range of ws) to {255, 255, 255}" in script
+    assert "XFD" not in script and "set value of" not in script, "no cells are written"
+
+
+def test_the_header_is_the_first_row_of_what_is_used():
+    script = write_script(EXCEL, [], fill="header blue")
+    assert "set color of interior object of (row 1 of (used range of ws)) to {0, 112, 192}" in script
+    numbers = write_script(NUMBERS, [], fill="header blue, A2:B3 yellow", font_color="sheet black")
+    assert "set background color of row 1 to {0, 28784, 49344}" in numbers
+    assert 'set background color of range "A2:B3" to {65535, 65535, 0}' in numbers
+    assert "set text color of cell range to {0, 0, 0}" in numbers
+
+
+def test_cells_and_colours_go_in_one_call():
+    script = write_script(EXCEL, WEEK, new_document=True, header=True, fill="A1:B1 blue")
+    assert script.index("set value of") < script.index("interior object") < script.index("activate")
+
+
+def test_a_write_with_nothing_to_do_is_refused():
+    with pytest.raises(HandsError, match="rows or a colour"):
+        write_script(EXCEL, [])
+
+
+@pytest.mark.parametrize("script", [write_script(EXCEL, [], fill="sheet red"),
+                                    write_script(NUMBERS, [], font_color="header blue"),
+                                    sheets.describe_script(EXCEL, [], "A1"), sheets.describe_script(NUMBERS, [], "A1")])
+def test_colour_scripts_never_say_tab_or_linefeed_to_an_app(script):
+    import re
+    assert [line for line in _inside_tell(script) if re.search(r"(?<!AppleScript's )\b(tab|linefeed)\b", line)] == []

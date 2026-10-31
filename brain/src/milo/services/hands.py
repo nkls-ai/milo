@@ -358,7 +358,7 @@ class HandsService:
         app = args["app"]
         if args.get("new_document"):
             return {"app": app, "new": True}
-        found = sheets.parse((await self._script(sheets.describe_script(app, args["rows"],
+        found = sheets.parse((await self._script(sheets.describe_script(app, args.get("rows") or [],
                                                                           args.get("start", "A1"))))["text"])
         document = found.get("document", "")
         return {"app": app, "document": document, "made": (app, document) in self._made,
@@ -379,18 +379,16 @@ class HandsService:
             found = sheets.parse((await self._script(sheets.read_script(app, args.get("range", ""))))["text"])
             return {"summary": f"{app}, “{found.get('document', '')}”, sheet “{found.get('sheet', '')}”",
                     "text": sheets.table_text(found)}
-        start = args.get("start", "A1")
-        script = sheets.write_script(app, args["rows"], start, new_document=bool(args.get("new_document")),
+        script = sheets.write_script(app, args.get("rows") or [], args.get("start", "A1"),
+                                     new_document=bool(args.get("new_document")),
                                      header=bool(args.get("header")), bold=args.get("bold", ""),
                                      money=args.get("money", ""), decimals=args.get("decimals", ""),
-                                     locale=self._locale)
+                                     locale=self._locale, fill=args.get("fill", ""),
+                                     font_color=args.get("font_color", ""))
         found = sheets.parse((await self._script(script))["text"])
-        document = found.get("document", "")
         if args.get("new_document"):
-            self._made.add((app, document))
-        where = sheets.block(args["rows"], start).range
-        made = "Made a new document and filled" if args.get("new_document") else "Filled"
-        return {"text": f"{made} {where} in “{document}”, sheet “{found.get('sheet', '')}”, in {app}."}
+            self._made.add((app, found.get("document", "")))
+        return {"text": sheets.write_summary(args, found)}
 
     async def _script(self, script: str) -> dict:
         """Run a script the brain wrote itself, through the app."""
@@ -458,7 +456,9 @@ def title(tool: str, args: dict, target: dict) -> str:
             if args.get("new_document"):
                 return f"Making a new table in {args['app']}"
             doc = _clip(str(target.get("document") or ""), 30)
-            return f"Filling in cells in “{doc}”" if doc else f"Filling in cells in {args['app']}"
+            verb = "Filling in" if args.get("rows") else "Colouring" if args.get("fill") or args.get(
+                "font_color") else "Formatting"
+            return f"{verb} cells in “{doc}”" if doc else f"{verb} cells in {args['app']}"
         case "sheet_read":
             return f"Reading the table in {args['app']}"
         case "write_document":

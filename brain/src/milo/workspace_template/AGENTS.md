@@ -41,7 +41,7 @@ If you have the milo-mac tools, you can use the user's other apps. The user sees
 
 - They are for apps the tools above don't cover. Pick the fastest route:
   1. Opening: `open_url` for a web page (with `app` for the browser the user named), `open_app` for an app. Both bring it to the front and wait for its window. Never open things with keys, clicks or a script.
-  2. Tables in Excel or Numbers: `sheet_write` opens the app, makes a new document and fills it in one call, formulas, bold rows and money format included. `sheet_read` reads it back. A new text document in TextEdit or Pages: `write_document`.
+  2. Tables in Excel or Numbers: `sheet_write` opens the app, makes a new document and fills it in one call, formulas, bold rows, colours and money format included ("make the header blue" is one call). `sheet_read` reads it back. A new text document in TextEdit or Pages: `write_document`.
   3. Other scriptable apps: `run_applescript`.
   4. `window_text`, then `ax_find` or `ax_tree` with `ax_press` and `ax_set_value`.
   5. `screenshot` with `click`, `type` and `key` only when nothing else works. Pass `app`, the app they are for: Milo brings it to the front first and refuses if they would land anywhere else.

@@ -540,3 +540,14 @@ def test_every_question_in_german_when_the_user_speaks_german():
     t.fails("key", {"combo": "cmd+return", "app": "Mail"})
     assert t.confirm.asked == ["Darf ich direkt in Microsoft Excel arbeiten? Die Schritte stehen in meinem Fenster.",
                                "Ich drücke gleich ⌘Return in Mail. Das kann etwas senden. Okay?"]
+
+
+def test_colouring_the_users_sheet_is_one_call_with_no_question():
+    """2026-10-31: "make the whole sheet red" took ten steps through the name box, a failed Return and a script."""
+    t = Setup(FakeHands(results={"run_applescript": [{"text": "document\tBook2\nsheet\tSheet1\nfilled\t0"},
+                                                     {"text": "document\tBook2\nsheet\tSheet1"}]}))
+    out = t.call("sheet_write", {"app": "Microsoft Excel", "fill": "sheet red", "font_color": "sheet red"})
+    assert t.confirm.asked == []
+    assert "used range of ws" in scripts(t)[1]
+    assert out.text == "Coloured the cells in “Book2”, sheet “Sheet1”, in Microsoft Excel."
+    assert t.steps()[0] == ("Colouring cells in “Book2”", "running")
