@@ -11,18 +11,9 @@ from milo.core.types import HandsError, ListenMode
 from milo.core.words import say
 from milo.services.cloud_hearing import CloudHearing
 from tests.fakes import FakeAudioInput, FakeHands, FakeLiveModel, FakeStreamingTranscriber, FakeTranscriber
-from tests.services.stack import Stack, settle
+from tests.services.stack import Stack, settle, talk
 
 YOUTUBE = '[happy] <open app="Google Chrome" url="https://www.youtube.com"/> Opening YouTube in Chrome.'
-
-
-def talk(s: Stack, *texts: str, language: str = "") -> None:
-    async def run():
-        for text in texts:
-            await s.live_talk.start(text, language=language)
-            await settle()
-
-    asyncio.run(run())
 
 
 def opened(s: Stack) -> list[tuple[str, dict]]:

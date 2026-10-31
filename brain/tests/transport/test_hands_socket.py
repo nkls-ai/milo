@@ -3,24 +3,14 @@
 import asyncio
 import json
 import os
-import shutil
 import stat
-import tempfile
 from pathlib import Path
 
-import pytest
 
 from milo.core.types import HandsError
 from milo.mcp_server import HandsClient
 from milo.services.hands import ToolOutput
 from milo.transport.hands_socket import HandsSocketServer
-
-
-@pytest.fixture
-def sock_path():
-    folder = Path(tempfile.mkdtemp(prefix="milo-", dir="/tmp"))  # AF_UNIX paths must stay short
-    yield folder / "run" / "hands.sock"
-    shutil.rmtree(folder, ignore_errors=True)
 
 
 async def fake_call(tool: str, args: object) -> ToolOutput:

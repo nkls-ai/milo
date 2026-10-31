@@ -17,7 +17,7 @@ from milo.core.types import ListenMode, MiloState
 from milo.services.listening import _InOrder
 from milo.transport.unix_socket import UnixSocketServer
 from tests.fakes import FakeTranscriber
-from tests.services.stack import Stack
+from tests.services.stack import Stack, until
 
 
 class GatedTranscriber(FakeTranscriber):
@@ -45,13 +45,6 @@ def threaded(transcriber: FakeTranscriber, workers: int = 1) -> tuple[Stack, Thr
     executor = ThreadPoolExecutor(workers)
     s.listening._executor = executor
     return s, executor
-
-
-async def until(test, timeout_s: float = 5.0) -> None:
-    deadline = time.monotonic() + timeout_s
-    while not test():
-        assert time.monotonic() < deadline, "timed out"
-        await asyncio.sleep(0.005)
 
 
 def test_a_key_press_right_after_a_release_opens_the_mic_at_once_over_the_socket():

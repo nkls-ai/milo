@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from concurrent.futures import Executor, Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -245,3 +246,21 @@ async def settle(rounds: int = 50) -> None:
     """Let background tasks (turns, speech, threadsafe callbacks) run to their next real wait."""
     for _ in range(rounds):
         await asyncio.sleep(0)
+
+
+async def until(condition, timeout: float = 10.0) -> None:
+    """Wait for `condition()` in real time, polling every 5 ms; fail after `timeout` seconds."""
+    deadline = time.monotonic() + timeout
+    while not condition():
+        assert time.monotonic() < deadline, "timed out"
+        await asyncio.sleep(0.005)
+
+
+def talk(s: Stack, *texts: str, **kwargs) -> None:
+    """Each of `texts` as a user turn, one after the other, each settled before the next. `kwargs` go to start."""
+    async def run():
+        for text in texts:
+            await s.live_talk.start(text, **kwargs)
+            await settle()
+
+    asyncio.run(run())

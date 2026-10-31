@@ -14,7 +14,7 @@ from milo.services.memory import MEMORY_RULES
 from milo.services.memory_requests import MemoryRequests
 from milo.services.transcript import Transcript
 from tests.fakes import FakeEyes, FakeHarness, FakeLiveModel, MemoryConversations, MemoryRoutineBook, MemoryTranscript
-from tests.services.stack import Stack, settle
+from tests.services.stack import Stack, settle, talk
 
 ANNA = "Anna is the user's sister. Her birthday is March 3."
 
@@ -25,15 +25,6 @@ def stack(**kw) -> Stack:
     s.facts.add(Fact(new_id(s.clock.now()), ANNA, "people", s.clock.now(), "chat"))
     s.index.refresh()
     return s
-
-
-def talk(s: Stack, *texts: str) -> None:
-    async def run():
-        for text in texts:
-            await s.live_talk.start(text)
-            await settle()
-
-    asyncio.run(run())
 
 
 def test_a_turn_carries_what_it_needs_and_the_system_prompt_stays_put():

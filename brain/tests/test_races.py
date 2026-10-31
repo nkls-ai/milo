@@ -8,8 +8,6 @@ how long the user waits.
 
 import asyncio
 import json
-import shutil
-import tempfile
 import time
 from pathlib import Path
 
@@ -37,15 +35,6 @@ class SlowVoice(FakeVoice):
     def synthesize(self, text):
         time.sleep(SLOW_S)
         return super().synthesize(text)
-
-
-@pytest.fixture
-def sock_path():
-    root = Path(tempfile.mkdtemp(dir="/tmp", prefix="milo-"))  # macOS caps socket paths at 104 bytes
-    try:
-        yield root / "run" / "brain.sock"
-    finally:
-        shutil.rmtree(root, ignore_errors=True)
 
 
 async def connect(s: Stack, path: Path):

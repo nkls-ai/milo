@@ -8,16 +8,7 @@ from milo.core.types import Emotion, HarnessError, MiloState, Reminder, Usage
 from milo.services.live_talk import HICCUP
 from milo.services.reply_effects import task_question
 from tests.fakes import FakeAudioOutput, FakeHarness, FakeLiveModel, ListReminders, MemoryProfile, without_undo_id
-from tests.services.stack import Stack, settle
-
-
-def talk(s: Stack, *texts: str) -> None:
-    async def run():
-        for text in texts:
-            await s.live_talk.start(text)
-            await settle()
-
-    asyncio.run(run())
+from tests.services.stack import Stack, settle, talk
 
 
 def test_a_turn_streams_into_speech_and_records_usage():

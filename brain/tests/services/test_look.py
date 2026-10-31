@@ -8,18 +8,10 @@ from milo.core.types import MiloState, ScreenCapture
 from milo.services.talk_prompt import LOOK_RULES
 from milo.services.screen import NOTE, checked, look_prompt, screen_data
 from tests.fakes import FakeEyes, FakeLiveModel
-from tests.services.stack import Stack, settle
+from tests.services.stack import Stack, settle, talk
 
 EXCEL = ScreenCapture(app="Microsoft Excel", window="Budget.xlsx", focused="cell C4: =SUM(C1:C3)",
                       text="Rent 900\nFood 320", image="/tmp/milo-test/look.png")
-
-
-def talk(s: Stack, text: str, **kwargs) -> None:
-    async def run():
-        await s.live_talk.start(text, **kwargs)
-        await settle()
-
-    asyncio.run(run())
 
 
 def test_a_look_tag_captures_the_window_and_asks_again_with_text_and_image():
