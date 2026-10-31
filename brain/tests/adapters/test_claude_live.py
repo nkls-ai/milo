@@ -70,6 +70,10 @@ while True:
         emit({"type": "stream_event", "event": {"type": "message_start"}})
         if text == "die":
             sys.exit(3)
+        if text == "hang":
+            delta("Okay ")
+            time.sleep(60)  # the CLI stops in the middle of a reply and sends nothing more
+            continue
         if text == "fail":
             result(0, "error_during_execution", True, "overloaded")
             continue
@@ -280,3 +284,25 @@ def test_close_while_priming_stops_cleanly(tmp_path, ctx, fake_claude):
         assert model._session is None and model._priming is None
 
     asyncio.run(main())
+
+
+def test_a_reply_that_goes_quiet_ends_and_the_next_turn_starts_fresh(tmp_path, ctx, fake_claude):
+    """2026-10-31 on the real Milo: the CLI stopped in the middle of a reply and every later message waited."""
+    async def main():
+        model = live(ctx, fake_claude)
+        model.stall_timeout_s = 0.5
+        try:
+            await model.start("be brief")
+            got = []
+            with pytest.raises(HarnessError, match="quiet") as e:
+                async for d in model.turn("hang"):
+                    got.append(d)
+            assert got == ["Okay "] and e.value.transient
+            started = asyncio.get_running_loop().time()
+            assert await collect(model, "prompt") == ["be brief "], "a fresh process answers"
+            assert asyncio.get_running_loop().time() - started < 5, "without waiting for the stuck one"
+        finally:
+            await model.close()
+
+    asyncio.run(main())
+    assert len(launches(tmp_path)) == 2

@@ -83,9 +83,24 @@ def _setup_logging(log_file: Path, settings: LoggingSettings) -> None:
         logging.getLogger(name).setLevel(logging.ERROR)
 
 
+def _log_tasks() -> None:
+    """Every running task and where it waits, into brain.log."""
+    import io
+
+    tasks = asyncio.all_tasks()
+    out = io.StringIO()
+    for task in sorted(tasks, key=lambda t: t.get_name()):
+        task.print_stack(limit=8, file=out)
+    log.warning("%d tasks, on SIGUSR1:\n%s", len(tasks), out.getvalue())
+
+
 async def _serve(runtime: Runtime) -> None:
     # The app stops its brain with SIGTERM (uv passes that on, not SIGINT). Shut down as for Ctrl-C.
     asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, asyncio.current_task().cancel)
+    # `kill -USR1 <brain>` logs what every task is waiting on: a stuck turn can be read without a debugger,
+    # which needs root on macOS. Only where the signal exists.
+    if (dump := getattr(signal, "SIGUSR1", None)) is not None:  # Windows has none
+        asyncio.get_running_loop().add_signal_handler(dump, _log_tasks)
     for notice in runtime.notices:
         notice.loop = asyncio.get_running_loop()
     if runtime.meetings is not None:

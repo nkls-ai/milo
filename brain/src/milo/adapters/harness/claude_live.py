@@ -42,6 +42,9 @@ log = logging.getLogger(__name__)
 STDOUT_LIMIT = 16 * 1024 * 1024  # one JSON line can carry a whole message
 CLOSE_TIMEOUT_S = 3.0
 DRAIN_TIMEOUT_S = 15.0  # how long to wait for an abandoned turn's result before restarting
+STALL_TIMEOUT_S = 30.0
+"""A reply that sends nothing for this long is stuck: on 2026-10-31 the CLI stopped in the middle of one and sent
+no more, and every later message waited behind it. Its first words take 1 to 5 seconds."""
 
 PRIME_TEXT = "(Nobody has said anything yet. This only opens the line. Reply with just [neutral].)"
 
@@ -137,6 +140,7 @@ class ClaudeLiveModel:
         self.model = model
         self.effort = effort
         self.prime = prime
+        self.stall_timeout_s = STALL_TIMEOUT_S
         self._priming: asyncio.Task | None = None
         self.last_usage = Usage()
         self._system_prompt = ""
@@ -184,7 +188,15 @@ class ClaudeLiveModel:
             try:
                 await session.send({"type": "user", "message": {"role": "user", "content": content(text, images)}})
                 while True:
-                    event = await session.events.get()
+                    try:
+                        async with asyncio.timeout(self.stall_timeout_s):
+                            event = await session.events.get()
+                    except TimeoutError:
+                        got_result = True  # nothing more will come: start a fresh process for the next turn
+                        log.warning("claude_live: nothing for %.0fs in the middle of a reply; restarting",
+                                    self.stall_timeout_s)
+                        await self._forget(session)
+                        raise HarnessError("claude went quiet in the middle of a reply", transient=True) from None
                     if event is _EOF:
                         got_result = True  # nothing more will come from this process
                         await self._forget(session)
