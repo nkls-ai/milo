@@ -38,6 +38,7 @@ max_helpers = 3
 [harness.codex]
 binary = ""                       # empty: PATH, then ChatGPT.app's bundled codex
 model = ""
+light_model = "gpt-6-luna"        # for simple helpers off the screen (a calendar read, a mail search); "" uses model
 reasoning_effort = "low"
 sandbox = "workspace-write"       # or read-only. Helpers write only ~/Milo/work, never Milo's own files
 timeout_s = 180
@@ -45,6 +46,7 @@ timeout_s = 180
 [harness.claude]
 binary = ""
 model = ""
+light_model = ""                  # for simple helpers off the screen, e.g. "claude-haiku-5-5"
 permission_mode = "acceptEdits"
 timeout_s = 180
 
