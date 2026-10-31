@@ -98,6 +98,7 @@ class Runtime:
     meetings: MeetingService | None = None
     diarize_executor: ThreadPoolExecutor | None = None
     attention: Attention | None = None
+    background_stt: BackgroundStt | None = None
 
 
 @dataclass
@@ -143,7 +144,7 @@ def build(home: Path) -> Runtime:
     return Runtime(p.brain, p.server, p.heartbeat, p.transcriber, p.voice, p.stt_executor, p.tts_executor, p.harness,
                    p.live_model, p.live_talk, p.tool_server, p.hands_server, p.helpers, p.mem, p.barge_in,
                    p.backchannel, p.messages, p.notices, meetings=p.meetings, diarize_executor=p.diarize_executor,
-                   attention=p.attention)
+                   attention=p.attention, background_stt=p.background_stt)
 
 
 def _workspace(p: Parts) -> None:
@@ -361,7 +362,11 @@ def _meetings(p: Parts) -> None:
     from .memory.meetings import FileMeetingStore, JsonVoiceBook
     from .services.connections import reach
 
-    p.meetings = p.diarize_executor = p.background_stt = None
+    p.meetings = p.diarize_executor = None
+    # The STT thread's one seam for work nobody waits on: meeting passes, and the models' warm-up at start. Both give
+    # way when a key goes down (Listening), so the user's words stay instant.
+    p.background_stt = BackgroundStt(p.stt_executor, busy=p.attention.user_speaking,
+                                     interrupt=p.transcriber.interrupt)
     if not isinstance(p.transcriber, TimedTranscriber):
         return
     config, attention = p.config, p.attention
@@ -382,9 +387,6 @@ def _meetings(p: Parts) -> None:
     async def add_reminder(title, notes):
         return await reach(day.reminders.add, title, None, notes)
 
-    # Meeting passes wait while the user dictates or talks, and give way when a key goes down (Listening),
-    # so the user's words stay instant during a call.
-    p.background_stt = BackgroundStt(p.stt_executor, busy=attention.user_speaking, interrupt=p.transcriber.interrupt)
     p.meetings = MeetingService(
         FileMeetingStore(p.workspace.meetings_dir), p.ui, p.clock, p.background_stt, p.transcriber,
         approvals=p.approvals, speaker=p.speaker, transcript=p.transcript, diarizer=diarizer,

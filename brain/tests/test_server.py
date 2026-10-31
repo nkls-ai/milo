@@ -68,6 +68,34 @@ def test_a_warmup_the_user_interrupted_is_no_error(caplog):
     assert [(r.levelname, r.getMessage()) for r in caplog.records] == [
         ("INFO", "stt engine ready; its warm-up gave way to the user")]
 
+
+def test_a_key_going_down_ends_the_stt_warmup_so_the_users_live_words_run_next(caplog):
+    """2026-10-31: the first dictation after a start showed no live words: its passes waited behind the warm-up's."""
+    from milo.core.types import Interrupted
+    from milo.services.background_stt import BackgroundStt
+
+    stop, started = threading.Event(), threading.Event()
+
+    def warm():  # like Whisper's warm-up passes: long, and they check the interrupt between steps
+        started.set()
+        if stop.wait(5):
+            raise Interrupted()
+
+    pool = ThreadPoolExecutor(1)
+    stt = BackgroundStt(pool, interrupt=stop.set)
+    caplog.set_level(logging.INFO, logger="milo")
+
+    async def go():
+        warming = asyncio.create_task(_warm_all({"stt": lambda: stt.run(warm)}))
+        await asyncio.to_thread(started.wait, 2)
+        stt.yield_now()  # Listening, as the dictation key goes down
+        heard = await asyncio.wait_for(asyncio.get_running_loop().run_in_executor(pool, lambda: "live words"), 1)
+        await warming
+        return heard
+
+    assert asyncio.run(go()) == "live words"
+    assert [r.getMessage() for r in caplog.records] == ["stt engine ready; its warm-up gave way to the user"]
+
 def test_a_background_loop_that_crashes_is_logged_and_started_again(caplog):
     # M10: one bad tick used to end the loop for the brain's life, with nothing in the log until exit.
     from milo.server import supervised

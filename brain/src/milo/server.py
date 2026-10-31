@@ -152,8 +152,12 @@ async def _serve(runtime: Runtime) -> None:
     if runtime.hands_server is not None:
         await runtime.hands_server.start()
     log.info("brain up (chat=%s, harness=%s)", runtime.live_model.name, runtime.harness.name)
+    background_stt = runtime.background_stt
     engines: dict[str, Warmup] = {
-        "stt": (runtime.stt_executor, runtime.transcriber.warm),
+        # Through BackgroundStt: a dictation started while Whisper warms up ends the warm-up's test passes, so the
+        # live words come at once instead of after them (2026-10-31: none showed on the first dictation).
+        "stt": (lambda: background_stt.run(runtime.transcriber.warm)) if background_stt is not None
+        else (runtime.stt_executor, runtime.transcriber.warm),
         "tts": (runtime.tts_executor, runtime.voice.warm),
         # Queued behind the voice on the one TTS thread: the "Hm." clips for slow replies, in his voice.
         **({"backchannels": (runtime.tts_executor, runtime.backchannel.warm)} if runtime.backchannel else {}),
