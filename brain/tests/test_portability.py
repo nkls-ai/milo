@@ -3,7 +3,8 @@
 Platform specifics belong in `milo/adapters/` (picked by name in config.toml) and in the native app. This test
 reads every core module and fails when one imports or names something only macOS has: AppleScript, bundle ids,
 macOS paths and commands, the ⌘ key vocabulary, System Settings, Apple-only frameworks and apps, "Mac" in words
-the user or the model reads, POSIX-only calls, and branches on `sys.platform`.
+the user or the model reads, POSIX-only calls, `%-d`-style strftime flags (Windows raises on them; use
+`milo.core.dates`), and branches on `sys.platform`.
 
 It reads code, not comments: imports, attribute uses and string values. Docstrings and other bare strings are
 left alone, so a comment may still say how macOS behaves.
@@ -43,6 +44,7 @@ TEXT_RULES: dict[str, re.Pattern[str]] = {
                                 r"|\bTCC\b|\bAX[A-Z]\w+|Apple Silicon|LOCAL_PEERCRED|AppleLocale"),
     "mac-app": re.compile(r"\b(?:Finder|Safari|TextEdit|Numbers|Pages|Keynote|Script Editor|Automator|iMessage)\b"),
     "mac-word": re.compile(r"\bmacOS\b|\bMacs?\b|\bMac's\b"),
+    "posix-strftime": re.compile(r"%[-#][aAbBdeHIjmMpSyYUwWxXcZ]"),
 }
 """Matched against string values in code, case as written unless the rule says otherwise."""
 
@@ -205,6 +207,9 @@ ALLOWED: dict[tuple[str, str], str] = {
     ("services/settings_guard.py", "mac-word"): "PUT_BACK says \"change them at the Mac\"",
     ("services/orchestrator.py", "mac-settings"): "_SCREEN_WORDS counts \"system settings\" as screen work",
     # Private folders are where macOS keeps them.
+    # Dates: `%-d` raises on Windows. milo.core.dates spells them out.
+    ("services/live_talk.py", "posix-strftime"): "the reminder question's `%-d`; fixed on the parallel live_talk branch, "
+                                                 "delete this line when it lands",
     ("services/sharing.py", "bundle-id"): "PRIVATE lists Library/Application Support/com.apple.TCC",
     ("services/sharing.py", "mac-framework"): "PRIVATE lists the TCC database folder",
     ("services/sharing.py", "mac-path"): "PRIVATE lists ~/Library folders (Keychains, Cookies, Messages, Mail)",
@@ -259,6 +264,8 @@ def test_allowlist_lines_say_why():
     ("x = os.getuid()", "posix"),
     ("if sys.platform == 'darwin': pass", "platform-branch"),
     ('P = "~/Library/Mail"', "mac-path"),
+    ('s = f"{day:%A %-d %B}"', "posix-strftime"),
+    ('s = day.strftime("%#d")', "posix-strftime"),
 ])
 def test_scan_catches(code, rule):
     assert rule in {f.rule for f in scan(code, "x.py")}
@@ -270,6 +277,7 @@ def test_scan_catches(code, rule):
     "# osascript on the Mac\nx = 1",
     'KEY = "say"',
     'COMBO = "mod+s"',
+    's = f"{day:%d %H:%M} 50%-ish"',
 ])
 def test_scan_leaves_comments_docstrings_and_plain_words(code):
     assert scan(code, "x.py") == []

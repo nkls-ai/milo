@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 
 import numpy as np
 
+from milo.core.dates import long_date
 from milo.core.meetings import ME, MeetingInfo, MeetingNotes, TimedWord, Todo, Track, TranscriptLine, Turn, clock
 from milo.core.types import STT_SAMPLE_RATE, Audio
 
@@ -250,7 +251,7 @@ def render_transcript(info: MeetingInfo, lines: Sequence[TranscriptLine], names:
 
 
 def _when(info: MeetingInfo, end: datetime | None = None) -> str:
-    when = f"{info.started:%A %-d %B %Y, %H:%M}"
+    when = f"{long_date(info.started, year=True)}, {info.started:%H:%M}"
     if end is not None:
         when += f"–{end:%H:%M}"
     parts = [when]
