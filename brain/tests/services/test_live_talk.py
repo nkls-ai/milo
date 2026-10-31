@@ -58,16 +58,28 @@ def test_first_speech_starts_before_the_stream_finishes():
     assert len(s.output.streams) == 1
 
 
-def test_the_system_prompt_has_persona_rules_profile_and_open_reminders():
+def test_the_system_prompt_has_persona_rules_and_profile_but_no_reminders():
     s = Stack(profile=MemoryProfile("# About the user\n- Name: Niklas\n"),
-              reminders=ListReminders(Reminder("a", datetime(2026, 10, 30, 9, 0), "Call mom", False),
-                                      Reminder("b", datetime(2026, 10, 28, 9, 0), "Old one", True)))
+              reminders=ListReminders(Reminder("a", datetime(2026, 10, 30, 9, 0), "Call mom", False)))
     talk(s, "hi")
     [system] = s.model.system_prompts
     assert system.startswith("You are Milo, a test persona.")
     assert "[happy]" in system and "<remember>" in system and "<task>" in system
     assert "- Name: Niklas" in system
-    assert "- 2026-10-30 09:00 Call mom" in system and "Old one" not in system
+    assert "Call mom" not in system, "reminders change; they go in <today>, so the cached prompt doesn't"
+
+
+def test_open_reminders_go_in_the_today_block_and_again_when_they_change():
+    s = Stack(model=FakeLiveModel(["[happy] Hi."], ["[happy] Sure. <reminder>2026-10-31 18:00 Buy milk</reminder>"],
+                                  ["[happy] Okay."], ["[happy] Fine."]),
+              reminders=ListReminders(Reminder("a", datetime(2026, 10, 30, 9, 0), "Call <b>mom</b>", False),
+                                      Reminder("b", datetime(2026, 10, 28, 9, 0), "Old one", True)))
+    talk(s, "hi", "remind me to buy milk at six", "thanks", "ok")
+    first, _, third, fourth = s.model.turns
+    assert "<today>\nThe user's day" in first and "Milo's reminders:\n- 2026-10-30 09:00 Call ‹b›mom‹/b›" in first
+    assert "Old one" not in first and "Today:" not in first, "without quick actions: only Milo's reminders"
+    assert "- 2026-10-31 18:00 Buy milk" in third, "a new reminder: the block goes in again"
+    assert "<today>" not in fourth, "unchanged: not again"
 
 
 def test_conversation_continues_and_restarts_after_idle_with_a_fresh_profile():

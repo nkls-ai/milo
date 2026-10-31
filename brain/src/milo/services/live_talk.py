@@ -24,6 +24,7 @@ from .reply_stream import ActRequest, ReplyParser
 from .screen import look_prompt
 from .speaker import Speaker, Utterance
 from .tag_policy import TagPolicy, policy
+from .today import Today
 from .talk_prompt import NAME_IT, PromptParts, system_prompt, untrusted, update_prompt
 from .transcript import Transcript, unrecorded
 from .ui_state import UiState
@@ -47,7 +48,7 @@ class LiveTalk:
 
     One turn runs at a time; a new turn or the talk key interrupts the running one at once (barge-in).
     The conversation stays open in the model between turns and starts fresh after `idle_reset_s` of
-    silence, with the persona, profile and open reminders reloaded into its system prompt.
+    silence, with the persona and profile reloaded into its system prompt.
     """
 
     def __init__(self, model: LiveModel, speaker: Speaker, ui: UiState, context: UserContext, clock: Clock,
@@ -65,6 +66,9 @@ class LiveTalk:
         self._writer = writer
         """Pastes what a <write> tag wrote where the user is (ADR 0033). None: the tag does nothing."""
         self._quick = quick
+        self._today = quick.today if quick is not None else Today(None, clock, reminders=reminders)
+        """The <today> block (services/today.py): the day, Milo's own open reminders, his timers. Without quick
+        actions only the reminders."""
         """Does the everyday act tags itself and keeps the <today> block (ADR 0029). None: those tags do nothing."""
         self._opener = opener
         """Opens what an <open> tag names at once (ADR 0028). None: the tag does nothing."""
@@ -89,7 +93,6 @@ class LiveTalk:
         self._context = context
         self._clock = clock
         self._profile = profile
-        self._reminders = reminders
         self._ledger = ledger
         self._persona = persona
         self._idle_reset_s = idle_reset_s
@@ -290,8 +293,8 @@ class LiveTalk:
         voice opens its connection now too.
         """
         self._speaker.prepare()
-        if self._quick is not None:
-            self._quick.prepare()
+        if self._today is not None:
+            self._today.soon()
         if (self._preparing is None or self._preparing.done()) and self._needs_fresh_conversation():
             self._preparing = asyncio.create_task(self._prepare())
 
@@ -364,7 +367,7 @@ class LiveTalk:
             await self._ensure_conversation()
             meeting, (today, outside), recalled = await asyncio.gather(
                 self._meeting(text) if tags and not screen else asyncio.sleep(0, ""),
-                self._quick.note() if self._quick is not None and tags else asyncio.sleep(0, ("", False)),
+                self._today.note() if self._today is not None and tags else asyncio.sleep(0, ("", False)),
                 self._recall(text, screen, outside=self._tainted or bool(notes) or self._saw_screen))
             if meeting and self._memory is not None:
                 self._memory.outside = True  # what was said in the call: the episode is stored as outside text
@@ -400,8 +403,8 @@ class LiveTalk:
         except asyncio.CancelledError:
             self._notes[:0] = notes  # the model may not have seen them: send them again next turn
             self._earlier[:0] = earlier
-            if self._quick is not None:
-                self._quick.today.unsent()
+            if self._today is not None:
+                self._today.unsent()
             self._end_reply(shown, parser)
             raise
         except HarnessError as e:
@@ -520,19 +523,17 @@ class LiveTalk:
                 self._tainted = False
                 if self._memory is not None:
                     self._memory.new_conversation()
-                if self._quick is not None:
-                    self._quick.new_conversation()
+                if self._today is not None:
+                    self._today.new_conversation()
 
     def _system_prompt(self) -> str:
-        open_reminders = [r for r in self._reminders.all() if not r.done]
         return system_prompt(PromptParts(
             persona=self._persona(), computer=self._computer, look=self._eyes is not None,
             quick=self._quick.rules() if self._quick is not None else "",
             writing=self._writer.rules() if self._writer is not None else "",
             memory=self._memory.rules if self._memory is not None else "",
             routines=self._routines.rules() if self._routines is not None else "",
-            profile=self._profile.read(),
-            reminders=tuple(f"- {r.due:%Y-%m-%d %H:%M} {r.text}" for r in open_reminders)))
+            profile=self._profile.read()))
 
     def _prompt(self, text: str, notes: list[str], *, name: bool = False) -> str:
         helpers = self._tasks.board()

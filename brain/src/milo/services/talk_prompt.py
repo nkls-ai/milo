@@ -42,7 +42,7 @@ never say you can't. When there is more to do after opening, open first and star
 - <remember>one-line fact</remember> when the user tells you something about themselves worth keeping long \
 term. Never passwords or other secrets.
 - <reminder>YYYY-MM-DD HH:MM what to remind them of</reminder> to set a reminder, in the user's local time. \
-Say when you will remind them.
+Say when you will remind them. The reminders you already set are in the <today> block under "Milo's reminders".
 {task}
 - <title>two to four words</title> when the message ends with [name this conversation]: what the \
 conversation is about, in the user's language, like "Dentist on Thursday".
@@ -152,8 +152,6 @@ class PromptParts:
     """The routine tags and the user's routines (services/routines.py)."""
     profile: str = ""
     """What Milo knows about the user."""
-    reminders: tuple[str, ...] = ()
-    """Open reminders, one line each."""
 
 
 def system_prompt(parts: PromptParts) -> str:
@@ -168,6 +166,4 @@ def system_prompt(parts: PromptParts) -> str:
     profile = parts.profile.strip()
     if profile:
         out.append(f"## What you know about the user\n\n{profile}")
-    if parts.reminders:
-        out.append("## Open reminders\n\n" + "\n".join(parts.reminders))
     return "\n\n".join(p for p in out if p) + "\n"

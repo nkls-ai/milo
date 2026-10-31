@@ -14,14 +14,14 @@ import pytest
 
 from milo.adapters.connect.fake import World
 from milo.core.events import ActionDone, Confirm, ConfirmAnswer, UndoPoints
-from milo.core.types import ScreenCapture
+from milo.core.types import Reminder, ScreenCapture
 from milo.memory.reminders import MarkdownReminders
 from milo.core import words
 from milo.core.words import dates
 from milo.services.app_ops import AppOps, OpsError
 from milo.services.reply_stream import ReplyParser
 from milo.services.today import Today
-from tests.fakes import FakeClock, FakeEyes, FakeHarness, FakeLiveModel
+from tests.fakes import FakeClock, FakeEyes, FakeHarness, FakeLiveModel, ListReminders
 from tests.services.stack import Stack, settle
 
 DENTIST = {"id": "x1", "title": "Dentist", "start": "2026-10-29T15:00", "end": "2026-10-29T16:00", "location": "",
@@ -715,3 +715,18 @@ def test_today_fetches_through_the_app_and_waits_only_briefly():
     assert "e1 15:00–16:00 Dentist" in first[0] and "Music: playing." in first[0] and first[1] is False
     assert again == ("", False) and stale == ("", False), "fetched again after 5 minutes, unchanged: not sent"
     assert seen.count("calendar.events") == 2
+
+
+def test_milos_own_reminders_sit_after_the_days_to_dos():
+    clock = FakeClock()
+
+    async def app(op, args):
+        if op == "calendar.events":
+            return [DENTIST]
+        return []
+
+    own = ListReminders(Reminder("a", datetime(2026, 11, 2, 9, 0), "Call Anna", False))
+    today = Today(AppOps(call=app, via_app=("calendar", "reminders", "media")), clock, reminders=own)
+    text, outside = asyncio.run(today.note())
+    assert text.index("Dentist") < text.index("Milo's reminders:\n- 2026-11-02 09:00 Call Anna")
+    assert outside is False, "Milo's own reminders are no outside text"
