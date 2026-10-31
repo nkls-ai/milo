@@ -1,6 +1,6 @@
 # 36. Music by name, the volume and the screen's brightness
 
-Date: 2026-11-01. Status: accepted. Builds on [ADR 29](0029-quick-actions-from-the-talker.md) and [ADR 35](0035-small-things-just-happen.md).
+Date: 2026-11-01. Status: accepted (changed after review the same day: the tags are `change` acts, and what plays is outside text). Builds on [ADR 29](0029-quick-actions-from-the-talker.md) and [ADR 35](0035-small-things-just-happen.md).
 
 ## Context
 
@@ -10,7 +10,7 @@ Date: 2026-11-01. Status: accepted. Builds on [ADR 29](0029-quick-actions-from-t
 
 **Three tags, done by the brain at once, like every quick action.** `<music do="play" query="Taylor Swift" kind="artist"/>` (kind: artist, song, album, playlist, genre or any; `app` only when the user names one), `<volume level="40"/>` or `do="up|down|mute|unmute"`, `<brightness do="up|down" steps="2"/>`. Each says one short templated line ("Playing Taylor Swift.", "Volume at 40.", "Brighter.", English and German), shows a card (`music`, `sound`, `brightness`) and has an Undo.
 
-**None of them asks.** Their plans have no action kind (`_Plan` approval None), like a timer: nothing leaves the computer, nothing is lost, and the card's Undo puts it back. Outside text in the conversation doesn't change that. A switch in `[connections]` (`music`, `volume`, `brightness`) turns each off.
+**They don't ask in auto mode.** Each is a `change`, like pause and skip, and `light` (`_Plan`): nothing leaves the computer, nothing is lost, and the card's Undo puts it back. So at the Mac in auto mode, the default, they just happen, even after outside text (ADR 35). In "Ask once per task" or "Every step" mode, after outside text they ask first ("Change the volume?"), and a `never` level for `change` refuses them, like every other act. A switch in `[connections]` (`music`, `volume`, `brightness`) turns each off.
 
 **Three new ports, platform specifics in the adapters.** `MusicApps` (which, scripts, play, running, playing, resume, pause), `Volume` (get, set) and `Brightness` (change) in `core/ports.py`, on `Connections`.
 
@@ -22,7 +22,7 @@ Date: 2026-11-01. Status: accepted. Builds on [ADR 29](0029-quick-actions-from-t
 
 **Undo.** A play records what played before in the same app (read by the same script, so no second round trip): Undo plays that track again from where it was, or pauses when nothing played or it can't be found (a stream not in the library). The volume goes back to its level and mute. The brightness presses the other key as often.
 
-**What plays, in `<today>`.** "What's this song?" should need no tool. `<today>`'s music line now says "Music: playing “Shake It Off” by Taylor Swift in Music." A script takes about half a second (0.6 to 1.3 s measured under load), longer than a turn waits for the block, so the read starts in the background when the user starts talking (`Today.soon`), at most every 5 s, and the block takes it once it is there. It reads only apps that run (`pgrep`, which starts nothing) and that Milo may script already (`AccessGate.allowed_now`, which asks nobody): reading what plays must never bring up the system's Automation question out of nowhere. Track titles are made inert and don't make the conversation count as outside text: most turns while music plays would otherwise ask (ADR 35's complaint).
+**What plays, in `<today>`.** "What's this song?" should need no tool. `<today>`'s music line now says "Music: playing “Shake It Off” by Taylor Swift in Music." A script takes about half a second (0.6 to 1.3 s measured under load), longer than a turn waits for the block, so the read starts in the background when the user starts talking (`Today.soon`), at most every 5 s, and the block takes it once it is there. It reads only apps that run (`pgrep`, which starts nothing) and that Milo may script already (`AccessGate.allowed_now`, which asks nobody): reading what plays must never bring up the system's Automation question out of nowhere. Track titles and artists are other people's text (anyone can name a track on Spotify): they are made inert, the line is marked "(titles by others)", and a block with it counts as outside text, like an invite. In auto mode at the Mac that costs little: acts and reminders don't ask after outside text there (ADR 35); a task nobody asked for runs careful, and a fact or an unnamed link asks.
 
 ## Consequences
 
@@ -30,5 +30,5 @@ Date: 2026-11-01. Status: accepted. Builds on [ADR 29](0029-quick-actions-from-t
 - Only the library plays by name in Music; the catalogue opens a search. Spotify by name never plays by itself.
 - An album added to the "Milo" playlist is in library order, which is usually but not always track order.
 - Brightness keys only reach screens that take them (built-in, Apple displays); others don't change, and the line still says "Brighter." At the top or the bottom of the range a press does nothing, and its Undo then moves the other way.
-- A song title in `<today>` is someone else's text, read as data, not taint. A malicious title can't open a tag (inert) and acts it suggested would still be the user's own small, undoable kind.
+- While music plays, conversations count as outside text. In "Ask once per task" or "Every step" mode that means acts ask after the block reached the conversation.
 - Not run on a real Mac: the Music play, resume and pause scripts (compiled with `osacompile` only, to play nothing during development), every Spotify script (Spotify isn't installed where this was written), the `music://` search address, and the brightness keys. The volume read ran for real; setting it did not. Tests use a fake script runner and the fake world.

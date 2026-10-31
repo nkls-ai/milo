@@ -772,8 +772,9 @@ class QuickActions:
         return _Plan("change", say(f"acts.ask.{do}", lang), None, run)
 
     def _play(self, act: ActRequest, lang: str) -> _Plan:
-        """Something by name, in Music or Spotify (ADR 0036). Never asks: Undo pauses it, or plays again what played
-        before. What the app can't play opens its search, and the line says so."""
+        """Something by name, in Music or Spotify (ADR 0036). Asks only after outside text outside auto mode: Undo
+        pauses it, or plays again what played before. What the app can't play opens its search, and the line says
+        so."""
         apps = self._connections.music_apps
         if apps is None:
             raise Problem("playing music by name is switched off in Milo's settings")
@@ -800,10 +801,11 @@ class QuickActions:
             return _Done("music", title, line, detail=say("acts.card_songs", lang, count=count) if count > 1 else "",
                          app=app, reverse=[{"op": "music.back", "app": app, "was": played.get("was") or {}}])
 
-        return _Plan(None, "", None, run)
+        # A change like the player's, light: it asks only after outside text outside auto mode, and `never` refuses.
+        return _Plan("change", say("acts.ask.play_named", lang, title=inert(query, 50)), None, run, light=True)
 
     def _volume(self, act: ActRequest, lang: str) -> _Plan:
-        """The sound output: a level, louder, quieter, mute or unmute. Never asks; Undo sets it back."""
+        """The sound output: a level, louder, quieter, mute or unmute. Light, like a play; Undo sets it back."""
         volume = self._connections.volume
         if volume is None:
             raise Problem("the volume is switched off in Milo's settings")
@@ -835,11 +837,11 @@ class QuickActions:
             return _Done("sound", line.rstrip("."), line,
                          reverse=[{"op": "volume", "level": was, "muted": bool(before.get("muted"))}])
 
-        return _Plan(None, "", None, run)
+        return _Plan("change", say("acts.ask.volume", lang), None, run, light=True)
 
     def _brightness(self, act: ActRequest, lang: str) -> _Plan:
-        """The screen, a few presses of the brightness key brighter or dimmer. Never asks; Undo presses the other
-        key as often."""
+        """The screen, a few presses of the brightness key brighter or dimmer. Light, like a play; Undo presses the
+        other key as often."""
         screen = self._connections.brightness
         if screen is None:
             raise Problem("the brightness is switched off in Milo's settings")
@@ -857,7 +859,7 @@ class QuickActions:
             return _Done("brightness", line.rstrip("."), line,
                          reverse=[{"op": "brightness", "do": "down" if do == "up" else "up", "steps": steps}])
 
-        return _Plan(None, "", None, run)
+        return _Plan("change", say("acts.ask.brightness", lang), None, run, light=True)
 
     def _meeting(self, act: ActRequest, lang: str) -> _Plan:
         meetings = self._meetings
