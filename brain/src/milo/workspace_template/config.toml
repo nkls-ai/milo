@@ -79,6 +79,10 @@ notes = true
 shortcuts = true
 files = true
 music = true                      # play, pause and skip the music
+music_app = ""                    # where "play Taylor Swift" plays: "Music", "Spotify", or "" for the one
+                                  # already running, else Music
+volume = true                     # set the sound volume
+brightness = true                 # make the screen brighter or dimmer
 
 [connections.mac]
 files_scope = "~"                 # files outside this folder are never searched or read

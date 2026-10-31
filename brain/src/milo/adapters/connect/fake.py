@@ -254,6 +254,110 @@ class FakeMusic:
         return world["music"]
 
 
+
+class FakeMusicApps:
+    """Music and Spotify over world.json: `songs` ({title, artist, album, genre}) and `playlists` ({name: [titles]})
+    are the library, `music_apps` the apps running, `now_playing` what plays ({app, track, artist, state, id}).
+    Searches it opened go to `searches`; Spotify plays only spotify: addresses, like the real one."""
+
+    def __init__(self, world: World):
+        self._world = world
+
+    def which(self, app: str = "") -> str:
+        named = {"music": "Music", "apple music": "Music", "spotify": "Spotify"}
+        if app.strip():
+            return named.get(app.strip().lower(), "")
+        return "Spotify" if self.running() == ["Spotify"] else "Music"
+
+    def scripts(self, app: str, query: str) -> bool:
+        return app == "Music" or query.startswith("spotify:")
+
+    def play(self, query: str, kind: str = "any", app: str = "") -> dict:
+        app = self.which(app)
+        if not app:
+            raise ToolError("I can play by name in Music or Spotify.")
+        world = self._world.load()
+        was = dict(world.get("now_playing") or {})
+        q = query.lower()
+        if app == "Spotify":
+            hits = [{"title": query, "artist": ""}] if query.startswith("spotify:") else []
+        else:
+            lists = world.get("playlists") or {}
+            name = next((n for n in lists if n.lower() == q), None) or next((n for n in lists if q in n.lower()), None)
+            if name is not None and kind in ("playlist", "any"):
+                hits = [{"title": name, "artist": "", "count": len(lists[name])}]
+            else:
+                keys = {"artist": ("artist",), "song": ("title",), "album": ("album",), "genre": ("genre",),
+                        "playlist": ()}.get(kind, ("title", "artist", "album", "genre"))
+                hits = [s for s in world.get("songs") or [] if any(q in str(s.get(k, "")).lower() for k in keys)]
+        if not hits:
+            world.setdefault("searches", []).append({"app": app, "query": query})
+            self._world.save(world)
+            return {"app": app, "title": query, "searched": True, "missing": app == "Music"}
+        first = hits[0]
+        world["now_playing"] = {"app": app, "track": first["title"], "artist": first.get("artist", ""),
+                                "state": "playing", "id": first["title"], "position": "0"}
+        world["music"] = "playing"
+        self._world.save(world)
+        title = first["title"] if kind == "song" or "count" in first or len(hits) == 1 else query
+        return {"app": app, "title": title, "count": first.get("count", len(hits)), "was": was}
+
+    def running(self) -> list[str]:
+        return list(self._world.load().get("music_apps") or [])
+
+    def playing(self, apps: list[str]) -> dict:
+        now = self._world.load().get("now_playing") or {}
+        return dict(now) if now.get("app") in apps else {}
+
+    def resume(self, was: dict) -> None:
+        world = self._world.load()
+        world["now_playing"] = {**was, "state": "playing"}
+        world["music"] = "playing"
+        self._world.save(world)
+
+    def pause(self, app: str) -> None:
+        world = self._world.load()
+        if (world.get("now_playing") or {}).get("app") == app:
+            world["now_playing"]["state"] = "paused"
+            world["music"] = "paused"
+            self._world.save(world)
+
+
+class FakeVolume:
+    """The output volume as `volume` in world.json: {level, muted}, 50 and not muted at first."""
+
+    def __init__(self, world: World):
+        self._world = world
+
+    def get(self) -> dict:
+        return {"level": 50, "muted": False, **(self._world.load().get("volume") or {})}
+
+    def set(self, level: int | None = None, muted: bool | None = None) -> dict:
+        now = self.get()
+        if level is not None:
+            now["level"] = max(0, min(100, int(level)))
+        if muted is not None:
+            now["muted"] = muted
+        world = self._world.load()
+        world["volume"] = now
+        self._world.save(world)
+        return now
+
+
+class FakeBrightness:
+    """The screen's brightness as `brightness` in world.json, 0 to 16 key presses, 8 at first."""
+
+    def __init__(self, world: World):
+        self._world = world
+
+    def change(self, do: str, steps: int = 1) -> dict:
+        if do not in ("up", "down"):
+            raise ToolError(f"The screen can't go {do}.")
+        world = self._world.load()
+        world["brightness"] = max(0, min(16, int(world.get("brightness", 8)) + (steps if do == "up" else -steps)))
+        self._world.save(world)
+        return {"steps": steps}
+
 class FakeShortcuts:
     def __init__(self, world: World):
         self._world = world
@@ -314,4 +418,6 @@ def _fake(options: Mapping[str, Any], ctx: AdapterContext) -> Connections:
     world = World(Path(o.dir).expanduser() if o.dir else ctx.home / "fake")
     return Connections(calendar=FakeCalendar(world), reminders=FakeReminders(world), mail=FakeMail(world),
                        notes=FakeNotes(world), shortcuts=FakeShortcuts(world),
-                       files=FakeFiles(world, Protected(ctx.home)), music=FakeMusic(world))
+                       files=FakeFiles(world, Protected(ctx.home)), music=FakeMusic(world),
+                       music_apps=FakeMusicApps(world), volume=FakeVolume(world),
+                       brightness=FakeBrightness(world))

@@ -22,7 +22,8 @@ let access = MacAppAccess()
 let controlledApps = ControlledApps(defaults: defaults)
 // The music player before Calendar and Reminders: its ops need no EventKit (ADR 29).
 let accessRequests = AccessRequests(source: access, apps: controlledApps,
-                                    next: MediaRequests(player: SystemMediaPlayer(), next: EventKitConnections()))
+                                    next: MediaRequests(player: SystemMediaPlayer(), brightness: SystemBrightnessKeys(),
+                                                        next: EventKitConnections()))
 let brain = UnixSocketBrainClient(socketPath: paths.socket.path)
 // Dictation and the text Milo writes (ADR 33) paste through one inserter, so a clipboard saved by one is the one restored.
 let inserter = PasteboardInserter(scheduler: scheduler)

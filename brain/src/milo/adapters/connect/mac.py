@@ -21,6 +21,7 @@ from milo.transport.tool_client import BrainClient
 
 from . import _files, _osascript
 from ._osascript import records
+from .mac_sound import MacMusicApps, MacVolume
 
 SHORTCUT_TIMEOUT_S = 120
 MDFIND_TIMEOUT_S = 20
@@ -337,4 +338,5 @@ def _mac(options: Mapping[str, Any], ctx: AdapterContext) -> Connections:
     brain = BrainClient(Workspace(ctx.home).tools_socket_path)
     return Connections(calendar=AppCalendar(_app(brain)), reminders=AppReminders(_app(brain)), mail=AppleMail(),
                        notes=AppleNotes(), shortcuts=ShortcutsApp(),
-                       files=SpotlightFiles(Path(o.files_scope).expanduser().resolve(), Protected(ctx.home)))
+                       files=SpotlightFiles(Path(o.files_scope).expanduser().resolve(), Protected(ctx.home)),
+                       music_apps=MacMusicApps(), volume=MacVolume())

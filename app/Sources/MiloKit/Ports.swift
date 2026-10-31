@@ -150,6 +150,12 @@ public protocol MediaPlayer: AnyObject {
     func send(_ command: MediaCommand) -> Bool
 }
 
+/// The keyboard's brightness keys, for the brain's `media.brightness_up` and `media.brightness_down` (ADR 36).
+public protocol BrightnessKeys: AnyObject {
+    /// Press the key once, up or down. False if the system took none.
+    func press(up: Bool) -> Bool
+}
+
 /// The Accessibility permission needed to see global keys and to paste.
 public protocol AccessibilityPermission {
     /// With `prompt`, macOS shows its permission dialog if not yet trusted.

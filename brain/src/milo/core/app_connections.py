@@ -1,4 +1,5 @@
-"""Calendar, Reminders and the music player held by Milo's app, as Connections ports (ADR 0029, 0034).
+"""Calendar, Reminders, the music player and the brightness keys held by Milo's app, as Connections ports (ADR 0029,
+0034, 0036).
 
 The app answers `app_request` ops (`calendar.events`, `reminders.add`, `media.state`, ...; protocol/messages.json).
 These classes turn the ports' calls into those ops over any `call(op, args)`. The worker's tools give them one that
@@ -85,3 +86,10 @@ class AppPlayer(_App):
 
 def _state(result: Any) -> str:
     return str((result or {}).get("state", ""))
+
+
+class AppBrightness(_App):
+    """The screen's brightness, through the app's brightness keys (ADR 0036)."""
+
+    def change(self, do: str, steps: int = 1) -> dict:
+        return self._call(f"media.brightness_{do}", {"steps": steps})

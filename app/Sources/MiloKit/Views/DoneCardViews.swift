@@ -239,6 +239,8 @@ struct DoneGlyph: View {
             case .opened: OpenedTile(app: card.action.app, detail: card.action.detail, icon: icon)
             case .written: SymbolTile(symbol: card.action.app.isEmpty ? "doc.on.doc.fill" : "text.cursor")
             case .copied: SymbolTile(symbol: "doc.on.clipboard.fill")
+            case .sound: SymbolTile(symbol: "speaker.wave.2.fill")
+            case .brightness: SymbolTile(symbol: "sun.max.fill")
             case .other: SymbolTile(symbol: "sparkles")
             }
         }

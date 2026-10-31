@@ -139,6 +139,8 @@ public enum DoneCardText {
         case .opened: return inApp("Opened")
         case .written: return inApp("Ready to copy")
         case .copied: return w("On your clipboard")
+        case .sound: return w("Sound")
+        case .brightness: return w("Screen")
         case .other: return w("Done")
         }
     }
@@ -177,6 +179,8 @@ public enum DoneCardText {
         case .opened: w("Opened")
         case .written: action.app.isEmpty ? w("Written, ready to copy") : w("Written")
         case .copied: w("Copied")
+        case .sound: w("Sound")
+        case .brightness: w("Screen")
         case .other: w("Done")
         }
         var said = "\(what): \(action.title), \(line(action, now: now, locale: locale))"
@@ -230,6 +234,7 @@ public enum DoneCardText {
             "Ready to copy": "Bereit zum Kopieren", "Written": "Geschrieben", "Written, ready to copy": "Geschrieben, bereit zum Kopieren",
             "On your clipboard": "In der Zwischenablage", "Copied": "Kopiert",
             "Shows it in the Milo window, to copy": "Zeigt es im Milo-Fenster, zum Kopieren",
+            "Sound": "Ton", "Screen": "Bildschirm",
         ]
     }
 }

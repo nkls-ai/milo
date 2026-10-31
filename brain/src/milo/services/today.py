@@ -12,6 +12,9 @@ same day (`current`).
 Each event gets a short handle (e1, e2, ...), stable for the conversation, so the model can move or cancel one by it;
 each to-do one (t1, ...) to tick off or delete, and each of Milo's reminders one (r1, ...) to cancel, when quick
 actions are on.
+What plays (track, artist and app, ADR 0036) is read through the music apps' scripts, which take about half a
+second: in the background, as the user starts talking, at most every `SONG_S`, and only in apps Milo may script
+already (`may_read`), so no question of the system's comes out of nowhere. The block takes it once it is there.
 Titles are made inert like task results. Events with other people come from their invites, and events and to-dos on a
 subscribed or read-only calendar or list (`shared`) were written by someone else too: their titles are other people's
 text, marked as such, and a reply to a block carrying one follows the taint rule (`render` returns whether it does).
@@ -21,7 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -39,6 +42,8 @@ WAIT_S = 0.3
 """How long a turn waits for a stale block before it goes without the fresh one."""
 MEDIA_S = 0.25
 """How long the block waits for the player."""
+SONG_S = 5.0
+"""How long what plays counts as fresh: no second script for the same turn."""
 MAX_EVENTS = 24
 MAX_TODOS = 12
 MAX_UNDATED = 15
@@ -87,6 +92,11 @@ class Today:
         self._sent = ""
         self._read = False
         """The last refresh read the day."""
+        self.may_read: Callable[[str], Awaitable[bool]] | None = None
+        """Whether Milo may script a music app already, without asking (QuickActions). None: he may."""
+        self._song: dict = {}
+        self._song_task: asyncio.Task | None = None
+        self._song_at: float | None = None
 
     # ---- the conversation
 
@@ -101,21 +111,25 @@ class Today:
         self._sent = ""
 
     def changed(self) -> None:
-        """Something changed the calendar or the to-dos (a quick action): fetch again before the next turn."""
+        """Something changed the calendar, the to-dos or the music (a quick action): fetch again before the next
+        turn."""
         self._dirty = True
+        self._song_at = None
 
     def soon(self) -> None:
         """Start a refresh now if it is due, without waiting: the user started talking."""
         if self._due() and (self._refreshing is None or self._refreshing.done()):
             self._refreshing = asyncio.create_task(self._refresh())
+        self._listen()
 
     async def note(self, *, wait_s: float = WAIT_S) -> tuple[str, bool]:
         """The block for the next user message and whether it carries other people's text; ("", False) when the
         conversation already saw it as it is, or it failed. Waits up to `wait_s` for a refresh that is due."""
         try:
             self.soon()
-            if self._refreshing is not None and not self._refreshing.done():
-                await asyncio.wait({self._refreshing}, timeout=wait_s)
+            pending = {t for t in (self._refreshing, self._song_task) if t is not None and not t.done()}
+            if pending:
+                await asyncio.wait(pending, timeout=wait_s)
             text, outside = self.render()
         except Exception:
             log.exception("the today block failed")
@@ -204,7 +218,11 @@ class Today:
         if timers:
             lines.append("Timers: " + "; ".join(f"{inert(title) or 'timer'} rings at {at:%H:%M:%S}"
                                                 for title, at in timers) + ".")
-        if snap.music in ("playing", "paused"):
+        song = self._song
+        if song.get("track") and song.get("state") in ("playing", "paused"):
+            by = f" by {inert(song.get('artist'))}" if song.get("artist") else ""
+            lines.append(f"Music: {song['state']} “{inert(song['track'])}”{by} in {inert(song.get('app'), 20)}.")
+        elif snap.music in ("playing", "paused"):
             lines.append(f"Music: {snap.music}.")
         if len(lines) == 1:
             return "", False
@@ -304,3 +322,25 @@ class Today:
             return self._snap.music
         except ToolError:
             return ""
+
+    def _listen(self) -> None:
+        """Read what plays in the background, unless it was read in the last `SONG_S`."""
+        apps = self.connections.music_apps if self.connections else None
+        if apps is None or (self._song_task is not None and not self._song_task.done()):
+            return
+        if self._song_at is not None and self._clock.monotonic() - self._song_at < SONG_S:
+            return
+        self._song_at = self._clock.monotonic()
+        self._song_task = asyncio.create_task(self._read_song(apps))
+
+    async def _read_song(self, apps: Any) -> None:
+        try:
+            running = await reach(apps.running) or []
+            mine = [app for app in running if self.may_read is None or await self.may_read(app)]
+            self._song = (await reach(apps.playing, mine) or {}) if mine else {}
+        except ToolError as e:
+            log.info("couldn't read what plays: %s", e)
+            self._song = {}
+        except Exception:
+            log.exception("reading what plays failed")
+            self._song = {}

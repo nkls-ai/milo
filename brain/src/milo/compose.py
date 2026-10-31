@@ -301,7 +301,7 @@ def _brain_connections(p: Parts):
     connections = CONNECTIONS.create(name, options, p.ctx)
     connections = dataclasses.replace(connections, **{f.name: None for f in dataclasses.fields(connections)
                                                       if not getattr(switches, f.name, True)})
-    return in_brain(connections, p.bridge.call, music=switches.music)
+    return in_brain(connections, p.bridge.call, music=switches.music, brightness=switches.brightness)
 
 
 def _helpers(p: Parts) -> None:
@@ -418,7 +418,8 @@ def _quick(p: Parts):
     return QuickActions(p.connections, p.ui, p.speaker, p.clock, approvals=p.approvals,
                         today=Today(p.connections, p.clock, reminders=p.reminders), undo=p.undo,
                         transcript=p.transcript, access=p.access, meetings=p.meetings, reminders=p.reminders,
-                        quiet=attention.user_speaking, language=p.language.get)
+                        quiet=attention.user_speaking, language=p.language.get,
+                        music_app=p.config.connections.music_app)
 
 
 def _talk(p: Parts) -> None:

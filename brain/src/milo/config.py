@@ -151,6 +151,13 @@ class ConnectionSettings:
     files: bool = True
     music: bool = True
     """Play, pause and skip the music when the user asks (the talker's <music> tag)."""
+    music_app: str = ""
+    """Where "play Taylor Swift" plays when the user names no app: "Music", "Spotify", or "" for the one already
+    running, else Music (ADR 0036)."""
+    volume: bool = True
+    """Set the sound volume when the user asks (<volume>)."""
+    brightness: bool = True
+    """Make the screen brighter or dimmer when the user asks (<brightness>)."""
 
 
 @dataclass(frozen=True)
