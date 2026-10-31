@@ -13,7 +13,8 @@ import pytest
 
 from milo.core.events import Bubble, Command, Level, StateChanged, TextInput, UiConfig
 from milo.core.types import MiloState
-from milo.transport.unix_socket import UnixSocketServer, peer_uid
+from milo.system.posix import peer_uid
+from milo.transport.unix_socket import UnixSocketServer
 
 TIMEOUT_S = 2
 GREETING = [StateChanged(MiloState.IDLE), UiConfig("fn", "right_option")]
@@ -347,12 +348,13 @@ def test_a_peer_whose_user_the_mac_cant_tell_is_refused(monkeypatch):
     # L3: macOS always answers LOCAL_PEERCRED, so no answer there means something is off: refuse.
     import sys
 
+    from milo.system import posix
     from milo.transport import unix_socket
 
-    monkeypatch.setattr(unix_socket, "peer_uid", lambda sock: None)
+    monkeypatch.setattr(posix, "peer_uid", lambda sock: None)
     monkeypatch.setattr(sys, "platform", "darwin")
     assert not unix_socket.same_user(None)
     monkeypatch.setattr(sys, "platform", "linux")
     assert unix_socket.same_user(None), "elsewhere the 0700 run/ folder is the check"
-    monkeypatch.setattr(unix_socket, "peer_uid", lambda sock: os.getuid() + 1)
+    monkeypatch.setattr(posix, "peer_uid", lambda sock: os.getuid() + 1)
     assert not unix_socket.same_user(None)

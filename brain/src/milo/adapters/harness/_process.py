@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
-import signal
-import subprocess
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
+from milo import system
 from milo.core.types import HarnessError
 
 log = logging.getLogger(__name__)
@@ -43,7 +41,7 @@ async def run(cmd: list[str], *, cwd: Path, timeout_s: float,
         # stdin must be closed: `codex exec` waits for piped stdin otherwise and hangs.
         proc = await asyncio.create_subprocess_exec(
             *cmd, cwd=cwd, env=env, stdin=asyncio.subprocess.DEVNULL, limit=STDOUT_LIMIT,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, start_new_session=True,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, **system.isolated_process(),
         )
     except OSError as e:
         raise HarnessError(f"could not start {Path(cmd[0]).name}: {e}", transient=False) from None
@@ -108,13 +106,13 @@ async def stop(proc: asyncio.subprocess.Process, grace_s: float = STOP_GRACE_S) 
     if proc.returncode is not None:
         return
     tree = await asyncio.to_thread(descendants, proc.pid)  # ps takes tens of ms: not on the event loop
-    _signal(proc.pid, [pid for pid, _ in tree], signal.SIGTERM)
+    system.signal_processes(proc.pid, [pid for pid, _ in tree], force=False)
     try:
         await asyncio.wait_for(proc.wait(), grace_s)
     except TimeoutError:
         pass
     # Only those still the same processes: in the grace a pid that ended may have gone to someone else.
-    _signal(proc.pid, await asyncio.to_thread(still_running, tree), signal.SIGKILL)
+    system.signal_processes(proc.pid, await asyncio.to_thread(still_running, tree), force=True)
     try:
         # wait() also waits for the pipes, which a process that escaped the tree could hold open forever.
         await asyncio.wait_for(asyncio.shield(proc.wait()), grace_s)
@@ -143,30 +141,8 @@ def still_running(tree: list[tuple[int, str]]) -> list[int]:
 
 
 def _processes() -> dict[int, tuple[int, str]]:
-    """pid -> (parent pid, start time) for every process. Empty if ps can't be read."""
-    try:
-        out = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,lstart="], capture_output=True, text=True,
-                             timeout=2).stdout
-    except (OSError, subprocess.SubprocessError):
-        return {}
-    table = {}
-    for line in out.splitlines():
-        parts = line.split(maxsplit=2)
-        if len(parts) == 3 and parts[0].isdigit() and parts[1].isdigit():
-            table[int(parts[0])] = (int(parts[1]), parts[2].strip())
-    return table
-
-
-def _signal(root: int, tree: list[int], sig: int) -> None:
-    """`sig` to the CLI's group and to each process it started, as a group when it leads one."""
-    for pid in (root, *tree):
-        try:
-            os.killpg(pid, sig)  # fails for a process that leads no group
-        except (ProcessLookupError, PermissionError):
-            try:
-                os.kill(pid, sig)
-            except (ProcessLookupError, PermissionError):
-                pass
+    """pid -> (parent pid, start time) for every process. Empty if the table can't be read."""
+    return system.process_table()
 
 
 def _linger(proc: asyncio.subprocess.Process, stderr: asyncio.Task) -> None:

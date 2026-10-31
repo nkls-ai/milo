@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import fcntl
 import os
 from pathlib import Path
+
+from milo import system
 
 
 class AlreadyRunning(Exception):
@@ -20,12 +21,10 @@ def acquire(path: Path) -> int:
     process's lifetime. The kernel releases the lock when the process ends, however it ends."""
     path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
+    if not system.try_lock(fd):
         pid = _read_pid(fd)
         os.close(fd)
-        raise AlreadyRunning(path, pid) from None
+        raise AlreadyRunning(path, pid)
     os.ftruncate(fd, 0)
     os.pwrite(fd, f"{os.getpid()}\n".encode(), 0)
     return fd

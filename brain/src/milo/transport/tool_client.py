@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import itertools
 import json
-import socket
 from pathlib import Path
 from typing import Any
 
+from milo import system
 from milo.core.types import ActionLevel, Decision, ToolError
 
 ANSWER_TIMEOUT_S = 3700.0  # longer than any question, even one sent to the phone: the brain answers "timeout" itself
@@ -30,9 +30,7 @@ class BrainClient:
         """The result of one request. Raises ToolError with the brain's plain-language error."""
         id = next(self._ids)
         try:
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
-                s.settimeout(self.timeout_s)
-                s.connect(str(self.path))
+            with system.connect_local(self.path, self.timeout_s) as s:
                 s.sendall((json.dumps({"id": id, **body}) + "\n").encode())
                 answer = json.loads(s.makefile("rb").readline() or b"{}")
         except (OSError, ValueError):

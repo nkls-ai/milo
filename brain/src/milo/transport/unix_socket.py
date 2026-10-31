@@ -3,13 +3,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import socket
-import struct
-import sys
 from collections.abc import Awaitable, Callable, Iterable
 from pathlib import Path
 
+from milo import system
 from milo.core.events import Command, Event, Level, parse_command
 
 log = logging.getLogger("milo.transport")
@@ -88,14 +86,7 @@ class UnixSocketServer:
 
     async def start(self) -> None:
         claim_socket(self.path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        os.chmod(self.path.parent, 0o700)
-        # Bind under a restrictive umask so the socket is never more open than 0600, not even briefly.
-        old_umask = os.umask(0o177)
-        try:
-            self._server = await asyncio.start_unix_server(self._client, path=str(self.path))
-        finally:
-            os.umask(old_umask)
+        self._server = await system.start_local_server(self._client, self.path)
         log.info("listening on %s", self.path)
 
     async def serve_forever(self) -> None:
@@ -177,39 +168,18 @@ def _encode(event: Event) -> bytes:
     return (json.dumps(event.to_wire(), ensure_ascii=False) + "\n").encode()
 
 
-_SOL_LOCAL, _LOCAL_PEERCRED = 0, 0x001  # macOS <sys/un.h>
-
-
 def same_user(sock: socket.socket | None) -> bool:
-    """Whether the process on the other end runs as this user. On macOS LOCAL_PEERCRED always answers, so
-    no answer is refused there; elsewhere the 0700 run/ folder is the check."""
-    uid = peer_uid(sock)
-    return uid == os.getuid() if uid is not None or sys.platform == "darwin" else True
-
-
-def peer_uid(sock: socket.socket | None) -> int | None:
-    """UID of the process on the other end, or None if the OS can't tell us."""
-    if sock is None:
-        return None
-    try:
-        if hasattr(socket, "SO_PEERCRED"):  # Linux: struct ucred {pid, uid, gid}
-            return struct.unpack("3i", sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))[1]
-        cred = sock.getsockopt(_SOL_LOCAL, _LOCAL_PEERCRED, 76)  # macOS: struct xucred {version, uid, ...}
-        return struct.unpack_from("=II", cred)[1]
-    except OSError:
-        return None
+    """Whether the process on the other end runs as this user (milo.system says how this OS tells)."""
+    return system.peer_is_me(sock)
 
 
 def claim_socket(path: Path) -> None:
     """Remove a stale socket, or exit if another brain is already serving on it."""
     if not path.exists():
         return
-    probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
-        probe.connect(str(path))
+        system.connect_local(path).close()
     except OSError:
         path.unlink()
         return
-    finally:
-        probe.close()
     raise SystemExit(f"another Milo brain is already running on {path}")

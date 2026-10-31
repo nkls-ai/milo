@@ -27,7 +27,8 @@ import pytest
 SRC = Path(__file__).parents[1] / "src" / "milo"
 
 CORE = ("core", "services", "memory", "proactive", "connect", "transport")
-"""Packages that must work on any platform. Not here: `adapters/` (that is where platforms live), `eval/`
+"""Packages that must work on any platform. Not here: `adapters/` (that is where platforms live), `system/` (the
+OS primitives, one module per OS family; tests/test_system.py keeps them in step), `eval/`
 (developer tools that drive the real Mac app) and `workspace_template/` (no Python)."""
 TOP_LEVEL = ("brain.py", "compose.py", "config.py", "config_file.py", "mcp_server.py", "server.py", "settings.py")
 
@@ -157,7 +158,6 @@ ALLOWED: dict[tuple[str, str], str] = {
     ("core/hands.py", "mac-keys"): "the key tool's vocabulary is cmd/option; becomes mod/alt (ADR 0027)",
     ("core/hands.py", "mac-word"): "INSTRUCTIONS say the tools act on the user's Mac",
     ("mcp_server.py", "mac-word"): "NO_BRAIN says \"the Mac tools are off\"",
-    ("mcp_server.py", "posix"): "talks to hands.sock over AF_UNIX; Windows needs AF_UNIX (10+) or a named pipe",
     ("services/hands.py", "applescript"): "gating, logging and app detection of run_applescript scripts",
     ("services/hands.py", "mac-keys"): "_pretty_combo shows combos with the Mac's ⌘⌥⌃ glyphs",
     ("services/hands.py", "mac-settings"): "NOT_ALLOWED points to System Settings › Privacy & Security › Automation",
@@ -195,7 +195,6 @@ ALLOWED: dict[tuple[str, str], str] = {
     ("connect/tools.py", "mac-framework"): "files_search says Spotlight",
     ("connect/tools.py", "mac-path"): "files_find says it skips ~/Library",
     ("connect/tools.py", "mac-word"): "INSTRUCTIONS say the apps are on this Mac",
-    ("core/secrets.py", "mac-word"): "errors say \"others on this Mac\"",
     ("services/approvals.py", "mac-word"): "a log line about an answer at the Mac",
     ("services/brief.py", "mac-word"): "\"is Milo running on the Mac?\"",
     ("services/cloud_hearing.py", "mac-word"): "NOTICE says it transcribes on this Mac",
@@ -218,12 +217,6 @@ ALLOWED: dict[tuple[str, str], str] = {
     ("memory/recall_eval.py", "mac-app"): "eval memories mention Safari and Finder",
     ("memory/recall_eval.py", "mac-framework"): "the eval runs with the mlx_e5 embedder",
     ("memory/recall_eval.py", "mac-settings"): "eval memories mention System Settings",
-    # POSIX: the sockets and the lock.
-    ("core/secrets.py", "posix"): "owner checks with os.getuid; Windows needs an ACL check",
-    ("transport/instance_lock.py", "posix"): "the one-brain lock is fcntl.flock; Windows needs msvcrt.locking or a named mutex",
-    ("transport/tool_client.py", "posix"): "tools.sock over AF_UNIX",
-    ("transport/unix_socket.py", "platform-branch"): "LOCAL_PEERCRED on darwin, SO_PEERCRED elsewhere",
-    ("transport/unix_socket.py", "posix"): "the brain socket is AF_UNIX and checks the peer's uid",
 }
 
 
