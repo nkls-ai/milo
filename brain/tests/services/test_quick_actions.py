@@ -522,6 +522,9 @@ class Notes:
     def pause(self, on: bool) -> None:
         self.paused.append(on)
 
+    async def before_turn(self, text: str) -> str:
+        return ""
+
 
 def test_im_done_taking_notes_stops_them(tmp_path):
     notes = Notes()

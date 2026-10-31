@@ -182,7 +182,7 @@ class Stack:
                                   self.reminders, self.ledger, lambda: self.persona, self.idle_reset_s, self.tasks,
                                   eyes=self.eyes, approvals=self.approvals, memory=self.turn_memory,
                                   routines=self.routines, undo=self.undo, opener=self.opener,
-                                  language=self.language, quick=self.quick)
+                                  language=self.language, quick=self.quick, meetings=self.meetings)
         self.tasks.on_result = self.live_talk.note
         self.dictation = DictationService(UpperCleaner(), self.history, self.ui)
         self.listening = Listening(self.mic, self.transcriber, executor, self.ui, self.dictation, self.live_talk,

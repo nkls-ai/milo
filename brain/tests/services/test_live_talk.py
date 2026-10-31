@@ -445,3 +445,45 @@ def test_task_questions_are_one_short_sentence_in_plain_words():
              "two columns, Item and Price.")
     assert task_question(excel, title="Shopping list in Excel") == "Start “Shopping list in Excel”?"
     assert task_question("Make a budget table in Excel.", title="Budget") == "Make a budget table in Excel?"
+
+
+def test_the_meeting_the_day_and_the_memories_are_fetched_at_once_before_a_turn(tmp_path):
+    """Each may take a moment (the meeting catches up on what was just said, the day waits up to 0.3 s for the app,
+    recall searches): one after the other they added up before every reply."""
+    from milo.adapters.connect.fake import World
+
+    World(tmp_path / "world").save({"events": [], "reminders": []})
+    started: list[str] = []
+    everyone = asyncio.Event()
+
+    async def waits(name: str, value):
+        started.append(name)
+        if len(started) == 3:
+            everyone.set()
+        await asyncio.wait_for(everyone.wait(), 1.0)  # in series the first would wait for the others in vain
+        return value
+
+    class Meeting:
+        recording = True
+
+        async def before_turn(self, text: str) -> str:
+            return await waits("meeting", "<meeting>\nAnna: the budget is fine\n</meeting>")
+
+    s = Stack(model=FakeLiveModel(["[happy] She said it's fine."]), world=tmp_path / "world", meetings=Meeting(),
+              with_memory=True)
+    recall = s.turn_memory.before_turn
+
+    async def recalling(*args, **kw):
+        return await waits("recall", await recall(*args, **kw))
+
+    s.turn_memory.before_turn = recalling
+    s.quick.today.note = lambda **kw: waits("today", ("", False))
+
+    async def run():
+        await s.live_talk.start("what did Anna just say", via="voice")
+        await settle()
+
+    asyncio.run(run())
+    assert sorted(started) == ["meeting", "recall", "today"]
+    assert "Anna: the budget is fine" in s.model.turns[0]
+    assert s.live_talk.carries_outside and s.turn_memory.outside, "the meeting's words still taint the conversation"
