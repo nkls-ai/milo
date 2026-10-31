@@ -23,7 +23,7 @@ let controlledApps = ControlledApps(defaults: defaults)
 // The music player before Calendar and Reminders: its ops need no EventKit (ADR 29). The address book for
 // messages and calls (ADR 39) needs none either.
 let accessRequests = AccessRequests(source: access, apps: controlledApps,
-                                    next: MediaRequests(player: SystemMediaPlayer(),
+                                    next: MediaRequests(player: SystemMediaPlayer(), brightness: SystemBrightnessKeys(),
                                                         next: ContactsRequests(book: SystemContactBook(),
                                                                                next: EventKitConnections())))
 let brain = UnixSocketBrainClient(socketPath: paths.socket.path)

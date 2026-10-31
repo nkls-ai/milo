@@ -44,14 +44,29 @@ public final class SystemMediaPlayer: MediaPlayer {
         case .next: 17
         case .previous: 18
         }
-        for down in [true, false] {
-            let flags = NSEvent.ModifierFlags(rawValue: down ? 0xA00 : 0xB00)
-            let data1 = Int((key << 16) | ((down ? 0xA : 0xB) << 8))
-            guard let event = NSEvent.otherEvent(with: .systemDefined, location: .zero, modifierFlags: flags,
-                                                 timestamp: 0, windowNumber: 0, context: nil, subtype: 8,
-                                                 data1: data1, data2: -1) else { return false }
-            event.cgEvent?.post(tap: .cghidEventTap)
-        }
-        return true
+        return pressSystemKey(key)
     }
+}
+
+/// The brightness keys, pressed like the keyboard's own: NX_KEYTYPE_BRIGHTNESS_UP (2) and _DOWN (3). The screen
+/// takes one step of 16 per press and shows the system's brightness bubble (ADR 36).
+public final class SystemBrightnessKeys: BrightnessKeys {
+    public init() {}
+
+    public func press(up: Bool) -> Bool {
+        pressSystemKey(up ? 2 : 3)
+    }
+}
+
+/// One press of a special key (`NX_KEYTYPE_*`), down then up, as a system-defined event.
+private func pressSystemKey(_ key: Int32) -> Bool {
+    for down in [true, false] {
+        let flags = NSEvent.ModifierFlags(rawValue: down ? 0xA00 : 0xB00)
+        let data1 = Int((key << 16) | ((down ? 0xA : 0xB) << 8))
+        guard let event = NSEvent.otherEvent(with: .systemDefined, location: .zero, modifierFlags: flags,
+                                             timestamp: 0, windowNumber: 0, context: nil, subtype: 8,
+                                             data1: data1, data2: -1) else { return false }
+        event.cgEvent?.post(tap: .cghidEventTap)
+    }
+    return true
 }

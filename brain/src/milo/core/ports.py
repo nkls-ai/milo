@@ -848,6 +848,61 @@ class Calls(Protocol):
         ...
 
 
+class MusicApps(Protocol):
+    """The music apps that play something by name, through their own scripting (ADR 0036). An app is "Music" or
+    "Spotify"; "" is the default: the one that's running, else Music."""
+
+    def which(self, app: str = "") -> str:
+        """The app a play by name goes to: `app` if it is one of them, else the default."""
+        ...
+
+    def scripts(self, app: str, query: str) -> bool:
+        """Whether playing `query` in `app` scripts the app (the system asks once whether Milo may), rather than only
+        opening its search."""
+        ...
+
+    def play(self, query: str, kind: str = "any", app: str = "") -> dict:
+        """Play what `query` names. `kind`: artist, song, album, playlist, genre or any. Returns {app, title, count}
+        for what plays; {app, searched: True} when nothing matched and the app's search was opened instead (a
+        Spotify search always: it can't be played without its web API)."""
+        ...
+
+    def running(self) -> list[str]:
+        """The music apps running now, found without starting or scripting any."""
+        ...
+
+    def playing(self, apps: list[str]) -> dict:
+        """What plays or is paused in the first of `apps` that has a track: {app, track, artist, state, id,
+        position}; {} when none has. Starts no app."""
+        ...
+
+    def resume(self, was: dict) -> None:
+        """Play again what `playing` returned, from where it was, as far as the app lets Milo name it."""
+        ...
+
+    def pause(self, app: str) -> None: ...
+
+
+class Volume(Protocol):
+    """The computer's sound output."""
+
+    def get(self) -> dict:
+        """{level: 0 to 100, muted: bool}. Raises ToolError when the output has no volume to set."""
+        ...
+
+    def set(self, level: int | None = None, muted: bool | None = None) -> dict:
+        """Sets what is given and returns {level, muted} after it."""
+        ...
+
+
+class Brightness(Protocol):
+    """The screen's brightness, as the brightness keys change it (a step is one press)."""
+
+    def change(self, do: str, steps: int = 1) -> dict:
+        """`do` is up or down. Returns {steps} pressed."""
+        ...
+
+
 @dataclass(frozen=True)
 class Connections:
     """One implementation of each connection. None: switched off in config.toml or not available."""
@@ -865,6 +920,9 @@ class Connections:
     contacts: Contacts | None = None
     messages: Messages | None = None
     calls: Calls | None = None
+    music_apps: MusicApps | None = None
+    volume: Volume | None = None
+    brightness: Brightness | None = None
 
 
 # ---- memory: episodes, facts and the user's things (docs/design/memory.md)

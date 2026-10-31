@@ -159,6 +159,18 @@ class AccessGate:
             return False, str(e)
         return True, ""
 
+    async def allowed_now(self, app: AppRef) -> bool:
+        """Whether the system lets Milo control `app` already, found without asking anyone or showing anything. For
+        reading a running app in passing (what plays, for <today>): an app not allowed yet is left alone."""
+        key = f"control:{app.key}"
+        if not app.key or key in self._yes:
+            return True
+        answer = await self._access.check(Need.CONTROL, app)
+        if answer.access is Access.YES:
+            self._yes.add(key)
+            return True
+        return False
+
     async def places(self, app: AppRef) -> tuple[str, ...] | None:
         """Where `app` can save without the system stopping it to ask the user (None: anywhere). Snapshots and
         working copies an app writes for Milo go there."""

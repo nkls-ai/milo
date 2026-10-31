@@ -14,7 +14,7 @@ import dataclasses
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from milo.core.app_connections import AppCalendar, AppContacts, AppPlayer, AppReminders
+from milo.core.app_connections import AppBrightness, AppCalendar, AppContacts, AppPlayer, AppReminders
 from milo.core.ports import Connections
 from milo.core.types import ToolError
 
@@ -30,10 +30,11 @@ async def reach(method: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
     return await asyncio.to_thread(method, *args, **kwargs)
 
 
-def in_brain(connections: Connections, call: BridgeCall, *, music: bool) -> Connections:
+def in_brain(connections: Connections, call: BridgeCall, *, music: bool, brightness: bool = True) -> Connections:
     """`connections` as the brain uses them. A Calendar or Reminders that goes through the brain to the app
     (`approves_itself`) is reached on the AppBridge directly. Without a player of its own the system's player goes
-    through the app, when `music` is switched on. The address book held by the app is reached the same way."""
+    through the app, when `music` is switched on; so do the brightness keys, when `brightness` is. The `music` switch
+    turns off playing by name too. The address book held by the app is reached the same way."""
 
     async def app(op: str, args: dict) -> Any:
         try:
@@ -49,4 +50,6 @@ def in_brain(connections: Connections, call: BridgeCall, *, music: bool) -> Conn
         calendar=AppCalendar(app) if via_app(connections.calendar) else connections.calendar,
         reminders=AppReminders(app) if via_app(connections.reminders) else connections.reminders,
         music=connections.music or (AppPlayer(app) if music else None),
-        contacts=AppContacts(app) if via_app(connections.contacts) else connections.contacts)
+        contacts=AppContacts(app) if via_app(connections.contacts) else connections.contacts,
+        music_apps=connections.music_apps if music else None,
+        brightness=connections.brightness or (AppBrightness(app) if brightness else None))

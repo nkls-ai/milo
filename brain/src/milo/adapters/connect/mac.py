@@ -23,6 +23,7 @@ from milo.transport.tool_client import BrainClient
 
 from . import _files, _osascript
 from ._osascript import records
+from .mac_sound import MacMusicApps, MacVolume
 
 SHORTCUT_TIMEOUT_S = 120
 OPEN_TIMEOUT_S = 15
@@ -401,4 +402,5 @@ def _mac(options: Mapping[str, Any], ctx: AdapterContext) -> Connections:
                        notes=AppleNotes(), shortcuts=ShortcutsApp(),
                        files=SpotlightFiles(Path(o.files_scope).expanduser().resolve(), Protected(ctx.home)),
                        focus=ShortcutsFocus(ctx.state_dir / "shortcuts"),
-                       contacts=AppContacts(_app(brain)), messages=AppleMessages(), calls=FaceTimeCalls())
+                       contacts=AppContacts(_app(brain)), messages=AppleMessages(), calls=FaceTimeCalls(),
+                       music_apps=MacMusicApps(), volume=MacVolume())

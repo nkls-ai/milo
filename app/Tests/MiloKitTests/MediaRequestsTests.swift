@@ -19,14 +19,25 @@ import Testing
         }
     }
 
-    /// Runs everything at once: "later" is now, so a test sees the timeout too.
-    private func requests(_ player: Player, next: AppConnections? = nil) -> MediaRequests {
-        MediaRequests(player: player, next: next, main: { $0() }, after: { _, work in work() })
+    final class Keys: BrightnessKeys {
+        var pressed: [Bool] = []
+        var takes = true
+
+        func press(up: Bool) -> Bool {
+            pressed.append(up)
+            return takes
+        }
     }
 
-    private func call(_ r: MediaRequests, _ op: String) -> [AppOutcome] {
+    /// Runs everything at once: "later" is now, so a test sees the timeout too.
+    private func requests(_ player: Player, brightness: BrightnessKeys? = nil,
+                          next: AppConnections? = nil) -> MediaRequests {
+        MediaRequests(player: player, brightness: brightness, next: next, main: { $0() }, after: { _, work in work() })
+    }
+
+    private func call(_ r: MediaRequests, _ op: String, _ args: JSONValue = .object([:])) -> [AppOutcome] {
         var outcomes: [AppOutcome] = []
-        r.handle(op: op, args: .object([:])) { outcomes.append($0) }
+        r.handle(op: op, args: args) { outcomes.append($0) }
         return outcomes
     }
 
@@ -57,5 +68,26 @@ import Testing
         let next = FakeConnections()
         _ = call(requests(Player(), next: next), "calendar.events")
         #expect(next.handled.map(\.op) == ["calendar.events"])
+    }
+
+    /// ADR 36: "make the screen brighter" presses the brightness key, a few times, like the keyboard does.
+    @Test func brightnessPressesTheKeyAsOftenAsAsked() {
+        let keys = Keys()
+        let r = requests(Player(), brightness: keys)
+        #expect(call(r, "media.brightness_up", .object(["steps": .number(3)]))
+                == [.success(.object(["steps": .number(3)]))])
+        #expect(call(r, "media.brightness_down") == [.success(.object(["steps": .number(1)]))])
+        #expect(keys.pressed == [true, true, true, false])
+        #expect(call(r, "media.brightness_down", .object(["steps": .number(99)]))
+                == [.success(.object(["steps": .number(16)]))], "never more than the whole range")
+    }
+
+    @Test func brightnessWithoutKeysIsAPlainFailure() {
+        let keys = Keys()
+        keys.takes = false
+        #expect(call(requests(Player(), brightness: keys), "media.brightness_up")
+                == [.failure("I couldn't reach the brightness keys.")])
+        #expect(call(requests(Player()), "media.brightness_up")
+                == [.failure("Milo's app can't change the brightness here.")])
     }
 }

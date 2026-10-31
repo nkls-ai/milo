@@ -157,6 +157,13 @@ class ConnectionSettings:
     """Send a text message when the user asks (the talker's <message> tag). It asks before every one."""
     calls: bool = True
     """Start a call when the user asks (the talker's <call> tag). It asks before every one."""
+    music_app: str = ""
+    """Where "play Taylor Swift" plays when the user names no app: "Music", "Spotify", or "" for the one already
+    running, else Music (ADR 0036)."""
+    volume: bool = True
+    """Set the sound volume when the user asks (<volume>)."""
+    brightness: bool = True
+    """Make the screen brighter or dimmer when the user asks (<brightness>)."""
 
 
 @dataclass(frozen=True)

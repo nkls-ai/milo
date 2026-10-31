@@ -242,6 +242,8 @@ struct DoneGlyph: View {
             case .copied: SymbolTile(symbol: "doc.on.clipboard.fill")
             case .message: SymbolTile(symbol: "message.fill")
             case .call: SymbolTile(symbol: "phone.fill")
+            case .sound: SymbolTile(symbol: "speaker.wave.2.fill")
+            case .brightness: SymbolTile(symbol: "sun.max.fill")
             case .other: SymbolTile(symbol: "sparkles")
             }
         }

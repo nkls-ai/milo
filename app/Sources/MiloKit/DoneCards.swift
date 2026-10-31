@@ -142,6 +142,8 @@ public enum DoneCardText {
         case .copied: return w("On your clipboard")
         case .message: return w("Sent")
         case .call: return w("Called")
+        case .sound: return w("Sound")
+        case .brightness: return w("Screen")
         case .other: return w("Done")
         }
     }
@@ -183,6 +185,8 @@ public enum DoneCardText {
         case .copied: w("Copied")
         case .message: w("Message sent")
         case .call: w("Call")
+        case .sound: w("Sound")
+        case .brightness: w("Screen")
         case .other: w("Done")
         }
         var said = "\(what): \(action.title), \(line(action, now: now, locale: locale))"
@@ -238,6 +242,7 @@ public enum DoneCardText {
             "Alarm set": "Wecker gestellt", "Alarm": "Wecker",
             "Shows it in the Milo window, to copy": "Zeigt es im Milo-Fenster, zum Kopieren",
             "Sent": "Gesendet", "Called": "Angerufen", "Message sent": "Nachricht gesendet", "Call": "Anruf",
+            "Sound": "Ton", "Screen": "Bildschirm",
         ]
     }
 }

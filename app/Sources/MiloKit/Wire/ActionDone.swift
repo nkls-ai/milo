@@ -16,6 +16,8 @@ public struct ActionDone: Equatable, Sendable, Decodable {
         case message
         /// A call Milo started, after the user's yes (ADR 0039): the detail is the number or address.
         case call
+        /// The sound volume (`<volume>`) and the screen's brightness (`<brightness>`), ADR 36.
+        case sound, brightness
         /// A kind a newer brain invents: a plain card with a check.
         case other
     }

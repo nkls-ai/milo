@@ -305,7 +305,7 @@ def _brain_connections(p: Parts):
     connections = dataclasses.replace(connections, **{f.name: None for f in dataclasses.fields(connections)
                                                       if not getattr(switches, f.name, True)})
     connections = _with_home(connections, p)
-    return in_brain(connections, p.bridge.call, music=switches.music)
+    return in_brain(connections, p.bridge.call, music=switches.music, brightness=switches.brightness)
 
 
 def _with_home(connections, p: Parts):
@@ -443,7 +443,8 @@ def _quick(p: Parts):
     return QuickActions(p.connections, p.ui, p.speaker, p.clock, approvals=p.approvals,
                         today=Today(p.connections, p.clock, reminders=p.reminders, weather=_weather(p)), undo=p.undo,
                         transcript=p.transcript, access=p.access, meetings=p.meetings, reminders=p.reminders,
-                        alarms=p.alarms, quiet=attention.user_speaking, language=p.language.get)
+                        alarms=p.alarms, quiet=attention.user_speaking, language=p.language.get,
+                        music_app=p.config.connections.music_app)
 
 
 def _weather(p: Parts) -> WeatherReport | None:

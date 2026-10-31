@@ -169,6 +169,8 @@ import Testing
         #expect(line(ActionDone(kind: .draft, title: "To Anna")) == "Draft, not sent")
         #expect(line(ActionDone(kind: .music, title: "Paused")) == "Music", "never \"Playing\" for a pause")
         #expect(line(ActionDone(kind: .music, title: "Paused", app: "Spotify")) == "Spotify")
+        #expect(line(ActionDone(kind: .sound, title: "Volume at 40")) == "Sound")
+        #expect(line(ActionDone(kind: .brightness, title: "Heller", lang: "de")) == "Bildschirm")
     }
 
     @Test func theCardsOwnWordsFollowTheLanguageMiloSpoke() throws {
