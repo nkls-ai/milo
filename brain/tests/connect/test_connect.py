@@ -209,7 +209,7 @@ def test_app_backed_calendar_lets_the_brain_ask():
 
     brain = Brain()
     brain.requests = []
-    connections = mac.Connections(calendar=mac.AppCalendar(brain))
+    connections = mac.Connections(calendar=mac.AppCalendar(mac._app(brain)))
     box = Toolbox(connections, brain)
     box.call("calendar_add_event", {"title": "Doctor", "start": "2026-11-05T15:00"})
     assert brain.asked == [], "the brain applies the level for app work itself"

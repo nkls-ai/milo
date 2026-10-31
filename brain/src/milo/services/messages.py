@@ -46,6 +46,7 @@ from . import sharing
 from .sharing import NotShareable, Outgoing, size_text
 from .speaker import Speaker
 from .talk_prompt import untrusted
+from .today import Today
 from .transcript import Transcript, unrecorded
 
 log = logging.getLogger("milo.messages")
@@ -103,22 +104,19 @@ class MessageSettings:
     question_timeout_s: float = 150.0
     brief_at: time | None = None
     max_file_mb: float = 45.0
-    calendar: bool = True
-    reminders: bool = True
-    """Whether the brief may read the calendar and Apple Reminders (the connection switches)."""
 
 
 class MessageService:
     """See the module docstring. `run()` polls the channel until cancelled; `tick()` comes from the heartbeat.
 
-    `app` reaches Calendar and Reminders through Milo.app, for the morning brief.
+    `today` is the day with the calendar and Apple Reminders, for the morning brief.
     """
 
     def __init__(self, channel: Channel, talk: LiveTalk, approvals: Approvals, state: RemoteState,
                  speaker: Speaker, sink: EventSink, context: UserContext, clock: Clock, *,
                  settings: MessageSettings = MessageSettings(), helpers: Callable[[], Sequence[Helper]] = list,
                  board: Callable[[], str] = str, reminders: ReminderSource | None = None,
-                 app: brief.AppCall | None = None, guard: SettingsGuard | None = None,
+                 today: Today | None = None, guard: SettingsGuard | None = None,
                  transcript: Transcript | None = None, home: Path = Path.home(), milo: Path | None = None,
                  pairing: Pairing | None = None, session_s: float = SESSION_S, wait_for_mac_s: float = WAIT_FOR_MAC_S,
                  typing_every_s: float = TYPING_EVERY_S, backoff_s: tuple[float, float] = BACKOFF_S):
@@ -134,7 +132,7 @@ class MessageService:
         self._helpers = helpers
         self._board = board
         self._reminders = reminders
-        self._app = app
+        self._today = today
         self._guard = guard
         self._transcript = transcript or unrecorded()
         self._home = home
@@ -541,9 +539,8 @@ class MessageService:
     # ---- plumbing
 
     async def _brief(self, now) -> str:
-        return await brief.build(now, app=self._app, calendar=self.settings.calendar,
-                                 apple_reminders=self.settings.reminders,
-                                 reminders=self._reminders or _NoReminders(), helpers=self._helpers())
+        return await brief.build(now, today=self._today, reminders=self._reminders or _NoReminders(),
+                                 helpers=self._helpers())
 
     async def _send(self, text: str) -> None:
         owner = self.owner

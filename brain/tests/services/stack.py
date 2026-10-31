@@ -10,7 +10,6 @@ from pathlib import Path
 from milo.adapters.connect.fake import _fake
 from milo.adapters.embed.hashing import HashEmbedder
 from milo.core.registry import AdapterContext
-from milo.services.app_ops import AppOps
 from milo.services.quick_actions import QuickActions
 from milo.brain import Brain
 from milo.config import UiSettings
@@ -179,7 +178,7 @@ class Stack:
         if self.world is not None:
             self.connections = _fake({"dir": str(self.world)}, AdapterContext(self.world, self.world / "state",
                                                                               self.clock))
-            self.quick = QuickActions(AppOps(self.connections), self.connections, self.ui, self.speaker, self.clock,
+            self.quick = QuickActions(self.connections, self.ui, self.speaker, self.clock,
                                       approvals=self.approvals, undo=self.undo, reminders=self.reminders,
                                       meetings=self.meetings, quiet=lambda: self.mic.active, wait_s=self.wait_s,
                                       language=self.language.get, poll_s=0.005)
@@ -217,7 +216,8 @@ class Stack:
             self.messages = MessageService(self.channel, self.live_talk, self.approvals, self.remote, self.speaker,
                                            self.ui, self.context, self.clock, settings=self.message_settings,
                                            helpers=lambda: self.tasks.helpers, board=self.tasks.board,
-                                           reminders=self.reminders, app=self.bridge.call,
+                                           reminders=self.reminders,
+                                           today=self.quick.today if self.quick is not None else None,
                                            wait_for_mac_s=self.wait_s, typing_every_s=0.01, backoff_s=(0.01, 0.02))
             self.approvals.relays.append(self.messages)
             self.tasks.watchers.append(self.messages.helper_changed)

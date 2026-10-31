@@ -7,6 +7,7 @@ in the user's language once it is done, shows a card, and "undo that" takes it b
 """
 
 import asyncio
+import dataclasses
 from datetime import datetime
 from pathlib import Path
 
@@ -18,7 +19,11 @@ from milo.core.types import Reminder, ScreenCapture
 from milo.memory.reminders import MarkdownReminders
 from milo.core import words
 from milo.core.words import dates
-from milo.services.app_ops import AppOps, OpsError
+from milo.core.app_connections import AppCalendar, AppPlayer, AppReminders
+from milo.core.ports import Connections
+from milo.core.types import ToolError
+from milo.services.app_bridge import AppError
+from milo.services.connections import in_brain, reach
 from milo.services.reply_stream import ReplyParser
 from milo.services.today import Today
 from tests.fakes import FakeClock, FakeEyes, FakeHarness, FakeLiveModel, ListReminders
@@ -527,7 +532,7 @@ def test_what_goes_wrong_is_said_and_nothing_is_made(tmp_path):
 
 def test_a_switched_off_connection_says_so(tmp_path):
     s = stack(tmp_path, ['[happy] <todo>Milk</todo>'])
-    s.quick._ops = AppOps(s.connections, enabled=("calendar",))
+    s.quick._connections = dataclasses.replace(s.connections, reminders=None)
     asyncio.run(say(s, "milk on my list"))
     assert said(s) == "That didn't work: The reminders connection is switched off in Milo's settings."
 
@@ -656,18 +661,33 @@ def test_milos_reminders_file_loses_exactly_the_one_line(tmp_path):
     assert not book.remove(bank.id)
 
 
-def test_ops_go_to_the_app_for_what_it_holds():
+def test_the_brain_reaches_the_app_directly_for_what_it_holds():
     calls = []
 
     async def app(op, args):
         calls.append((op, args))
+        if op == "reminders.list":
+            raise AppError("Milo's app isn't running.")
         return {"state": "paused"}
 
-    ops = AppOps(call=app, via_app=("calendar", "media"), enabled=("calendar", "media"))
-    assert asyncio.run(ops("media.pause", {})) == {"state": "paused"}
-    assert calls == [("media.pause", {})] and ops.has("calendar") and not ops.has("reminders")
-    with pytest.raises(OpsError):
-        asyncio.run(ops("reminders.list", {}))
+    def through_the_tool_socket(op, args):
+        raise AssertionError("the brain doesn't ask itself")
+
+    worker = Connections(calendar=AppCalendar(through_the_tool_socket), reminders=AppReminders(through_the_tool_socket))
+    c = in_brain(worker, app, music=True)
+    assert asyncio.run(reach(c.music.control, "pause")) == "paused"
+    asyncio.run(reach(c.calendar.events, datetime(2026, 10, 30), datetime(2026, 10, 31)))
+    assert calls == [("media.pause", {}), ("calendar.events", {"start": "2026-10-30T00:00",
+                                                               "end": "2026-10-31T00:00", "query": ""})]
+    with pytest.raises(ToolError, match="isn't running"):
+        asyncio.run(reach(c.reminders.list))
+    assert in_brain(worker, app, music=False).music is None, "the music switch is off"
+    player = object()
+    assert in_brain(Connections(music=player), app, music=True).music is player, "a player of its own stays"
+
+
+def _via_app(app) -> Connections:
+    return Connections(calendar=AppCalendar(app), reminders=AppReminders(app), music=AppPlayer(app))
 
 
 def test_today_asks_the_app_for_everything_at_once_and_doesnt_wait_for_a_slow_player():
@@ -685,7 +705,7 @@ def test_today_asks_the_app_for_everything_at_once_and_doesnt_wait_for_a_slow_pl
             return [{"id": "r1", "title": "Buy milk", "due": "2026-10-29T18:00", "done": False}]
         return {}
 
-    today = Today(AppOps(call=app, via_app=("calendar", "reminders", "media")), clock)
+    today = Today(_via_app(app), clock)
     text, _ = asyncio.run(today.note())
     assert "Dentist" in text and "Buy milk" in text, "both in within the 0.3 s"
 
@@ -702,7 +722,7 @@ def test_today_fetches_through_the_app_and_waits_only_briefly():
             return {"state": "playing"}
         return []
 
-    today = Today(AppOps(call=app, via_app=("calendar", "reminders", "media")), clock)
+    today = Today(_via_app(app), clock)
 
     async def run():
         first = await today.note()
@@ -726,7 +746,7 @@ def test_milos_own_reminders_sit_after_the_days_to_dos():
         return []
 
     own = ListReminders(Reminder("a", datetime(2026, 11, 2, 9, 0), "Call Anna", False))
-    today = Today(AppOps(call=app, via_app=("calendar", "reminders", "media")), clock, reminders=own)
+    today = Today(_via_app(app), clock, reminders=own)
     text, outside = asyncio.run(today.note())
     assert text.index("Dentist") < text.index("Milo's reminders:\n- 2026-11-02 09:00 Call Anna")
     assert outside is False, "Milo's own reminders are no outside text"

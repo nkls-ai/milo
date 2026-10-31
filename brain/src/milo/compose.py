@@ -275,6 +275,26 @@ def _presence(p: Parts) -> None:
     p.updates = Updates(ui, p.live_settings.updates, clock, busy=attention.occupied)
     switches = config.connections
     p.enabled = [name for name in ("calendar", "reminders") if switches.enabled and getattr(switches, name)]
+    p.connections = _brain_connections(p)
+
+
+def _brain_connections(p: Parts):
+    """The connections the brain itself uses (quick actions, <today>, the morning brief, meeting notes), on the same
+    adapters the worker gets, without the ones switched off. Calendar, Reminders and the music go through the app where
+    the app holds them; the fake connections stay fake. None when `[connections] enabled` is off."""
+    import dataclasses
+
+    from .core.registry import CONNECTIONS
+    from .services.connections import in_brain
+
+    config, switches = p.config, p.config.connections
+    if not switches.enabled:
+        return None
+    name, options = config.pluggable("connections")
+    connections = CONNECTIONS.create(name, options, p.ctx)
+    connections = dataclasses.replace(connections, **{f.name: None for f in dataclasses.fields(connections)
+                                                      if not getattr(switches, f.name, True)})
+    return in_brain(connections, p.bridge.call, music=switches.music)
 
 
 def _helpers(p: Parts) -> None:
@@ -333,11 +353,12 @@ def _helpers(p: Parts) -> None:
 def _meetings(p: Parts) -> None:
     """Meeting notes, when the transcriber gives timings."""
     from .memory.meetings import FileMeetingStore, JsonVoiceBook
+    from .services.connections import reach
 
     p.meetings = p.diarize_executor = p.background_stt = None
     if not isinstance(p.transcriber, TimedTranscriber):
         return
-    config, bridge, enabled, attention = p.config, p.bridge, p.enabled, p.attention
+    config, attention = p.config, p.attention
     m = config.meetings
     diarizer = DIARIZERS.create(m.diarizer, config.section("meetings").get(m.diarizer, {}), p.ctx) \
         if m.diarizer else None
@@ -345,12 +366,13 @@ def _meetings(p: Parts) -> None:
     chat_name, chat_options = config.pluggable("chat")
     ctx, helpers, switches = p.ctx, p.helpers, config.connections
 
+    day = p.connections
+
     async def calendar(start, end):
-        return await bridge.call("calendar.events", {"start": start.isoformat(timespec="minutes"),
-                                                     "end": end.isoformat(timespec="minutes"), "query": ""})
+        return await reach(day.calendar.events, start, end, "")
 
     async def add_reminder(title, notes):
-        return await bridge.call("reminders.add", {"title": title, "notes": notes})
+        return await reach(day.reminders.add, title, None, notes)
 
     # Meeting passes wait while the user dictates or talks, and give way when a key goes down (Listening),
     # so the user's words stay instant during a call.
@@ -361,8 +383,8 @@ def _meetings(p: Parts) -> None:
         diarize_executor=p.diarize_executor,
         voices=JsonVoiceBook(p.workspace.meetings_dir / "voices.json", diarizer.model) if diarizer else None,
         summarizer=lambda: LIVE_MODELS.create(chat_name, chat_options, ctx),
-        calendar=calendar if "calendar" in enabled else None,
-        add_reminder=add_reminder if "reminders" in enabled else None,
+        calendar=calendar if day is not None and day.calendar is not None else None,
+        add_reminder=add_reminder if day is not None and day.reminders is not None else None,
         # careful: the draft comes from other people's words, so the helper's tools ask before changes too
         draft_mail=(lambda task: helpers.submit(task, title="Follow-up mail", screen=False, careful=True))
         if switches.enabled and switches.mail else None,
@@ -374,33 +396,18 @@ def _meetings(p: Parts) -> None:
 
 
 def _quick(p: Parts):
-    """The talker's quick actions and its <today> block (ADR 0029), on the same connections the worker gets. Calendar,
-    Reminders and the music go through the app where the app holds them; the fake connections stay fake. None when
+    """The talker's quick actions and its <today> block (ADR 0029), on the brain's connections. None when
     `[chat] quick_actions` or `[connections] enabled` is off."""
-    import dataclasses
-
-    from .core.registry import CONNECTIONS
-    from .services.app_ops import AppOps
     from .services.quick_actions import QuickActions
     from .services.today import Today
 
-    config, switches = p.config, p.config.connections
-    if not config.chat.quick_actions or not switches.enabled:
+    if not p.config.chat.quick_actions or p.connections is None:
         return None
-    name, options = config.pluggable("connections")
-    connections = CONNECTIONS.create(name, options, p.ctx)
-    connections = dataclasses.replace(connections, **{f.name: None for f in dataclasses.fields(connections)
-                                                      if not getattr(switches, f.name, True)})
-    # A connection that goes through the brain to the app (approves_itself) is reached on the AppBridge directly.
-    via_app = [c for c in ("calendar", "reminders") if getattr(getattr(connections, c), "approves_itself", False)]
-    if connections.music is None:
-        via_app.append("media")  # the app's player op, when this platform's connections have no player of their own
-    enabled = [c for c in ("calendar", "reminders") if getattr(switches, c)] + (["media"] if switches.music else [])
-    ops = AppOps(connections, p.bridge.call, via_app=via_app, enabled=enabled)
     attention = p.attention
-    return QuickActions(ops, connections, p.ui, p.speaker, p.clock, approvals=p.approvals, today=Today(ops, p.clock),
-                        undo=p.undo, transcript=p.transcript, access=p.access, meetings=p.meetings,
-                        reminders=p.reminders, quiet=attention.user_speaking, language=p.language.get)
+    return QuickActions(p.connections, p.ui, p.speaker, p.clock, approvals=p.approvals,
+                        today=Today(p.connections, p.clock, reminders=p.reminders), undo=p.undo,
+                        transcript=p.transcript, access=p.access, meetings=p.meetings, reminders=p.reminders,
+                        quiet=attention.user_speaking, language=p.language.get)
 
 
 def _talk(p: Parts) -> None:
@@ -446,11 +453,12 @@ def _talk(p: Parts) -> None:
 def _messages(p: Parts) -> None:
     """Milo by message from the owner's phone."""
     from .memory.remote import JsonRemoteState
+    from .services.today import Today
 
     p.messages = None
     if not p.config.messages.enabled:
         return
-    workspace, transcript, speaker, enabled, helpers = p.workspace, p.transcript, p.speaker, p.enabled, p.helpers
+    workspace, transcript, speaker, helpers = p.workspace, p.transcript, p.speaker, p.helpers
     name, options = p.config.pluggable("messages")
     channel = CHANNELS.create(name, options, p.ctx)
 
@@ -463,8 +471,10 @@ def _messages(p: Parts) -> None:
         channel, p.live_talk, p.approvals, JsonRemoteState(workspace.remote_state_path), speaker, p.ui, p.context,
         p.clock,
         settings=MessageSettings(m.max_per_minute, m.away_after_min * 60, m.question_timeout_s,
-                                 brief_time(m.brief_at), m.max_file_mb, "calendar" in enabled, "reminders" in enabled),
-        helpers=lambda: helpers.helpers, board=helpers.board, reminders=p.reminders, app=p.bridge.call,
+                                 brief_time(m.brief_at), m.max_file_mb),
+        # The brief reads the talker's day when it has one, so the calendar isn't fetched twice.
+        helpers=lambda: helpers.helpers, board=helpers.board, reminders=p.reminders,
+        today=p.quick.today if p.quick is not None else Today(p.connections, p.clock) if p.connections else None,
         guard=SettingsGuard([workspace.config_path, workspace.remote_state_path], [workspace.secrets_dir], show),
         transcript=transcript, home=Path.home(), milo=p.home)
     p.approvals.relays.append(messages)

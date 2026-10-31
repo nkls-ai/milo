@@ -2,8 +2,8 @@
 
 "Dentist, Thursday at 3" used to start a helper: a 12 to 60 s worker turn and tens of thousands of tokens for one
 calendar entry. Now the talker writes one tag (`<event>`, `<todo>`, `<note>`, `<timer>`, `<draft>`, `<shortcut>`,
-`<music>`, `<meeting>`) and this service does it in-process: Calendar, Reminders and the player through the app
-(`AppOps`, about 100 ms), Notes, Mail and Shortcuts through the brain's own connections, a timer on the event loop.
+`<music>`, `<meeting>`) and this service does it in-process, on the brain's connections (services/connections.py:
+Calendar, Reminders and the player through the app, about 100 ms), with a timer on the event loop.
 Then Milo says one templated line in the user's language ("Dentist, Thursday at 3 pm. It's in."), the window shows an
 `action_done` card, and Undo can take it back.
 
@@ -22,7 +22,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from milo.core import words
 from milo.core.events import ActionDone
@@ -33,7 +33,7 @@ from milo.core.types import ActionLevel, AppRef, Emotion, Reminder, ToolError
 from milo.core.wording import first_name
 from milo.core.words import dates, say
 
-from .app_ops import AppOps, OpsError
+from .connections import reach
 from .approvals import Approvals
 from .permits import Scope
 from .reply_stream import ActRequest
@@ -129,22 +129,22 @@ class _Timer:
 
 
 class QuickActions:
-    """See the module docstring. `ops` reaches Calendar, Reminders and media; `connections` Notes, Mail and
-    Shortcuts. `quiet` says the user is talking, so a line waits (up to `wait_s`) or only shows."""
+    """See the module docstring. `connections` reach Calendar, Reminders, the player, Notes, Mail and Shortcuts, as
+    the brain uses them (services/connections.py). `quiet` says the user is talking, so a line waits (up to `wait_s`)
+    or only shows."""
 
-    def __init__(self, ops: AppOps, connections: Connections, ui: EventSink, speaker: Speaker, clock: Clock, *,
+    def __init__(self, connections: Connections, ui: EventSink, speaker: Speaker, clock: Clock, *,
                  approvals: Approvals, today: Today | None = None, undo: Undo | None = None,
                  transcript: Transcript | None = None, access: AccessGate | None = None,
                  meetings: MeetingService | None = None, reminders: ReminderBook | None = None,
                  quiet: Callable[[], bool] = lambda: False, language: Callable[[], str] = lambda: "",
                  wait_s: float = WAIT_FOR_QUIET_S, poll_s: float = POLL_S):
-        self._ops = ops
         self._connections = connections
         self._ui = ui
         self._speaker = speaker
         self._clock = clock
         self._approvals = approvals
-        self.today = today or Today(ops, clock, reminders=reminders)
+        self.today = today or Today(connections, clock, reminders=reminders)
         self.today.timers = self.timers
         self._undo = undo
         if undo is not None:
@@ -241,7 +241,7 @@ class QuickActions:
                     if not allowed:
                         return await self._say(say("acts.declined", lang), via, turn, Emotion.NEUTRAL)
             done = await plan.run()
-        except (Problem, OpsError, ToolError) as e:
+        except (Problem, ToolError) as e:
             log.info("a quick %s didn't work: %s", act.kind, e)
             return await self._say(say("acts.failed", lang, why=str(e).rstrip(".") + "."), via, turn,
                                    Emotion.CONCERNED)
@@ -318,12 +318,15 @@ class QuickActions:
                 return self._meeting(act, lang)
         raise Problem(f"I don't know how to do {act.kind}")
 
-    def _need(self, connection: str) -> None:
-        if not self._ops.has(connection):
+    def _need(self, connection: str) -> Any:
+        """The connection, or Problem when it is switched off."""
+        found = getattr(self._connections, "music" if connection == "media" else connection)
+        if found is None:
             raise Problem(f"The {connection} connection is switched off in Milo's settings")
+        return found
 
     def _add_event(self, act: ActRequest, lang: str) -> _Plan:
-        self._need("calendar")
+        calendar = self._need("calendar")
         title = (act.get("title") or act.text)[:200]
         start = _time(act.get("start"), "start")
         if not title or start is None:
@@ -336,11 +339,10 @@ class QuickActions:
             end = _time(act.get("end"), "end") or start + timedelta(hours=1)
         if end <= start:
             raise Problem("the end must be after the start")
-        args = {"title": title, "start": _iso(start), "end": _iso(end), "location": act.get("location"),
-                "notes": act.get("notes"), "calendar": act.get("calendar"), **({"all_day": True} if all_day else {})}
 
         async def run() -> _Done:
-            made = await self._ops("calendar.add_event", args) or {}
+            made = await reach(calendar.add_event, title, start, end, act.get("location"), act.get("notes"),
+                               act.get("calendar"), all_day=all_day) or {}
             self.today.changed()
             spoken = dates.when(start, self._clock.now().date(), lang, all_day=all_day)
             # The card shows the day and the time from `when` (ADR 0030): its detail is only the place.
@@ -366,7 +368,7 @@ class QuickActions:
         day = _time(act.get("on"), "on")
         start = datetime.combine((day or self._clock.now()).date(), datetime.min.time())
         end = start + timedelta(days=1 if day else SEARCH_DAYS)
-        hits = await self._ops("calendar.events", {"start": _iso(start), "end": _iso(end), "query": title}) or []
+        hits = await reach(self._need("calendar").events, start, end, title) or []
         hits = [e for e in hits if isinstance(e, dict)]
         exact = [e for e in hits if str(e.get("title", "")).casefold() == title.casefold()]
         found = exact or hits
@@ -379,7 +381,7 @@ class QuickActions:
         return found[0], bool(exact)
 
     async def _move(self, act: ActRequest, lang: str) -> _Plan:
-        self._need("calendar")
+        calendar = self._need("calendar")
         e, sure = await self._event(act)
         old_start, old_end = _time(e.get("start"), "start"), _time(e.get("end"), "end")
         start = _time(act.get("start"), "start")
@@ -392,8 +394,7 @@ class QuickActions:
         others = _others(e)
 
         async def run() -> _Done:
-            await self._ops("calendar.update_event", {"id": e["id"], "at": _iso(old_start), "start": _iso(start),
-                                                      "end": _iso(end)})
+            await reach(calendar.move_event, e["id"], old_start, start, end)
             self.today.changed()
             spoken = dates.when(start, self._clock.now().date(), lang)
             return _Done("event", title, say("acts.moved", lang, title=title, when=spoken),
@@ -407,7 +408,7 @@ class QuickActions:
                      + (say("acts.ask.invite", lang) if others else ""), APPS["calendar"], run, sure)
 
     async def _cancel(self, act: ActRequest, lang: str) -> _Plan:
-        self._need("calendar")
+        calendar = self._need("calendar")
         e, sure = await self._event(act)
         start = _time(e.get("start"), "start")
         title = str(e.get("title") or "the event")
@@ -416,7 +417,7 @@ class QuickActions:
         restorable = not others and not e.get("recurring") and not e.get("shared")
 
         async def run() -> _Done:
-            gone = await self._ops("calendar.delete_event", {"id": e["id"], "at": _iso(start)}) or e
+            gone = await reach(calendar.delete_event, e["id"], start) or e
             self.today.changed()
             return _Done("event", title, say("acts.cancelled", lang, title=title), detail="",
                          when=_iso(start) if start else "", app="Calendar",
@@ -430,15 +431,14 @@ class QuickActions:
                      say("acts.ask.cancel", lang, title=inert(title, 50), when=when) + why, APPS["calendar"], run, sure)
 
     def _todo(self, act: ActRequest, lang: str) -> _Plan:
-        self._need("reminders")
+        reminders = self._need("reminders")
         title = (act.text or act.get("title")).replace("\n", " ")[:200]
         if not title:
             raise Problem("say what the to-do is")
         due = _time(act.get("due"), "due")
-        args = {"title": title, "due": _iso(due) if due else "", "notes": act.get("notes"), "list": act.get("list")}
 
         async def run() -> _Done:
-            made = await self._ops("reminders.add", args) or {}
+            made = await reach(reminders.add, title, due, act.get("notes"), act.get("list")) or {}
             self.today.changed()
             spoken = dates.when(due, self._clock.now().date(), lang) if due else ""
             return _Done("todo", title, say("acts.todo_due" if due else "acts.todo", lang, title=title, when=spoken),
@@ -533,7 +533,7 @@ class QuickActions:
         return _Plan("shortcut", say("acts.ask.shortcut", lang, title=inert(name, 50)), None, run)
 
     def _music(self, act: ActRequest, lang: str) -> _Plan:
-        self._need("media")
+        player = self._need("media")
         do = {"stop": "pause", "resume": "play", "skip": "next", "back": "previous"}.get(
             act.get("do").lower(), act.get("do").lower() or "play")
         if do not in ("play", "pause", "next", "previous"):
@@ -541,15 +541,15 @@ class QuickActions:
 
         async def run() -> _Done:
             try:
-                before = str((await self._ops("media.state", {}) or {}).get("state", ""))
-            except OpsError:
+                before = str(await reach(player.state) or "")
+            except ToolError:
                 before = ""
-            after = await self._ops(f"media.{do}", {}) or {}
+            await reach(player.control, do)
             self.today.changed()
             back = {"next": "previous", "previous": "next"}.get(do) or ("play" if before == "playing" else "pause")
             line = say(f"acts.{do}", lang)
-            # The card says it as Milo did ("Paused", "Nächster"). The system's player names no app: "" unless it does.
-            return _Done("music", line.rstrip("."), line, app=str(after.get("app") or ""),
+            # The card says it as Milo did ("Paused", "Nächster"). The system's player names no app.
+            return _Done("music", line.rstrip("."), line, app="",
                          reverse=[{"op": "media", "do": back}])
 
         return _Plan("change", say(f"acts.ask.{do}", lang), None, run)
@@ -616,16 +616,23 @@ class QuickActions:
         """Undo one recorded step. False when the user chose to keep a change made since. Raises with plain words."""
         try:
             return await self._reverse(step)
-        except (OpsError, ToolError) as e:
+        except ToolError as e:
             raise ValueError(str(e)) from None
+
+    def _need_to_undo(self, connection: str) -> Any:
+        try:
+            return self._need(connection)
+        except Problem as e:
+            raise ToolError(str(e) + ".") from None
 
     async def _reverse(self, step: dict) -> bool:
         op = step.get("op")
         match op:
             case "event.delete" | "event.move":
+                calendar = self._need_to_undo("calendar")
                 try:
-                    now = await self._ops("calendar.event", {"id": step["id"], "at": step["at"]}) or {}
-                except OpsError:
+                    now = await reach(calendar.event, step["id"], _at(step["at"])) or {}
+                except ToolError:
                     if op == "event.delete":
                         return True  # gone already: nothing to take back
                     raise
@@ -639,16 +646,17 @@ class QuickActions:
                                                                    title=inert(step["title"], 50))):
                         return False
                 if op == "event.delete":
-                    await self._ops("calendar.delete_event", {"id": step["id"], "at": step["at"]})
+                    await reach(calendar.delete_event, step["id"], _at(step["at"]))
                 else:
-                    await self._ops("calendar.update_event", {"id": step["id"], "at": step["at"],
-                                                              "start": step["start"], "end": step["end"]})
+                    await reach(calendar.move_event, step["id"], _at(step["at"]), _at(step["start"]),
+                                _at(step["end"]))
             case "event.add":
-                await self._ops("calendar.add_event", {k: step.get(k, "") for k in
-                                                       ("title", "start", "end", "location", "notes", "calendar")}
-                                | ({"all_day": True} if step.get("all_day") else {}))
+                await reach(self._need_to_undo("calendar").add_event, str(step.get("title", "")),
+                            _at(step.get("start")), _at(step.get("end")), str(step.get("location") or ""),
+                            str(step.get("notes") or ""), str(step.get("calendar") or ""),
+                            all_day=bool(step.get("all_day")))
             case "todo.delete":
-                await self._ops("reminders.delete", {"id": step["id"]})
+                await reach(self._need_to_undo("reminders").delete, step["id"])
             case "note.delete":
                 notes = self._connections.notes
                 if notes is None:
@@ -671,7 +679,7 @@ class QuickActions:
                 if timer is not None and timer.handle is not None:
                     timer.handle.cancel()
             case "media":
-                await self._ops(f"media.{step['do']}", {})
+                await reach(self._need_to_undo("media").control, step["do"])
             case _:
                 raise ValueError(f"I don't know how to undo {op}")
         self.today.changed()
@@ -685,6 +693,17 @@ def _time(value: str, key: str) -> datetime | None:
         return local(value).replace(second=0, microsecond=0)
     except ValueError:
         raise Problem(f"{key} must look like 2026-11-05T15:00, not {inert(value, 30)}") from None
+
+
+def _at(value: object) -> datetime | None:
+    """A time an Undo step kept, as `_iso` wrote it."""
+    text = str(value or "")
+    if not text:
+        return None
+    try:
+        return local(text)
+    except ValueError:
+        raise ToolError(f"{text!r} isn't a time like 2026-11-05T15:00") from None
 
 
 def _iso(t: datetime | None, *, seconds: bool = False) -> str:
