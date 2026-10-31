@@ -191,10 +191,21 @@ def without_echo(lines: Sequence[TranscriptLine]) -> list[TranscriptLine]:
         if line.track is Track.ME:
             near = [t for t in them if t.start - ECHO_WINDOW_S <= line.end and line.start <= t.end + ECHO_WINDOW_S]
             mine = _norm(line.text)
-            if mine and any(_similar(mine, _norm(t.text)) for t in near):
+            if mine and (any(_similar(mine, _norm(t.text)) for t in near)
+                         or _covered(mine, _norm(" ".join(t.text for t in sorted(near, key=lambda t: t.start))))):
                 continue
         kept.append(line)
     return kept
+
+
+def _covered(mine: str, theirs: str) -> bool:
+    """Most of the user's line is in what the call said around it, in order: one long line of the call's audio coming
+    back while the call's track split it among its speakers (2026-10-31, a YouTube video: 24 s over ten lines)."""
+    a, b = mine.split(), theirs.split()
+    if not a or not b:
+        return False
+    matched = sum(block.size for block in difflib.SequenceMatcher(None, a, b, autojunk=False).get_matching_blocks())
+    return matched / len(a) >= ECHO_SIMILAR
 
 
 def _similar(a: str, b: str) -> bool:

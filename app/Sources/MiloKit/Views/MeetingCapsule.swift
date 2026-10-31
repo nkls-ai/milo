@@ -37,6 +37,12 @@ struct MeetingCapsule: View {
             .frame(minHeight: 34)
             .floatingSurface(Capsule(style: .continuous),
                              edge: status.phase == .recording ? MeetingColors.live.opacity(0.45) : nil)
+            .background(GeometryReader { geometry in
+                // Where the capsule is in the panel, so its hit test lets a click there through to the buttons.
+                Color.clear.onAppear { meeting.area = geometry.frame(in: .global) }
+                    .onChange(of: geometry.frame(in: .global)) { _, frame in meeting.area = frame }
+                    .onDisappear { meeting.area = .zero }
+            })
             .padding(.trailing, Surface.trailingInset)
             .transition(reduceMotion ? .opacity : .asymmetric(
                 insertion: .scale(scale: 0.6, anchor: .bottomTrailing).combined(with: .opacity),

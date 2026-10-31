@@ -56,6 +56,8 @@ public final class OverlayPanel: NSPanel {
             if model.canStop && hypot(p.x - Self.stopCenter.x, p.y - Self.stopCenter.y) <= StopByMilo.size / 2 + 4 {
                 return true
             }
+            // The meeting capsule's Pause and Stop, whose row above him reaches into his square.
+            if Self.onCards(p, model.meeting.area) { return true }
             // A done card where it reaches into his square, and the check on its corner.
             return Self.onCards(p, model.done.area)
         }

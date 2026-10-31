@@ -54,6 +54,24 @@ def test_echo_of_the_call_on_the_users_track_is_dropped():
                                                          "We ship on Friday."]
 
 
+def test_a_long_echo_the_call_split_among_its_speakers_is_dropped_too():
+    """2026-10-31, a YouTube video through the speakers: the mic heard 19 s of it as one line, the call's track had it
+    as many short lines, none of which alone was like the whole."""
+    them = [L(0, Track.THEM, "S4", "Guy, Iscinerate, and Tab", end=2.4), L(3.4, Track.THEM, "S7", "Iscinerate", end=3.9),
+            L(3.9, Track.THEM, "S8", "Sadness is the food", end=5.1),
+            L(5.1, Track.THEM, "S2", "Want a bowl of sadness for dinner?", end=7.0), L(7, Track.THEM, "S1", "Yeah", end=7.4),
+            L(7.4, Track.THEM, "S6", "You seen any Shroomish?", end=9.0),
+            L(9, Track.THEM, "S9", "I love that Pokemon", end=11.0),
+            L(14, Track.THEM, "S1", "Oh, they had such cool outfits, I love their outfits", end=17.0),
+            L(17, Track.THEM, "S3", "Yeah, my guys are just like pirates", end=19.4)]
+    echo = L(0, Track.ME, ME, "Guy, Iscinerate and Tab Iscinerate Sadness is the food Want a bowl of sadness for "
+             "dinner? Yeah You can see that he's shrewbish, I love that Pokemon Yeah, it's nice Oh, they had such cool "
+             "outfits, I love their outfits Yeah, my guys are just like pirates", end=19.4)
+    own = L(8, Track.ME, ME, "Wait, which game is this? I want to play it tonight with Tom.", end=11.0)
+    assert [l.text for l in mt.without_echo([*them, echo, own])] == [l.text for l in [*them, own]], \
+        "the user's own words over the call stay"
+
+
 def test_talk_with_milo_stays_out_but_the_call_doesnt():
     lines = [L(10, Track.ME, ME, "Milo, what did she say?"), L(10, Track.THEM, "S1", "Next topic."),
              L(30, Track.ME, ME, "Okay.")]

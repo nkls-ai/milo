@@ -26,6 +26,9 @@ public final class MeetingModel: ObservableObject {
     public var send: ((BrainCommand) -> Void)?
     /// Puts text on the clipboard. Set by main.swift; tests read what was copied.
     public var copy: ((String) -> Void)?
+    /// Where the capsule over Milo is in the overlay panel (top-left origin), `.zero` while it isn't shown: the
+    /// panel's hit test gives a click there to its Pause and Stop, not to Milo's square, which it reaches into.
+    public var area: CGRect = .zero
 
     /// Seconds on a monotonic clock.
     let now: () -> TimeInterval
