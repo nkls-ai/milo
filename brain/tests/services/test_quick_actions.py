@@ -446,8 +446,17 @@ def test_music_pauses_and_undo_plays_again(tmp_path):
     s = stack(tmp_path, ['[happy] <music do="pause"/>'], ["[happy] <undo/>"], world={"music": "playing"})
     asyncio.run(say(s, "pause the music"))
     assert world(s)["music"] == "paused" and said(s) == "Paused."
+    [card] = cards(s)
+    assert (card.kind, card.title, card.detail, card.app) == ("music", "Paused", "", ""), \
+        "the card says what happened, in the user's words, and names no player it doesn't know"
     asyncio.run(say(s, "undo that"))
     assert world(s)["music"] == "playing"
+
+
+def test_the_music_card_speaks_the_users_language(tmp_path):
+    s = stack(tmp_path, ['[happy] <music do="next"/>'], world={"music": "playing"})
+    asyncio.run(say(s, "spiel mir bitte das nächste Lied, das hier mag ich nicht"))
+    assert [c.title for c in cards(s)] == ["Nächster"]
 
 
 def test_after_a_task_result_an_act_asks_like_a_reminder(tmp_path):

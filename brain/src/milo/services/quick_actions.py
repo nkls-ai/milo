@@ -547,10 +547,12 @@ class QuickActions:
                 before = str((await self._ops("media.state", {}) or {}).get("state", ""))
             except OpsError:
                 before = ""
-            after = str((await self._ops(f"media.{do}", {}) or {}).get("state", ""))
+            after = await self._ops(f"media.{do}", {}) or {}
             self.today.changed()
             back = {"next": "previous", "previous": "next"}.get(do) or ("play" if before == "playing" else "pause")
-            return _Done("music", do, words.line(do, lang), detail=after, app="Music",
+            line = words.line(do, lang)
+            # The card says it as Milo did ("Paused", "Nächster"). The system's player names no app: "" unless it does.
+            return _Done("music", line.rstrip("."), line, app=str(after.get("app") or ""),
                          reverse=[{"op": "media", "do": back}])
 
         return _Plan("change", words.ask(do, lang), None, run)
