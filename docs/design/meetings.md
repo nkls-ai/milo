@@ -76,6 +76,7 @@ class MeetingStore(Protocol):
 - **The user's voice** comes from the microphone, as today.
 - **The other people** come from the call app's own audio output, not the speakers. macOS 14.4 and later can tap one process's audio with Core Audio process taps; ScreenCaptureKit audio capture is the fallback. Either needs the user's permission once.
 - Two tracks give "you" versus "them" for free and remove echo of the others from the user's track.
+- Without headphones the microphone also hears the speakers. Before Whisper reads a chunk of the user's track, `echo_muted` (services/meeting_text.py) compares its loudness, 50 ms frame by frame, with the call track at the same moment: where the mic only follows the call, a little later and at a steady ratio, it's the call's echo and is muted. Where the mic is clearly louder than that echo would be, the user is talking over the call and stays. Real echo cancellation in the app (Apple's voice processing) would be better still.
 
 ## Never losing a meeting
 
@@ -87,6 +88,8 @@ class MeetingStore(Protocol):
 ## Telling speakers apart
 
 - The user's track is always the user.
+- A speaker's language is only named when Whisper is at least 80% sure (`SURE_OF_LANGUAGE`). Music and a few words otherwise sent passes off into the wrong language.
+- The whole-call regroup starts the moment the user presses Stop, on its own thread, while the last passes still run, so the notes don't wait for it after them.
 - The call track gets split into turns by a small local speaker-embedding model (candidates: pyannote's segmentation and embedding models, or sherpa-onnx's speaker models; measure size, speed and accuracy on the M3).
 - Names come from the calendar invite's attendees, the call app's window (who is speaking, when it shows it), and the user naming a voice once ("that was Anna"). `VoiceBook` remembers voices locally.
 

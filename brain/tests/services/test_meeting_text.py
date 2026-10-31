@@ -4,7 +4,9 @@ import numpy as np
 import pytest
 
 from milo.core.meetings import ME, MeetingInfo, MeetingNotes, TimedWord, Todo, Track, TranscriptLine, Turn, clock
+from milo.core.types import STT_SAMPLE_RATE
 from milo.services import meeting_text as mt
+from milo.services.meeting_text import echo_muted
 from milo.services.meeting_speakers import SpeakerTracker
 
 SR = 16_000
@@ -205,3 +207,60 @@ def test_looking_only_doesnt_change_the_voices():
     before = tracker.to_state()
     assert tracker.assign([Turn(0, 5, 0, voice(0, 1))], learn=False) == {0: "S1"}
     assert tracker.to_state() == before
+
+
+# ---- echo in the sound (echo_muted)
+
+def _speech(seconds: float, seed: int) -> np.ndarray:
+    """Noise whose loudness rises and falls like syllables and pauses, each seed a different voice."""
+    rng = np.random.default_rng(seed)
+    n = int(seconds * STT_SAMPLE_RATE)
+    beats = np.repeat(rng.uniform(0.0, 1.0, int(seconds * 6) + 1) ** 2, STT_SAMPLE_RATE // 6)[:n]
+    return (rng.normal(0, 0.2, n) * beats).astype(np.float32)
+
+
+def _room(call: np.ndarray, gain: float = 0.25, seed: int = 9) -> np.ndarray:
+    """The call out of the speakers into the microphone: 15 ms late, ringing for a third of a second, some hiss."""
+    rng = np.random.default_rng(seed)
+    t = np.arange(int(0.35 * STT_SAMPLE_RATE)) / STT_SAMPLE_RATE
+    ring = rng.normal(0, 1, len(t)) * np.exp(-6.9 * t / 0.35) * 0.05
+    ring[0] += 1.0
+    late = np.concatenate([np.zeros(int(0.015 * STT_SAMPLE_RATE)), np.convolve(call, ring)[:len(call)]])[:len(call)]
+    return (gain * late + rng.normal(0, 0.002, len(call))).astype(np.float32)
+
+
+def _muted(audio: np.ndarray, a: float, b: float) -> float:
+    piece = audio[int(a * STT_SAMPLE_RATE):int(b * STT_SAMPLE_RATE)]
+    return float(np.mean(piece == 0))
+
+
+def test_the_call_coming_back_through_the_speakers_is_muted_on_the_users_track():
+    """Live (2026-10-31): a song from YouTube, without headphones, came out a second time as the user's lines."""
+    call = _speech(30, seed=1)
+    muted, seconds = echo_muted(_room(call), call)
+    assert seconds > 20 and _muted(muted, 2, 28) > 0.8
+
+
+def test_the_users_own_voice_stays_alone_and_over_the_call():
+    call = np.concatenate([_speech(15, seed=1), np.zeros(15 * STT_SAMPLE_RATE, np.float32)])
+    mic = _room(call)
+    mine = _speech(6, seed=2)
+    at = lambda s: slice(int(s * STT_SAMPLE_RATE), int(s * STT_SAMPLE_RATE) + len(mine))  # noqa: E731
+    mic[at(5)] += 2.4 * mine   # over the call, louder than its echo
+    mic[at(20)] += 2.4 * mine  # after the call
+    muted, _ = echo_muted(mic, call)
+    assert _muted(muted, 20, 26) == 0, "nothing the user said alone is muted"
+    assert _muted(muted, 5, 11) < 0.1, "the user over the call stays"
+
+
+def test_with_headphones_nothing_is_muted():
+    """The microphone hears only the user: their loudness doesn't follow the call's."""
+    call, mine = _speech(30, seed=1), _speech(30, seed=2)
+    muted, seconds = echo_muted(mine, call)
+    assert seconds == 0 and muted is mine
+
+
+def test_a_silent_or_missing_call_track_mutes_nothing():
+    mine = _speech(30, seed=2)
+    assert echo_muted(mine, np.zeros_like(mine))[1] == 0
+    assert echo_muted(mine, np.zeros(0, np.float32))[1] == 0

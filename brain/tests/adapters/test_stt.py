@@ -228,3 +228,13 @@ def test_learned_words_in_the_prompt_are_capped():
     learned = prompt.removeprefix("Milo, ")
     assert len(learned) <= mlx_whisper.LEARNED_CHARS
     assert learned.startswith("Word000, Word001")
+
+
+@pytest.mark.parametrize("sure, said", [(0.95, "de"), (0.55, "")])
+def test_a_speakers_language_is_named_only_when_whisper_is_sure(monkeypatch, sure, said):
+    """Over music Whisper guessed English for German singing, and the meeting's lines came out again, translated into
+    nonsense (2026-10-31). Unsure, it says nothing and the pass's language stays."""
+    monkeypatch.setattr(_Whisper, "_load", lambda self: object())
+    monkeypatch.setattr(_Whisper, "_detect_sure", staticmethod(lambda model, audio: ("de", sure)))
+    assert MlxWhisper("m").spoken_language(SPEECH) == said
+    assert MlxWhisper("m", language="en").spoken_language(SPEECH) == "en", "a pinned language is always it"

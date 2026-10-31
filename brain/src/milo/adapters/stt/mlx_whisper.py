@@ -76,6 +76,9 @@ def vocabulary_prompt(configured: str, words: Sequence[str]) -> str:
 
 
 SHORT_PHRASE_S = 3.0
+SURE_OF_LANGUAGE = 0.8
+"""spoken_language says a language only this sure: over music Whisper guessed English for German singing, and the
+meeting's lines came out a second time, translated into nonsense (2026-10-31)."""
 """Language detection on a phrase shorter than this is a guess ("okay" sounds like many languages), so a
 phrase that continues a recording keeps the language its earlier phrases had."""
 
@@ -162,7 +165,8 @@ class MlxWhisper:
             return self.language
         self._stop.clear()
         whisper = self._whisper(self.model)
-        return whisper._detect(whisper._load(), audio.astype(np.float32))
+        language, sure = whisper._detect_sure(whisper._load(), audio.astype(np.float32))
+        return language if sure >= SURE_OF_LANGUAGE else ""
 
     def _transcribe(self, model: str, audio: Audio, language: str | None, quick: bool, *, retry: bool = True) -> str:
         self._stop.clear()
@@ -357,6 +361,11 @@ class _Whisper:
 
     @staticmethod
     def _detect(model, audio: Audio) -> str:
+        return _Whisper._detect_sure(model, audio)[0]
+
+    @staticmethod
+    def _detect_sure(model, audio: Audio) -> tuple[str, float]:
+        """The language of the audio's first window, and how sure Whisper is of it (0 to 1)."""
         import mlx.core as mx
         from mlx_whisper.audio import N_FRAMES, N_SAMPLES, log_mel_spectrogram, pad_or_trim
 
@@ -366,7 +375,8 @@ class _Whisper:
         window = pad_or_trim(mel[:content], N_FRAMES, axis=-2).astype(mx.float16)
         _, probs = model.detect_language(model.encoder(window[None]))
         probs = probs[0] if isinstance(probs, list) else probs
-        return max(probs, key=probs.get)
+        language = max(probs, key=probs.get)
+        return language, float(probs[language])
 
 
 class _Encoder:

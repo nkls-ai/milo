@@ -392,6 +392,33 @@ def test_after_stop_the_whole_call_sorts_out_who_said_what(tmp_path):
     assert {"Speaker 1", "Speaker 2"} <= set(re.findall(r"Speaker \d+", transcript)) and "Speaker 3" not in transcript
 
 
+def test_the_whole_call_is_heard_again_as_soon_as_the_recording_is_over_not_after_the_last_passes(tmp_path):
+    """Live (2026-10-31): after Stop a backlog of passes, then 124 s for the whole call, one after the other."""
+    script = Script.conversation(["Anna", "Sam", "me"], lines=12)
+    order: list[str] = []
+
+    class Reader(WordReader):
+        def words(self, audio, language=None):
+            order.append("pass")
+            return super().words(audio, language)
+
+    class Call(WholeCall):
+        def segments(self, audio):
+            order.append("whole call")
+            return super().segments(audio)
+
+    rig = Rig(tmp_path, script, reader=Reader(), call_diarizer=Call(script))
+
+    async def go():
+        await rig.service.toggle(True)
+        await rig.finish()
+
+    asyncio.run(go())
+    assert "whole call" in order and order.index("whole call") < len(order) - 1, order
+    assert "pass" in order[order.index("whole call"):], "passes still ran after it started"
+    assert "regrouped" in rig.store.state(rig.id)
+
+
 def test_when_the_whole_call_cant_be_sorted_out_the_live_speakers_stay(tmp_path):
     script = Script.conversation(["Anna", "Sam"], lines=8)
     call = WholeCall(script, fail=True)

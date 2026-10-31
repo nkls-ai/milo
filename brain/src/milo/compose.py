@@ -392,6 +392,7 @@ def _meetings(p: Parts) -> None:
         approvals=p.approvals, speaker=p.speaker, transcript=p.transcript, diarizer=diarizer,
         call_diarizer=call_diarizer,
         diarize_executor=p.diarize_executor,
+        regroup_executor=ThreadPoolExecutor(1, thread_name_prefix="regroup") if call_diarizer else None,
         voices=JsonVoiceBook(p.workspace.meetings_dir / "voices.json", diarizer.model) if diarizer else None,
         summarizer=lambda: LIVE_MODELS.create(chat_name, chat_options, ctx),
         calendar=calendar if day is not None and day.calendar is not None else None,

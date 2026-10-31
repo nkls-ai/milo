@@ -81,6 +81,88 @@ def energy_spans(audio: Audio, *, frame_s: float = 0.05, floor: float = 0.01,
     return spans
 
 
+ECHO_FRAME_S = 0.05
+ECHO_WINDOW_FRAMES = 20
+"""The microphone is compared with the call one second at a time."""
+ECHO_LAGS = range(-2, 7)
+"""The call reaches the microphone through the room up to 0.3 s later, and the two tracks may start a little apart."""
+ECHO_FOLLOWS = 0.6
+"""A second where the microphone's loudness follows the call's this closely is the call coming out of the speakers:
+the user's own voice over it breaks the pattern."""
+CALL_FLOOR = 1e-3
+"""The call track is digital: below this it is silent, and the microphone can't be its echo."""
+ECHO_RING_FRAMES = 8
+"""How long the room keeps ringing after the call goes quiet, in frames."""
+ECHO_USER = 1.5
+"""The microphone this many times louder than the call's echo there: the user is talking. Tried on two voices with
+a room's ringing added (2026-10-31): the user louder than the echo loses under 5 % of their words, a user alone none,
+and about 90 % of the echo goes."""
+
+
+def echo_muted(mic: Audio, call: Audio) -> tuple[Audio, float]:
+    """The microphone with the stretches that are only the call coming back through the speakers made silent, and
+    how many seconds that was. Live (2026-10-31): without headphones a song from YouTube came out a second time as
+    the user's lines, garbled differently, so `without_echo` couldn't match the words. Comparing the sound can, and
+    the muted stretches cost Whisper nothing.
+
+    A second is echo when the microphone's loudness follows the call's (ECHO_FOLLOWS) and nothing in it is louder
+    than the room makes the call: how much louder the microphone is than the call is learned from the clearest echo
+    of the pass, and the user talking over the call shows up as more than that (ECHO_USER)."""
+    frame = int(ECHO_FRAME_S * STT_SAMPLE_RATE)
+    n = min(len(mic), len(call)) // frame
+    if n < ECHO_WINDOW_FRAMES:
+        return mic, 0.0
+
+    def loudness(audio: Audio, count: int) -> np.ndarray:
+        return np.sqrt(np.mean(np.square(audio[:count * frame].reshape(count, frame)), axis=1))
+
+    mine_rms = loudness(mic, n)
+    mine = np.log(mine_rms + 1e-5)
+    theirs_rms = loudness(call, min(len(call) // frame, n + max(ECHO_LAGS)))
+    # The room keeps the call ringing for a moment after it stops: the echo can be as loud as the call just before.
+    ringing = np.array([theirs_rms[max(0, i - ECHO_RING_FRAMES):i + 1].max() for i in range(len(theirs_rms))])
+    theirs = np.log(theirs_rms + 1e-5)
+    follows: list[tuple[int, int, int, float]] = []  # (start, end, lag, how closely)
+    step = ECHO_WINDOW_FRAMES // 4
+    seen = np.zeros(n, dtype=int)
+    for a in range(0, n - ECHO_WINDOW_FRAMES + 1, step):
+        b = a + ECHO_WINDOW_FRAMES
+        seen[a:b] += 1
+        if np.mean(theirs_rms[a:b] > CALL_FLOOR) < 0.5 or np.std(mine[a:b]) < 1e-3:
+            continue
+        best, best_lag = -1.0, 0
+        for lag in ECHO_LAGS:  # the microphone hears the call `lag` frames late
+            lo, hi = a - lag, b - lag
+            if lo < 0 or hi > len(theirs) or np.std(theirs[lo:hi]) < 1e-3:
+                continue
+            r = float(np.corrcoef(mine[a:b], theirs[lo:hi])[0, 1])
+            if r > best:
+                best, best_lag = r, lag
+        if best >= ECHO_FOLLOWS:
+            follows.append((a, b, best_lag, best))
+    if not follows:
+        return mic, 0.0
+    # How loud the room makes the call, from the windows that follow it most closely.
+    ratios = []
+    for a, b, lag, r in sorted(follows, key=lambda w: -w[3])[:max(3, len(follows) // 3)]:
+        loud = theirs_rms[a - lag:b - lag] > CALL_FLOOR
+        ratios.extend(mine_rms[a:b][loud] / theirs_rms[a - lag:b - lag][loud])
+    gain = float(np.median(ratios)) if ratios else 0.0
+    hits = np.zeros(n, dtype=int)
+    for a, b, lag, _ in follows:
+        expected = gain * ringing[a - lag:b - lag]
+        user = (mine_rms[a:b] > ECHO_USER * expected) & (mine_rms[a:b] > 4 * CALL_FLOOR)
+        if user.sum() < 3:  # more than a click of the user's own voice: not only echo
+            hits[a:b] += 1
+    # A moment is echo only when every second around it is: the user's first words after the call stopped stay.
+    echo = (seen > 0) & (hits == seen)
+    if not echo.any():
+        return mic, 0.0
+    muted = mic.copy()
+    muted[:n * frame].reshape(n, frame)[echo] = 0.0
+    return muted, float(echo.sum()) * ECHO_FRAME_S
+
+
 WORD_MAX_S = 1.2
 """Whisper stretches a word over speech it skipped; a word counts as covering at most this long."""
 

@@ -915,7 +915,8 @@ class TimedTranscriber(Protocol):
         ...
 
     def spoken_language(self, audio: Audio) -> str:
-        """The language spoken in the audio, like "en". Blocking."""
+        """The language spoken in the audio, like "en"; "" when it can't tell for sure (music, a few words).
+        Blocking."""
         ...
 
 

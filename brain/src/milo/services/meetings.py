@@ -34,9 +34,10 @@ from .approvals import Approvals
 from .background_stt import BackgroundStt
 from .meeting_regroup import regroup, regrouped
 from .meeting_speakers import SpeakerTracker
-from .meeting_text import (OTHERS, SUMMARY_RULES, YOU, clean, energy_spans, find_cut, inert, meeting_block, merged,
-                           minutes_asked, name_of, naming, parse_notes, render_notes, render_transcript, shifted,
-                           spans_of, speaker_of, summary_prompt, uncovered, without_repeats, words_to_lines)
+from .meeting_text import (OTHERS, SUMMARY_RULES, YOU, clean, echo_muted, energy_spans, find_cut, inert,
+                           meeting_block, merged, minutes_asked, name_of, naming, parse_notes, render_notes,
+                           render_transcript, shifted, spans_of, speaker_of, summary_prompt, uncovered,
+                           without_repeats, words_to_lines)
 from .speaker import Speaker
 from .transcript import Transcript, unrecorded
 from .ui_state import UiState
@@ -123,6 +124,8 @@ class _Meeting:
     error: tuple[str, str] = ("", "")
     """What the app can't record and the permission that mends it."""
     step: str = ""
+    call_segments: asyncio.Future | None = None
+    """Who spoke when over the whole call, started the moment the recording is over (MeetingService._regroup)."""
 
     @property
     def conversation(self) -> str:
@@ -151,7 +154,7 @@ class MeetingService:
                  options: MeetingOptions = MeetingOptions(), connected: Callable[[], bool] = lambda: True,
                  private: Callable[[], bool] = lambda: False, quiet: Callable[[], bool] = lambda: False,
                  on_episode: Callable[[Episode], None] | None = None, match: float = 0.6,
-                 call_diarizer: CallDiarizer | None = None):
+                 call_diarizer: CallDiarizer | None = None, regroup_executor: Executor | None = None):
         self._store = store
         self._ui = ui
         self._clock = clock
@@ -163,6 +166,9 @@ class MeetingService:
         self._diarizer = diarizer
         self._diarize_executor = diarize_executor
         self._call_diarizer = call_diarizer
+        self._regroup_executor = regroup_executor or diarize_executor
+        """Where the whole call is listened to again after Stop: a thread of its own, so it runs beside the last
+        passes' diarizing instead of before it."""
         self._voices = voices
         self._summarizer = summarizer
         self._calendar = calendar
@@ -393,6 +399,7 @@ class MeetingService:
         m.state["stopped"] = True
         self._end_pause(m)
         self._save(m)
+        self._start_regroup(m)
         m.wake.set()
         if not m.step:
             self._writing(m, WRITING[0])
@@ -473,6 +480,8 @@ class MeetingService:
         cut = seconds if final or seconds < WINDOW_S - 0.05 else find_cut(audio, CUT_FROM_S, WINDOW_S)
         audio = audio[:int(round(cut * STT_SAMPLE_RATE))]
         started = self._clock.monotonic()
+        if track is Track.ME:
+            audio = await asyncio.to_thread(self._without_echo, m, audio, start)
         words = await self._fill_gaps(audio, await self._words(audio))
         diarize = self._diarize(audio, spans_of(words)) if track is Track.THEM and words else None
         turns = await diarize if diarize is not None else []
@@ -492,6 +501,19 @@ class MeetingService:
         log.info("meeting %s: %s %s-%s, %d line(s) in %.1fs", m.id, track.value, clock(start), clock(start + cut),
                  len(lines), self._clock.monotonic() - started)
         self._render(m)
+
+    def _without_echo(self, m: _Meeting, mic, start: float):
+        """The microphone pass without the call coming back through the speakers (meeting_text.echo_muted)."""
+        seconds = len(mic) / STT_SAMPLE_RATE
+        try:
+            call = self._store.audio(m.id, Track.THEM, start, start + seconds + 0.5)
+        except Exception:
+            log.exception("meeting %s: couldn't read the call track to find echo", m.id)
+            return mic
+        muted, echo_s = echo_muted(mic, call)
+        if echo_s:
+            log.info("meeting %s: %.1fs of the call's echo left out of your track", m.id, echo_s)
+        return muted
 
     async def _words(self, audio, language: str | None = None):
         for attempt in range(STT_TRIES):
@@ -762,20 +784,36 @@ class MeetingService:
             self._ui.emit(Status(ready))
         self._done(m, ready)
 
+    def _start_regroup(self, m: _Meeting) -> None:
+        """Start listening to the whole call again the moment its audio is complete, beside the last passes: after
+        Stop the two longest waits then overlap instead of adding up. Live (2026-10-31): a backlog of passes, then
+        124 s for this, one after the other."""
+        if self._call_diarizer is None or self._regroup_executor is None or m.state.get("regrouped") \
+                or m.call_segments is not None:
+            return
+        end = max((c.end for c in self._store.chunks(m.id) if c.track is Track.THEM), default=0.0)
+        if end <= 0:
+            return
+        diarizer = self._call_diarizer
+        m.call_segments = asyncio.get_running_loop().run_in_executor(
+            self._regroup_executor, lambda: diarizer.segments(self._store.audio(m.id, Track.THEM, 0.0, end)))
+        m.call_segments.add_done_callback(lambda f: f.cancelled() or f.exception())  # read later, or never
+
     async def _regroup(self, m: _Meeting) -> bool:
         """Sort out who said what over the whole call's audio (CallDiarizer), before it is deleted. False when there
         is no call diarizer or it failed: the speakers found during the call stay, joined where they sound alike."""
-        if self._call_diarizer is None or self._diarize_executor is None or m.state.get("regrouped"):
+        if self._call_diarizer is None or self._regroup_executor is None or m.state.get("regrouped"):
             return bool(m.state.get("regrouped"))
         them = [l for l in self._store.lines(m.id) if l.track is Track.THEM]
         if not them:
             return False
-        diarizer, end = self._call_diarizer, max(l.end for l in them)
         loop = asyncio.get_running_loop()
         started = loop.time()
+        self._start_regroup(m)  # a brain that restarted after Stop starts it only now
         try:
-            segments = await loop.run_in_executor(
-                self._diarize_executor, lambda: diarizer.segments(self._store.audio(m.id, Track.THEM, 0.0, end)))
+            if m.call_segments is None:
+                return False
+            segments = await m.call_segments
         except Exception:
             log.exception("meeting %s: sorting out who said what failed; keeping the speakers from the call", m.id)
             return False
