@@ -22,6 +22,9 @@ public final class OverlayPanel: NSPanel {
     /// Milo's centre in the panel, from its bottom-left corner: OverlayView pins his 132 pt frame 20 pt from
     /// the right and 12 pt from the bottom, and Pip's body sits 6 pt below the middle of that frame.
     static let characterCenter = CGPoint(x: size.width - 86, y: 72)
+    /// The Stop button's centre, the same way: on the left edge of that frame, halfway up, moved by its offset.
+    static let stopCenter = CGPoint(x: size.width - 20 - 132 + StopByMilo.size / 2 + StopByMilo.offset.width,
+                                    y: 12 + 66 - StopByMilo.offset.height)
 
     private let host: DraggableHostingView<OverlayView>
     private var flight: FlightDriver?
@@ -47,6 +50,10 @@ public final class OverlayPanel: NSPanel {
         flight = FlightDriver(panel: self, model: model, center: Self.characterCenter)
         presence.reduceMotion = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
         host.onDrag = { [weak presence] in presence?.held = $0 }
+        // The Stop button sits in Milo's square: a click on it is the button's, never a drag or a click on him.
+        host.isControl = { [weak model] p in
+            model?.canStop == true && hypot(p.x - Self.stopCenter.x, p.y - Self.stopCenter.y) <= StopByMilo.size / 2 + 4
+        }
         host.onClick = { [weak presence] in presence?.summon() }
         presence.pointing = { [weak host] in host?.pointerOnCharacter ?? false }
         // `phase` is published before it changes: the new value comes in, so he is in the window list before the
@@ -85,6 +92,8 @@ final class DraggableHostingView<Content: View>: NSHostingView<Content> {
     static var clickSlop: CGFloat { 3 }
 
     var onClick: (() -> Void)?
+    /// A control inside Milo's square at this point (from the bottom-left corner) takes the click itself.
+    var isControl: (NSPoint) -> Bool = { _ in false }
     /// True while Milo is dragged, false when he is let go: he doesn't leave in between.
     var onDrag: ((Bool) -> Void)?
 
@@ -116,8 +125,10 @@ final class DraggableHostingView<Content: View>: NSHostingView<Content> {
         return isOnCharacter(convert(window.mouseLocationOutsideOfEventStream, from: nil))
     }
 
-    private func isOnCharacter(_ p: NSPoint) -> Bool {
+    /// A press here drags Milo or clicks him: his square, less any control in it.
+    func isOnCharacter(_ p: NSPoint) -> Bool {
         let fromBottom = isFlipped ? bounds.maxY - p.y : p.y - bounds.minY
+        if isControl(NSPoint(x: p.x - bounds.minX, y: fromBottom)) { return false }
         return bounds.maxX - p.x <= Self.characterArea && fromBottom <= Self.characterArea
     }
 }

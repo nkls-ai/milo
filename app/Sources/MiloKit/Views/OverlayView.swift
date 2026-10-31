@@ -19,23 +19,21 @@ public struct OverlayView: View {
                 // A question to the user shows in the bubble, with Yes and No.
                 BubbleView(model: model)
                 VoiceCapsule(model: model)
-                // The meeting capsule has a row of its own above Milo, and the Stop button sits left of him in his
-                // row, so a meeting and a working Milo show both, one above the other, never on top of each other.
+                // The meeting capsule has a row of its own above Milo, and the Stop button sits at his side, so a
+                // meeting and a working Milo show both, one above the other, never on top of each other.
                 MeetingCapsule(meeting: model.meeting)
             }
             .opacity(gone ? 0 : 1)
             HStack(alignment: .bottom, spacing: 0) {
-                // Left of the square DraggableHostingView keeps for Milo, so a click on a bird or on Stop is theirs.
-                HStack(alignment: .bottom, spacing: 6) {
-                    HelperFlock(model: model)
-                    StopByMilo(model: model).padding(.bottom, 50)
-                }
+                // Left of the square DraggableHostingView keeps for Milo, so a click on a bird is the bird's.
+                HelperFlock(model: model)
                 .opacity(gone ? 0 : 1)
                 .padding(.trailing, 20)
                 Comings(presence: model.presence) { pose in
                     CharacterView(model: model, heading: pose.heading)
                         .frame(width: 132, height: 132)
                         .overlay(alignment: .topLeading) { LookingBadge(model: model) }
+                        .overlay(alignment: .leading) { StopByMilo(model: model).offset(StopByMilo.offset) }
                         .offset(pose.offset)
                         .opacity(pose.opacity)
                 }
