@@ -939,6 +939,21 @@ class Diarizer(Protocol):
 
 
 @runtime_checkable
+class CallDiarizer(Protocol):
+    """Who spoke when over a whole call's audio, once it ends. It sees all of it at once, so it tells voices apart far
+    better than the live passes can (services/meeting_regroup.py). Blocking; runs on the diarizer's thread."""
+
+    def warm(self) -> None:
+        """Load the models. Blocking."""
+        ...
+
+    def segments(self, audio: Audio) -> list[tuple[float, float, str]]:
+        """(start, end, label) for each stretch of one voice, seconds into `audio`. Labels mean nothing across
+        calls."""
+        ...
+
+
+@runtime_checkable
 class VoiceBook(Protocol):
     """Known voices, so "Speaker 2" becomes "Anna" after the user names her once. Kept on the Mac only."""
 

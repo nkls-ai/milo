@@ -15,9 +15,9 @@ from .core.clock import SystemClock
 from .core.conversations import SplitRules
 from .core.language import SpokenLanguage
 from .core.ports import Harness, LiveModel, PlaybackTap, TimedTranscriber, Transcriber, Vocabulary, Voice
-from .core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, CHANNELS, DIARIZERS, EMBEDDERS, HARNESSES, LIVE_MODELS,
-                            STREAMING_TRANSCRIBERS, TEXT_CLEANERS, TRANSCRIBERS, VOICES, AdapterContext, ConfigError,
-                            Registry)
+from .core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, CALL_DIARIZERS, CHANNELS, DIARIZERS, EMBEDDERS, HARNESSES,
+                            LIVE_MODELS, STREAMING_TRANSCRIBERS, TEXT_CLEANERS, TRANSCRIBERS, VOICES, AdapterContext,
+                            ConfigError, Registry)
 from .core.task_scope import CONNECT_SERVER
 from .core.types import Emotion, LiveMode, ToolServer
 from .memory.state import JsonState
@@ -368,7 +368,9 @@ def _meetings(p: Parts) -> None:
     m = config.meetings
     diarizer = DIARIZERS.create(m.diarizer, config.section("meetings").get(m.diarizer, {}), p.ctx) \
         if m.diarizer else None
-    p.diarize_executor = ThreadPoolExecutor(1, thread_name_prefix="diarize") if diarizer else None
+    call_diarizer = CALL_DIARIZERS.create(m.regroup, config.section("meetings").get(m.regroup, {}), p.ctx) \
+        if m.regroup else None
+    p.diarize_executor = ThreadPoolExecutor(1, thread_name_prefix="diarize") if diarizer or call_diarizer else None
     chat_name, chat_options = config.pluggable("chat")
     ctx, helpers, switches = p.ctx, p.helpers, config.connections
 
@@ -386,6 +388,7 @@ def _meetings(p: Parts) -> None:
     p.meetings = MeetingService(
         FileMeetingStore(p.workspace.meetings_dir), p.ui, p.clock, p.background_stt, p.transcriber,
         approvals=p.approvals, speaker=p.speaker, transcript=p.transcript, diarizer=diarizer,
+        call_diarizer=call_diarizer,
         diarize_executor=p.diarize_executor,
         voices=JsonVoiceBook(p.workspace.meetings_dir / "voices.json", diarizer.model) if diarizer else None,
         summarizer=lambda: LIVE_MODELS.create(chat_name, chat_options, ctx),

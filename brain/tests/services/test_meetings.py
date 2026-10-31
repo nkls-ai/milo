@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import os
 import signal
 import subprocess
@@ -15,6 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from milo.core.events import (CallEnded, CallStarted, Confirm, MeetingChunk, MeetingMail,
@@ -27,8 +29,8 @@ from milo.memory.meetings import FileMeetingStore
 from milo.services.background_stt import BackgroundStt
 from milo.services.listening import Listening
 from milo.services.meetings import QUESTION, MeetingOptions, MeetingService, followup_task
-from tests.meeting_fakes import (FakeVoiceBook, GivingWay, LineVoices, Script, SummaryModel, WordReader, line_of_word,
-                                 word, write_chunks)
+from tests.meeting_fakes import (BASE, SR, FakeVoiceBook, GivingWay, LineVoices, Script, SummaryModel, WordReader,
+                                 line_of, line_of_word, word, write_chunks)
 from tests.services.stack import InlineExecutor, Stack, settle, until
 
 SUMMARY = json.dumps({"summary": "We moved the release by a week.", "decisions": ["Release on the 21st"],
@@ -40,12 +42,12 @@ SUMMARY = json.dumps({"summary": "We moved the release by a week.", "decisions":
 class Rig:
     def __init__(self, tmp_path: Path, script: Script, *, auto="ask", reader=None, voices=None, events=None,
                  summary=SUMMARY, stack=None, end_after_s=0.05, busy=lambda: False, connected=lambda: True,
-                 offers=False, stt=None, transcript=None):
+                 offers=False, stt=None, transcript=None, diarizer=None, call_diarizer=None):
         self.s = stack or Stack(confirm_timeout_s=2.0)
         self.script = script
         self.store = FileMeetingStore(tmp_path / "meetings")
         self.reader = reader or WordReader()
-        self.diarizer = LineVoices(script.speaker_of_line())
+        self.diarizer = diarizer or LineVoices(script.speaker_of_line())
         self.voices = voices if voices is not None else FakeVoiceBook()
         self.models: list[SummaryModel] = []
         self.reminders: list[tuple[str, str]] = []
@@ -71,7 +73,7 @@ class Rig:
             diarize_executor=InlineExecutor(), voices=self.voices, summarizer=summarizer, calendar=calendar,
             add_reminder=add_reminder, draft_mail=self.drafts.append,
             options=MeetingOptions(auto=auto, end_after_s=end_after_s, offer_reminders=offers, offer_mail=offers), connected=connected,
-            on_episode=self.episodes.append)
+            on_episode=self.episodes.append, call_diarizer=call_diarizer)
 
     @property
     def id(self) -> str:
@@ -333,6 +335,77 @@ def test_a_known_voice_gets_its_name_by_itself(tmp_path):
     asyncio.run(go())
     transcript = (rig.store.folder(rig.id) / "transcript.md").read_text()
     assert "Anna:" in transcript and "Speaker 2:" in transcript
+
+
+class ScatteredVoices(LineVoices):
+    """A live diarizer on a bad line: every line sounds like someone new."""
+
+    def speakers(self, audio, spans):
+        turns = super().speakers(audio, spans)
+        for turn in turns:
+            piece = audio[int(turn.start * SR):int(turn.end * SR)]
+            turn.voice[:] = 0
+            turn.voice[line_of(float(piece[np.abs(piece) > BASE / 2][0])) % len(turn.voice)] = 1.0
+        return turns
+
+
+class WholeCall:
+    """A call diarizer that hears the script's people right, over the whole call."""
+
+    def __init__(self, script: Script, fail: bool = False):
+        self.script, self.fail, self.heard = script, fail, []
+
+    def warm(self):
+        pass
+
+    def segments(self, audio):
+        self.heard.append(len(audio) / SR)
+        if self.fail:
+            raise RuntimeError("no model")
+        return [(s.start, s.end, f"SPEAKER_0{'AS'.index(s.who[0])}") for s in self.script.said if s.who != "me"]
+
+
+def test_after_stop_the_whole_call_sorts_out_who_said_what(tmp_path):
+    """2026-10-31: a YouTube video with two people came out as 15 speakers."""
+    script = Script.conversation(["Anna", "Sam", "me"], lines=18)
+    call = WholeCall(script)
+    rig = Rig(tmp_path, script, diarizer=ScatteredVoices(script.speaker_of_line()), call_diarizer=call)
+
+    async def go():
+        await rig.service.toggle(True)
+        rig.deliver()
+        await until(lambda: rig.store.progress(rig.id)[Track.THEM] >= 25)
+        live = {l.speaker for l in rig.lines() if l.track is Track.THEM}
+        await rig.finish()
+        return live
+
+    live = asyncio.run(go())
+    assert len(live) > 2, "the live voices split them"
+    last = max(s.end for s in script.said if s.who != "me")
+    assert call.heard and call.heard[0] >= last - 0.5, "it heard the whole call's track"
+    by_line = said_lines(rig, rig.service._clean(rig.service._last[0]))
+    them = {n: set(speakers) for n, speakers in by_line.items() if script.speaker_of_line()[n] != "me"}
+    anna = set().union(*(v for n, v in them.items() if script.speaker_of_line()[n] == "Anna"))
+    sam = set().union(*(v for n, v in them.items() if script.speaker_of_line()[n] == "Sam"))
+    assert len(anna) == len(sam) == 1 and anna != sam, "each person is one speaker"
+    transcript = (rig.store.folder(rig.id) / "transcript.md").read_text()
+    assert {"Speaker 1", "Speaker 2"} <= set(re.findall(r"Speaker \d+", transcript)) and "Speaker 3" not in transcript
+
+
+def test_when_the_whole_call_cant_be_sorted_out_the_live_speakers_stay(tmp_path):
+    script = Script.conversation(["Anna", "Sam"], lines=8)
+    call = WholeCall(script, fail=True)
+    rig = Rig(tmp_path, script, call_diarizer=call)
+
+    async def go():
+        await rig.service.toggle(True)
+        await rig.finish()
+
+    asyncio.run(go())
+    assert call.heard and "regrouped" not in rig.store.state(rig.id)
+    assert (rig.store.folder(rig.id) / "notes.md").exists(), "the notes are still written"
+    by_line = said_lines(rig, rig.lines())
+    assert len({tuple(v) for v in by_line.values()}) == 2
 
 
 def test_one_other_person_invited_and_one_voice_heard_is_that_person(tmp_path):

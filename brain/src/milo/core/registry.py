@@ -21,8 +21,8 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar
 from .control import WORK_FOLDER
 
 if TYPE_CHECKING:
-    from .ports import (AudioInput, AudioOutput, Channel, Clock, Connections, Diarizer, Embedder, Harness, LiveModel,
-                        ProactiveRule, StreamingTranscriber, TextCleaner, Transcriber, Voice)
+    from .ports import (AudioInput, AudioOutput, CallDiarizer, Channel, Clock, Connections, Diarizer, Embedder, Harness,
+                        LiveModel, ProactiveRule, StreamingTranscriber, TextCleaner, Transcriber, Voice)
     from .types import ToolServer
 
 T = TypeVar("T")
@@ -105,3 +105,4 @@ CONNECTIONS: Registry[Connections] = Registry("connections")
 EMBEDDERS: Registry[Embedder] = Registry("embedder")
 CHANNELS: Registry[Channel] = Registry("message channel")
 DIARIZERS: Registry[Diarizer] = Registry("diarizer")
+CALL_DIARIZERS: Registry[CallDiarizer] = Registry("call diarizer")

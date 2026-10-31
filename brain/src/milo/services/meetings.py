@@ -25,13 +25,14 @@ from milo.core.events import (CallEnded, CallStarted, MeetingChunk, MeetingLines
                               OpenMeeting, Status)
 from milo.core.logtext import private
 from milo.core.meetings import ME, MeetingInfo, MeetingNotes, Track, TranscriptLine, clock
-from milo.core.ports import Clock, Diarizer, LiveModel, MeetingStore, TimedTranscriber, VoiceBook
+from milo.core.ports import CallDiarizer, Clock, Diarizer, LiveModel, MeetingStore, TimedTranscriber, VoiceBook
 from milo.core.times import local
 from milo.core.memory import Episode, new_id
 from milo.core.types import STT_SAMPLE_RATE, Emotion, Interrupted
 
 from .approvals import Approvals
 from .background_stt import BackgroundStt
+from .meeting_regroup import regroup, regrouped
 from .meeting_speakers import SpeakerTracker
 from .meeting_text import (OTHERS, SUMMARY_RULES, YOU, clean, energy_spans, find_cut, inert, meeting_block, merged,
                            minutes_asked, name_of, naming, parse_notes, render_notes, render_transcript, shifted,
@@ -149,7 +150,8 @@ class MeetingService:
                  add_reminder: AddReminder | None = None, draft_mail: Callable[[str], object] | None = None,
                  options: MeetingOptions = MeetingOptions(), connected: Callable[[], bool] = lambda: True,
                  private: Callable[[], bool] = lambda: False, quiet: Callable[[], bool] = lambda: False,
-                 on_episode: Callable[[Episode], None] | None = None, match: float = 0.6):
+                 on_episode: Callable[[Episode], None] | None = None, match: float = 0.6,
+                 call_diarizer: CallDiarizer | None = None):
         self._store = store
         self._ui = ui
         self._clock = clock
@@ -160,6 +162,7 @@ class MeetingService:
         self._transcript = transcript or unrecorded()
         self._diarizer = diarizer
         self._diarize_executor = diarize_executor
+        self._call_diarizer = call_diarizer
         self._voices = voices
         self._summarizer = summarizer
         self._calendar = calendar
@@ -583,7 +586,7 @@ class MeetingService:
     def _clean(self, m: _Meeting) -> list[TranscriptLine]:
         """The lines to show: without talk with Milo, echo, or anything from a paused stretch."""
         paused = [(a, b if b is not None else 1e9) for a, b in m.state.get("paused", ())]
-        lines = clean(self._store.lines(m.id), m.state.get("private", ()))
+        lines = regrouped(clean(self._store.lines(m.id), m.state.get("private", ())), m.state.get("regrouped", {}))
         return [l for l in lines if not any(a <= (l.start + l.end) / 2 <= b for a, b in paused)]
 
     def _save(self, m: _Meeting) -> None:
@@ -606,7 +609,8 @@ class MeetingService:
 
     def _name_from_calendar(self, m: _Meeting) -> None:
         """One other person invited and one other voice heard: that's them."""
-        speakers = [s for s in m.tracker.voices if s not in m.aliases]
+        regrouped = m.state.get("regrouped")
+        speakers = sorted(set(regrouped.values())) if regrouped else [s for s in m.tracker.voices if s not in m.aliases]
         if len(m.info.attendees) == 1 and len(speakers) == 1 and speakers[0] not in m.names:
             m.names[speakers[0]] = m.info.attendees[0]
 
@@ -711,10 +715,15 @@ class MeetingService:
 
     async def _write_notes(self, m: _Meeting) -> None:
         self._writing(m, WRITING[1])
-        merges = m.tracker.merge()
-        m.aliases.update(merges)
+        self._name_from_voices(m)  # while the call's speakers still are its live voices
+        if not await self._regroup(m):
+            merges = m.tracker.merge()
+            m.aliases.update(merges)
+            for gone, kept in merges.items():  # a name on a voice joined into another goes with it
+                if gone in m.names and kept not in m.names:
+                    m.names[kept] = m.names.pop(gone)
+            self._name_from_voices(m)  # joined voices are longer: one may now be known
         m.state["speakers"] = m.tracker.to_state()
-        self._name_from_voices(m)
         self._name_from_calendar(m)
         self._save(m)
         lines = self._clean(m)
@@ -752,6 +761,33 @@ class MeetingService:
         else:
             self._ui.emit(Status(ready))
         self._done(m, ready)
+
+    async def _regroup(self, m: _Meeting) -> bool:
+        """Sort out who said what over the whole call's audio (CallDiarizer), before it is deleted. False when there
+        is no call diarizer or it failed: the speakers found during the call stay, joined where they sound alike."""
+        if self._call_diarizer is None or self._diarize_executor is None or m.state.get("regrouped"):
+            return bool(m.state.get("regrouped"))
+        them = [l for l in self._store.lines(m.id) if l.track is Track.THEM]
+        if not them:
+            return False
+        diarizer, end = self._call_diarizer, max(l.end for l in them)
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        try:
+            segments = await loop.run_in_executor(
+                self._diarize_executor, lambda: diarizer.segments(self._store.audio(m.id, Track.THEM, 0.0, end)))
+        except Exception:
+            log.exception("meeting %s: sorting out who said what failed; keeping the speakers from the call", m.id)
+            return False
+        mapping = regroup(them, segments, m.aliases, m.names)
+        if not mapping:
+            return False
+        m.state["regrouped"] = mapping
+        self._save(m)
+        log.info("meeting %s: %d speaker(s) over the whole call, %d during it, in %.1fs", m.id,
+                 len(set(mapping.values())), len({m.aliases.get(l.speaker, l.speaker) for l in them}),
+                 loop.time() - started)
+        return True
 
     def _done(self, m: _Meeting, said: str) -> None:
         """The notes are on disk: the page shows them, and the bubble what Milo said with an Open button. The status

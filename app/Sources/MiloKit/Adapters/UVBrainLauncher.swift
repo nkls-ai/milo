@@ -25,7 +25,7 @@ public final class UVBrainLauncher: BrainLauncher {
 
         public init(brainDir: URL, logURL: URL, lockURL: URL? = nil,
                     uvCandidates: [String] = Configuration.defaultUVCandidates,
-                    extras: [String] = ["omnivoice", "pocket"], command: String = "milo",
+                    extras: [String] = ["omnivoice", "pocket", "pyannote"], command: String = "milo",
                     extraPath: [String] = ["/opt/homebrew/bin", "/usr/local/bin", "\(NSHomeDirectory())/.local/bin"],
                     restartDelay: TimeInterval = 1, lockWait: TimeInterval = 30) {
             self.brainDir = brainDir

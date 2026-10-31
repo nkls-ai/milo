@@ -275,6 +275,9 @@ class MeetingSettings:
     """Keep the recording after the notes are written. Off: it's deleted."""
     diarizer: str = "sherpa_onnx"
     """What tells the other people apart. "" labels everyone on the call as "Others"."""
+    regroup: str = "pyannote"
+    """What sorts out who said what again over the whole call once it ends (core/ports.CallDiarizer). "" keeps the
+    speakers the diarizer found during the call."""
     offer_reminders: bool = True
     """After the call, offer to put your to-dos into Reminders."""
     offer_mail: bool = True
@@ -382,8 +385,9 @@ class Config:
             self.memory = dataclasses.replace(self.memory, embedder=platform.embedder)
         self.routines = _typed(options_from(RoutineSettings, raw.get("routines", {}), "routines"), "routines")
         self.meetings: MeetingSettings = _pluggable_settings(MeetingSettings, raw.get("meetings", {}), "meetings")
-        if self.meetings.diarizer and not isinstance(raw.get("meetings", {}).get(self.meetings.diarizer, {}), dict):
-            raise ConfigError(f"[meetings.{self.meetings.diarizer}] must be a table")
+        for name in (self.meetings.diarizer, self.meetings.regroup):
+            if name and not isinstance(raw.get("meetings", {}).get(name, {}), dict):
+                raise ConfigError(f"[meetings.{name}] must be a table")
 
     @classmethod
     def load(cls, path: Path, platform: Platform = ANYWHERE) -> Config:

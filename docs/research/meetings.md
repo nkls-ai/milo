@@ -129,11 +129,31 @@ All on the M3 with 16 GB, while other agents ran builds and models (load average
 
 The remaining mistakes are short replies ("Yes, exactly.", under 1 s) that go to the nearest voice, and a pass cut that splits "one more / thing" across two lines.
 
+## Real voices: pyannote after Stop (2026-10-31)
+
+A YouTube video with two people, played through the speakers, came out as 15 speakers in one minute. Short shouted
+stretches over game sound gave TitaNet voices of one person a cosine of at most 0.57, below the 0.6 match, so each
+became someone new. Measured on two AMI meetings (CC-BY-4.0, headset mix, 4 people, reference labels from
+pyannote/AMI-diarization-setup), on an M3:
+
+| | ES2004a (17.5 min) | IS1009a (14 min) |
+|---|---|---|
+| Live TitaNet + online clustering | 41 speakers, DER 55.0%, confusion 9.4% | 30 speakers, DER 40.8%, confusion 9.0% |
+| pyannote community-1 alone | 5 speakers, DER 18.8%, confusion 3.1% | 4 speakers, DER 19.7%, confusion 5.6% |
+| Live lines regrouped with pyannote (what the notes show) | 5 speakers, DER 46.8%, confusion 1.2% | 4 speakers, DER 35.1%, confusion 3.3% |
+
+pyannote took 0.12x the meeting's length on the GPU (MPS). Most of the regrouped DER is missed speech: the transcript's
+lines only cover what Whisper wrote down. So after Stop the call's whole track goes through pyannote community-1
+(`[meetings] regroup`, services/meeting_regroup.py), and its voices replace the live speakers in the transcript and
+the notes; the live ones stay for the page during the call. Its weights are gated on Hugging Face and downloaded once;
+pyannote.audio 4 reports each file's length and speaker counts to otel.pyannote.ai by default, which the adapter
+switches off before it loads.
+
 ## Not verified
 
 - The process tap and its permission prompt. Creating a tap records what the Mac plays, and the rules for this work forbid recording real audio. The tap code builds against the macOS 15.5 SDK and follows AudioCap step by step, but it hasn't run. The first real test is a call with a test account.
 - The ScreenCaptureKit fallback, for the same reason.
 - Call detection with a real Zoom, Teams, Meet or FaceTime call. The classifier is tested on bundle ids and titles, and the Core Audio process list was read on this Mac (no app used the mic at the time).
 - An hour with the real models in one go. The model lock allows about 15 minutes, so the hour ran with the test fakes (flat at 303 MB) and the real models ran for 9.7 minutes.
-- Diarization of real voices over a real call connection. The numbers above are `say` voices, which are cleaner and more distinct than people on a bad line. The voice-match threshold (0.6) will likely need tuning on real calls.
+- Diarization over a real call connection. AMI is real voices in one room (above), not a compressed call line.
 - German speaker-embedding quality in general: no published benchmark covers it.

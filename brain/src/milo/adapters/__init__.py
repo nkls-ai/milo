@@ -32,6 +32,7 @@ BUILTIN = (
     "channel.telegram",
     "channel.imessage",
     "diarize.sherpa",
+    "diarize.pyannote",
 )
 
 

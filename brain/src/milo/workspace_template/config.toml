@@ -305,6 +305,7 @@ device = "gpu"                    # gpu | cpu
 auto = "ask"
 keep_audio = false                # keep the recording after the notes are written
 diarizer = "sherpa_onnx"          # tells the other people apart; "" labels them all "Others"
+regroup = "pyannote"              # sorts out who said what over the whole call after Stop; "" keeps the live speakers
 offer_reminders = true            # after the call, offer to put your to-dos into Reminders
 offer_mail = true                 # after the call, offer a follow-up mail draft
 end_after_s = 30                  # notes stop this long after the call ends
@@ -313,3 +314,10 @@ never = ""                        # apps he never asks about, like "WhatsApp"
 
 [meetings.sherpa_onnx]
 match = 0.6                       # how alike two stretches of speech must sound to count as one person
+
+# pyannote's community-1 pipeline (the brain's `pyannote` extra), once per call after Stop. Its weights are gated on
+# Hugging Face: accept the terms on huggingface.co/pyannote/speaker-diarization-community-1, then download them once
+# into model_dir. Without them Milo keeps the speakers he found during the call. Its usage reporting stays off.
+[meetings.pyannote]
+model_dir = "~/.cache/milo/models/pyannote-community-1"
+device = "auto"                   # auto (the GPU), mps, cuda or cpu

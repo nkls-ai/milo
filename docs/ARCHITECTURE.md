@@ -31,7 +31,7 @@ brain/src/milo/
     harness/      codex, claude (agent harnesses), claude_live (the streaming chat model), openai_compat (any
                   OpenAI-style chat API as the chat model: OpenAI, OpenRouter, Ollama, LM Studio)
     stt/          mlx_whisper, elevenlabs (Scribe: streaming for [stt] talk, whole recordings for [stt] use)
-    diarize/      sherpa_onnx (voice embeddings for meeting notes, TitaNet-small by default)
+    diarize/      sherpa_onnx (voice embeddings for meeting notes, TitaNet-small by default); pyannote (community-1, CC-BY-4.0 weights: who said what over the whole call after Stop)
     tts/          omnivoice, say
     audio/        sounddevice (mic in, speaker out), wav (a real-time virtual sound card that writes WAV files,
                   and a WAV file as the mic, for timing tests and voice comparisons without the speakers)
