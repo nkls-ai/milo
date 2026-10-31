@@ -86,12 +86,10 @@ def test_only_words_that_ask_for_the_tag_itself_let_it_skip_the_question():
     assert rule("remind me to call Anna", via="message").ask_reminder("Call Anna"), "from the phone the plain rule"
 
 
-def test_undo_that_asks_for_work():
-    """Live, "undo that" right after Milo put the dentist on the calendar asked "Delete “Dentist”…?": the calendar
-    in the conversation counts as outside text, and "undo" wasn't one of the verbs that ask for work."""
+def test_undo_that_is_no_work_request():
+    """"undo that" mustn't let every other tag of its reply skip outside text's question (security review,
+    2026-10-31). Taking out what Milo put in himself is light in quick_actions instead."""
     def rule(request: str):
         return policy(tainted=True, saw_screen=False, now=False, auto=True, via="voice", request=request)
 
-    assert not rule("undo that").ask_undoable
-    assert not rule("mach das rückgängig").ask_undoable
-    assert rule("what did you undo?").ask_undoable, "a question asks for nothing"
+    assert rule("undo that").ask_undoable and rule("undo that").careful

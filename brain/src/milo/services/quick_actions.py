@@ -128,8 +128,9 @@ class _Plan:
     """False: Milo only guessed what it is about (an event found by part of its title). It asks first, every time."""
     light: bool = False
     """So small and so plain to see that in auto mode outside text in the conversation doesn't make it ask: ticking a
-    to-do off. Milo says which one and its card unticks it. The user says "I bought the milk", not "tick it off", so
-    their words rarely ask for it as work, and an invite in <today> made every such tick a question."""
+    to-do off, or taking out an event or to-do Milo put in himself. Milo says which one and its card puts it back.
+    The user says "I bought the milk" or "undo that", not "tick it off", so their words rarely ask for it as work,
+    and an invite in <today> made every such act a question."""
 
 
 @dataclass
@@ -197,6 +198,9 @@ class QuickActions:
         self._lines: dict[asyncio.Task, list[str]] = {}
         self._spoke: weakref.WeakKeyDictionary[asyncio.Task, str] = weakref.WeakKeyDictionary()  # what replies said
         self._silent: weakref.WeakSet[asyncio.Task] = weakref.WeakSet()  # acts of a turn that answers without audio
+        self._made: set[str] = set()
+        """Events and to-dos Milo put in since he started. Taking one of those out again is "undo that" in other
+        words: the model wrote <event do="cancel"> for it, and after an invite in <today> it asked "Delete …?"."""
         self._allowed: set[str] = set()
         """Apps the system lets Milo control, found before the first script there (ADR 0025)."""
 
@@ -402,6 +406,7 @@ class QuickActions:
         async def run() -> _Done:
             made = await reach(calendar.add_event, title, start, end, act.get("location"), act.get("notes"),
                                act.get("calendar"), all_day=all_day) or {}
+            self._made.add(str(made.get("id") or ""))
             self.today.changed()
             spoken = dates.when(start, self._clock.now().date(), lang, all_day=all_day)
             # The card shows the day and the time from `when` (ADR 0030): its detail is only the place.
@@ -489,7 +494,8 @@ class QuickActions:
         why = (say("acts.ask.invite", lang) if others else say("acts.ask.series", lang) if e.get("recurring") else "")
         when = dates.when(start, self._clock.now().date(), lang, all_day=bool(e.get("all_day"))) if start else ""
         return _Plan("trash" if restorable else "delete",
-                     say("acts.ask.cancel", lang, title=inert(title, 50), when=when) + why, APPS["calendar"], run, sure)
+                     say("acts.ask.cancel", lang, title=inert(title, 50), when=when) + why, APPS["calendar"], run, sure,
+                     light=restorable and self._is_made(e))
 
     def _todo(self, act: ActRequest, lang: str) -> _Plan:
         reminders = self._need("reminders")
@@ -500,6 +506,7 @@ class QuickActions:
 
         async def run() -> _Done:
             made = await reach(reminders.add, title, due, act.get("notes"), act.get("list")) or {}
+            self._made.add(str(made.get("id") or ""))
             self.today.changed()
             spoken = dates.when(due, self._clock.now().date(), lang) if due else ""
             return _Done("todo", title, say("acts.todo_due" if due else "acts.todo", lang, title=title, when=spoken),
@@ -549,10 +556,11 @@ class QuickActions:
         t, sure = await self._find_todo(act, lang)
         title = str(t.get("title") or "the to-do")
         due = parse_local(t.get("due"))
-        # Always asks (`delete`, like the worker's reminders.delete): a copy made again loses a repeat, its alarms and
+        # Asks (`delete`, like the worker's reminders.delete): a copy made again loses a repeat, its alarms and
         # subtasks, and on a list shared through iCloud, which Reminders doesn't mark, it isn't the one the others had.
-        # Undo still makes that copy, except on a list marked shared.
+        # Undo still makes that copy, except on a list marked shared. One Milo made himself has none of that.
         restorable = not t.get("shared")
+        own = restorable and self._is_made(t)
 
         async def run() -> _Done:
             gone = await reach(reminders.delete, t["id"]) or t
@@ -563,8 +571,12 @@ class QuickActions:
                                                         for k in ("title", "due", "notes", "list")}}]
                          if restorable else [])
 
-        return _Plan("delete", say("acts.ask.todo_delete", lang, title=inert(title, 50))
-                     + ("" if restorable else say("acts.ask.shared_list", lang)), APPS["reminders"], run, sure)
+        return _Plan("trash" if own else "delete", say("acts.ask.todo_delete", lang, title=inert(title, 50))
+                     + ("" if restorable else say("acts.ask.shared_list", lang)), APPS["reminders"], run, sure,
+                     light=own)
+
+    def _is_made(self, item: dict) -> bool:
+        return bool(item.get("id")) and str(item["id"]) in self._made
 
     def _cancel_reminder(self, act: ActRequest, lang: str) -> _Plan:
         """One of Milo's own reminders (reminders.md): its handle from <today>, else its text."""

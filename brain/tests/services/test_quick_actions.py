@@ -487,6 +487,23 @@ def test_a_todo_with_no_date_is_ticked_by_its_handle_in_any_language(tmp_path):
     assert world(s)["reminders"][0]["done"] is True and not s.sink.of(Confirm)
 
 
+def test_undo_that_as_a_cancel_of_milos_own_event_doesnt_ask_but_the_users_own_does(tmp_path):
+    """Live (2026-10-31): "undo that" right after Milo put the dentist in came back as <event do="cancel">, and with
+    an invite in <today> it asked "Delete “Dentist”…?". Milo's own event goes; one the user had still asks."""
+    s = stack(tmp_path, ['[happy] <event title="Gym" start="2026-10-30T18:00"/>'],
+              ['[happy] <event do="cancel" title="Gym" on="2026-10-30"/>'],
+              ['[happy] <event do="cancel" id="e1"/>'], world={"events": [DENTIST, INVITE]})
+
+    async def run():
+        await say(s, "put gym on my calendar tomorrow at six", "undo that")
+        assert not s.sink.of(Confirm) and [e["title"] for e in world(s)["events"]] == ["Dentist", INVITE["title"]]
+        s.live_talk.start("undo that")  # the model picks the user's own dentist instead
+        await until(lambda: s.approvals.pending)
+
+    asyncio.run(run())
+    assert s.sink.of(Confirm), "not Milo's: outside text in the conversation still asks"
+
+
 def test_a_tick_on_a_shared_list_still_asks_after_an_invite(tmp_path):
     shared = _todo("r6", "Buy oat milk", shared=True)
     s = stack(tmp_path, ['[happy] <todo do="done" title="oat milk"/>'],
