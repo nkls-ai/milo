@@ -59,8 +59,10 @@ struct RoutinesPanel: View {
     /// "today at 09:00", "tomorrow at 09:00", "Monday at 09:00", "on 2 Nov at 09:00".
     static func when(_ date: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
         let time = date.formatted(date: .omitted, time: .shortened)
-        if calendar.isDateInToday(date) { return "today at \(time)" }
-        if calendar.isDateInTomorrow(date) { return "tomorrow at \(time)" }
+        if calendar.isDate(date, inSameDayAs: now) { return "today at \(time)" }
+        if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now), calendar.isDate(date, inSameDayAs: tomorrow) {
+            return "tomorrow at \(time)"
+        }
         if let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: now),
                                               to: calendar.startOfDay(for: date)).day, days < 7 {
             return "\(date.formatted(.dateTime.weekday(.wide))) at \(time)"
