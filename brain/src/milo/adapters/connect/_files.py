@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import email
 import email.policy
-import fcntl
 import os
 import re
 import subprocess
@@ -160,6 +159,8 @@ def _pinned(folder: Path, scope: Path, protected: Protected | None, *, into: boo
 
 def _path_of(fd: int) -> str:
     """The real path of an open folder."""
+    import fcntl  # here, not at the top: Windows has no fcntl, and loading this adapter must not fail there
+
     if hasattr(fcntl, "F_GETPATH"):  # macOS
         return os.fsdecode(fcntl.fcntl(fd, fcntl.F_GETPATH, bytes(1024)).split(b"\0", 1)[0])
     return os.readlink(f"/proc/self/fd/{fd}")

@@ -12,6 +12,7 @@ from datetime import time
 from pathlib import Path
 from typing import Any
 
+from .core.platform import ANYWHERE, Platform
 from .core.registry import ConfigError, options_from
 from .core.types import LiveMode
 
@@ -25,8 +26,7 @@ PLUGGABLE = ("chat", "harness", "stt", "tts", "audio", "dictation", "connections
 SECTIONS = (*PLUGGABLE, "ui", "heartbeat", "hands", "approvals", "logging", "memory", "routines", "meetings")
 _COMBO = re.compile(r"^((ctrl|control|option|alt|shift|cmd|command)\+)+[a-z0-9]+$|^f([1-9]|1[0-9])$")
 
-# `use` when a section leaves it out. Lets configs written before a section existed keep working.
-DEFAULT_USE = {"chat": "claude_live", "connections": "mac", "messages": "telegram"}
+# `use` when a section leaves it out comes from the Platform (milo.core.platform): this computer's engines.
 
 # Keys older templates had. ~/Milo/config.toml is never overwritten, so they are skipped with a warning.
 RETIRED = {("harness", "conversation_idle_reset_s"): "it moved to [chat]",
@@ -72,8 +72,9 @@ class HarnessSettings:
 
 @dataclass(frozen=True)
 class TtsSettings:
-    fallback: str = "say"
-    """Engine to use if `use` fails to load. Empty: none."""
+    fallback: str = ""
+    """Engine to use if `use` fails to load. Empty: none. Left out of config.toml: the platform's
+    (Platform.tts_fallback)."""
 
 
 @dataclass(frozen=True)
@@ -322,8 +323,9 @@ class MemorySettings:
     """Remember conversations, tasks and facts, and recall what matters with each turn."""
     recall_tokens: int = 800
     """How much memory goes along with each turn, at most (about 4 characters a token)."""
-    embedder: str = "mlx_e5"
-    """What turns text into numbers for search: "mlx_e5" (a small model, 140 MB) or "hash" (no model, words only)."""
+    embedder: str = ""
+    """What turns text into numbers for search: "mlx_e5" (a small model, 140 MB) or "hash" (no model, words only).
+    Left out of config.toml: the platform's (Platform.embedder)."""
     dictations: bool = False
     """Also remember what you dictate into other apps."""
     consolidate: bool = True
@@ -346,7 +348,9 @@ _PLUGGABLE_SETTINGS: dict[str, type] = {
 
 
 class Config:
-    def __init__(self, raw: Mapping[str, Any]):
+    def __init__(self, raw: Mapping[str, Any], platform: Platform = ANYWHERE):
+        """`platform` fills in the engines config.toml leaves out. Compose and the other entry points pass
+        milo.adapters.platform.current(); the default is engines that need nothing from the OS."""
         unknown = sorted(set(raw) - set(SECTIONS))
         if unknown:
             raise ConfigError(f"unknown section(s) in config.toml: {', '.join(unknown)}")
@@ -354,8 +358,11 @@ class Config:
             if not isinstance(raw.get(name, {}), dict):
                 raise ConfigError(f"[{name}] must be a table")
         self._raw = raw
+        self.platform = platform
         settings = {name: _pluggable_settings(cls, raw.get(name, {}), name)
                     for name, cls in _PLUGGABLE_SETTINGS.items()}
+        if "fallback" not in raw.get("tts", {}):
+            settings["tts"] = dataclasses.replace(settings["tts"], fallback=platform.tts_fallback)
         self.chat: ChatSettings = settings["chat"]
         self.harness: HarnessSettings = settings["harness"]
         self.tts: TtsSettings = settings["tts"]
@@ -377,26 +384,28 @@ class Config:
         self.heartbeat = _typed(HeartbeatSettings(**heartbeat), "heartbeat")
         self.hands = _typed(options_from(HandsSettings, _current(raw.get("hands", {}), "hands"), "hands"), "hands")
         self.memory: MemorySettings = _pluggable_settings(MemorySettings, raw.get("memory", {}), "memory")
+        if not self.memory.embedder:
+            self.memory = dataclasses.replace(self.memory, embedder=platform.embedder)
         self.routines = _typed(options_from(RoutineSettings, raw.get("routines", {}), "routines"), "routines")
         self.meetings: MeetingSettings = _pluggable_settings(MeetingSettings, raw.get("meetings", {}), "meetings")
         if self.meetings.diarizer and not isinstance(raw.get("meetings", {}).get(self.meetings.diarizer, {}), dict):
             raise ConfigError(f"[meetings.{self.meetings.diarizer}] must be a table")
 
     @classmethod
-    def load(cls, path: Path) -> Config:
-        return cls.parse(path.read_text(), str(path))
+    def load(cls, path: Path, platform: Platform = ANYWHERE) -> Config:
+        return cls.parse(path.read_text(), str(path), platform)
 
     @classmethod
-    def parse(cls, text: str, source: str = "config.toml") -> Config:
+    def parse(cls, text: str, source: str = "config.toml", platform: Platform = ANYWHERE) -> Config:
         try:
-            return cls(tomllib.loads(text))
+            return cls(tomllib.loads(text), platform)
         except tomllib.TOMLDecodeError as e:
             raise ConfigError(f"{source} is not valid TOML: {e}") from None
 
     def pluggable(self, section: str) -> tuple[str, dict[str, Any]]:
         """`use = "<name>"` and that implementation's `[section.<name>]` table (empty if absent)."""
         table = self.section(section)
-        name = table.get("use", DEFAULT_USE.get(section))
+        name = table.get("use", self.platform.use(section))
         if not isinstance(name, str) or not name:
             raise ConfigError(f"[{section}] needs use = \"<name>\"")
         options = table.get(name, {})

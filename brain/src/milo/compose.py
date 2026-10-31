@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
@@ -147,12 +146,15 @@ def build(home: Path) -> Runtime:
 def _workspace(p: Parts) -> None:
     """The workspace, its config, the clock and what every adapter gets."""
     from . import adapters
+    from .adapters import platform
     from .memory.workspace import Workspace
 
     # Lazy, so importing compose neither registers adapters nor touches the workspace.
     p.workspace = Workspace(p.home)
     p.workspace.ensure()
-    p.config = Config.load(p.workspace.config_path)
+    p.platform = platform.current()
+    p.config = Config.load(p.workspace.config_path, p.platform)
+    log.info("platform %s", p.platform.name)
     adapters.load_builtin()
     p.clock = SystemClock()
     # The worker CLI starts the MCP server with the brain's own interpreter, so it needs no install step.
@@ -276,6 +278,7 @@ def _presence(p: Parts) -> None:
 
 def _helpers(p: Parts) -> None:
     """Computer use, the helpers that do the real work, and the routines they follow."""
+    from .adapters.region import region
     from .memory.routines import JsonStateFile, MarkdownRoutineBook
     from .memory.undo_shelf import FileUndoShelf
 
@@ -296,7 +299,7 @@ def _helpers(p: Parts) -> None:
         p.hands = HandsService(AppHands(p.bridge), HelperQuestions(p.approvals, p.later("helpers"), screen=True),
                                p.ui, transcript=ScreenSteps(p.transcript, p.later("helpers")),
                                applescript=config.hands.applescript,
-                               locale=_mac_locale(), protected=workspace.protected, access=p.access,
+                               locale=region(), protected=workspace.protected, access=p.access,
                                before_change=undo.before_change, language=p.language.get)
         p.hands_server = HandsSocketServer(workspace.hands_socket_path, p.hands.call)
     p.memory_requests = MemoryRequests(mem.memory, p.approvals, mem.profile.remember) if mem is not None else None
@@ -537,7 +540,7 @@ def _brain(p: Parts) -> None:
             ("approvals", "ask"): use_ask, ("approvals", "allowed_apps"): use_allowed,
             ("meetings", "auto"): use_meetings, ("meetings", "always"): use_meetings,
             ("meetings", "never"): use_meetings}
-    settings = Settings(TomlConfigFile(p.workspace.config_path), p.config, p.ui, live)
+    settings = Settings(TomlConfigFile(p.workspace.config_path, p.config.platform), p.config, p.ui, live)
     p.permits.save = lambda apps: settings.keep("approvals", "allowed_apps", apps)
     if p.meetings is not None:
         meetings = p.meetings
@@ -605,7 +608,8 @@ def _available(config: Config) -> frozenset[str]:
     """The connections the worker's tools reach, as config.toml switches them (milo.connect reads the same)."""
     switches = config.connections
     names = ("calendar", "reminders", "mail", "notes", "shortcuts", "files")
-    return frozenset({*(n for n in names if switches.enabled and getattr(switches, n)),
+    on = switches.enabled and config.pluggable("connections")[0] != "none"
+    return frozenset({*(n for n in names if on and getattr(switches, n)),
                       *(("memory",) if config.memory.enabled else ()), *(("phone",) if config.messages.enabled else ())})
 
 
@@ -619,16 +623,6 @@ def _live_settings(text: str) -> tuple[str, int]:
     """The settings LiveSettings re-reads from a changed config.toml. Raises ConfigError on bad values."""
     config = Config.parse(text)
     return config.chat.updates, config.harness.max_helpers
-
-
-def _mac_locale() -> str:
-    """The Mac's region setting, like "en_US@rg=dezzzz", for money formats. "" if it can't be read."""
-    try:
-        done = subprocess.run(["/usr/bin/defaults", "read", "-g", "AppleLocale"], capture_output=True, text=True,
-                              timeout=5, stdin=subprocess.DEVNULL)
-    except (OSError, subprocess.TimeoutExpired):
-        return ""
-    return done.stdout.strip()
 
 
 def _persona(path: Path):
@@ -653,7 +647,7 @@ def _cloud_engine(config: Config, ctx: AdapterContext):
     name = config.stt.talk
     if not name:
         if config.stt.cloud_dictation:
-            log.warning("[stt] cloud_dictation needs [stt] talk to name a service; dictation stays on this Mac")
+            log.warning("[stt] cloud_dictation needs [stt] talk to name a service; dictation stays on this computer")
         return None
     options = config.section("stt").get(name, {})
     if not isinstance(options, dict):

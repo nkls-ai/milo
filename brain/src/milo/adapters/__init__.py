@@ -12,6 +12,7 @@ BUILTIN = (
     "harness.codex",
     "harness.claude",
     "harness.claude_live",
+    "harness.openai_compat",
     "stt.mlx_whisper",
     "stt.elevenlabs_scribe",
     "stt.tones",

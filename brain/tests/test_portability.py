@@ -3,15 +3,16 @@
 Platform specifics belong in `milo/adapters/` (picked by name in config.toml) and in the native app. This test
 reads every core module and fails when one imports or names something only macOS has: AppleScript, bundle ids,
 macOS paths and commands, the ⌘ key vocabulary, System Settings, Apple-only frameworks and apps, "Mac" in words
-the user or the model reads, POSIX-only calls, and branches on `sys.platform`.
+the user or the model reads, POSIX-only calls, `%-d`-style strftime flags (Windows raises on them; use
+`milo.core.dates`), and branches on `sys.platform`.
 
 It reads code, not comments: imports, attribute uses and string values. Docstrings and other bare strings are
 left alone, so a comment may still say how macOS behaves.
 
 `ALLOWED` is today's state, one (file, rule) pair per line with why it is there. It is the to-do list for a port:
-moving a coupling out deletes its line, and a line that matches nothing any more fails too, so the list only
-shrinks. A new coupling in core needs a new line here and a reason a reviewer will accept; usually the answer is
-an adapter or a port instead.
+moving a coupling out deletes its line, and a line that matches nothing any more fails too. `CEILING` holds the
+count and only goes down, so the list only shrinks: a new coupling in core needs a new line here and a `GROWN`
+entry with a reason a reviewer will accept. Usually the answer is an adapter, a port or `milo.system` instead.
 """
 
 from __future__ import annotations
@@ -26,7 +27,8 @@ import pytest
 SRC = Path(__file__).parents[1] / "src" / "milo"
 
 CORE = ("core", "services", "memory", "proactive", "connect", "transport")
-"""Packages that must work on any platform. Not here: `adapters/` (that is where platforms live), `eval/`
+"""Packages that must work on any platform. Not here: `adapters/` (that is where platforms live), `system/` (the
+OS primitives, one module per OS family; tests/test_system.py keeps them in step), `eval/`
 (developer tools that drive the real Mac app) and `workspace_template/` (no Python)."""
 TOP_LEVEL = ("brain.py", "compose.py", "config.py", "config_file.py", "mcp_server.py", "server.py", "settings.py")
 
@@ -43,6 +45,7 @@ TEXT_RULES: dict[str, re.Pattern[str]] = {
                                 r"|\bTCC\b|\bAX[A-Z]\w+|Apple Silicon|LOCAL_PEERCRED|AppleLocale"),
     "mac-app": re.compile(r"\b(?:Finder|Safari|TextEdit|Numbers|Pages|Keynote|Script Editor|Automator|iMessage)\b"),
     "mac-word": re.compile(r"\bmacOS\b|\bMacs?\b|\bMac's\b"),
+    "posix-strftime": re.compile(r"%[-#][aAbBdeHIjmMpSyYUwWxXcZ]"),
 }
 """Matched against string values in code, case as written unless the rule says otherwise."""
 
@@ -140,13 +143,7 @@ def findings() -> list[Finding]:
 
 
 ALLOWED: dict[tuple[str, str], str] = {
-    # The composition root reads the region the Mac way; a `Locale` port with a per-platform adapter replaces it.
-    ("compose.py", "mac-command"): "_mac_locale runs `defaults read -g AppleLocale` for money formats",
-    ("compose.py", "mac-framework"): "_mac_locale: AppleLocale is the macOS name of the region setting",
-    ("compose.py", "mac-path"): "_mac_locale: /usr/bin/defaults",
-    ("compose.py", "mac-word"): "a log line says dictation stays \"on this Mac\"",
-    # Config: defaults and key names chosen for a Mac.
-    ("config.py", "mac-framework"): "[memory] embedder defaults to mlx_e5; the default should come from the platform",
+    # Config: key names chosen for a Mac.
     ("config.py", "mac-keys"): "push-to-talk key names (fn, right_option) and the cmd/option combo grammar",
     ("settings.py", "mac-keys"): "Settings labels for the Mac's push-to-talk keys (Right Option, fn)",
     # The worker's tools: names, descriptions and the protocol to the app.
@@ -155,7 +152,6 @@ ALLOWED: dict[tuple[str, str], str] = {
     ("core/hands.py", "mac-keys"): "the key tool's vocabulary is cmd/option; becomes mod/alt (ADR 0027)",
     ("core/hands.py", "mac-word"): "INSTRUCTIONS say the tools act on the user's Mac",
     ("mcp_server.py", "mac-word"): "NO_BRAIN says \"the Mac tools are off\"",
-    ("mcp_server.py", "posix"): "talks to hands.sock over AF_UNIX; Windows needs AF_UNIX (10+) or a named pipe",
     ("services/hands.py", "applescript"): "gating, logging and app detection of run_applescript scripts",
     ("services/hands.py", "mac-keys"): "_pretty_combo shows combos with the Mac's ⌘⌥⌃ glyphs",
     ("services/hands.py", "mac-settings"): "NOT_ALLOWED points to System Settings › Privacy & Security › Automation",
@@ -193,7 +189,6 @@ ALLOWED: dict[tuple[str, str], str] = {
     ("connect/tools.py", "mac-framework"): "files_search says Spotlight",
     ("connect/tools.py", "mac-path"): "files_find says it skips ~/Library",
     ("connect/tools.py", "mac-word"): "INSTRUCTIONS say the apps are on this Mac",
-    ("core/secrets.py", "mac-word"): "errors say \"others on this Mac\"",
     ("services/approvals.py", "mac-word"): "a log line about an answer at the Mac",
     ("services/brief.py", "mac-word"): "\"is Milo running on the Mac?\"",
     ("services/cloud_hearing.py", "mac-word"): "NOTICE says it transcribes on this Mac",
@@ -205,6 +200,9 @@ ALLOWED: dict[tuple[str, str], str] = {
     ("services/settings_guard.py", "mac-word"): "PUT_BACK says \"change them at the Mac\"",
     ("services/orchestrator.py", "mac-settings"): "_SCREEN_WORDS counts \"system settings\" as screen work",
     # Private folders are where macOS keeps them.
+    # Dates: `%-d` raises on Windows. milo.core.dates spells them out.
+    ("services/live_talk.py", "posix-strftime"): "the reminder question's `%-d`; fixed on the parallel live_talk branch, "
+                                                 "delete this line when it lands",
     ("services/sharing.py", "bundle-id"): "PRIVATE lists Library/Application Support/com.apple.TCC",
     ("services/sharing.py", "mac-framework"): "PRIVATE lists the TCC database folder",
     ("services/sharing.py", "mac-path"): "PRIVATE lists ~/Library folders (Keychains, Cookies, Messages, Mail)",
@@ -213,13 +211,35 @@ ALLOWED: dict[tuple[str, str], str] = {
     ("memory/recall_eval.py", "mac-app"): "eval memories mention Safari and Finder",
     ("memory/recall_eval.py", "mac-framework"): "the eval runs with the mlx_e5 embedder",
     ("memory/recall_eval.py", "mac-settings"): "eval memories mention System Settings",
-    # POSIX: the sockets and the lock.
-    ("core/secrets.py", "posix"): "owner checks with os.getuid; Windows needs an ACL check",
-    ("transport/instance_lock.py", "posix"): "the one-brain lock is fcntl.flock; Windows needs msvcrt.locking or a named mutex",
-    ("transport/tool_client.py", "posix"): "tools.sock over AF_UNIX",
-    ("transport/unix_socket.py", "platform-branch"): "LOCAL_PEERCRED on darwin, SO_PEERCRED elsewhere",
-    ("transport/unix_socket.py", "posix"): "the brain socket is AF_UNIX and checks the peer's uid",
 }
+
+
+CEILING = 56
+"""How many ALLOWED lines there were at the last count (2026-10-31: 57, less the one in GROWN). It only goes down:
+when a coupling moves out and its line goes, lower it too. It never goes up."""
+
+GROWN: dict[tuple[str, str], str] = {
+    ("services/live_talk.py", "posix-strftime"): "the rule is newer than this line, and live_talk.py is being fixed "
+                                                 "on another branch; both go when that lands",
+}
+"""ALLOWED lines added past CEILING, each with why the coupling can't be an adapter or a port yet. A reviewer reads
+this dict; growing ALLOWED without a line here fails test_allowlist_only_grows_with_a_reason."""
+
+
+def test_allowlist_only_grows_with_a_reason():
+    unexplained = len(ALLOWED) - CEILING - len(GROWN)
+    assert unexplained <= 0, (f"ALLOWED grew by {unexplained} line(s) with no GROWN entry. Move the coupling into an "
+                              "adapter or milo.system, or add its (file, rule) to GROWN with why it can't move yet.")
+    assert unexplained == 0, f"ALLOWED shrank: lower CEILING to {len(ALLOWED) - len(GROWN)}, so it stays down."
+    assert set(GROWN) <= set(ALLOWED), "a GROWN line whose coupling is gone: delete it from both"
+    assert all(len(reason.split()) >= 8 for reason in GROWN.values()), "say why it can't move, in a sentence"
+
+
+def test_the_docs_state_todays_count():
+    files = len({path for path, _ in ALLOWED})
+    text = (SRC.parents[2] / "docs" / "ARCHITECTURE.md").read_text(encoding="utf-8")
+    assert f"today's {len(ALLOWED)} exceptions in {files} files" in text, \
+        f"docs/ARCHITECTURE.md (Portability) should say \"today's {len(ALLOWED)} exceptions in {files} files\""
 
 
 def test_core_names_no_new_macos_couplings():
@@ -241,7 +261,7 @@ def test_allowlist_has_no_stale_lines():
 
 
 def test_allowlist_lines_say_why():
-    assert all(reason.strip() for reason in ALLOWED.values())
+    assert all(len(reason.split()) >= 3 for reason in ALLOWED.values()), "each line says why, in a few words"
     assert all(rule in TEXT_RULES or rule in ("mac-command", "mac-import", "posix", "platform-branch")
                for _, rule in ALLOWED)
 
@@ -259,6 +279,8 @@ def test_allowlist_lines_say_why():
     ("x = os.getuid()", "posix"),
     ("if sys.platform == 'darwin': pass", "platform-branch"),
     ('P = "~/Library/Mail"', "mac-path"),
+    ('s = f"{day:%A %-d %B}"', "posix-strftime"),
+    ('s = day.strftime("%#d")', "posix-strftime"),
 ])
 def test_scan_catches(code, rule):
     assert rule in {f.rule for f in scan(code, "x.py")}
@@ -270,6 +292,7 @@ def test_scan_catches(code, rule):
     "# osascript on the Mac\nx = 1",
     'KEY = "say"',
     'COMBO = "mod+s"',
+    's = f"{day:%d %H:%M} 50%-ish"',
 ])
 def test_scan_leaves_comments_docstrings_and_plain_words(code):
     assert scan(code, "x.py") == []

@@ -1,0 +1,26 @@
+# The brain's tests on Linux: proves the core runs off the Mac (ADR 0027, port step 2).
+name: brain
+
+on:
+  push:
+    paths: ["brain/**", "protocol/**", "docs/ARCHITECTURE.md", ".github/workflows/brain.yml"]
+  pull_request:
+    paths: ["brain/**", "protocol/**", "docs/ARCHITECTURE.md", ".github/workflows/brain.yml"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: brain
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: brain/uv.lock
+      # sounddevice looks for PortAudio when an adapter first imports it.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libportaudio2
+      - run: uv sync --locked
+      - run: uv run pytest -q

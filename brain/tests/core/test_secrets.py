@@ -39,7 +39,7 @@ def test_a_key_others_could_read_is_made_private_and_the_log_says_so(secrets, ca
     os.chmod(key, 0o644)
     assert read_secret(key, "The ElevenLabs key") == "sk-123"
     assert mode(key) == 0o600 and mode(secrets) == 0o700
-    assert "others on this Mac could read" in caplog.text and "sk-123" not in caplog.text
+    assert "others on this computer could read" in caplog.text and "sk-123" not in caplog.text
 
 
 def test_links_folders_and_empty_files_are_refused(secrets):

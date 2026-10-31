@@ -6,6 +6,7 @@ import pytest
 
 from milo.config import (PLUGGABLE, ChatSettings, Config, DictationSettings, HarnessSettings, HeartbeatSettings,
                          TtsSettings, UiSettings)
+from milo.adapters.platform import LINUX, MACOS, WINDOWS, for_os
 from milo.core.registry import ConfigError
 
 TEMPLATE = Path(str(resources.files("milo") / "workspace_template" / "config.toml"))
@@ -26,7 +27,7 @@ use = "plain"
 
 
 def test_the_shipped_template_loads():
-    config = Config.load(TEMPLATE)
+    config = Config.load(TEMPLATE, MACOS)
     assert config.chat == ChatSettings(conversation_idle_reset_s=600)
     assert config.harness == HarnessSettings()
     assert config.tts == TtsSettings(fallback="say")
@@ -35,6 +36,30 @@ def test_the_shipped_template_loads():
     assert config.heartbeat == HeartbeatSettings(enabled=True)
     assert config.section("heartbeat")["tick_s"] == 30
     assert config.section("heartbeat")["morning"] == {"after_hour": 5, "before_hour": 12}
+
+
+def test_on_a_mac_the_template_gets_todays_engines_and_elsewhere_ones_without_the_mac():
+    # ADR 0027: the template names no Mac engine; the platform fills in what it leaves out.
+    mac = Config.load(TEMPLATE, MACOS)
+    assert [mac.pluggable(s)[0] for s in ("stt", "tts", "connections", "chat")] == \
+        ["mlx_whisper", "omnivoice", "mac", "claude_live"]
+    assert (mac.tts.fallback, mac.embedder()[0]) == ("say", "mlx_e5")
+    for platform in (LINUX, WINDOWS):
+        other = Config.load(TEMPLATE, platform)
+        assert [other.pluggable(s)[0] for s in ("stt", "tts", "connections", "chat")] == \
+            ["elevenlabs", "elevenlabs", "none", "claude_live"]
+        assert (other.tts.fallback, other.embedder()[0]) == ("", "hash")
+    assert for_os("darwin") is MACOS and for_os("win32") is WINDOWS and for_os("linux") is LINUX
+    assert for_os("freebsd14").stt == "elevenlabs"
+
+
+def test_what_config_toml_names_wins_over_the_platform():
+    text = '[stt]\nuse = "mlx_whisper"\n[tts]\nuse = "say"\nfallback = ""\n[memory]\nembedder = "mlx_e5"\n' \
+           '[connections]\nuse = "fake"\n'
+    for platform in (MACOS, LINUX):
+        config = Config.parse(text, platform=platform)
+        assert [config.pluggable(s)[0] for s in ("stt", "tts", "connections")] == ["mlx_whisper", "say", "fake"]
+        assert (config.tts.fallback, config.memory.embedder) == ("", "mlx_e5")
 
 
 @pytest.mark.parametrize("section, name, key, value", [
@@ -46,7 +71,7 @@ def test_the_shipped_template_loads():
     ("dictation", "fillers", "languages", ["en", "de"]),
 ])
 def test_pluggable_returns_the_use_name_and_its_table(section, name, key, value):
-    use, options = Config.load(TEMPLATE).pluggable(section)
+    use, options = Config.load(TEMPLATE, MACOS).pluggable(section)
     assert use == name
     assert options[key] == value
     assert "use" not in options

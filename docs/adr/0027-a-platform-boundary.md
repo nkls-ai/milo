@@ -131,7 +131,20 @@ Every new feature passes this list. It is also in [ARCHITECTURE](../ARCHITECTURE
 
 `brain/tests/test_portability.py` parses every core module and checks imports, attribute uses, argv lists and string values. It skips comments and docstrings, so they may still explain macOS. Its rules: `applescript`, `bundle-id`, `mac-path`, `mac-command` (`osascript`, `defaults`, `pmset`, `mdfind` and others as the first word of an argv), `mac-keys`, `mac-settings`, `mac-framework` (MLX, `mps`, AppKit, Spotlight, TCC, `AX…` names), `mac-app` (Finder, Safari, TextEdit, Numbers, Pages, Keynote, iMessage and a few more), `mac-word` ("Mac", "macOS"), `mac-import`, `posix` (`fcntl`, `os.getuid`, `AF_UNIX`, `killpg` and the like) and `platform-branch` (`sys.platform`).
 
-`ALLOWED` starts with today's 62 file-and-rule pairs in 31 files, each with a one-line reason. It is the to-do list. A coupling that moves out has to have its line deleted too, since a line that matches nothing fails the test. So the list can only get shorter.
+`ALLOWED` started with 62 file-and-rule pairs in 31 files, each with a one-line reason. It is the to-do list. A coupling that moves out has to have its line deleted too, since a line that matches nothing fails the test.
+
+That alone didn't keep it short: by the end of the same day it had grown to 68 lines in 34 files, while this ADR and ARCHITECTURE still said 62 and "only shorter". A stale-line check stops lines from staying behind; nothing stopped new ones. So now `CEILING` holds the count and may only go down, a line added past it needs a `GROWN` entry saying why the coupling can't move yet, and a test checks that ARCHITECTURE states the real count. After the first port work below it is 57 lines in 29 files.
+
+## Update, 2026-10-31: the first port work
+
+Port step 2 and parts of 3 and 4 are done in the brain, with macOS unchanged:
+
+- `mlx` and `mlx-whisper` carry `sys_platform == 'darwin'`. The lock resolves for Linux and Windows without MLX or torch, and the brain imports and its tests pass with the Apple-only packages missing. `.github/workflows/brain.yml` runs the tests on Ubuntu.
+- **The `Platform` value** is plain data in `core/platform.py`: the default `use` for `[stt]`, `[tts]`, `[connections]` and `[chat]`, the fallback voice and the embedder. `adapters/platform.py` holds one per OS and is the one place that asks which OS this is (it moved out of compose so compose has no `sys.platform` either). Compose, the connections server and the consolidator load `config.toml` with it. macOS gets today's engines; Linux and Windows get ElevenLabs for hearing (a new whole-recording Scribe transcriber for `[stt] use`) and voice, the hash embedder, no fallback voice and the new `none` connections. The template names none of the Mac engines any more; configs that name them stay valid. The wording, risk data and app catalog this ADR puts in `Platform` are still to come.
+- **`milo.system`** holds the POSIX calls the core made itself: secret-file ownership and modes, the instance lock, the harness CLI's process group and kill, the process table, and the local sockets (bind, connect, peer check). `windows.py` has the same functions, each raising NotImplementedError with what Windows would use, and a test keeps the two in step. Port step 4 is filling in that one file.
+- **Dates** come from `core/dates.py` in English words; the guard's new `posix-strftime` rule catches `%-d` and `%#d`, which Windows' strftime rejects.
+- **The chat model** can be any OpenAI-style API (`openai_compat`: OpenAI, OpenRouter, Ollama, LM Studio), so a port isn't tied to the Claude CLI for talking.
+- The region for money formats moved from compose into `adapters/region.py`.
 
 ## Consequences
 

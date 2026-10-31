@@ -24,6 +24,7 @@ from dataclasses import replace
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
+from milo.core.dates import long_date
 from milo.core.logtext import private
 from milo.core.memory import TOPICS, ConsolidationReport, Episode, Fact, FactChange, new_id
 from milo.core.ports import Clock, EpisodeLog, FactStore, Harness, UsageLedger
@@ -110,7 +111,7 @@ class NightlyConsolidator:
         mentioned = [f for f in self._facts.forgotten()[:MAX_FORGOTTEN]
                      if any(_resembles(_words(f.text), words) for words in day_words)]
         forgotten = "\n".join(f"- {_line(f.text)}" for f in mentioned) or "- (nothing)"
-        text = PROMPT.format(day=f"{day:%A %-d %B %Y}", facts=fact_lines, forgotten=forgotten,
+        text = PROMPT.format(day=long_date(day, year=True), facts=fact_lines, forgotten=forgotten,
                              episodes=episode_lines, topics="|".join(TOPICS))
         return text, episodes, facts
 
@@ -221,7 +222,7 @@ class NightlyConsolidator:
         try:
             existing = path.read_text(encoding="utf-8")
         except FileNotFoundError:
-            existing = f"# {day:%A %-d %B %Y}\n"
+            existing = f"# {long_date(day, year=True)}\n"
         existing = existing.split(JOURNAL_HEADING)[0].rstrip()  # a second run replaces the first one's section
         jsonl.write_private(path, f"{existing}\n\n{JOURNAL_HEADING}\n\n{body}\n")
         return str(path)
@@ -306,6 +307,7 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s", stream=sys.stderr)
 
     from milo import adapters
+    from milo.adapters import platform
     from milo.config import Config
     from milo.core.clock import SystemClock
     from milo.core.registry import HARNESSES, AdapterContext
@@ -327,7 +329,7 @@ def main(argv: list[str] | None = None) -> int:
     if opts.prompt:
         print(NightlyConsolidator(None, episodes, facts, workspace.journal_dir, runs, clock).prompt(day)[0])
         return 0
-    config = Config.load(workspace.config_path)
+    config = Config.load(workspace.config_path, platform.current())
     adapters.load_builtin()
     name, options = config.pluggable("harness")
     harness = HARNESSES.create(name, options, AdapterContext(workspace.home, workspace.state_dir, clock))

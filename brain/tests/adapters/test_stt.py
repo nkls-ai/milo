@@ -185,7 +185,7 @@ class FakeMlxEncoder:
 
 
 def test_an_interrupt_ends_the_encoding_between_layers():
-    import mlx.core as mx
+    mx = pytest.importorskip("mlx.core", reason="MLX is installed on macOS only")
 
     stop = threading.Event()
     inner = FakeMlxEncoder()

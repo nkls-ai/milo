@@ -179,3 +179,45 @@ def test_the_committed_text_says_which_language_it_was(tmp_path):
     assert query["include_language_detection"] == ["true"]
     text, language, _ = asyncio.run(attempt(FakeScribe()))
     assert text.startswith("heard") and language == "", "no language said: the brain guesses from the words"
+
+
+def test_the_batch_transcriber_sends_a_whole_recording_and_waits_longer_for_a_longer_one(tmp_path):
+    # ADR 0027: `[stt] use = "elevenlabs"` is how a computer without a local Whisper hears.
+    from milo.adapters.stt.elevenlabs_scribe import ScribeTranscriber
+    from milo.core.ports import Transcriber
+
+    fake = FakeScribe()
+
+    async def serve_for(seconds: float):
+        server, url = await started(fake)
+        async with server:
+            batch = ScribeTranscriber(engine(url, tmp_path))
+            audio = np.zeros(int(seconds * STT_SAMPLE_RATE), dtype=np.float32)
+            return batch, await asyncio.to_thread(batch.transcribe, audio)
+
+    batch, text = asyncio.run(serve_for(2.5))
+    assert isinstance(batch, Transcriber)
+    assert text == f"heard {int(2.5 * STT_SAMPLE_RATE)} samples" and fake.committed_after == [len(fake.audio)]
+    assert batch.preview(np.zeros(100, dtype=np.float32)) == "", "no live words: that would be a session a pass"
+
+
+def test_the_batch_transcriber_stops_on_interrupt_and_says_when_the_service_is_gone(tmp_path):
+    from milo.adapters.stt.elevenlabs_scribe import ScribeTranscriber
+    from milo.core.types import Interrupted
+
+    fake = FakeScribe(silent=True)
+
+    async def run():
+        server, url = await started(fake)
+        async with server:
+            batch = ScribeTranscriber(engine(url, tmp_path))
+            pass_ = asyncio.create_task(asyncio.to_thread(batch.transcribe, np.zeros(1600, dtype=np.float32)))
+            await asyncio.sleep(0.3)
+            batch.interrupt()
+            with pytest.raises(Interrupted):
+                await pass_
+
+    asyncio.run(run())
+    gone = ScribeTranscriber(engine("ws://127.0.0.1:9", tmp_path))
+    with pytest.raises(VoiceUnavailable):
+        gone.transcribe(np.zeros(1600, dtype=np.float32))

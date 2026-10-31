@@ -1,7 +1,7 @@
 """Secret files: API keys and bot tokens, each alone in a file under ~/Milo/secrets (never in config.toml).
 
 One reader for all of them, so every key gets the same checks. A secret is only read from a plain file the
-user owns, in a folder the user owns. If others on the Mac could read the file (mode not 0600) or list the
+user owns, in a folder the user owns. If others on the computer could read the file (mode not 0600) or list the
 folder (not 0700), Milo tightens both itself and says so in the log: the key is the user's own, so there is
 nothing to ask. A link, a folder, or a file of another user is refused, since Milo can't tell who controls it.
 """
@@ -13,6 +13,8 @@ import logging
 import os
 import stat
 from pathlib import Path
+
+from milo import system
 
 log = logging.getLogger("milo.secrets")
 
@@ -33,7 +35,7 @@ def read_secret(path: Path, what: str, *, missing: str = "") -> str:
     path = path.expanduser()
     _private_folder(path.parent, what)
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        fd = system.open_no_follow(path)
     except FileNotFoundError:
         raise SecretError(missing or f"{what} is missing: put it alone in {path}.") from None
     except OSError as e:
@@ -44,15 +46,15 @@ def read_secret(path: Path, what: str, *, missing: str = "") -> str:
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode):
             raise SecretError(f"{what} file {path} must be a plain file, not a link or a folder.")
-        if info.st_uid != os.getuid():
+        if not system.owned_by_me(info):
             raise SecretError(f"{what} file {path} belongs to another user.")
-        if info.st_mode & 0o077:
+        if system.open_to_others(info):
             try:
-                os.fchmod(fd, FILE_MODE)
+                system.make_private(fd, FILE_MODE)
             except OSError as e:
-                raise SecretError(f"Others on this Mac can read {what.lower()} in {path}, and Milo couldn't fix "
+                raise SecretError(f"Others on this computer can read {what.lower()} in {path}, and Milo couldn't fix "
                                   f"it ({e.strerror}). Run: chmod {FILE_MODE:o} {path}") from None
-            log.warning("%s: others on this Mac could read %s; made it %o", what, path, FILE_MODE)
+            log.warning("%s: others on this computer could read %s; made it %o", what, path, FILE_MODE)
         with os.fdopen(os.dup(fd), "rb") as f:
             raw = f.read()
     finally:
@@ -76,12 +78,12 @@ def _private_folder(folder: Path, what: str) -> None:
         raise SecretError(f"Can't check the folder {folder}: {e.strerror}.") from None
     if not stat.S_ISDIR(info.st_mode):
         raise SecretError(f"The folder {folder} that holds {what.lower()} must be a real folder, not a link.")
-    if info.st_uid != os.getuid():
+    if not system.owned_by_me(info):
         raise SecretError(f"The folder {folder} that holds {what.lower()} belongs to another user.")
-    if info.st_mode & 0o077:
+    if system.open_to_others(info):
         try:
-            os.chmod(folder, DIR_MODE, follow_symlinks=False)
+            system.make_private(folder, DIR_MODE)
         except OSError as e:
-            raise SecretError(f"Others on this Mac can list {folder}, and Milo couldn't fix it ({e.strerror}). "
+            raise SecretError(f"Others on this computer can list {folder}, and Milo couldn't fix it ({e.strerror}). "
                               f"Run: chmod {DIR_MODE:o} {folder}") from None
-        log.warning("%s: others on this Mac could list %s; made it %o", what, folder, DIR_MODE)
+        log.warning("%s: others on this computer could list %s; made it %o", what, folder, DIR_MODE)

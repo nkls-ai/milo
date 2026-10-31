@@ -18,6 +18,7 @@ import base64
 import contextlib
 import json
 import logging
+import threading
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,8 +28,8 @@ from urllib.parse import urlencode
 import numpy as np
 
 from milo.core.secrets import SecretError, read_secret
-from milo.core.registry import STREAMING_TRANSCRIBERS, AdapterContext, options_from
-from milo.core.types import STT_SAMPLE_RATE, Audio, VoiceUnavailable
+from milo.core.registry import STREAMING_TRANSCRIBERS, TRANSCRIBERS, AdapterContext, options_from
+from milo.core.types import STT_SAMPLE_RATE, Audio, Interrupted, VoiceUnavailable
 
 log = logging.getLogger(__name__)
 
@@ -69,12 +70,13 @@ class ScribeRealtime:
         terms = list(dict.fromkeys(" ".join(w.split()) for w in (*self.configured, *words)))
         self.keyterms = tuple(t for t in terms if t and len(t) <= MAX_KEYTERM_CHARS)[:MAX_KEYTERMS]
 
-    def session(self, on_partial: Callable[[str], None] | None = None) -> ScribeSession:
+    def session(self, on_partial: Callable[[str], None] | None = None, *,
+                final_timeout_s: float = FINAL_TIMEOUT_S) -> ScribeSession:
         try:
             key = self._read_key()
         except VoiceUnavailable as e:
             return ScribeSession.failed(str(e))
-        return ScribeSession(self._url(), key, on_partial)
+        return ScribeSession(self._url(), key, on_partial, final_timeout_s=final_timeout_s)
 
     def _read_key(self) -> str:
         if self._key is None:
@@ -97,8 +99,10 @@ class ScribeRealtime:
 class ScribeSession:
     """One recording. feed() queues audio; a task connects, sends it in order, and collects the committed text."""
 
-    def __init__(self, url: str | None, key: str = "", on_partial: Callable[[str], None] | None = None):
+    def __init__(self, url: str | None, key: str = "", on_partial: Callable[[str], None] | None = None, *,
+                 final_timeout_s: float = FINAL_TIMEOUT_S):
         self._on_partial = on_partial
+        self._final_timeout_s = final_timeout_s
         self._outbox: asyncio.Queue[object] = asyncio.Queue()
         self._texts: list[str] = []
         self._final = asyncio.Event()
@@ -129,12 +133,12 @@ class ScribeSession:
             self._committed = True
             self._outbox.put_nowait(_COMMIT)
         try:
-            async with asyncio.timeout(FINAL_TIMEOUT_S):
+            async with asyncio.timeout(self._final_timeout_s):
                 await self._final.wait()
                 if self._error is None and self._seconds > LONG_S:
                     await asyncio.sleep(STRAGGLER_S)
         except TimeoutError:
-            self._fail(f"no text from ElevenLabs within {FINAL_TIMEOUT_S:.0f} s")
+            self._fail(f"no text from ElevenLabs within {self._final_timeout_s:.0f} s")
         finally:
             self.cancel()
         if self._error is not None:
@@ -219,8 +223,63 @@ def _chunk(pcm: bytes, *, commit: bool = False) -> str:
                        "commit": commit, "sample_rate": STT_SAMPLE_RATE})
 
 
-@STREAMING_TRANSCRIBERS.register("elevenlabs")
-def _scribe(options: Mapping[str, Any], ctx: AdapterContext) -> ScribeRealtime:
+class ScribeTranscriber:
+    """Transcriber over the same service, for `[stt] use = "elevenlabs"`: each pass sends a whole recording at
+    once and commits it. What a computer without a local Whisper hears with (ADR 0027), so everything the user
+    says, dictation too, goes to ElevenLabs. No live words while speaking: a preview would be a session a pass."""
+
+    def __init__(self, realtime: ScribeRealtime):
+        self.realtime = realtime
+        self._stop = threading.Event()
+
+    def warm(self) -> None:
+        pass
+
+    def wake(self) -> None:
+        pass
+
+    def use_vocabulary(self, words: Sequence[str]) -> None:
+        self.realtime.use_vocabulary(words)
+
+    def transcribe(self, audio: Audio, before: str = "", *, quick: bool = False) -> str:
+        """Blocking, on the STT thread. Raises VoiceUnavailable when the service can't be reached or doesn't
+        answer, Interrupted after interrupt()."""
+        self._stop.clear()
+        seconds = len(audio) / STT_SAMPLE_RATE
+
+        async def run() -> str:
+            # The upload comes before the commit here, so the wait for the text grows with the recording.
+            session = self.realtime.session(final_timeout_s=FINAL_TIMEOUT_S + seconds / 10)
+            session.feed(audio)
+            text = asyncio.ensure_future(session.finish())
+            while not text.done():
+                if self._stop.is_set():
+                    session.cancel()
+                    text.cancel()
+                    raise Interrupted()
+                await asyncio.wait({text}, timeout=0.05)
+            return text.result()
+
+        return asyncio.run(run())
+
+    def preview(self, audio: Audio) -> str:
+        return ""
+
+    def interrupt(self) -> None:
+        self._stop.set()
+
+
+def _realtime(options: Mapping[str, Any], ctx: AdapterContext) -> ScribeRealtime:
     o = options_from(ScribeOptions, options, "stt.elevenlabs")
     key_file = Path(o.key_file).expanduser() if o.key_file else ctx.home / "secrets" / "elevenlabs.key"
     return ScribeRealtime(key_file, languages=o.languages, keyterms=o.keyterms, server=o.server)
+
+
+@STREAMING_TRANSCRIBERS.register("elevenlabs")
+def _scribe(options: Mapping[str, Any], ctx: AdapterContext) -> ScribeRealtime:
+    return _realtime(options, ctx)
+
+
+@TRANSCRIBERS.register("elevenlabs")
+def _scribe_batch(options: Mapping[str, Any], ctx: AdapterContext) -> ScribeTranscriber:
+    return ScribeTranscriber(_realtime(options, ctx))

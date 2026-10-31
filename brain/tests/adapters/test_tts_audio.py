@@ -60,7 +60,9 @@ class FakeOmniModel:
 @pytest.fixture
 def fake_omnivoice(monkeypatch):
     seeds = []
-    torch = types.SimpleNamespace(float16="f16", float32="f32", manual_seed=seeds.append)
+    torch = types.SimpleNamespace(float16="f16", float32="f32", manual_seed=seeds.append,
+                                  backends=types.SimpleNamespace(mps=types.SimpleNamespace(is_available=lambda: True)),
+                                  cuda=types.SimpleNamespace(is_available=lambda: False))
     monkeypatch.setitem(sys.modules, "torch", torch)
     monkeypatch.setitem(sys.modules, "omnivoice", types.SimpleNamespace(OmniVoice=FakeOmniModel))
     return seeds
@@ -357,3 +359,14 @@ def test_gpu_decoding_in_windows_matches_one_long_decode():
     broken.audio_tokenizer.decode = lambda c: types.SimpleNamespace(audio_values=torch.rand(1, 1, c.shape[-1] * spf))
     assert not decode_on_gpu(broken, codes[0, :, :49], torch, "cpu"), "a decoder that disagrees stays on the CPU"
     assert not isinstance(broken.audio_tokenizer.decode, WindowedDecoder)
+
+
+def test_an_empty_omnivoice_device_is_the_gpu_torch_finds():
+    from milo.adapters.tts.omnivoice import pick_device
+
+    def torch(mps, cuda):
+        return types.SimpleNamespace(backends=types.SimpleNamespace(mps=types.SimpleNamespace(is_available=lambda: mps)),
+                                     cuda=types.SimpleNamespace(is_available=lambda: cuda))
+
+    assert [pick_device(torch(True, False)), pick_device(torch(False, True)), pick_device(torch(False, False))] == \
+        ["mps", "cuda", "cpu"]

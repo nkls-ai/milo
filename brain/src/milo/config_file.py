@@ -12,17 +12,19 @@ from tomlkit.exceptions import TOMLKitError
 from tomlkit.items import Item
 
 from .config import Config
+from .core.platform import ANYWHERE, Platform
 from .core.registry import ConfigError
 
 
 class TomlConfigFile:
     """Changes one key at a time. A change that would make the whole file invalid is never written."""
 
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, platform: Platform = ANYWHERE):
         self.path = path
+        self.platform = platform
 
     def read(self) -> Config:
-        return Config.load(self.path)
+        return Config.load(self.path, self.platform)
 
     def write(self, section: str, key: str, value: str | bool | int | float | list) -> Config:
         """Set `[section] key = value` and return the config as it is now. Raises ConfigError, writing nothing."""
@@ -39,7 +41,7 @@ class TomlConfigFile:
             raise ConfigError(f"[{section}] must be a table")
         _set(table, key, value)
         new = tomlkit.dumps(doc)
-        config = Config.parse(new, str(self.path))
+        config = Config.parse(new, str(self.path), self.platform)
         temporary = self.path.with_name(f".{self.path.name}.saving")
         temporary.write_text(new, encoding="utf-8")
         os.replace(temporary, self.path)

@@ -3,10 +3,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
+from milo import system
 from milo.core.types import HandsError
 
 from .unix_socket import claim_socket, same_user
@@ -33,13 +33,7 @@ class HandsSocketServer:
 
     async def start(self) -> None:
         claim_socket(self.path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        os.chmod(self.path.parent, 0o700)
-        old_umask = os.umask(0o177)
-        try:
-            self._server = await asyncio.start_unix_server(self._client, path=str(self.path), limit=MAX_LINE)
-        finally:
-            os.umask(old_umask)
+        self._server = await system.start_local_server(self._client, self.path, limit=MAX_LINE)
         log.info("hands listening on %s", self.path)
 
     async def close(self) -> None:

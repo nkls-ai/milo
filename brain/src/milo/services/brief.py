@@ -12,6 +12,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime, time, timedelta
 from typing import Any
 
+from milo.core.dates import month, weekday
 from milo.core.ports import ReminderSource
 
 from .helpers import Helper, HelperStatus
@@ -36,7 +37,7 @@ def due(at: time | None, now: datetime, sent_on: str) -> bool:
 async def build(now: datetime, *, app: AppCall | None, calendar: bool, apple_reminders: bool,
                 reminders: ReminderSource, helpers: Sequence[Helper]) -> str:
     """The brief's text. A part whose data can't be read (the app isn't running) is left out with a note."""
-    lines = [f"Good morning! Here's {now:%A, %-d %B}."]
+    lines = [f"Good morning! Here's {weekday(now)}, {now.day} {month(now)}."]
     if calendar and app is not None:
         lines += ["", *await _calendar(app, now)]
     lines += ["", *await _reminders(app if apple_reminders else None, reminders, now)]

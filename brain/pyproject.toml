@@ -7,7 +7,9 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "mlx-whisper>=0.4.3",
+    # Apple-only: MLX runs on Apple silicon. Elsewhere [stt] and [memory] default to engines without it.
+    "mlx>=0.32.4; sys_platform == 'darwin'",
+    "mlx-whisper>=0.4.3; sys_platform == 'darwin'",
     "numpy>=2.5.4",
     "sherpa-onnx>=2.0.1",
     "sounddevice>=0.5.6",

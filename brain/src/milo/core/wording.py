@@ -9,6 +9,8 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+from .dates import long_date
+
 
 def first_name(address: str) -> str:
     """'Anna Schmidt <anna@example.com>' or 'anna.schmidt@example.com' -> 'Anna'."""
@@ -129,7 +131,7 @@ def when(value: object) -> str:
         dt = datetime.fromisoformat(str(value))
     except ValueError:
         return str(value)
-    return f"{dt:%A} {dt.day} {dt:%B}" + (f" at {dt:%H:%M}" if (dt.hour, dt.minute) != (0, 0) else "")
+    return long_date(dt) + (f" at {dt:%H:%M}" if (dt.hour, dt.minute) != (0, 0) else "")
 
 
 def question(tool: str, args: dict) -> str:

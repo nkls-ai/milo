@@ -12,6 +12,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 
+from milo.core.dates import long_date
 from milo.core.memory import Episode, Fact, Hit, Recall, TurnContext, estimate_tokens
 from milo.core.ports import FactStore, MemoryIndex
 
@@ -142,7 +143,7 @@ def _inert(text: str) -> str:
 def line(item: Fact | Episode, now: datetime) -> str:
     if isinstance(item, Fact):
         return f"- {_inert(item.text)}"
-    when = f"{item.at:%a %-d %b %H:%M}" if item.at.year == now.year else f"{item.at:%a %-d %b %Y %H:%M}"
+    when = f"{long_date(item.at, year=item.at.year != now.year, short=True)} {item.at:%H:%M}"
     return f"- {when}, {item.kind}: {_inert(item.summary)}"
 
 

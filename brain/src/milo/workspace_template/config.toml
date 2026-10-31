@@ -2,7 +2,9 @@
 # Milo's Settings window changes some of these for you and keeps your comments.
 #
 # Every swappable part has `use = "<name>"` and a table `[<part>.<name>]` with that
-# implementation's options. Unknown keys are an error, so typos fail loudly.
+# implementation's options. Unknown keys are an error, so typos fail loudly. A part whose `use`
+# is left out (commented below) gets this computer's own engine: on a Mac everything runs here
+# (Whisper, OmniVoice, the Mac's apps); elsewhere hearing and voice are ElevenLabs for now.
 
 [chat]
 # The fast model Milo talks with. It streams, so he starts speaking after the first clause.
@@ -32,6 +34,17 @@ binary = ""                       # empty: PATH, then ~/.local/bin
 model = "claude-haiku-5-5"
 effort = "low"
 
+# Or any OpenAI-style chat API: use = "openai_compat" in [chat] and this table without the #s.
+# OpenAI, OpenRouter (base_url = "https://openrouter.ai/api/v1"), Ollama ("http://localhost:11434/v1")
+# or LM Studio ("http://localhost:1234/v1"). The key goes alone in ~/Milo/secrets/<key_ref>; local
+# servers need none.
+# [chat.openai_compat]
+# base_url = "https://api.openai.com/v1"
+# model = "gpt-5-mini"
+# key_ref = "openai.key"
+# cache_control = false           # true for Claude or Gemini models through OpenRouter, so the prompt is cached
+# images = true                   # false for a model that can't see screenshots
+
 [harness]
 # The agent that does real work (files, research, multi-step tasks) when the chat model hands one off.
 use = "codex"                     # codex | claude
@@ -57,7 +70,8 @@ timeout_s = 180
 # Lets Milo's helper use your calendar, reminders, mail, notes, shortcuts and files.
 # Mail is only ever drafted, never sent. Switch off anything he shouldn't touch.
 enabled = true
-use = "mac"                       # mac | fake (made-up data in ~/Milo/fake, for trying things out)
+# use = "mac"                     # left out: this computer's apps (mac on a Mac, none elsewhere yet)
+                                  # fake: made-up data in ~/Milo/fake, for trying things out
 calendar = true
 reminders = true
 mail = true
@@ -125,7 +139,9 @@ max_mb = 2
 keep = 3
 
 [stt]
-use = "mlx_whisper"               # on this Mac: dictation, and talking to Milo unless `talk` is set
+# Dictation, and talking to Milo unless `talk` is set. Left out: mlx_whisper (on this computer) on a Mac,
+# elevenlabs elsewhere (needs the key, see [tts.elevenlabs]).
+# use = "mlx_whisper"
 # A cloud service that listens along while you talk to Milo, so the text is ready 0.2 s after you let go
 # instead of after a full pass here. "elevenlabs" sends what you say to Milo to ElevenLabs (it needs the key,
 # see [tts.elevenlabs]). Empty: nothing you say leaves this Mac. If the service can't be reached, Milo
@@ -146,11 +162,12 @@ vocabulary = "Milo, Codex, Claude" # names Whisper should spell right
 [tts]
 # omnivoice: on this Mac, a cloned voice, piece by piece. elevenlabs: a cloud voice that speaks a whole answer
 # as one, starting about 0.2 s after his first sentence is written; needs a key in ~/Milo/secrets/elevenlabs.key.
-# say: the Mac's own voice.
-use = "omnivoice"
+# say: the Mac's own voice. Left out: omnivoice on a Mac, elevenlabs elsewhere.
+# use = "omnivoice"
 # Used if `use` fails to load, and while elevenlabs can't be reached. It loads only when needed: "say" at
 # once, "omnivoice" sounds more like Milo but takes a while and a few GB of memory the first time.
-fallback = "say"
+# "" for none. Left out: say on a Mac, none elsewhere.
+# fallback = "say"
 
 [tts.elevenlabs]
 # One of your account's voices. Callum (the default) is young and a little higher; others for Milo, higher
@@ -164,7 +181,7 @@ speed = 1.0                       # 0.7 to 1.2, v2.5 models only
 language = ""                     # empty: follows the text, German and English mixed
 
 [tts.omnivoice]
-device = "mps"
+device = ""                       # empty: the GPU it finds (mps on a Mac, cuda), else cpu
 # Milo always speaks with one cloned voice. On first start it is designed from `instruct` with
 # `voice_seed` and saved to ~/Milo/state/voice/. Delete that folder to design a new one.
 instruct = "male, young adult, high pitch"
@@ -260,7 +277,9 @@ show_window = true                # bring the window he works in to the front, s
 # matters to it. Everything stays on this Mac in ~/Milo/memory. See "What Milo knows" in the menu bar.
 enabled = true
 recall_tokens = 800               # how much memory goes along with each turn, at most (about 4 characters a token)
-embedder = "mlx_e5"               # mlx_e5 (a small model, 140 MB, finds meaning) | hash (no model, finds words)
+# mlx_e5 (a small model, 140 MB, finds meaning) | hash (no model, finds words). Left out: mlx_e5 on a Mac,
+# hash elsewhere. Changing it rebuilds the search index on the next start.
+# embedder = "mlx_e5"
 dictations = false                # also remember what you dictate into other apps
 # Once a night, while the Mac is idle and plugged in, Milo sums up the day, learns new facts and fixes
 # old ones, and writes memory/journal/<day>.md. That costs a worker call or two a day.

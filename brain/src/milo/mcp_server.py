@@ -14,11 +14,11 @@ import argparse
 import base64
 import itertools
 import json
-import socket
 import sys
 from pathlib import Path
 from typing import IO
 
+from milo import system
 from milo.core.hands import SERVER_NAME, TOOLS
 
 PROTOCOL_VERSION = "2025-06-18"
@@ -36,9 +36,7 @@ class HandsClient:
 
     def call(self, tool: str, args: dict) -> dict:
         try:
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-                sock.settimeout(self.timeout_s)
-                sock.connect(str(self.path))
+            with system.connect_local(self.path, self.timeout_s) as sock:
                 sock.sendall((json.dumps({"id": next(self._ids), "tool": tool, "args": args}) + "\n").encode())
                 with sock.makefile("rb") as stream:
                     line = stream.readline()
