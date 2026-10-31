@@ -101,6 +101,8 @@ class UiSettings:
     """How Milo looks. There is one Milo, a wren in a marigold scarf; the retired looks still load and mean him."""
     voice: bool = True
     """Say answers out loud. False: the bubble and the window only."""
+    hide_after_s: float = 60.0
+    """Milo leaves the screen after this long with nothing going on, and comes back when he is needed. 0: he stays."""
 
     def __post_init__(self):
         for name in ("whats_this_key", "meeting_key"):
@@ -117,6 +119,8 @@ class UiSettings:
             raise ConfigError(f"[ui] dictate_key and talk_key can't be the same key ({self.talk_key!r})")
         if self.hands_free_max_s <= 0:
             raise ConfigError("[ui] hands_free_max_s must be more than 0")
+        if isinstance(self.hide_after_s, int | float) and self.hide_after_s < 0:  # a string: _typed names it
+            raise ConfigError("[ui] hide_after_s must be 0 (he stays on screen) or more")
         if self.character not in CHARACTERS + RETIRED_CHARACTERS:
             raise ConfigError('[ui] character must be "milo"')
 

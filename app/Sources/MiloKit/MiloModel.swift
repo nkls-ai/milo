@@ -78,6 +78,8 @@ public final class MiloModel: ObservableObject {
     public var onAnswer: ((PendingQuestion, Answer, String) -> Void)?
     /// Meeting notes: the capsule by Milo, the menu bar and the meeting's page follow it.
     public let meeting: MeetingModel
+    /// Whether Milo is on screen: he leaves after a while with nothing going on and comes back when needed.
+    public let presence: Presence
     /// The helpers working for Milo, oldest first, from the brain's `helpers` event.
     @Published public private(set) var helpers: [HelperInfo] = []
     /// Called when the user clicks Stop on a helper. Set by the controller.
@@ -120,6 +122,8 @@ public final class MiloModel: ObservableObject {
         self.scheduler = scheduler
         now = clock
         meeting = MeetingModel(clock: clock)
+        presence = Presence(scheduler: scheduler, clock: clock)
+        presence.watch(self)
     }
 
     /// How long "Got it" stays after the key comes up. Long enough to read, short enough not to hold anything up.
@@ -298,6 +302,8 @@ public final class MiloModel: ObservableObject {
         endBeat?.cancel()
         lastMode = mode
         set(ear: .armed(mode))
+        // Back on screen even if this turns out to be a tap: the key is the user asking for him.
+        presence.summon()
     }
 
     /// The hold is real, or a double tap locked it on: Milo listens.

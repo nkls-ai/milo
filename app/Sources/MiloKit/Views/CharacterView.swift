@@ -6,10 +6,19 @@ struct CharacterView: View {
     /// Meeting notes: he holds his notepad while he takes them and while he writes them up.
     @ObservedObject var meeting: MeetingModel
     @StateObject private var life = CharacterLifeDriver()
+    /// The way he flies while he leaves the screen or comes back (`Presence.Pose`); nil: as the model says.
+    let heading: CGVector?
 
-    init(model: MiloModel) {
+    init(model: MiloModel, heading: CGVector? = nil) {
         self.model = model
         meeting = model.meeting
+        self.heading = heading
+    }
+
+    /// A real flight wins: he may come back because he has somewhere to fly.
+    private var flight: Flight {
+        guard let heading, !model.flight.airborne else { return model.flight }
+        return .flying(heading: heading)
     }
 
     private var noting: Bool { model.recording || meeting.status.phase == .writing }
@@ -25,7 +34,7 @@ struct CharacterView: View {
 
     var body: some View {
         CharacterFigure(for: model.character, state: state, emotion: model.emotion, asleep: asleep,
-                        connected: model.connected, pose: life.pose, flight: model.flight,
+                        connected: model.connected, pose: life.pose, flight: flight,
                         words: Self.words(in: model.partial), asking: model.question != nil,
                         working: model.workingWindow != nil || model.handsActive, noting: noting, size: 120,
                         live: model.live)

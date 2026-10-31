@@ -128,6 +128,36 @@ private final class Harness {
     private static let look = Setting(section: "ui", key: "character", value: "pip",
                                       options: ["pip", "dragon"], labels: ["Pip", "Dragon"])
 
+    private static func hideAfter(_ value: JSONValue) -> SettingsReport {
+        SettingsReport(settings: [Setting(section: "ui", key: "hide_after_s", value: value, options: [30, 60, 300, 0],
+                                          labels: ["After 30 seconds", "After a minute", "After 5 minutes", "Never"])])
+    }
+
+    @Test func howLongMiloStaysComesFromTheBrainAndAppliesAtOnce() {
+        let h = Harness()
+        h.brain.connect()
+        #expect(h.model.presence.hideAfter == 60, "a minute until the brain says")
+        h.brain.emit(.settings(Self.hideAfter(300)))
+        #expect(h.model.presence.hideAfter == 300)
+        h.brain.emit(.settings(Self.hideAfter(0)))
+        #expect(h.model.presence.hideAfter == nil, "0 is Never")
+        h.controller.settingsModel.change("ui", "hide_after_s", to: 30)
+        #expect(h.model.presence.hideAfter == 30, "the window's choice works before the brain answers")
+        h.brain.emit(.settings(SettingsReport(settings: [Self.look])))
+        #expect(h.model.presence.hideAfter == 60, "an older brain that doesn't know the setting: the default")
+    }
+
+    @Test func theDictateKeyBringsMiloBackFromAway() {
+        let h = Harness()
+        h.brain.connect()
+        h.advance(to: 60 + Presence.leaveDuration(plain: false))
+        #expect(h.model.presence.phase == .away)
+        h.keys.send(.flagsChanged(keyCode: 63, flags: ModifierFlag.function, at: h.scheduler.now))
+        guard case .arriving = h.model.presence.phase else {
+            return #expect(Bool(false), "back the moment the key goes down, not after the brain answers")
+        }
+    }
+
     @Test func settingsComeFromTheBrainAndChangesGoBack() {
         let h = Harness()
         h.brain.connect()
@@ -366,7 +396,7 @@ private final class Harness {
         #expect(h.brain.sent == [.listenStart(.dictate, tentative: true)], "too quick to show")
         h.advance(to: 0.36)
         #expect(h.brain.sent == [.listenStart(.dictate, tentative: true), .listenCancel])
-        #expect(h.scheduler.pendingCount == 1, "only the context timer is left")
+        #expect(h.scheduler.pendingCount == 2, "only the context timer and Milo's wait before he leaves the screen")
     }
 
     @Test func aLongerSingleTapShowsAndGoesAwayAgain() {

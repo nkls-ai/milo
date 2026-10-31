@@ -167,6 +167,44 @@ struct OverlayRenderTests {
         }
     }
 
+    /// Frames of Milo leaving the screen and coming back (`Presence.Pose`), pinned on a clock of their own.
+    @Test func renderLeavingAndComingBack() throws {
+        _ = NSApplication.shared
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        final class Clock { var now: TimeInterval = 0 }
+        for plain in [false, true] {
+            let clock = Clock(), scheduler = ManualScheduler()
+            let model = MiloModel(scheduler: scheduler, clock: { clock.now })
+            model.connected = true
+            model.presence.reduceMotion = { plain }
+            let kind = plain ? "fade" : "fly"
+            model.presence.dismiss()
+            let leave = Presence.leaveDuration(plain: plain)
+            for (i, f) in [0, 0.2, 0.4, 0.55, 0.7, 0.85, 1].enumerated() {
+                clock.now = leave * f
+                try render(model, name: "presence-\(kind)-1leave-\(i)", dark: false)
+            }
+            scheduler.advance(by: leave)
+            clock.now = 10
+            model.presence.summon()
+            let arrive = Presence.arriveDuration(plain: plain)
+            for (i, f) in [0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9].enumerated() {
+                clock.now = 10 + arrive * f
+                try render(model, name: "presence-\(kind)-2arrive-\(i)", dark: false)
+            }
+            scheduler.advance(by: arrive)
+            try render(model, name: "presence-\(kind)-3here", dark: false)
+            // Called back by a question: the bubble with its buttons is there at once, while he flies in.
+            model.presence.dismiss()
+            scheduler.advance(by: leave)
+            clock.now = 20
+            model.apply(.confirm(id: "q", question: "Send the email to Dr. Lee?"))
+            scheduler.advance(by: 0)
+            clock.now = 20 + arrive * 0.3
+            try render(model, name: "presence-\(kind)-4question", dark: false)
+        }
+    }
+
     private func render(_ model: MiloModel, name: String, dark: Bool) throws {
         let size = OverlayPanel.size
         let view = ZStack {

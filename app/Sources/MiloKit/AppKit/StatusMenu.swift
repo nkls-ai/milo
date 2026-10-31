@@ -2,7 +2,7 @@ import AppKit
 import Combine
 
 /// The menu bar item.
-public final class StatusMenu: NSObject, NSMenuDelegate {
+public final class StatusMenu: NSObject, NSMenuDelegate, NSMenuItemValidation {
     /// The "Dictation style" choices, in menu order, with plain names.
     static let dictationStyles: [(DictationStyle, String)] = [
         (.preview, "Show the words, paste when I let go"),
@@ -87,7 +87,9 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
         }
         muteItem = add(menu, "Pause nudges", #selector(toggleMute))
         muteItem.toolTip = "Milo stops bringing things up by himself. He still answers when you ask."
-        visibleItem = add(menu, "Hide Milo", #selector(toggleVisible))
+        visibleItem = add(menu, "Hide Milo", #selector(hideMilo))
+        visibleItem.toolTip = "Milo leaves the screen until you press a key or he has something for you."
+        visibleItem.setAccessibilityHelp(visibleItem.toolTip)
         add(menu, "Move Milo back to the corner", #selector(resetPosition))
         styleMenu = NSMenu()
         styleMenu.delegate = self
@@ -201,14 +203,22 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
     /// Each time a menu opens: ticks the dictation style the brain uses in the submenu, and shows Milo by
     /// message as the brain last reported it in the main menu.
     public func menuNeedsUpdate(_ menu: NSMenu) {
-        guard menu === styleMenu else {
-            visibleItem.title = panel.isVisible ? "Hide Milo" : "Show Milo"
-            return updateRemoteItems()
-        }
+        guard menu === styleMenu else { return updateRemoteItems() }
         for item in menu.items {
             item.state = item.representedObject as? String == controller.dictationStyle?.rawValue ? .on : .off
             item.isEnabled = controller.dictationStyle != nil  // no brain yet: nothing to switch
         }
+    }
+
+    /// A click on the menu bar icon brings Milo back if he left the screen, and his wait starts over.
+    public func menuWillOpen(_ menu: NSMenu) {
+        guard menu === statusItem.menu else { return }
+        controller.model.presence.summon()
+    }
+
+    /// "Hide Milo" only while nothing needs him: he never leaves a question, his words or his work.
+    public func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        item !== visibleItem || controller.model.presence.canLeave
     }
 
     @objc private func pickDictationStyle(_ item: NSMenuItem) {
@@ -232,7 +242,7 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
         if alert.runModal() == .alertFirstButtonReturn { controller.forgetPhone() }
     }
 
-    @objc private func toggleVisible() { panel.toggleVisible() }
+    @objc private func hideMilo() { controller.model.presence.dismiss() }
     @objc private func toggleWindow() { window.toggle() }
     @objc private func openSettings() { settings.open() }
     @objc private func endAutoMode() { controller.endAutoMode() }
@@ -243,7 +253,10 @@ public final class StatusMenu: NSObject, NSMenuDelegate {
     @objc private func togglePause() { controller.model.meeting.pause(controller.model.meeting.status.phase != .paused) }
     @objc private func openMeeting() { controller.model.meeting.open(controller.model.meeting.status.id) }
     @objc private func copyConsent() { controller.model.meeting.copyConsent() }
-    @objc private func resetPosition() { panel.placeBottomRight() }
+    @objc private func resetPosition() {
+        panel.placeBottomRight()
+        controller.model.presence.summon()
+    }
     @objc private func openHome() { NSWorkspace.shared.open(paths.home) }
     @objc private func openDictionary() { Self.openText(paths.dictionary) }
 

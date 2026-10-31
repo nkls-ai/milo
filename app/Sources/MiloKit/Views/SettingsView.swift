@@ -111,6 +111,18 @@ public struct SettingsView: View {
                     }
                 }
             }
+            if let stay = report["ui", "hide_after_s"] {
+                ThemedCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        CardHeading(icon: "bird",
+                                    title: "When Milo leaves the screen",
+                                    detail: "If nothing is going on. He comes back when you press a key or he has something for you.")
+                        ChoiceList(choices: Self.hideChoices(stay), selected: stay.value) {
+                            settings.change(stay.section, stay.key, to: $0)
+                        }
+                    }
+                }
+            }
             if let show = report["hands", "show_window"] {
                 ThemedCard {
                     HStack {
@@ -241,6 +253,17 @@ public struct SettingsView: View {
             }
             .padding(.leading, 26)
         }
+    }
+
+    /// `[ui] hide_after_s`'s choices, with a time set by hand in config.toml first, in words.
+    static func hideChoices(_ setting: Setting) -> [(value: JSONValue, label: String)] {
+        var all = setting.choices
+        if !setting.options.contains(setting.value), let seconds = setting.value.number {
+            let minutes = seconds.truncatingRemainder(dividingBy: 60) == 0
+            let label = seconds <= 0 ? "Never" : minutes ? "After \(Int(seconds / 60)) minutes" : "After \(Int(seconds)) seconds"
+            all.insert((setting.value, label), at: 0)
+        }
+        return all
     }
 
     /// "Zoom, Microsoft Teams" as its names.
