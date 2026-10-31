@@ -378,7 +378,7 @@ def _cleanup_answer(apps: tuple[str, ...], question: str, run: Run) -> bool:
         return True
     if re.fullmatch(rf"I'm about to click “(Delete|Don['’]t Save)” in ({named})\. Go ahead\?", question):
         return True
-    if not re.fullmatch(rf"Run a script in ({named})\? It's in my window\.", question):
+    if not re.fullmatch(rf"May I work in ({named}) directly\? You can read the steps in my window\.", question):
         return False
     waiting = [s for s in run.step_list() if s.status == "running"]
     script = waiting[-1].detail if waiting else ""

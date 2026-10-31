@@ -137,3 +137,59 @@ def test_the_worker_hears_plainly_that_it_should_stop_and_wait():
 
     for words in (REFUSED["parked"], BRAIN_REFUSED["parked"]):
         assert "end your turn" in words and "Don't do it another way" in words
+
+
+def test_the_yes_while_it_waited_covers_only_that_helpers_next_turn(monkeypatch):
+    """The same words from another helper, or later from this one, ask again."""
+    s, worker = parked_stack(monkeypatch)
+    questions = worker.questions
+
+    async def run():
+        helper = s.tasks.submit("write to Anna", title="Mail to Anna", screen=False, user_asked=True)
+        await asyncio.sleep(0.5)
+        s.approvals.answer(s.sink.of(Confirm)[0].id, True)
+        await s.tasks.idle()
+        assert helper.granted == "", "used up in the turn after the yes"
+        other = s.tasks.submit("write to Anna again", title="Mail again", screen=False, user_asked=True)
+        await settle()
+        return other
+
+    asyncio.run(run())
+    assert worker.decisions[:2] == ["parked", "yes"] and len(s.sink.of(Confirm)) == 2, "the second helper asked"
+    del questions
+
+
+def test_a_money_question_is_never_let_through_by_an_earlier_yes():
+    from milo.services.helpers import Helper
+
+    class OneHelper:
+        """The orchestrator as HelperQuestions sees it, with one helper at work."""
+
+        def __init__(self, helper):
+            self.helper = helper
+
+        def asking(self, *, screen):
+            return self.helper
+
+        def answered(self, helper):
+            pass
+
+        def careful(self, *, screen):
+            return False
+
+        def question_wait(self, helper):
+            return None
+
+    s = Stack(confirm_timeout_s=0)
+    helper = Helper("h1", 1, "Tickets", "buy the tickets", False, 0.0, status=HelperStatus.WORKING,
+                    granted="Buy 2 tickets for 40 €?")
+    questions = HelperQuestions(s.approvals, lambda: OneHelper(helper), screen=False)
+
+    async def run():
+        task = asyncio.create_task(questions.approve("buy", "Buy 2 tickets for 40 €?"))
+        await settle()
+        s.approvals.cancel()
+        return await task
+
+    assert not asyncio.run(run()).allowed
+    assert s.sink.of(Confirm)[-1].money, "asked again, as a money question that only a click answers"

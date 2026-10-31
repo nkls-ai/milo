@@ -82,6 +82,8 @@ class Helper:
     """The user asked for it themselves, in a conversation without outside text (a look at the screen they asked
     for doesn't count as outside). In auto mode its work in apps needs no question (ADR 0022). Routines, meeting
     follow-ups and anything a mail or web page could have suggested are False."""
+    language: str = ""
+    """The language the user asked in ("de"), so its answer is spoken in that one. "" when unknown."""
     instructions: str = ""
     """What the worker gets instead of the description, when that is long: a routine's recipe. The
     description stays short, for the Milo window."""
@@ -93,6 +95,11 @@ class Helper:
     """The answer to a question that outlived its turn (ADR 0031). The work goes on after a yes."""
     waiting_for: str = ""
     """That question."""
+    grantable: bool = False
+    """Whether a yes to the question it waits for may count for the same question once more (see `granted`)."""
+    granted: str = ""
+    """A question the user said yes to while this helper waited, without a scope and not about money. Only in the
+    turn that goes on after the yes, the same question from this helper counts as that yes."""
     on_finish: Callable[[Helper], None] | None = field(default=None, compare=False, repr=False)
     """Called once when it ends, however it ends (a routine's run log)."""
 

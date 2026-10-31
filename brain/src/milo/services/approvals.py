@@ -25,6 +25,7 @@ DEFAULT_TIMEOUT_S = 0.0
 REASK_S = 20.0
 """An unanswered question is said once more after this long."""
 NO_ANSWER = "No answer, so I left it."
+NO_ANSWER_DE = "Keine Antwort, also habe ich es gelassen."
 PARKED = ("The user hasn't answered yet; the question stays open for them. Don't do it another way: end your turn "
           "now and say in one short sentence that you're waiting for their answer. If they say yes, you'll be told "
           "to go on.")
@@ -70,6 +71,7 @@ UNDOABLE_KINDS = ("trash",)
 mode."""
 _STRICTNESS = (ActionLevel.READ, ActionLevel.CHANGE, ActionLevel.ASK_FIRST, ActionLevel.NEVER)
 MONEY_YES = "That one involves money, so only a click on Yes counts."
+MONEY_YES_DE = "Da geht es um Geld, deshalb zählt nur ein Klick auf Ja."
 
 _YES = ("yes", "yeah", "yep", "yup", "sure", "ok", "okay", "go ahead", "do it", "please do", "of course",
         "send it", "ja", "jawohl", "klar", "gerne", "genau", "mach das", "mach es", "mach")
@@ -141,6 +143,7 @@ BUBBLE_LINES = 8
 LINE_CHARS = 32
 """Fewer characters than a bubble line holds, so the estimate of the lines a question needs errs high."""
 SEE_WINDOW = " (all of it is in the Milo window)"
+SEE_WINDOW_DE = " (alles steht im Milo-Fenster)"
 
 
 def bubble_lines(text: str) -> int:
@@ -153,19 +156,20 @@ def _width(line: str) -> int:
     return sum(2 if unicodedata.east_asian_width(c) in "WF" or ord(c) > 0xFFFF else 1 for c in line)
 
 
-def fit_bubble(question: str, detail: str) -> tuple[str, str]:
+def fit_bubble(question: str, detail: str, language: str = "") -> tuple[str, str]:
     """A question the bubble can show whole. A longer one, in characters or in lines, is cut where everyone can
     see it was cut, and the whole of it goes into the detail the Milo window shows: Yes must never sit under a
     hidden end."""
     if len(question) <= QUESTION_MAX and bubble_lines(question) <= BUBBLE_LINES:
         return question, detail
     whole = f"{question}\n\n{detail}" if detail else question
-    room = QUESTION_MAX - len(SEE_WINDOW) - 1
+    see = SEE_WINDOW_DE if language == "de" else SEE_WINDOW
+    room = QUESTION_MAX - len(see) - 1
     short = " ".join(question.split())[:room]
-    while short and bubble_lines(short + "…" + SEE_WINDOW) > BUBBLE_LINES:
+    while short and bubble_lines(short + "…" + see) > BUBBLE_LINES:
         short = short[:-LINE_CHARS]
     short = short.rsplit(" ", 1)[0].rstrip(",;: ") if " " in short else short
-    return short + "…" + SEE_WINDOW, whole
+    return short + "…" + see, whole
 
 
 class Approvals:
@@ -181,8 +185,7 @@ class Approvals:
     An unanswered question stays open, in the bubble and on Today, and is said once more after `reask_s` (ADR 0031).
     A caller with a deadline of its own (a helper whose turn the harness ends) passes `wait_s` and `parked`: when
     the time is up the question stays open, the caller gets "parked" at once, and `parked` gets a future for the
-    answer still to come; cancelling it takes the question away. A yes to a parked question with no scope lets the
-    same question through once more without asking, since the asker will try it again. `timeout_s` > 0 brings back
+    answer still to come; cancelling it takes the question away. `timeout_s` > 0 brings back
     the old rule (no answer in that time means no), and a question only the phone may answer waits as long as the
     relay says.
 
@@ -203,14 +206,15 @@ class Approvals:
 
     def __init__(self, ui: UiState, speaker: Speaker, policy: ActionPolicy | None = None, *,
                  timeout_s: float = DEFAULT_TIMEOUT_S, speak: bool = True, quiet: Callable[[], bool] = lambda: False,
-                 transcript: Transcript | None = None, permits: Permits | None = None, reask_s: float = REASK_S):
+                 transcript: Transcript | None = None, permits: Permits | None = None,
+                 language: Callable[[], str] = lambda: "", reask_s: float = REASK_S):
         self._ui = ui
+        self._language = language
+        """The code of the language the user last spoke in: Milo's own lines here follow it (German or English)."""
         self._speaker = speaker
         self.policy = policy or ActionPolicy()
         self._timeout_s = timeout_s
         self._reask_s = reask_s
-        self._granted: list[str] = []
-        """Questions the user said yes to after their asker parked: the next identical one goes through once."""
         self._expired: set[asyncio.Task] = set()
         self._speak = speak
         self._quiet = quiet
@@ -325,8 +329,9 @@ class Approvals:
             return False
         if yes and self._money:
             # Taken as the answer so it isn't a turn of its own, but it doesn't say yes: the button has to.
-            self._transcript.say(MONEY_YES, Emotion.NEUTRAL)
-            self._speaker.say(MONEY_YES, Emotion.NEUTRAL, speak=self._speak and via == "voice")
+            money_yes = MONEY_YES_DE if self._language() == "de" else MONEY_YES
+            self._transcript.say(money_yes, Emotion.NEUTRAL)
+            self._speaker.say(money_yes, Emotion.NEUTRAL, speak=self._speak and via == "voice")
             return True
         return self.answer(self._pending[0], yes, via=via)
 
@@ -352,10 +357,6 @@ class Approvals:
         always) and no money."""
         if choices:
             scope, money = None, False
-        if question in self._granted:
-            self._granted.remove(question)
-            log.info("the user said yes to this while its asker waited: %s", private(question))
-            return "yes"
         if self._timeout_s > 0:
             wait_s, parked = None, None  # the old rule: no answer in `timeout_s` means no
         flow = asyncio.ensure_future(self._question(question, detail, speak, scope=scope, money=money,
@@ -375,18 +376,11 @@ class Approvals:
             return "timeout"
         log.info("the asker can't wait longer; the question stays open: %s", private(question))
         answer: asyncio.Future[str] = asyncio.get_running_loop().create_future()
-        flow.add_done_callback(lambda f: self._parked_answer(f, answer, question, grant=scope is None and not choices))
+        flow.add_done_callback(lambda f: answer.done() or answer.set_result(
+            "no" if f.cancelled() or f.exception() is not None else f.result()))
         answer.add_done_callback(lambda a: flow.cancel() if a.cancelled() else None)
         parked(answer)
         return "parked"
-
-    def _parked_answer(self, flow: asyncio.Future[str], answer: asyncio.Future[str], question: str, *,
-                       grant: bool) -> None:
-        result = "no" if flow.cancelled() or flow.exception() is not None else flow.result()
-        if grant and result in ("yes", "always"):
-            self._granted.append(question)  # its asker will try it again: that is this yes, not a new question
-        if not answer.done():
-            answer.set_result(result)
 
     async def _question(self, question: str, detail: str, speak: bool, *, scope: Scope | None, money: bool,
                         choices: tuple[tuple[str, str], ...]) -> str:
@@ -417,7 +411,7 @@ class Approvals:
             waits = [r.wait_s for r in relayed]
             timeout_s = (max(waits) if self._remote_only and waits else
                          max([self._timeout_s, *waits]) if self._timeout_s > 0 else None)
-            question, detail = fit_bubble(question, detail)
+            question, detail = fit_bubble(question, detail, self._language())
             text = f"{question}\n\n{detail}" if detail else question
             if self._remote_only:
                 # The user is away: the Mac only shows that a question went to the phone, without buttons.
@@ -435,13 +429,13 @@ class Approvals:
                 answer = await asyncio.wait_for(future, timeout_s)
             except TimeoutError:
                 answer = "timeout"
-                self._transcript.say(NO_ANSWER, Emotion.NEUTRAL)
+                self._transcript.say(NO_ANSWER_DE if self._language() == "de" else NO_ANSWER, Emotion.NEUTRAL)
             except asyncio.CancelledError:
                 if asyncio.current_task() not in self._expired:
                     raise
                 self._expired.discard(asyncio.current_task())
                 answer = "timeout"
-                self._transcript.say(NO_ANSWER, Emotion.NEUTRAL)
+                self._transcript.say(NO_ANSWER_DE if self._language() == "de" else NO_ANSWER, Emotion.NEUTRAL)
             finally:
                 self._pending = None
                 self._money = False

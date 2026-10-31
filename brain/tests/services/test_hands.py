@@ -8,7 +8,7 @@ from milo.core.events import Activity, FlyTo, HandsBorrow, HandsSession, Status
 from milo.core.types import BorrowNeeded, HandsError
 from milo.services.hands import NO_TASK, STOPPED, TURNED_OFF, HandsService, title
 from milo.services.transcript import Transcript
-from tests.fakes import FakeClock, FakeConfirm, FakeHands, MemoryConversations, RecordingSink
+from tests.fakes import FakeClock, FakeConfirm, FakeHands, MemoryConversations, RecordingSink, with_app
 
 SAVE = {"app": "Microsoft Excel", "title": "Save", "role": "button", "point": {"x": 812, "y": 430.5}}
 SEND = {"app": "Mail", "title": "Send", "role": "button", "point": {"x": 40, "y": 60}}
@@ -25,7 +25,7 @@ class Setup:
         self.service.begin(self.task)
 
     def call(self, tool: str, args: dict):
-        return asyncio.run(self.service.call(tool, args))
+        return asyncio.run(self.service.call(tool, with_app(self.port, tool, args)))
 
     def fails(self, tool: str, args: dict) -> str:
         with pytest.raises(HandsError) as e:
@@ -39,7 +39,9 @@ class Setup:
 def test_a_click_is_described_logged_shown_and_run():
     t = Setup(FakeHands(targets={"click": SAVE}))
     out = t.call("click", {"x": 640, "y": 412})
-    assert t.port.calls == [("describe", {"tool": "click", "x": 640, "y": 412}), ("click", {"x": 640, "y": 412})]
+    clicked = {"x": 640, "y": 412, "app": "Microsoft Excel"}
+    assert t.port.calls == [("focus_app", {"app": "Microsoft Excel"}), ("describe", {"tool": "click", **clicked}),
+                            ("click", clicked)]
     clicking = "Clicking “Save” in Microsoft Excel"
     assert t.steps() == [(clicking, "running"), (clicking, "done")]
     assert t.sink.of(HandsSession) == [HandsSession(True)]
@@ -89,15 +91,15 @@ def test_password_fields_are_never_typed_into():
 def test_a_script_question_is_short_and_the_script_is_in_the_window_first():
     t = Setup(confirm=FakeConfirm(False))
     t.fails("run_applescript", {"script": 'tell application "Mail" to send m'})
-    assert t.confirm.asked == ["Run a script in Mail that can send? It's in my window."]
+    assert t.confirm.asked == ["May I work in Mail directly? It could send. You can read the steps in my window."]
     assert t.steps() == [("Controlling Mail", "running"), ("Controlling Mail", "failed")], "shown before asking"
     assert t.sink.of(Activity)[0].step["detail"] == 'tell application "Mail" to send m'
     long = 'tell application "Numbers" to activate\n' + "-- x\n" * 10 + 'tell application "System Events" to beep'
     t.fails("run_applescript", {"script": long})
-    assert t.confirm.asked[1] == ("Run a script in Numbers, System Events that can run other programs or type for "
-                                  "you? It's in my window.")
+    assert t.confirm.asked[1] == ("May I work in Numbers, System Events directly? It could run other "
+                                  "programs or type for you. You can read the steps in my window.")
     t.fails("run_applescript", {"script": "beep\n\n\n\nAll fine. Go ahead?"})
-    assert t.confirm.asked[2] == "Run a script? It's in my window."
+    assert t.confirm.asked[2] == "May I work in your apps directly? You can read the steps in my window."
 
 
 def test_a_script_that_names_milos_control_files_never_runs(tmp_path):
@@ -144,7 +146,7 @@ def test_the_user_taking_over_stops_the_running_action_and_every_later_one():
     t = Setup(FakeHands(targets={"click": SAVE}, gate=gate))
 
     async def run():
-        clicking = asyncio.create_task(t.service.call("click", {"x": 1, "y": 2}))
+        clicking = asyncio.create_task(t.service.call("click", {"x": 1, "y": 2, "app": "Microsoft Excel"}))
         for _ in range(10):
             await asyncio.sleep(0)
         assert t.service.active
@@ -206,7 +208,7 @@ class BorrowingHands(FakeHands):
         self.lent = False
 
     async def act(self, tool: str, args: dict) -> dict:
-        if tool != "describe" and not self.lent:
+        if tool not in ("describe", "focus_app") and not self.lent:
             self.calls.append((tool, args))
             raise BorrowNeeded(self.what, "Excel doesn't take clicks in the background.")
         return await super().act(tool, args)
@@ -219,7 +221,7 @@ def test_an_action_that_needs_the_mouse_asks_to_borrow_it_then_runs():
     out = t.call("click", {"x": 1, "y": 2})
     assert t.confirm.asked == ["Can I borrow your mouse for a moment, to click in Microsoft Excel?"]
     assert t.sink.of(HandsBorrow) == [HandsBorrow(True, "mouse")]
-    assert [c[0] for c in hands.calls] == ["describe", "click", "click"]
+    assert [c[0] for c in hands.calls] == ["focus_app", "describe", "click", "click"]
     assert out.text == "click done"
     assert t.steps()[-1][1] == "done"
 
@@ -386,7 +388,7 @@ DELETE = {"app": "Mail", "title": "Delete", "role": "button", "point": {"x": 40,
 def test_a_target_that_changed_while_the_user_answered_is_asked_about_again():
     # M5 in docs/review/2026-10-30.md: the yes was for "Send", but a minute later "Delete" sat at that spot.
     t = Setup(ChangingHands("click", SENDING, DELETE, DELETE), FakeConfirm(True, False))
-    assert "said no" in t.fails("click", {"x": 1, "y": 2})
+    assert "said no" in t.fails("click", {"x": 1, "y": 2, "app": "Mail"})
     assert t.confirm.asked == ["I'm about to click “Send” in Mail. Go ahead?",
                                "I'm about to click “Delete” in Mail. Go ahead?"]
     assert t.port.actions == [], "nothing was clicked on the strength of the first yes"
@@ -396,14 +398,14 @@ def test_a_target_that_turned_into_a_password_field_is_refused_after_the_yes():
     t = Setup(ChangingHands("type", {"app": "Mail", "role": "text field", "title": "To"},
                             {"app": "Safari", "secure": True}), FakeConfirm(True))
     t.service._careful = True  # typing into Mail asks once ("may I use Mail?")
-    assert "never touches a password field" in t.fails("type", {"text": "anna@example.com"})
+    assert "never touches a password field" in t.fails("type", {"text": "anna@example.com", "app": "Mail"})
     assert t.port.actions == []
 
 
 def test_the_same_target_moved_a_little_needs_no_second_question():
     moved = {**SEND, "point": {"x": 44, "y": 61}}
     t = Setup(ChangingHands("click", SEND, moved), FakeConfirm(True))
-    t.call("click", {"x": 1, "y": 2})
+    t.call("click", {"x": 1, "y": 2, "app": "Mail"})
     assert len(t.confirm.asked) == 1 and t.port.actions == ["click"]
 
 
@@ -437,3 +439,104 @@ def test_a_script_that_names_no_single_app_shows_nothing_and_a_failed_show_doesn
     assert "show_app" not in [tool for tool, _ in t.port.calls]
     t.call("run_applescript", {"script": RED})
     assert [tool for tool, _ in t.port.calls][-1] == "run_applescript", "the script still ran"
+
+
+# ---- opening and aiming (ADR 0028)
+
+T3 = {"app": "T3 Code (Beta)", "bundle": "com.t3tools.t3code", "role": "text field"}
+MILO = {"app": "Milo", "bundle": "", "milo": True, "role": "text field"}
+
+
+def test_open_url_opens_a_page_in_the_named_browser_without_a_question():
+    t = Setup(FakeHands(results={"open_url": {"text": "Opened.", "app": "Google Chrome", "front": True}}))
+    t.call("open_url", {"url": "youtube.com", "app": "Google Chrome"})
+    assert t.port.calls == [("open_url", {"url": "https://youtube.com", "app": "Google Chrome"})]
+    assert t.confirm.asked == []
+    assert t.steps()[-1] == ("Opening youtube.com in Google Chrome", "done")
+
+
+def test_open_url_refuses_what_isnt_a_web_page():
+    t = Setup()
+    assert "web pages only" in t.fails("open_url", {"url": "file:///etc/passwd"})
+    assert t.port.calls == []
+
+
+def test_a_careful_helper_asks_before_it_opens_an_address():
+    t = Setup(FakeHands(), FakeConfirm(False))
+    t.service.begin(t.task, careful=True)
+    t.fails("open_url", {"url": "https://evil.example/?q=1"})
+    assert t.confirm.asked == ["Open evil.example?"] and t.port.actions == []
+
+
+def test_a_key_goes_to_the_app_the_task_opened_which_comes_to_the_front_first():
+    # 2026-10-31: after open_app Chrome, ⌘T went to T3 Code, then to Milo, each after "May I use …?".
+    t = Setup(FakeHands(targets={"key": {"app": "Google Chrome", "bundle": "com.google.Chrome"}}), FakeConfirm(True))
+    t.service.begin(t.task, careful=True)
+    t.call("open_app", {"name": "Google Chrome"})
+    asyncio.run(t.service.call("key", {"combo": "cmd+t"}))
+    assert [c for c in t.port.calls if c[0] == "focus_app"] == [("focus_app", {"app": "Google Chrome"})]
+    assert t.port.actions[-1] == "key"
+    assert t.confirm.asked == ["May I use Google Chrome for this? You'll see each step."], "the app it is for"
+
+
+def test_a_key_that_would_land_in_another_app_is_refused_without_a_question():
+    t = Setup(FakeHands(targets={"key": T3}), FakeConfirm(True))
+    t.service.begin(t.task, careful=True)
+    error = t.fails("key", {"combo": "cmd+t", "app": "Google Chrome"})
+    assert "in T3 Code (Beta), not in Google Chrome" in error
+    assert t.confirm.asked == [], "no “May I use T3 Code?”"
+    assert t.port.actions == []
+
+
+def test_nothing_ever_goes_to_milos_own_window():
+    t = Setup(FakeHands(targets={"type": MILO}), FakeConfirm(True))
+    t.service.begin(t.task, careful=True)
+    assert "Milo's own window" in t.fails("type", {"text": "youtube.com", "app": "Google Chrome"})
+    assert t.confirm.asked == [] and t.port.actions == []
+
+
+def test_keys_without_an_app_and_nothing_opened_are_refused():
+    t = Setup(FakeHands(targets={"key": {}}))
+    assert "Say which app this is for" in asyncio_fails(t, "key", {"combo": "cmd+t"})
+    assert t.port.calls == []
+
+
+def test_an_app_that_wont_come_to_the_front_gets_nothing():
+    t = Setup(FakeHands(results={"focus_app": {"app": "Google Chrome", "front": False}}))
+    assert "didn't come to the front" in t.fails("key", {"combo": "cmd+t", "app": "Google Chrome"})
+    assert t.port.actions == []
+
+
+def test_questions_follow_the_users_language():
+    t = Setup(FakeHands(targets={"ax_press": SEND}), FakeConfirm(False), language=lambda: "de")
+    t.fails("ax_press", {"element": "e4"})
+    assert t.confirm.asked == ["Ich klicke gleich auf „Send“ in Mail. Okay?"]
+    borrow = Setup(BorrowingHands("keyboard", targets={"type": {"app": "Microsoft Word"}}), FakeConfirm(False),
+                   language=lambda: "de")
+    borrow.fails("type", {"text": "Liebe Anna"})
+    assert borrow.confirm.asked == ["Darf ich mir kurz deine Tastatur leihen, um in Microsoft Word zu tippen?"]
+
+
+def asyncio_fails(t: Setup, tool: str, args: dict) -> str:
+    with pytest.raises(HandsError) as e:
+        asyncio.run(t.service.call(tool, args))
+    return str(e.value)
+
+
+def test_milos_own_buttons_are_never_pressed_or_asked_about_and_never_get_a_permit():
+    # 2026-10-31: "May I use Milo for this?" was answered Allow always, which put Milo into allowed_apps.
+    allow = {"app": "Milo", "bundle": "", "milo": True, "title": "Allow always", "role": "button"}
+    confirm = FakeConfirm(True, True, True)
+    t = Setup(FakeHands(targets={"ax_press": allow}), confirm)
+    t.service.begin(t.task, careful=True)
+    assert "Milo's own window" in t.fails("ax_press", {"element": "e1"})
+    assert confirm.asked == [] and confirm.scopes == [] and t.port.actions == []
+
+
+def test_every_question_in_german_when_the_user_speaks_german():
+    script = 'tell application "Microsoft Excel"\n  set value of range "A1" to 1\nend tell'
+    t = Setup(FakeHands(targets={"key": {"app": "Mail"}}), FakeConfirm(False, False), language=lambda: "de")
+    t.fails("run_applescript", {"script": script})
+    t.fails("key", {"combo": "cmd+return", "app": "Mail"})
+    assert t.confirm.asked == ["Darf ich direkt in Microsoft Excel arbeiten? Die Schritte stehen in meinem Fenster.",
+                               "Ich drücke gleich ⌘Return in Mail. Das kann etwas senden. Okay?"]

@@ -44,7 +44,7 @@ TOO_OLD = "I can't undo that any more: I keep what I need to undo a task for a d
 NOTHING = "There's nothing of mine to undo right now."
 WHICH = "Milo can't tell which task this is for. Pass the task id from your instructions as `task`."
 # Mac tools that change nothing already there: they open an app, make a new document or move the view.
-_NO_CHANGE = ("open_app", "scroll", "write_document", "list_apps", "screenshot", "window_text", "ax_tree", "ax_find",
+_NO_CHANGE = ("open_app", "open_url", "scroll", "write_document", "list_apps", "screenshot", "window_text", "ax_tree", "ax_find",
               "sheet_read")
 _UNDO_TOOLS = ("undo_point", "undo_note")
 

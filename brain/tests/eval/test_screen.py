@@ -27,16 +27,16 @@ def _waiting(script: str) -> Run:
 
 def test_cleanup_says_yes_only_to_closing_quitting_and_deleting_in_its_own_apps():
     close = 'tell application "Numbers"\n  close front document saving no\n  quit\nend tell'
-    assert _cleanup_answer(("Numbers",), "Run a script in Numbers? It's in my window.", _waiting(close))
+    assert _cleanup_answer(("Numbers",), "May I work in Numbers directly? You can read the steps in my window.", _waiting(close))
     assert _cleanup_answer(("Numbers",), "May I use Numbers for this? You'll see each step.", Run())
     assert _cleanup_answer(("Numbers",), "I'm about to click “Delete” in Numbers. Go ahead?", Run())
     send = 'tell application "Mail"\n  send front outgoing message\n  delete drafts\nend tell'
-    assert not _cleanup_answer(("Mail",), "Run a script in Mail? It's in my window.", _waiting(send))
+    assert not _cleanup_answer(("Mail",), "May I work in Mail directly? You can read the steps in my window.", _waiting(send))
     other = 'tell application "Numbers" to quit\ntell application "Finder" to delete every file of desktop'
-    assert not _cleanup_answer(("Numbers",), "Run a script in Numbers, Finder? It's in my window.", _waiting(other))
-    assert not _cleanup_answer(("Numbers",), "Run a script in Numbers? It's in my window.", _waiting(other))
+    assert not _cleanup_answer(("Numbers",), "May I work in Numbers, Finder directly? You can read the steps in my window.", _waiting(other))
+    assert not _cleanup_answer(("Numbers",), "May I work in Numbers directly? You can read the steps in my window.", _waiting(other))
     assert not _cleanup_answer(("Numbers",), "I'm about to click “Send” in Mail. Go ahead?", Run())
-    assert not _cleanup_answer(("Numbers",), "Run a script in Numbers? It's in my window.", Run())
+    assert not _cleanup_answer(("Numbers",), "May I work in Numbers directly? You can read the steps in my window.", Run())
     assert not _cleanup_answer((), "May I use Numbers for this? You'll see each step.", Run())
     excel = ("Microsoft Excel",)
     assert _cleanup_answer(excel, "Close the Excel workbook with the weekly budget table without saving it?", Run())

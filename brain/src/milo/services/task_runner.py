@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 
+from milo.core.hands import SERVER_NAME, TOOLS
+from milo.core.language import name as language_name
 from milo.core.logtext import private
 from milo.core.ports import Clock, Harness, PlanCallback, SessionCallback, StepCallback, UsageLedger
 from milo.core.types import Reply
@@ -22,15 +24,33 @@ NO_SCREEN = (f"(You have no milo-mac tools for this task. If it can only be done
              f"screen, stop at once and reply with say exactly {NEEDS_SCREEN}.)")
 
 
-def first_prompt(helper: Helper, *, no_screen: bool) -> str:
+def answer_in(language: str) -> str:
+    """Tells a helper which language its answer is spoken in, whatever language the task is written in."""
+    return f"(The user speaks {language_name(language)}: write `say` in {language_name(language)}.)"
+
+
+def screen_tools() -> str:
+    """Names the screen tools up front. A Codex worker otherwise starts by listing every tool it has, and each
+    description comes back with the server's instructions in front: some 10,000 tokens that every later step of
+    the task sends again."""
+    names = ", ".join(t.name for t in TOOLS)
+    return (f"(Your screen tools are on the {SERVER_NAME} server: {names}. Call them directly, no need to look them "
+            f"up first. To open an app or a web page use open_app or open_url, never keys.)")
+
+
+def first_prompt(helper: Helper, *, no_screen: bool, tools: bool = False) -> str:
     """The task as the talker wrote it, plus whatever the user changed since. Self-contained."""
     parts = [helper.instructions or helper.description]
     if helper.amendments:
         changes = "\n".join(f"- {a}" for a in helper.amendments)
         parts.append(f"The user changed the task since:\n{changes}\nAn earlier try may have done part of it "
                      f"already: check before you redo anything.")
+    if helper.language:
+        parts.append(answer_in(helper.language))
     if no_screen:
         parts.append(NO_SCREEN)
+    elif tools and helper.screen:
+        parts.append(screen_tools())
     parts.append(f"(Task id for undo_point and undo_note: {helper.id}.)")
     return "\n\n".join(parts)
 
@@ -78,7 +98,7 @@ class TaskRunner:
         return self._background is not None
 
     def first_prompt(self, helper: Helper) -> str:
-        return first_prompt(helper, no_screen=self.has_screen and not helper.screen)
+        return first_prompt(helper, no_screen=self.has_screen and not helper.screen, tools=self._hands is not None)
 
     def turn_left(self, helper: Helper) -> float | None:
         """Seconds until the harness ends `helper`'s current turn, None if it sets no limit."""
