@@ -62,6 +62,15 @@ Every section at 390, 1440 and 2560 px, light and dark, with reduced motion so d
 - `p2/`: after the first round of fixes.
 - `p3-after/`: after the second round, with wren v4.
 - `p4/`: the cuter wren from track 12. The best shots are listed in `site/README.md`.
+- `p5/`: brought up to date with ADRs 24 to 32 (2026-10-31): the done card in the hero and a quick-things demo, opening, undo, auto mode, the step under the outline, meeting notes by voice. 390 and 1440 only. `p5/moments/` has the hero card, the deck fanned out, an undo and the outline's caption mid-run.
+
+### Pass 5, what the site said against what Milo does now
+
+- The hero's "Done. Dentist, Thursday at nine." became the brain's own line, "Dentist, Thursday at 9 am. It's in." (`quick_words.py`), and the calendar's today moved to Monday so "Thursday" is what the brain would say (it says "today" for the same day and the full date a week ahead).
+- `:root:not([data-milo='hero'])` hid the hero's words pill until the script first set `data-milo`, so with reduced motion the pill never showed. It now applies only once the attribute is set.
+- In the deck, `[data-behind]` outranked `.is-open`, so the cards behind stayed blank when fanned out.
+- "Lunch with Anna" didn't fit on a card (the app truncates at the same width), so the demo adds a haircut.
+- Money moved from "never" to "asks, and only a click counts" in ADR 23, so "no bank transfers" went from Trust and the FAQ.
 
 ### Pass 1, against the details list
 
