@@ -200,9 +200,6 @@ ALLOWED: dict[tuple[str, str], str] = {
     ("services/settings_guard.py", "mac-word"): "PUT_BACK says \"change them at the Mac\"",
     ("services/orchestrator.py", "mac-settings"): "_SCREEN_WORDS counts \"system settings\" as screen work",
     # Private folders are where macOS keeps them.
-    # Dates: `%-d` raises on Windows. milo.core.dates spells them out.
-    ("services/live_talk.py", "posix-strftime"): "the reminder question's `%-d`; fixed on the parallel live_talk branch, "
-                                                 "delete this line when it lands",
     ("services/sharing.py", "bundle-id"): "PRIVATE lists Library/Application Support/com.apple.TCC",
     ("services/sharing.py", "mac-framework"): "PRIVATE lists the TCC database folder",
     ("services/sharing.py", "mac-path"): "PRIVATE lists ~/Library folders (Keychains, Cookies, Messages, Mail)",
@@ -218,10 +215,7 @@ CEILING = 56
 """How many ALLOWED lines there were at the last count (2026-10-31: 57, less the one in GROWN). It only goes down:
 when a coupling moves out and its line goes, lower it too. It never goes up."""
 
-GROWN: dict[tuple[str, str], str] = {
-    ("services/live_talk.py", "posix-strftime"): "the rule is newer than this line, and live_talk.py is being fixed "
-                                                 "on another branch; both go when that lands",
-}
+GROWN: dict[tuple[str, str], str] = {}
 """ALLOWED lines added past CEILING, each with why the coupling can't be an adapter or a port yet. A reviewer reads
 this dict; growing ALLOWED without a line here fails test_allowlist_only_grows_with_a_reason."""
 
