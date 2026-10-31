@@ -193,12 +193,15 @@ class Transcript:
         self._keep(info)
         return info
 
-    def meeting(self, id: str, title: str, text: str) -> str:
-        """A meeting's notes: a conversation of its own, named after the meeting. Other people's words, so
-        it counts as outside text: its recap is untrusted."""
-        conversation = self._new("meeting", clean_title(title) or "Meeting notes", source=f"meeting:{id}",
-                                 outside=True)
-        return self._add(EntryKind.MILO, text, finished=True, emotion=Emotion.HAPPY, conversation=conversation).id
+    def meeting(self, id: str, title: str, text: str, *, conversation: str = "",
+                emotion: Emotion = Emotion.HAPPY) -> str:
+        """A Milo line about meeting `id` in the meeting's own conversation, named after it: `conversation` when the
+        meeting already has one (made when it started), a new one otherwise. Other people's words, so it counts as
+        outside text: its recap is untrusted. Returns the entry's id."""
+        if not conversation or self.info(conversation) is None:
+            conversation = self._new("meeting", clean_title(title) or "Meeting notes", source=f"meeting:{id}",
+                                     outside=True)
+        return self._add(EntryKind.MILO, text, finished=True, emotion=emotion, conversation=conversation).id
 
     # ---- tasks
 

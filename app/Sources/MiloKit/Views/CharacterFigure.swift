@@ -17,6 +17,8 @@ struct FigureInput: Equatable {
     var asking = false
     /// He is working in a window (perched on it) or driving the mouse and keys.
     var working = false
+    /// He takes meeting notes: a notepad in his wings, writing and looking up to listen.
+    var noting = false
 
     /// The feeling the face shows: sleepy while asleep, a smile while the cursor first arrives.
     var shown: Emotion {
@@ -43,11 +45,11 @@ struct CharacterFigure: View {
 
     init(for style: CharacterStyle = .milo, state: MiloState = .idle, emotion: Emotion = .neutral, asleep: Bool = false,
          level: Double = 0, connected: Bool = true, pose: LifePose = LifePose(), flight: Flight = .perched,
-         words: Int = 0, asking: Bool = false, working: Bool = false, size: CGFloat = 120, time: Double? = nil,
-         live: LiveLevel? = nil) {
+         words: Int = 0, asking: Bool = false, working: Bool = false, noting: Bool = false, size: CGFloat = 120,
+         time: Double? = nil, live: LiveLevel? = nil) {
         self.init(for: style, input: FigureInput(state: state, emotion: emotion, asleep: asleep, level: level,
                                                  connected: connected, pose: pose, flight: flight, words: words,
-                                                 asking: asking, working: working),
+                                                 asking: asking, working: working, noting: noting),
                   size: size, time: time)
         self.live = live
     }

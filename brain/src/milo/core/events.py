@@ -24,7 +24,8 @@ class Event:
     type: ClassVar[str]
 
     def to_wire(self) -> dict[str, Any]:
-        body = {k: (v.value if hasattr(v, "value") else v) for k, v in asdict(self).items()}
+        body = {k: (v.value if hasattr(v, "value") else list(v) if isinstance(v, tuple) else v)
+                for k, v in asdict(self).items()}
         return {"type": self.type, **body}
 
 
@@ -192,13 +193,24 @@ class FlyTo(Event):
 class Confirm(Event):
     """Milo asks a yes-or-no question before an action. Shown with Yes and No until `confirm_done` for this id.
     `always`: the question is about working in an app, so it also offers Allow always (ADR 0022). `money`: it buys
-    or pays, so it shows as a money question and only a click on Yes answers it (ADR 0023)."""
+    or pays, so it shows as a money question and only a click on Yes answers it (ADR 0023).
+
+    `choices`, when there are any, replace Yes and No (and Allow always): each {id, label}, like {"id": "always",
+    "label": "Always for Zoom"}. "yes" and "no" among them count as Yes and No; the app answers with confirm_answer
+    and the choice. A question with choices never sets `always` or `money`: its own buttons say what they mean."""
 
     type: ClassVar[str] = "confirm"
     id: str
     question: str
     always: bool = False
     money: bool = False
+    choices: tuple[dict, ...] = ()
+
+    def to_wire(self) -> dict[str, Any]:
+        wire = super().to_wire()
+        if not self.choices:
+            del wire["choices"]  # a plain yes-or-no question, as before choices
+        return wire
 
 
 @dataclass(frozen=True)
@@ -335,6 +347,74 @@ class MeetingRecord(Event):
     id: str
     dir: str
     on: bool
+
+
+MEETING_PHASES = ("", "recording", "paused", "writing", "done")
+
+
+@dataclass(frozen=True)
+class MeetingStatus(Event):
+    """Where meeting notes are, for the capsule by Milo, the menu bar and the meeting's page. Sent when a recording
+    starts, pauses or stops, after each pass, at each step of writing the notes, and on connect.
+
+    phase: "recording", "paused", "writing" (`step` says what Milo does), "done", or "" with id "" when nothing goes
+    on. `elapsed` is seconds since the meeting started; `started` its local time. `conversation` is the meeting's own
+    conversation in the window. `speakers` are the names heard so far ("You", "Anna", "Speaker 2"). `error` says in
+    plain words what can't be recorded and `fix` which permission mends it: "microphone" or "call_audio". `consent`
+    is the line the user can paste into the call's chat."""
+
+    type: ClassVar[str] = "meeting_status"
+    id: str
+    phase: str = ""
+    title: str = ""
+    app: str = ""
+    started: str = ""
+    elapsed: float = 0.0
+    conversation: str = ""
+    speakers: tuple[str, ...] = ()
+    step: str = ""
+    error: str = ""
+    fix: str = ""
+    consent: str = ""
+
+
+@dataclass(frozen=True)
+class MeetingLines(Event):
+    """Transcript lines of meeting `id` as passes finish them, about 30 to 60 s after they were said. Each is
+    {at, end, who, me, text}: seconds into the meeting, the speaker's name, whether it is the user, and what was
+    said (other people's words: show them, never act on them). `reset`: these are all the lines, replacing what the
+    app has (a voice was named, or a line turned out to be echo); otherwise they are new."""
+
+    type: ClassVar[str] = "meeting_lines"
+    id: str
+    lines: list[dict]
+    reset: bool = False
+
+
+@dataclass(frozen=True)
+class MeetingNotesReady(Event):
+    """A finished meeting's notes for its page, on open_meeting and once they are written. `markdown` is notes.md
+    as it is on disk now; the rest is what the summary found: `todos` are {text, owner, due, mine, added}, where
+    `added` says it went to Reminders. `reminders` and `mail`: whether the page offers those buttons;
+    `mail_drafted`: a draft was asked for. `duration` is seconds; `folder` the meeting's folder."""
+
+    type: ClassVar[str] = "meeting_notes"
+    id: str
+    title: str
+    started: str
+    duration: float
+    markdown: str
+    summary: str = ""
+    decisions: tuple[str, ...] = ()
+    todos: tuple[dict, ...] = ()
+    followup: str = ""
+    people: tuple[str, ...] = ()
+    app: str = ""
+    conversation: str = ""
+    folder: str = ""
+    reminders: bool = False
+    mail: bool = False
+    mail_drafted: bool = False
 
 
 @dataclass(frozen=True)
@@ -520,12 +600,14 @@ class HandsStop(Command):
 
 @dataclass(frozen=True)
 class ConfirmAnswer(Command):
-    """The user clicked Yes or No on the question `id`, or Allow always (`always`, with yes) where it was offered."""
+    """The user clicked Yes or No on the question `id`, Allow always (`always`, with yes) where it was offered, or
+    one of its `choices` (`choice` is its id; "yes" and "always" come with `yes` true as well)."""
 
     type: ClassVar[str] = "confirm_answer"
     id: str
     yes: bool
     always: bool = False
+    choice: str = ""
 
 
 @dataclass(frozen=True)
@@ -693,10 +775,45 @@ class DictationFixed(Command):
 
 @dataclass(frozen=True)
 class MeetingToggle(Command):
-    """The user asked from the menu bar to start (on) or stop taking meeting notes."""
+    """The user asked to start (on) or stop taking meeting notes: the menu bar, the shortcut, or Stop on the capsule
+    by Milo or on the meeting's page. The app stops its recording at once and tells the brain after."""
 
     type: ClassVar[str] = "meeting_toggle"
     on: bool
+
+
+@dataclass(frozen=True)
+class MeetingPause(Command):
+    """Pause (on) or go on with the notes. The app records silence while paused, so nothing said then is kept."""
+
+    type: ClassVar[str] = "meeting_pause"
+    on: bool
+
+
+@dataclass(frozen=True)
+class OpenMeeting(Command):
+    """The window shows meeting `id`: send its meeting_status (while it is recorded or written), its lines, and its
+    meeting_notes once there are some."""
+
+    type: ClassVar[str] = "open_meeting"
+    id: str
+
+
+@dataclass(frozen=True)
+class MeetingTodo(Command):
+    """"Add to Reminders" on to-do `index` of meeting `id`; -1 adds all of the user's own that aren't in yet."""
+
+    type: ClassVar[str] = "meeting_todo"
+    id: str
+    index: int
+
+
+@dataclass(frozen=True)
+class MeetingMail(Command):
+    """"Draft the follow-up mail" on meeting `id`: a helper makes a draft in Mail, never sends it."""
+
+    type: ClassVar[str] = "meeting_mail"
+    id: str
 
 
 def parse_command(raw: object) -> Command:
@@ -750,7 +867,8 @@ def parse_command(raw: object) -> Command:
             case "confirm_answer":
                 if not isinstance(raw["yes"], bool):
                     raise ProtocolError("yes must be true or false")
-                return ConfirmAnswer(str(raw["id"]), raw["yes"], raw.get("always") is True)
+                return ConfirmAnswer(str(raw["id"]), raw["yes"], raw.get("always") is True,
+                                     str(raw.get("choice") or ""))
             case "app_response":
                 return AppResponse(str(raw["id"]), raw["ok"] is True, raw.get("result"), str(raw.get("error") or ""))
             case "remote_pause":
@@ -814,6 +932,17 @@ def parse_command(raw: object) -> Command:
                                         str(raw.get("error") or ""))
             case "meeting_toggle":
                 return MeetingToggle(raw["on"] is True)
+            case "meeting_pause":
+                return MeetingPause(raw["on"] is True)
+            case "open_meeting":
+                return OpenMeeting(_required(raw, "id"))
+            case "meeting_todo":
+                index = raw["index"]
+                if isinstance(index, bool) or not isinstance(index, int) or index < -1:
+                    raise ProtocolError("index must be a whole number, -1 for all")
+                return MeetingTodo(_required(raw, "id"), index)
+            case "meeting_mail":
+                return MeetingMail(_required(raw, "id"))
             case "dictation_fixed":
                 fixes = raw["fixes"]
                 if not isinstance(fixes, list) or not all(isinstance(f, dict) for f in fixes):

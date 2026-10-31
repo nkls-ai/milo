@@ -41,7 +41,7 @@ struct TodayView: View {
     /// Nothing at work, nothing waiting, no reminders, nothing done today.
     private var quiet: Bool {
         working.isEmpty && model.question == nil && model.drafts.isEmpty && transcript.reminders.isEmpty
-            && doneToday.isEmpty && lastConversation == nil
+            && doneToday.isEmpty && lastConversation == nil && meetings.isEmpty
     }
 
     private var sections: [AnyView] {
@@ -50,6 +50,7 @@ struct TodayView: View {
         if !working.isEmpty { cards.append(AnyView(workingCard)) }
         if !transcript.reminders.isEmpty { cards.append(AnyView(remindersCard)) }
         if !doneToday.isEmpty { cards.append(AnyView(doneCard)) }
+        if !meetings.isEmpty { cards.append(AnyView(meetingsCard)) }
         if let last = lastConversation { cards.append(AnyView(pickUp(last))) }
         if !model.routines.isEmpty {
             cards.append(AnyView(RoutinesPanel(routines: model.routines, open: $showRoutines, act: model.routine)
@@ -120,7 +121,8 @@ struct TodayView: View {
                             .foregroundStyle(question.money ? theme.accent : theme.ink.opacity(0.5))
                     }
                     Spacer(minLength: 8)
-                    AnswerButtons(always: question.always) { model.answer($0) }
+                    AnswerButtons(always: question.always, choices: question.choices, answer: { model.answer($0) },
+                                  choose: { model.answer($0) })
                 }
             }
             ForEach(model.drafts) { draft in
@@ -196,6 +198,49 @@ struct TodayView: View {
         }
     }
 
+    /// This week's meetings, the one going on first: each opens its notes, or its live transcript.
+    private var meetingsCard: some View {
+        TodayCard(title: "Meetings", icon: "person.2.fill", tint: theme.accent) {
+            ForEach(meetings) { conversation in
+                let live = model.meeting.status.conversation == conversation.id && model.meeting.status.phase != .done
+                    && model.meeting.status.phase != .none
+                Button { actions.open(conversation.id); route.go(.conversation(conversation.id)) } label: {
+                    HStack(spacing: 10) {
+                        ZStack {
+                            if live { LiveLight(paused: model.meeting.status.phase == .paused) } else {
+                                Image(systemName: "note.text")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(theme.accent)
+                            }
+                        }
+                        .frame(width: 20, height: 20)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(conversation.title)
+                                .font(.system(size: 13, weight: .medium, design: .rounded))
+                                .foregroundStyle(theme.ink)
+                                .lineLimit(1)
+                            Text(live ? (model.meeting.status.phase == .writing ? "Writing the notes…" : "Taking notes now")
+                                      : MeetingPageID.summary(of: conversation.preview))
+                                .font(.system(size: 11))
+                                .foregroundStyle(theme.ink.opacity(live ? 0.7 : 0.5))
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: 6)
+                        Text(DayGroups.time(conversation.started, now: ConversationsSidebar.now()))
+                            .font(.system(size: 10.5).monospacedDigit())
+                            .foregroundStyle(theme.ink.opacity(0.42))
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(theme.ink.opacity(0.3))
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint(live ? "Opens the live transcript" : "Opens the notes")
+            }
+        }
+    }
+
     private func pickUp(_ conversation: ConversationInfo) -> some View {
         Button {
             if conversation.id == transcript.current { route.go(.live) } else {
@@ -252,6 +297,13 @@ struct TodayView: View {
         }
         .sorted { $0.task.date > $1.task.date }
         .prefix(5).map { $0 }
+    }
+
+    /// Meetings of the last seven days, newest first, at most four.
+    private var meetings: [ConversationInfo] {
+        let since = ConversationsSidebar.now().addingTimeInterval(-7 * 86400)
+        return Array(transcript.conversations.filter { $0.kind == .meeting && $0.started >= since }
+            .sorted { $0.started > $1.started }.prefix(4))
     }
 
     private var lastConversation: ConversationInfo? {

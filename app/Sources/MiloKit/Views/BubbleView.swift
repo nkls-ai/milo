@@ -25,7 +25,7 @@ struct BubbleView: View {
         let phase = model.voicePhase
         if phase?.recording == true { return nil }
         if let question = model.question {
-            return AnyView(QuestionView(question: question, answer: { model.answer($0) }))
+            return AnyView(QuestionView(question: question, answer: { model.answer($0) }, choose: { model.answer($0) }))
         }
         if case .transcribing = phase { return nil }
         guard let text = model.bubble else { return nil }
@@ -117,11 +117,11 @@ struct QuestionView: View {
     @Environment(\.miloTheme) private var theme
     let question: PendingQuestion
     let answer: (Answer) -> Void
+    var choose: (ConfirmChoice) -> Void = { _ in }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label(question.money ? "This involves money" : "Okay to go ahead?",
-                  systemImage: question.money ? "creditcard.fill" : "hand.raised.fill")
+            Label(heading, systemImage: icon)
                 .font(.system(size: 10.5, weight: .semibold, design: .rounded))
                 .foregroundStyle(theme.accent)
                 .labelStyle(TightLabel())
@@ -139,7 +139,7 @@ struct QuestionView: View {
                     .foregroundStyle(theme.ink.opacity(0.65))
                     .fixedSize(horizontal: false, vertical: true)
             }
-            AnswerButtons(always: question.always, answer: answer)
+            AnswerButtons(always: question.always, choices: question.choices, answer: answer, choose: choose)
                 .padding(.top, 2)
         }
         .accessibilityElement(children: .contain)
@@ -150,6 +150,15 @@ struct QuestionView: View {
 extension QuestionView {
     /// Under a money question, in the bubble, the window and Today.
     static let moneyNote = "Only a click on Yes counts for this, not a spoken yes."
+
+    /// Money first, then a question with its own buttons ("Up to you"), else the plain heading.
+    var heading: String {
+        question.money ? "This involves money" : question.choices.isEmpty ? "Okay to go ahead?" : "Up to you"
+    }
+
+    var icon: String {
+        question.money ? "creditcard.fill" : question.choices.isEmpty ? "hand.raised.fill" : "questionmark.bubble.fill"
+    }
 }
 
 /// An icon and a title, closer together than the system's label.
@@ -165,12 +174,34 @@ struct TightLabel: LabelStyle {
 /// Yes and No, or for a question about working in an app, Allow, Allow always and No (ADR 22). The three are a
 /// little narrower, so they fit in one row even in the bubble: a second row would push an eight-line question's
 /// top out of Milo's panel. Should they not fit, Allow always goes on a line of its own.
+///
+/// A question with choices of its own shows only those: its yes and no first, the rest, like "Always for Zoom",
+/// smaller under them. Its "always" is the asker's own (the meeting question's), never Allow always.
 struct AnswerButtons: View {
     var always = false
+    var choices: [ConfirmChoice] = []
     let answer: (Answer) -> Void
+    var choose: (ConfirmChoice) -> Void = { _ in }
 
     var body: some View {
-        if always {
+        if !choices.isEmpty {
+            let main = choices.filter { $0.id == "yes" || $0.id == "no" }
+            let more = choices.filter { $0.id != "yes" && $0.id != "no" }
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(spacing: 8) {
+                    ForEach(main, id: \.id) { choice in
+                        Button(choice.label) { choose(choice) }
+                            .buttonStyle(AnswerButtonStyle(prominent: choice.id == "yes"))
+                    }
+                }
+                if !more.isEmpty {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 6) { quiet(more) }
+                        VStack(alignment: .leading, spacing: 6) { quiet(more) }
+                    }
+                }
+            }
+        } else if always {
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 6) { allow; allowAlways; no }
                 VStack(alignment: .leading, spacing: 6) {
@@ -206,6 +237,36 @@ struct AnswerButtons: View {
         Button("No") { answer(.no) }
             .buttonStyle(AnswerButtonStyle(prominent: false, compact: always))
             .accessibilityHint("Milo leaves it")
+    }
+
+    private func quiet(_ list: [ConfirmChoice]) -> some View {
+        ForEach(list, id: \.id) { choice in
+            Button(choice.label) { choose(choice) }
+                .buttonStyle(QuietChoiceStyle())
+                .accessibilityHint(choice.id == "always" ? "Milo won't ask again and takes notes every time"
+                                   : choice.id == "never" ? "Milo won't ask again for this app" : "")
+        }
+    }
+}
+
+/// A small, quiet button for a choice past Yes and No: "Always for Zoom".
+struct QuietChoiceStyle: ButtonStyle {
+    @Environment(\.miloTheme) private var theme
+    @State private var hovered = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12, weight: .medium, design: .rounded))
+            .foregroundStyle(theme.ink.opacity(0.8))
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.vertical, 5)
+            .padding(.horizontal, 9)
+            .background(Capsule(style: .continuous).fill(theme.ink.opacity(hovered ? 0.1 : 0.055)))
+            .scaleEffect(configuration.isPressed ? 0.95 : 1)
+            .animation(theme.motion.spring, value: configuration.isPressed)
+            .contentShape(Capsule())
+            .onHover { hovered = $0 }
     }
 }
 

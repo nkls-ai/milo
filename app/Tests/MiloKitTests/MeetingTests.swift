@@ -6,6 +6,7 @@ final class FakeRecorder: MeetingRecorder {
     var onChunk: ((String, ChunkWriter.Finished) -> Void)?
     var onTracks: (([String], String) -> Void)?
     var tracks: [String] = []
+    var paused = false
     private(set) var started: [URL] = []
     private(set) var pendingStop: (() -> Void)?
 
@@ -110,6 +111,30 @@ private final class Rig {
         rig.brain.clearSent()
         rig.meetings.connectionChanged(true)
         #expect(rig.brain.sent == [.meetingRecording(id: "m1", on: true, tracks: ["me", "them"])])
+    }
+
+    @Test func stopOnTheCapsuleEndsTheRecordingAtOnceAndTellsTheBrain() {
+        let rig = Rig()
+        rig.record(true)
+        rig.brain.clearSent()
+        rig.model.meeting.stop()
+        #expect(rig.brain.sent == [.meetingToggle(false)])
+        #expect(!rig.model.recording && rig.recorder.pendingStop != nil)
+        rig.recorder.finishStop()
+        #expect(rig.brain.sent.last == .meetingRecording(id: "m1", on: false, tracks: []))
+    }
+
+    @Test func pauseSilencesTheRecorderAndTellsTheBrainOncePerChange() {
+        let rig = Rig()
+        rig.model.meeting.pause(true)
+        #expect(rig.brain.sent.isEmpty && !rig.recorder.paused)  // nothing records: nothing to pause
+        rig.record(true)
+        rig.brain.clearSent()
+        rig.model.meeting.pause(true)
+        rig.model.meeting.pause(true)
+        #expect(rig.recorder.paused && rig.brain.sent == [.meetingPause(true)])
+        rig.model.meeting.pause(false)
+        #expect(!rig.recorder.paused && rig.brain.sent == [.meetingPause(true), .meetingPause(false)])
     }
 
     @Test func theMenuAsksTheBrainToStartButStopsAtOnce() {

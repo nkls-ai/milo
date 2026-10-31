@@ -272,6 +272,8 @@ diarizer = "sherpa_onnx"          # tells the other people apart; "" labels them
 offer_reminders = true            # after the call, offer to put your to-dos into Reminders
 offer_mail = true                 # after the call, offer a follow-up mail draft
 end_after_s = 30                  # notes stop this long after the call ends
+always = ""                       # apps he takes notes in without asking, like "Zoom, Microsoft Teams"
+never = ""                        # apps he never asks about, like "WhatsApp"
 
 [meetings.sherpa_onnx]
 match = 0.6                       # how alike two stretches of speech must sound to count as one person

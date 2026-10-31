@@ -13,6 +13,9 @@ enum WrenColors {
     static let beakHi = rgb(0xE6B274), beakLo = rgb(0xB27744), mouth = rgb(0x6E2F3C)
     static let scarfHi = rgb(0xF4C262), scarfLo = rgb(0xD69A3C), scarfRib = rgb(0xFBDB98), scarfEdge = rgb(0xFFE6B0)
     static let feet = rgb(0xB17C50), blush = rgb(0xEE9AA6)
+    static let paperHi = rgb(0xFFFCF4), paperLo = rgb(0xF2E7D4), paperLine = rgb(0xB9AEEA), writing = rgb(0x4C3F8A)
+    static let pencil = rgb(0xF29AAE), pencilLo = rgb(0xD26A84), wood = rgb(0xF3D9B0), lead = rgb(0x3A3150)
+    static let eraser = rgb(0xCBC2F4), ferrule = rgb(0xD9D4E8)
     static let shade = rgb(0x2E2463), ground = rgb(0x2A2050), rim = rgb(0xF1ECFF)
     static let ink = rgb(0x1B1430)
 
@@ -29,6 +32,7 @@ struct WrenPart {
     enum ID: Int, CaseIterable {
         case shadow, feet, tail, crest, wingFoldL, wingOpenL, wingFoldR, wingOpenR, body, scarfEnd, knot
         case blush, eyeL, eyeR, browL, browR, beak
+        case notepad, pencil
     }
 
     let id: ID
@@ -181,6 +185,28 @@ enum WrenRig {
             stroke(ctx, crease, WrenColors.scarfLo, width: 1.2, alpha: 0.7)
         }, transform: CGAffineTransform(translationX: knotX, y: knotY), z: 6))
 
+        // Meeting notes: a little notepad held up in front of his belly, and the pencil writing on it.
+        if p.pad > 0.005 {
+            let pad = min(1, max(0, p.pad))
+            let shown = smooth(0.05, 0.45, pad)
+            let cx = 97 + t * 18, cy = 160 + (1 - pad) * 16
+            let padTransform = CGAffineTransform(translationX: cx, y: cy).rotated(by: rad(-5 + t * 6))
+                .scaledBy(x: 0.7 + 0.3 * pad, y: 0.7 + 0.3 * pad)
+            parts.append(WrenPart(id: .notepad, box: CGRect(x: -24, y: -19, width: 48, height: 40),
+                                  key: keys(small ? 1 : 0), draw: { ctx in
+                drawNotepad(ctx, small: small)
+            }, transform: padTransform, opacity: shown, z: 8))
+            // The tip moves along the pad's third line; the pencil leans away from his face.
+            let pen = min(1.2, max(-1.2, p.pen))
+            let tip = CGPoint(x: 2 + pen * 10, y: 7.2 - abs(pen) * 0.8)
+            parts.append(WrenPart(id: .pencil, box: CGRect(x: -4, y: -32, width: 30, height: 36), key: keys(small ? 1 : 0),
+                                  draw: { ctx in
+                drawPencil(ctx, small: small)
+            }, transform: CGAffineTransform(translationX: tip.x, y: tip.y).rotated(by: rad(38 + pen * 4)).scaledBy(x: 1.15, y: 1.15)
+                .concatenating(padTransform),
+               opacity: shown * smooth(0.5, 0.9, pad), z: 9))
+        }
+
         // Face
         var face: [WrenPart] = []
         let gx = p.gazeX * 4.5, gy = p.gazeY * 3.5
@@ -293,6 +319,72 @@ enum WrenRig {
         let shine = CGMutablePath()
         shine.move(to: CGPoint(x: -w + 2, y: -L + 6)); shine.addQuadCurve(to: CGPoint(x: w - 3, y: -L + 5), control: CGPoint(x: 0, y: -L - 1))
         stroke(ctx, shine, CGColor(gray: 1, alpha: 1), width: 1, alpha: 0.25)
+    }
+
+    /// A small spiral notepad centred on (0, 0), cream paper with lavender lines, the top two already written.
+    private static func drawNotepad(_ ctx: CGContext, small: Bool) {
+        let paper = CGPath(roundedRect: CGRect(x: -21, y: -14, width: 42, height: 29), cornerWidth: 3.5,
+                           cornerHeight: 3.5, transform: nil)
+        ctx.saveGState()
+        ctx.setShadow(offset: CGSize(width: 0, height: -device(ctx, 1.5)), blur: device(ctx, 3),
+                      color: WrenColors.shade.copy(alpha: 0.35))
+        fill(ctx, paper, WrenColors.paperHi)
+        ctx.restoreGState()
+        fillLinear(ctx, paper, [WrenColors.paperHi, WrenColors.paperLo], top: -14, bottom: 16)
+        // the cover's edge along the top, in his own lavender, so it stands apart from the scarf above it
+        let cover = CGPath(rect: CGRect(x: -21, y: -14, width: 42, height: 6), transform: nil)
+        ctx.saveGState()
+        ctx.addPath(paper); ctx.clip()
+        fillLinear(ctx, cover, [WrenColors.wingHi, WrenColors.wingLo], top: -14, bottom: -8)
+        ctx.restoreGState()
+        stroke(ctx, paper, WrenColors.paperLine, width: 1, alpha: 0.6)
+        guard !small else { return }
+        let lines = CGMutablePath()
+        for y in [-2.0, 3.5, 9.0] {
+            lines.move(to: CGPoint(x: -16, y: y)); lines.addLine(to: CGPoint(x: 16, y: y))
+        }
+        stroke(ctx, lines, WrenColors.paperLine, width: 0.8, alpha: 0.7)
+        // what he wrote so far: loopy lines of handwriting
+        let words = CGMutablePath()
+        for (y, end) in [(-3.6, 13.0), (1.9, 6.0)] {
+            words.move(to: CGPoint(x: -15, y: y))
+            var x = -15.0
+            while x < end {
+                words.addQuadCurve(to: CGPoint(x: x + 2.2, y: y), control: CGPoint(x: x + 1.1, y: y - 2.6))
+                x += 2.2
+                if Int(x * 10) % 9 == 0 { x += 1.6; words.move(to: CGPoint(x: x, y: y)) }
+            }
+        }
+        stroke(ctx, words, WrenColors.writing, width: 0.9, alpha: 0.75)
+        // the spiral's rings
+        let rings = CGMutablePath()
+        for x in stride(from: -15.0, through: 15.0, by: 6) {
+            rings.addEllipse(in: CGRect(x: x - 1.3, y: -16.6, width: 2.6, height: 4.8))
+        }
+        stroke(ctx, rings, WrenColors.paperHi, width: 1.1)
+    }
+
+    /// A pencil with its tip at (0, 0), pointing down, the eraser end up. Rotated into place by the caller.
+    private static func drawPencil(_ ctx: CGContext, small: Bool) {
+        let w = 2.6
+        let shaft = CGPath(rect: CGRect(x: -w, y: -24, width: w * 2, height: 18), transform: nil)
+        fillLinear(ctx, shaft, [WrenColors.pencil, WrenColors.pencilLo], top: -24, bottom: -6)
+        if !small {
+            let facet = CGMutablePath()
+            facet.move(to: CGPoint(x: 0.6, y: -23.5)); facet.addLine(to: CGPoint(x: 0.6, y: -6.5))
+            stroke(ctx, facet, WrenColors.pencilLo, width: 0.8, alpha: 0.6)
+        }
+        let wood = CGMutablePath()
+        wood.move(to: CGPoint(x: -w, y: -6)); wood.addLine(to: CGPoint(x: w, y: -6)); wood.addLine(to: CGPoint(x: 0, y: 0))
+        wood.closeSubpath()
+        fill(ctx, wood, WrenColors.wood)
+        let lead = CGMutablePath()
+        lead.move(to: CGPoint(x: -0.9, y: -2.1)); lead.addLine(to: CGPoint(x: 0.9, y: -2.1)); lead.addLine(to: CGPoint(x: 0, y: 0.2))
+        lead.closeSubpath()
+        fill(ctx, lead, WrenColors.lead)
+        fill(ctx, CGPath(rect: CGRect(x: -w, y: -27, width: w * 2, height: 3), transform: nil), WrenColors.ferrule)
+        fill(ctx, CGPath(roundedRect: CGRect(x: -w, y: -31, width: w * 2, height: 4.6), cornerWidth: 1.6, cornerHeight: 1.6,
+                         transform: nil), WrenColors.eraser)
     }
 
     private static func drawFoldedWing(_ ctx: CGContext, side s: Double, length L: Double, small: Bool) {

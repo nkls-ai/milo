@@ -74,6 +74,19 @@ public struct SettingsView: View {
                     }
                 }
             }
+            if let auto = report["meetings", "auto"] {
+                ThemedCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        CardHeading(icon: "person.2", title: "Meeting notes",
+                                    detail: "When a call starts in Zoom, Teams, FaceTime and the like.")
+                        choices(auto)
+                        if let always = report["meetings", "always"] {
+                            appsRow(always, "Takes notes without asking in")
+                        }
+                        if let never = report["meetings", "never"] { appsRow(never, "Never asks in") }
+                    }
+                }
+            }
             ThemedCard {
                 VStack(alignment: .leading, spacing: 10) {
                     CardHeading(icon: "keyboard", title: "Keys")
@@ -195,6 +208,44 @@ public struct SettingsView: View {
             }
         }
         .padding(.top, 4)
+    }
+
+    /// The apps chosen with "Always for Zoom" or "Never for Zoom" on Milo's question, each removable.
+    @ViewBuilder private func appsRow(_ setting: Setting, _ title: String) -> some View {
+        let apps = Self.apps(setting.value.string ?? "")
+        if !apps.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title)
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.ink.opacity(0.65))
+                HStack(spacing: 6) {
+                    ForEach(apps, id: \.self) { app in
+                        HStack(spacing: 4) {
+                            Text(app).font(.system(size: 12, weight: .medium, design: .rounded))
+                            Button {
+                                settings.change(setting.section, setting.key,
+                                                to: .string(apps.filter { $0 != app }.joined(separator: ", ")))
+                            } label: {
+                                Image(systemName: "xmark").font(.system(size: 8.5, weight: .bold))
+                            }
+                            .buttonStyle(.plain)
+                            .help("Ask me again for \(app)")
+                            .accessibilityLabel("Ask again for \(app)")
+                        }
+                        .foregroundStyle(theme.ink.opacity(0.8))
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(theme.ink.opacity(0.07)))
+                    }
+                }
+            }
+            .padding(.leading, 26)
+        }
+    }
+
+    /// "Zoom, Microsoft Teams" as its names.
+    static func apps(_ text: String) -> [String] {
+        text.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
     }
 
     private func choices(_ setting: Setting) -> some View {

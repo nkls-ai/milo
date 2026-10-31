@@ -17,8 +17,9 @@ from pathlib import Path
 
 import pytest
 
-from milo.core.events import (CallEnded, CallStarted, Confirm, MeetingChunk, MeetingRecord, MeetingRecording,
-                              MeetingToggle, Status)
+from milo.core.events import (CallEnded, CallStarted, Confirm, MeetingChunk, MeetingLines, MeetingMail,
+                              MeetingNotesReady, MeetingPause, MeetingRecord, MeetingRecording, MeetingStatus,
+                              MeetingTodo, MeetingToggle, OpenMeeting, Status)
 from milo.core.meetings import Track
 from milo.core.memory import Episode
 from milo.core.types import Interrupted, ListenMode, MiloState
@@ -39,7 +40,7 @@ SUMMARY = json.dumps({"summary": "We moved the release by a week.", "decisions":
 class Rig:
     def __init__(self, tmp_path: Path, script: Script, *, auto="ask", reader=None, voices=None, events=None,
                  summary=SUMMARY, stack=None, end_after_s=0.05, busy=lambda: False, connected=lambda: True,
-                 offers=False, stt=None):
+                 offers=False, stt=None, transcript=None):
         self.s = stack or Stack(confirm_timeout_s=2.0)
         self.script = script
         self.store = FileMeetingStore(tmp_path / "meetings")
@@ -66,7 +67,7 @@ class Rig:
         self.service = MeetingService(
             self.store, self.s.ui, self.s.clock, stt or BackgroundStt(InlineExecutor(), busy, poll_s=0.01),
             self.reader,
-            approvals=self.s.approvals, speaker=self.s.speaker, diarizer=self.diarizer,
+            approvals=self.s.approvals, speaker=self.s.speaker, transcript=transcript, diarizer=self.diarizer,
             diarize_executor=InlineExecutor(), voices=self.voices, summarizer=summarizer, calendar=calendar,
             add_reminder=add_reminder, draft_mail=self.drafts.append,
             options=MeetingOptions(auto=auto, end_after_s=end_after_s, offer_reminders=offers, offer_mail=offers), connected=connected,
@@ -123,7 +124,7 @@ def said_lines(rig: Rig, lines) -> dict[int, list[str]]:
     return out
 
 
-def test_a_call_asks_once_records_and_ends_with_notes_reminders_and_a_mail(tmp_path):
+def test_a_call_asks_once_records_and_ends_with_notes_on_the_page_with_reminders_and_a_mail(tmp_path):
     script = Script.conversation(["Anna", "me", "Sam", "Fred"], lines=30)
     rig = Rig(tmp_path, script, offers=True)
 
@@ -141,10 +142,12 @@ def test_a_call_asks_once_records_and_ends_with_notes_reminders_and_a_mail(tmp_p
         rig.service.handle(CallEnded("Zoom"))
         await until(lambda: len(rig.records()) == 2)  # end_after_s later: stop recording
         assert not rig.records()[1].on
-        finishing = asyncio.create_task(rig.finish())
-        assert "Reminders" in await rig.answer(True)
-        assert "follow-up mail" in await rig.answer(True)
-        await finishing
+        await rig.finish()
+        assert not rig.s.approvals.pending, "the offers are on the page now, not questions in the bubble"
+        # "Add to Reminders" on the user's own to-dos, then "Draft the follow-up mail"
+        await rig.service.handle(MeetingTodo(rig.id, -1))
+        rig.service.handle(MeetingMail(rig.id))
+        await settle()
 
     asyncio.run(go())
     lines = rig.lines()
@@ -161,6 +164,8 @@ def test_a_call_asks_once_records_and_ends_with_notes_reminders_and_a_mail(tmp_p
     assert not rig.store.audio_dir(rig.id).exists() and rig.store.unfinished() == []
     assert rig.reminders == [("Write to the customer", "From the meeting “Zoom call”, due Friday")]
     assert len(rig.drafts) == 1 and "‹" not in rig.drafts[0] and "Hi all, thanks for today." in rig.drafts[0]
+    page = rig.s.sink.of(MeetingNotesReady)[-1]
+    assert page.mail_drafted and [t["added"] for t in page.todos] == [True, False]
     assert rig.models[0].closed and "<meeting_transcript>" in rig.models[0].prompts[0]
     [episode] = rig.episodes
     assert episode.kind == "meeting" and episode.trusted is False and episode.source == f"meeting:{rig.id}"
@@ -244,7 +249,7 @@ def test_without_the_app_there_are_no_notes_and_milo_says_why(tmp_path):
     assert not rig.records() and "window" in rig.s.sink.of(Status)[-1].text
 
 
-def test_the_apps_error_shows_once_and_a_recorder_that_failed_ends_the_meeting(tmp_path):
+def test_the_apps_error_shows_once_with_its_fix_and_a_recorder_that_failed_ends_the_meeting(tmp_path):
     rig = Rig(tmp_path, Script.conversation(["Anna", "me"], lines=2))
 
     async def go():
@@ -252,7 +257,10 @@ def test_the_apps_error_shows_once_and_a_recorder_that_failed_ends_the_meeting(t
         error = "I can only hear you, not the others."
         rig.service.recording_changed(MeetingRecording(rig.id, True, ("me",), error))
         rig.service.recording_changed(MeetingRecording(rig.id, True, ("me",), error))
-        assert [e.text for e in rig.s.sink.of(Status)].count(error) == 1
+        told = [(e.error, e.fix) for e in rig.s.sink.of(MeetingStatus) if e.error]
+        assert told == [(error, "call_audio")], "once, with the switch that mends it"
+        rig.service.recording_changed(MeetingRecording(rig.id, True, (), "No microphone."))
+        assert rig.s.sink.of(MeetingStatus)[-1].fix == "microphone"
         await rig.finish()
 
     asyncio.run(go())

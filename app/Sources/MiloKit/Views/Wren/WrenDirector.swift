@@ -38,18 +38,29 @@ struct WrenDirector {
             lastNod = now
             motion.play(WrenClips.nod)
         }
-        let rhythm = speaking || thinking || input.asking
-        let wasRhythm = before.state == input.state && before.asking == input.asking
+        let writing = Self.writing(input)
+        let rhythm = speaking || thinking || input.asking || writing
+        let wasRhythm = before.state == input.state && before.asking == input.asking && Self.writing(before) == writing
         if !rhythm {
             beat = .infinity
         } else if !wasRhythm || beat == .infinity {
             beats = 0
-            beat = now + (speaking ? rng.next(in: 1.2...2.2) : input.asking ? 2.8 : rng.next(in: 0.9...1.5))
+            beat = now + (speaking ? rng.next(in: 1.2...2.2) : input.asking ? 2.8 : writing ? rng.next(in: 0.6...1.2)
+                          : rng.next(in: 0.9...1.5))
         }
         if now >= beat {
             beats += 1
             let near = input.pose.side
-            if input.asking {
+            if writing {
+                // A few lines of writing, then a look up at the call, as if someone said something worth noting.
+                if beats % 4 == 0 {
+                    motion.play(WrenClips.glanceUp.mirrored(near))
+                    beat = now + rng.next(in: 2.4...3.4)
+                } else {
+                    motion.play(WrenClips.scribble)
+                    beat = now + rng.next(in: 2...3)
+                }
+            } else if input.asking {
                 motion.play(WrenClips.tailTick)
                 beat = now + rng.next(in: 3.2...4.6)
             } else if speaking {
@@ -60,6 +71,11 @@ struct WrenDirector {
                 beat = now + rng.next(in: 1.1...1.6)
             }
         }
+    }
+
+    /// Writing notes: taking them, perched, with nobody talking to him or waiting on an answer.
+    static func writing(_ input: FigureInput) -> Bool {
+        input.noting && input.state == .idle && !input.asking && input.flight == .perched
     }
 
     // MARK: Poses
@@ -126,6 +142,23 @@ struct WrenDirector {
             p.scarfToss = 1
             p.tail = max(p.tail, 4)
             p.crest = max(p.crest, 0.2)
+        }
+        if input.noting && input.flight == .perched {
+            // The notepad up in both wings. Idle, his eyes are on it; talking with the user, they're on them.
+            p.pad = 1
+            p.wingL = -16; p.wingR = -16
+            // the scarf's end flipped aside, out of the way of the page
+            p.scarfToss = max(p.scarfToss, 0.4)
+            p.crest = max(p.crest, 0.3)
+            p.tail = max(p.tail, 8)
+            if input.state == .idle && !input.asking {
+                p.gazeY = 0.6
+                p.gazeX = 0.15 * s
+                p.headY += 1.8
+                p.headTilt += 4 * s
+                p.lidL = 0.26; p.lidR = 0.26
+                p.browL = 0.2; p.browR = 0.2
+            }
         }
         if input.asking {
             p.headTilt += 9 * s
@@ -300,6 +333,8 @@ struct WrenDirector {
         }
         if b.asking && !a.asking { clips.append(WrenClips.tailTick); clips.append(WrenClips.perk) }
         if b.working && !a.working { clips.append(WrenClips.rollUp) }
+        if b.noting && !a.noting { clips.append(WrenClips.perk) }
+        if a.noting && !b.noting { clips.append(WrenClips.settle) }
 
         if let habit = b.pose.habit, habit != a.pose.habit {
             switch habit {
@@ -528,6 +563,27 @@ enum WrenClips {
         clip.tracks[open] = keys([(0, 0), (0.3, 1), (0.9, 1), (1.2, 0)])
         return clip
     }
+
+    /// A line of notes: the pencil runs along the pad in small strokes, the head nodding along. The head doesn't
+    /// swing sideways, which would set the scarf swinging between lines.
+    static let scribble = WrenClip("scribble", [
+        .pen: [(0, 0), (0.12, -0.7), (0.24, -0.25), (0.36, -0.5), (0.48, 0.05), (0.6, -0.15), (0.72, 0.45),
+               (0.84, 0.2), (0.96, 0.75), (1.2, 0)],
+        .headY: [(0, 0), (0.12, 0.6), (0.48, 0.3), (0.84, 0.6), (1.2, 0)],
+    ])
+
+    /// Looks up from the notepad to listen, the tuft lifting, then back down to write it.
+    static let glanceUp = WrenClip("glanceUp", [
+        .gazeY: [(0, 0), (0.12, -0.8), (1.1, -0.75), (1.3, 0)],
+        .gazeX: [(0, 0), (0.12, -0.3), (1.1, -0.3), (1.3, 0)],
+        .headY: [(0, 0), (0.14, -2.2), (1.1, -2), (1.35, 0)],
+        .headTilt: [(0, 0), (0.2, -5), (1.0, -4), (1.4, 0)],
+        .browL: [(0, 0), (0.14, 0.3), (1.1, 0.25), (1.35, 0)],
+        .browR: [(0, 0), (0.14, 0.3), (1.1, 0.25), (1.35, 0)],
+        .lidL: [(0, 0), (0.12, -0.18), (1.1, -0.18), (1.3, 0)],
+        .lidR: [(0, 0), (0.12, -0.18), (1.1, -0.18), (1.3, 0)],
+        .crest: [(0, 0), (0.15, 0.35), (1.1, 0.3), (1.4, 0)],
+    ])
 
     private static func keys(_ list: [(Double, Double)]) -> [WrenClip.Key] {
         list.map { WrenClip.Key(at: $0.0, value: $0.1) }

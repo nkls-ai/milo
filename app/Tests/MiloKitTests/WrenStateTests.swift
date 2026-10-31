@@ -46,6 +46,9 @@ struct WrenStateTests {
         ("pointing", FigureInput(flight: .pointing(toward: CGVector(dx: -0.97, dy: -0.24)))),
         ("pointing right", FigureInput(flight: .pointing(toward: CGVector(dx: 0.9, dy: -0.4)))),
         ("offline", FigureInput(connected: false)),
+        ("noting", FigureInput(noting: true)),
+        ("noting, looks up", FigureInput(state: .listening, level: 0.2, noting: true)),
+        ("noting, says", FigureInput(state: .speaking, level: 0.5, noting: true)),
     ]
 
     @Test func renderEveryState() throws {

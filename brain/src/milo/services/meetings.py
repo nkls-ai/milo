@@ -15,13 +15,14 @@ import logging
 from collections import Counter
 from collections.abc import Awaitable, Callable
 from concurrent.futures import Executor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 
 import numpy as np
 
-from milo.core.events import (CallEnded, CallStarted, MeetingChunk, MeetingRecord, MeetingRecording, MeetingToggle,
-                              Status)
+from milo.core.events import (CallEnded, CallStarted, MeetingChunk, MeetingLines, MeetingMail, MeetingNotesReady,
+                              MeetingPause, MeetingRecord, MeetingRecording, MeetingStatus, MeetingTodo, MeetingToggle,
+                              OpenMeeting, Status)
 from milo.core.logtext import private
 from milo.core.meetings import ME, MeetingInfo, MeetingNotes, Track, TranscriptLine, clock
 from milo.core.ports import Clock, Diarizer, LiveModel, MeetingStore, TimedTranscriber, VoiceBook
@@ -31,9 +32,9 @@ from milo.core.types import STT_SAMPLE_RATE, Emotion, Interrupted
 from .approvals import Approvals
 from .background_stt import BackgroundStt
 from .meeting_speakers import SpeakerTracker
-from .meeting_text import (OTHERS, SUMMARY_RULES, clean, energy_spans, find_cut, inert, meeting_block, merged,
-                           minutes_asked, naming, parse_notes, render_notes, render_transcript, shifted, spans_of,
-                           speaker_of, summary_prompt, uncovered, without_repeats, words_to_lines)
+from .meeting_text import (OTHERS, SUMMARY_RULES, YOU, clean, energy_spans, find_cut, inert, meeting_block, merged,
+                           minutes_asked, name_of, naming, parse_notes, render_notes, render_transcript, shifted,
+                           spans_of, speaker_of, summary_prompt, uncovered, without_repeats, words_to_lines)
 from .speaker import Speaker
 from .transcript import Transcript, unrecorded
 from .ui_state import UiState
@@ -47,7 +48,11 @@ CUT_FROM_S = 24.0
 THEM = "them"
 """The call track's speaker while no diarizer tells voices apart."""
 QUESTION = "Looks like a meeting. Should I take notes?"
-STARTED = ("Taking notes. If you like, tell the others: “Milo is taking notes for me, it stays on my computer.”")
+CONSENT = "Milo is taking notes for me. They stay on my computer."
+"""The line the user can paste into the call's chat: recording others needs their consent in many places."""
+STARTED = "Taking notes. Stop me any time with the button next to me."
+WRITING = ("Writing down the last words", "Telling who said what", "Writing the summary")
+"""The steps after Stop, as the window and the capsule show them."""
 STOP_WAIT_S = 15.0
 ADOPT_WAIT_S = 90.0
 CATCH_UP_S = 6.0
@@ -85,6 +90,19 @@ class MeetingOptions:
     offer_reminders: bool = True
     offer_mail: bool = True
     end_after_s: float = 30.0
+    always: tuple[str, ...] = ()
+    """Call apps to take notes in without asking."""
+    never: tuple[str, ...] = ()
+    """Call apps never to ask about."""
+
+    def says(self, app: str) -> str:
+        """"always", "never" or "" for the call app `app`, by name without case."""
+        name = app.strip().lower()
+        if name and name in (a.lower() for a in self.never):
+            return "never"
+        if name and name in (a.lower() for a in self.always):
+            return "always"
+        return ""
 
 
 @dataclass
@@ -98,7 +116,15 @@ class _Meeting:
     stopped: bool = False
     reported: dict[Track, int] = field(default_factory=dict)
     wake: asyncio.Event = field(default_factory=asyncio.Event)
-    told_error: bool = False
+    sent: set = field(default_factory=set)
+    """The lines the app has, so each pass sends only new ones."""
+    error: tuple[str, str] = ("", "")
+    """What the app can't record and the permission that mends it."""
+    step: str = ""
+
+    @property
+    def conversation(self) -> str:
+        return str(self.state.get("conversation") or "")
 
     @property
     def names(self) -> dict[str, str]:
@@ -154,6 +180,8 @@ class MeetingService:
         self._waiting: list[str] = []
         """Unfinished meetings found at start, waiting for the app to say whether it still records one."""
         self._diarizer_broken = False
+        self.remember: Callable[[str, str], None] | None = None
+        """Saves "Always for Zoom" ("always", "Zoom") or "Never for …" in config.toml, through Settings."""
 
     @property
     def recording(self) -> bool:
@@ -210,6 +238,14 @@ class MeetingService:
                 self.recording_changed(command)
             case MeetingToggle(on):
                 return self._spawn(self.toggle(on))
+            case MeetingPause(on):
+                self.pause(on)
+            case OpenMeeting(id):
+                self.open(id)
+            case MeetingTodo(id, index):
+                return self._spawn(self.add_todo(id, index))
+            case MeetingMail(id):
+                self.draft_followup(id)
         return None
 
     async def call_started(self, call: CallStarted) -> None:
@@ -221,15 +257,25 @@ class MeetingService:
             return
         self._asked = True  # once per call: a no, or no answer, holds until the call is over
         log.info("a call started in %s", call.app)
+        said = self.options.says(call.app)
+        if said == "never":
+            log.info("not asking: never for %s", call.app)
+            return
         event = await self._event_now()
         info = self._info(event, call.app)
-        if self.options.auto == "calendar" and event is not None:
-            log.info("taking notes without asking: the calendar has a meeting now")
+        if said == "always" or (self.options.auto == "calendar" and event is not None):
+            log.info("taking notes without asking: %s", "always for this app" if said else "a calendar meeting")
             await self._begin(info, from_call=True)
             return
         if self._approvals is None:
             return
-        if await self._approvals.confirm(QUESTION, speak=False) and self._call is not None and self.current is None:
+        answer = await self._approvals.choose(QUESTION, choices(call.app), speak=False)
+        if answer in ("always", "never") and call.app and self.remember is not None:
+            try:
+                self.remember(answer, call.app)
+            except Exception:
+                log.exception("remembering %s for %s failed", answer, call.app)
+        if answer in ("yes", "always") and self._call is not None and self.current is None:
             await self._begin(info, from_call=True)
 
     def call_ended(self, call: CallEnded) -> None:
@@ -278,9 +324,12 @@ class MeetingService:
                 log.info("the app records meeting %s, which is over: stopping it", rec.id)
                 self._ui.emit(MeetingRecord(rec.id, "", False))
                 return
-            if m is not None and m.id == rec.id and rec.error and not m.told_error:
-                m.told_error = True
-                self._ui.emit(Status(rec.error))
+            if m is not None and m.id == rec.id:
+                error = (rec.error, fix_for(rec.tracks) if rec.error else "")
+                if error != m.error:
+                    # The app shows the error by Milo with a button that opens the right switch.
+                    m.error = error
+                    self._status(m)
             return
         self._finish_waiting()
         if m is not None and (rec.id in ("", m.id)) and not m.stopped:
@@ -297,11 +346,22 @@ class MeetingService:
             return
         id = self._store.open(info)
         m = _Meeting(id, info, SpeakerTracker(match=self._match), {"from_call": from_call}, from_call=from_call)
+        try:
+            entry = self._transcript.meeting(id, info.title, STARTED, emotion=Emotion.NEUTRAL)
+            found = self._transcript.entry(entry)
+            m.state["conversation"] = found.conversation if found is not None else ""
+        except Exception:
+            log.exception("the meeting's conversation couldn't start")
         self._store.save_state(id, m.state)
         self.current = m
         log.info("taking notes in meeting %s", id)
         self._ui.emit(MeetingRecord(id, str(self._store.audio_dir(id)), True))
-        self._say(STARTED, speak=False)
+        self._status(m)
+        self._ui.emit(MeetingLines(id, [], True))
+        if self._speaker is not None:
+            self._speaker.say(STARTED, Emotion.NEUTRAL, speak=False)
+        else:
+            self._ui.emit(Status(STARTED))
         if self._diarizer is not None and self._diarize_executor is not None:
             self._spawn(self._warm_diarizer())
         self._run(m)
@@ -313,6 +373,7 @@ class MeetingService:
     async def _stop(self, m: _Meeting) -> None:
         m.stopping = True
         self._ui.emit(MeetingRecord(m.id, "", False))
+        self._writing(m, WRITING[0])
         if self._connected():
             for _ in range(int(STOP_WAIT_S / 0.25)):  # the app sends its last chunks, then meeting_recording off
                 if m.stopped:
@@ -326,8 +387,11 @@ class MeetingService:
             return
         m.stopped = True
         m.state["stopped"] = True
+        self._end_pause(m)
         self._save(m)
         m.wake.set()
+        if not m.step:
+            self._writing(m, WRITING[0])
 
     async def _watch_private(self, m: _Meeting) -> None:
         """Note when the user talks to Milo or Milo speaks, so those moments stay out of the meeting."""
@@ -509,8 +573,17 @@ class MeetingService:
             self._diarizer_broken = True
 
     def _render(self, m: _Meeting) -> None:
-        lines = clean(self._store.lines(m.id), m.state.get("private", ()))
+        lines = self._clean(m)
         self._store.render(m.id, render_transcript(m.info, lines, m.names, m.aliases))
+        self._send_lines(m, lines)
+        if not m.stopped:
+            self._status(m)
+
+    def _clean(self, m: _Meeting) -> list[TranscriptLine]:
+        """The lines to show: without talk with Milo, echo, or anything from a paused stretch."""
+        paused = [(a, b if b is not None else 1e9) for a, b in m.state.get("paused", ())]
+        lines = clean(self._store.lines(m.id), m.state.get("private", ()))
+        return [l for l in lines if not any(a <= (l.start + l.end) / 2 <= b for a, b in paused)]
 
     def _save(self, m: _Meeting) -> None:
         self._store.save_state(m.id, m.state)
@@ -595,7 +668,8 @@ class MeetingService:
             lines += await asyncio.wait_for(self._catch_up(m), CATCH_UP_S)
         except (TimeoutError, Exception) as e:
             log.info("no catch-up for the question: %s", type(e).__name__)
-        entries = merged(clean(lines, m.state.get("private", ())), m.names, m.aliases)
+        private = [*m.state.get("private", ()), *([a, b if b is not None else 1e9] for a, b in m.state.get("paused", ()))]
+        entries = merged(clean(lines, private), m.names, m.aliases)
         return meeting_block(m.info, entries, self._seconds(m), minutes_asked(text), note)
 
     async def _catch_up(self, m: _Meeting) -> list[TranscriptLine]:
@@ -635,25 +709,31 @@ class MeetingService:
             self._last = (m, self._clock.now())
 
     async def _write_notes(self, m: _Meeting) -> None:
+        self._writing(m, WRITING[1])
         merges = m.tracker.merge()
         m.aliases.update(merges)
         m.state["speakers"] = m.tracker.to_state()
         self._name_from_voices(m)
         self._name_from_calendar(m)
         self._save(m)
-        lines = clean(self._store.lines(m.id), m.state.get("private", ()))
+        lines = self._clean(m)
         self._store.render(m.id, render_transcript(m.info, lines, m.names, m.aliases))
+        self._send_lines(m, lines)
         duration = max((l.end for l in lines), default=0.0)
         if not lines:
             self._store.close(m.id, MeetingNotes(""), render_notes(m.info, MeetingNotes(""), duration),
-                              keep_audio=self.options.keep_audio)
-            self._say("I didn't hear anything in that call, so there are no notes.")
+                              keep_audio=self.options.keep_audio, extra={"duration": duration})
+            text = "I didn't hear anything in that call, so there are no notes."
+            self._transcript.meeting(m.id, m.info.title, text, conversation=m.conversation, emotion=Emotion.NEUTRAL)
+            self._say(text, record=False)
+            self._done(m, text)
             return
         entries = merged(lines, m.names, m.aliases)
+        self._writing(m, WRITING[2])
         notes = await self._summarize(m.info, entries)
-        speakers = list(dict.fromkeys(name for _, name, _ in entries if name not in ("You", OTHERS)))
-        path = self._store.close(m.id, notes, render_notes(m.info, notes, duration, speakers),
-                                 keep_audio=self.options.keep_audio)
+        speakers = list(dict.fromkeys(name for _, name, _ in entries if name not in (YOU, OTHERS)))
+        self._store.close(m.id, notes, render_notes(m.info, notes, duration, speakers),
+                          keep_audio=self.options.keep_audio, extra={"duration": duration, "people": speakers})
         log.info("meeting %s: notes written, %d to-do(s)", m.id, len(notes.todos))
         if self._on_episode is not None:
             try:
@@ -661,11 +741,25 @@ class MeetingService:
             except Exception:
                 log.exception("the memory episode for meeting %s failed", m.id)
         summary = notes.summary or "I couldn't write a summary this time, but the transcript is there."
-        self._transcript.meeting(m.id, m.info.title, f"Notes from “{m.info.title}”: {summary}\n\n{path}")
+        self._transcript.meeting(m.id, m.info.title, f"Notes from “{m.info.title}”: {summary}",
+                                 conversation=m.conversation)
+        mine = sum(1 for t in notes.todos if t.mine)
+        ready = f"Your notes from “{m.info.title}” are ready." + (
+            "" if not mine else " One to-do for you." if mine == 1 else f" {mine} to-dos for you.")
         if self._speaker is not None:
-            await self._speaker.say(f"Your notes from “{m.info.title}” are ready.", Emotion.HAPPY,
-                                    speak=not self._quiet() and self._call is None)
-        await self._offer(m, notes, speakers)
+            await self._speaker.say(ready, Emotion.HAPPY, speak=not self._quiet() and self._call is None)
+        else:
+            self._ui.emit(Status(ready))
+        self._done(m, ready)
+
+    def _done(self, m: _Meeting, said: str) -> None:
+        """The notes are on disk: the page shows them, and the bubble what Milo said with an Open button. The status
+        comes after the words, so the button stays under them."""
+        notes = self.notes_event(m.id)
+        if notes is not None:
+            self._ui.emit(notes)
+        m.step = said
+        self._ui.emit(self._status_of(m, "done"))
 
     async def _summarize(self, info: MeetingInfo, entries) -> MeetingNotes:
         if self._summarizer is None:
@@ -687,31 +781,155 @@ class MeetingService:
             except Exception:
                 log.exception("closing the summary model failed")
 
-    async def _offer(self, m: _Meeting, notes: MeetingNotes, speakers: list[str]) -> None:
-        if self._approvals is None:
+    # ---- what the app shows: the capsule, the menu bar, the meeting's page
+
+    def status_event(self) -> MeetingStatus:
+        """The meeting going on, being written, or nothing: for a newly connected app."""
+        m = self.current or next(iter(self._finishing.values()), None)
+        return self._status_of(m) if m is not None else MeetingStatus("")
+
+    def _status(self, m: _Meeting) -> None:
+        self._ui.emit(self._status_of(m))
+
+    def _status_of(self, m: _Meeting, phase: str = "") -> MeetingStatus:
+        if not phase:
+            phase = "writing" if m.stopped or m.stopping else "paused" if self._paused(m) else "recording"
+        ended = m.state.get("ended")
+        elapsed = float(ended) if (m.stopped or phase == "done") and ended is not None else self._seconds(m)
+        return MeetingStatus(m.id, phase, m.info.title, m.info.app, m.info.started.isoformat(timespec="seconds"),
+                             round(max(0.0, elapsed), 1), m.conversation, tuple(m.state.get("heard", ())),
+                             m.step if phase in ("writing", "done") else "", *(m.error if phase in ("recording", "paused")
+                                                                       else ("", "")), CONSENT)
+
+    def _writing(self, m: _Meeting, step: str) -> None:
+        if m.state.get("ended") is None:
+            m.state["ended"] = round(self._seconds(m), 1)
+        m.step = step
+        self._ui.emit(self._status_of(m, "writing"))
+
+    def _send_lines(self, m: _Meeting, lines: list[TranscriptLine]) -> None:
+        """New lines to the app; all of them when one it has changed (a name, echo taken out)."""
+        rows = [{"at": round(l.start, 1), "end": round(l.end, 1),
+                 "who": name_of(l.speaker, m.names, m.aliases), "me": l.track is Track.ME, "text": l.text}
+                for l in lines]
+        keys = [(r["at"], r["me"], r["who"], r["text"]) for r in rows]
+        heard = list(dict.fromkeys(r["who"] for r in sorted(rows, key=lambda r: not r["me"])))
+        if heard != m.state.get("heard"):
+            m.state["heard"] = heard
+        if m.sent - set(keys):
+            self._ui.emit(MeetingLines(m.id, rows, True))
+            m.sent = set(keys)
             return
-        mine = [t for t in notes.todos if t.mine]
-        if mine and self.options.offer_reminders and self._add_reminder is not None:
-            what = "your to-do" if len(mine) == 1 else f"your {len(mine)} to-dos"
-            detail = "\n".join(f"- {t.text}{f' ({t.due})' if t.due else ''}" for t in mine)
-            if await self._approvals.confirm(f"Put {what} from “{m.info.title}” into Reminders?", detail=detail):
-                for todo in mine:
-                    try:
-                        await self._add_reminder(todo.text, f"From the meeting “{m.info.title}”"
-                                                            + (f", due {todo.due}" if todo.due else ""))
-                    except Exception as e:
-                        log.warning("adding a reminder failed: %s", e)
-                        self._ui.emit(Status(str(e) or "I couldn't add that to Reminders."))
-                        break
-        people = speakers or list(m.info.attendees)
-        if notes.followup and people and self.options.offer_mail and self._draft_mail is not None:
-            if await self._approvals.confirm("Want a follow-up mail draft to the others?", detail=notes.followup):
-                self._draft_mail(followup_task(m.info, people, notes.followup))
+        new = [r for r, k in zip(rows, keys) if k not in m.sent]
+        if new:
+            self._ui.emit(MeetingLines(m.id, new))
+            m.sent.update(keys)
+
+    def pause(self, on: bool) -> None:
+        """The app records silence while paused; the brain marks the stretch, so nothing from it is kept."""
+        m = self.current
+        if m is None or m.stopped or m.stopping or on == self._paused(m):
+            return
+        if on:
+            m.state.setdefault("paused", []).append([round(self._seconds(m), 2), None])
+            log.info("meeting %s: paused", m.id)
+        else:
+            self._end_pause(m)
+            log.info("meeting %s: going on", m.id)
+        self._save(m)
+        self._status(m)
+
+    def _paused(self, m: _Meeting) -> bool:
+        spans = m.state.get("paused") or []
+        return bool(spans) and spans[-1][1] is None
+
+    def _end_pause(self, m: _Meeting) -> None:
+        if self._paused(m):
+            m.state["paused"][-1][1] = round(self._seconds(m), 2)
+
+    def open(self, id: str) -> None:
+        """The window shows meeting `id`: what it has so far, or its notes."""
+        m = self.current if self.current is not None and self.current.id == id else self._finishing.get(id)
+        if m is not None:
+            m.sent = set()
+            self._status(m)
+            self._send_lines(m, self._clean(m))
+            return
+        try:
+            notes = self.notes_event(id)
+            if notes is None:
+                return
+            done = self._load(id)
+        except (KeyError, OSError, ValueError):
+            log.info("no meeting %s to open", id)
+            return
+        self._ui.emit(MeetingLines(id, [], True))
+        self._send_lines(done, self._clean(done))
+        self._ui.emit(notes)
+
+    def notes_event(self, id: str) -> MeetingNotesReady | None:
+        """A finished meeting's notes for its page; None while it isn't finished. Raises KeyError if there's no
+        such meeting."""
+        record = self._store.record(id)
+        if not record:
+            return None
+        info = self._store.info(id)
+        notes = record["notes"]
+        todos = tuple({"text": str(t.get("text", "")), "owner": "" if t.get("owner") == ME else str(t.get("owner") or ""),
+                       "due": str(t.get("due") or ""), "mine": t.get("owner") == ME, "added": bool(t.get("added"))}
+                      for t in notes.get("todos") or [] if isinstance(t, dict))
+        state = self._store.state(id)
+        people = tuple(record["people"]) or info.attendees
+        return MeetingNotesReady(
+            id, info.title, info.started.isoformat(timespec="seconds"), record["duration"], record["markdown"],
+            str(notes.get("summary") or ""), tuple(str(d) for d in notes.get("decisions") or []), todos,
+            str(notes.get("followup") or ""), people, info.app, str(state.get("conversation") or ""),
+            str(self._store.folder(id)),
+            reminders=self.options.offer_reminders and self._add_reminder is not None and bool(todos),
+            mail=self.options.offer_mail and self._draft_mail is not None and bool(notes.get("followup")) and bool(people),
+            mail_drafted=record["mail"])
+
+    async def add_todo(self, id: str, index: int) -> None:
+        """"Add to Reminders" on the page: one to-do, or all of the user's own (-1) that aren't in yet."""
+        try:
+            notes = self.notes_event(id)
+        except KeyError:
+            notes = None
+        if notes is None or self._add_reminder is None:
+            return
+        picked = [i for i, t in enumerate(notes.todos) if (i == index if index >= 0 else t["mine"]) and not t["added"]]
+        for i in picked:
+            todo = notes.todos[i]
+            try:
+                await self._add_reminder(todo["text"], f"From the meeting “{notes.title}”"
+                                                       + (f", due {todo['due']}" if todo["due"] else ""))
+            except Exception as e:
+                log.warning("adding a reminder failed: %s", e)
+                self._ui.emit(Status(str(e) or "I couldn't add that to Reminders."))
+                break
+            self._store.mark(id, todo=i)
+        log.info("meeting %s: %d to-do(s) into Reminders", id, len(picked))
+        updated = self.notes_event(id)
+        if updated is not None:
+            self._ui.emit(updated)
+
+    def draft_followup(self, id: str) -> None:
+        """"Draft the follow-up mail" on the page: a careful helper makes a draft in Mail, never sends it."""
+        try:
+            notes = self.notes_event(id)
+        except KeyError:
+            notes = None
+        if notes is None or self._draft_mail is None or not notes.followup or not notes.people:
+            return
+        self._draft_mail(followup_task(self._store.info(id), list(notes.people), notes.followup))
+        self._store.mark(id, mail=True)
+        self._ui.emit(replace(notes, mail_drafted=True))
 
     # ---- small things
 
-    def _say(self, text: str, *, speak: bool = True) -> None:
-        self._transcript.say(text, Emotion.NEUTRAL)
+    def _say(self, text: str, *, speak: bool = True, record: bool = True) -> None:
+        if record:
+            self._transcript.say(text, Emotion.NEUTRAL)
         if self._speaker is not None:
             self._speaker.say(text, Emotion.NEUTRAL, speak=speak and not self._quiet())
         else:
@@ -753,6 +971,19 @@ class MeetingService:
     async def close(self) -> None:
         for task in list(self._tasks):
             task.cancel()
+
+
+def choices(app: str) -> tuple[tuple[str, str], ...]:
+    """The buttons on "Should I take notes?": yes and no, and remembering the answer for this app."""
+    picked = [("yes", "Take notes"), ("no", "Not this time")]
+    if app:
+        picked += [("always", f"Always for {app}"), ("never", f"Never for {app}")]
+    return tuple(picked)
+
+
+def fix_for(tracks) -> str:
+    """The permission that mends a recording missing a track: the microphone first."""
+    return "microphone" if "me" not in tracks else "call_audio" if "them" not in tracks else ""
 
 
 def episode(id: str, info: MeetingInfo, notes: MeetingNotes, speakers: list[str]) -> Episode:

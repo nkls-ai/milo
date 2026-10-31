@@ -35,6 +35,9 @@ public final class MeetingController {
 
     public func start() {
         hotkey?.onPress = { [weak self] in self?.toggle() }
+        // The capsule's, the page's and the menu's Stop and Pause.
+        model.meeting.onStop = { [weak self] in self?.stop() }
+        model.meeting.onPause = { [weak self] in self?.pause($0) }
         recorder.onChunk = { [weak self] track, chunk in
             guard let self, let id = meeting else { return }
             brain.send(.meetingChunk(MeetingChunk(id: id, track: track, index: chunk.index, path: chunk.path,
@@ -95,9 +98,22 @@ public final class MeetingController {
     /// "Take meeting notes" or "Stop taking notes" in the menu. Starting is the brain's to decide (it answers with
     /// `meeting_record`); stopping happens here at once, brain or not.
     public func toggle() {
-        let stop = model.recording
-        brain.send(.meetingToggle(!stop))
-        if stop { end() }
+        if model.recording { stop() } else { brain.send(.meetingToggle(true)) }
+    }
+
+    /// Stop on the capsule by Milo, on the meeting's page or in the menu: the recording ends now, then the brain
+    /// writes the notes.
+    public func stop() {
+        brain.send(.meetingToggle(false))
+        end()
+    }
+
+    /// Pause on the capsule or the page: the recorder writes silence at once, so nothing said meanwhile is kept, and
+    /// the brain marks the stretch.
+    public func pause(_ on: Bool) {
+        guard meeting != nil, !stopping, recorder.paused != on else { return }
+        recorder.paused = on
+        brain.send(.meetingPause(on))
     }
 
     private func begin(id: String, dir: String) {
@@ -112,6 +128,7 @@ public final class MeetingController {
         meeting = id
         stopping = false
         model.recording = true
+        recorder.paused = false
         recorder.start(dir: URL(fileURLWithPath: dir, isDirectory: true))
     }
 

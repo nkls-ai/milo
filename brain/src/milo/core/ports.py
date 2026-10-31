@@ -929,9 +929,23 @@ class MeetingStore(Protocol):
         """Replace transcript.md."""
         ...
 
-    def close(self, meeting_id: str, notes: MeetingNotes, markdown: str, *, keep_audio: bool = False) -> Path:
-        """Write notes.md, mark the meeting done and delete its audio unless kept. Returns the notes path."""
+    def close(self, meeting_id: str, notes: MeetingNotes, markdown: str, *, keep_audio: bool = False,
+              extra: dict | None = None) -> Path:
+        """Write notes.md, mark the meeting done and delete its audio unless kept. `extra` goes into the meeting's
+        record with the notes (its duration, who spoke). Returns the notes path."""
         ...
+
+    def record(self, meeting_id: str) -> dict:
+        """What is known about a finished meeting: "notes" as MeetingNotes.to_dict() with each to-do's "added",
+        "duration", "people", "mail" (a draft was asked for), and "markdown", notes.md as it is now. {} while it isn't
+        done. Raises KeyError for a meeting that doesn't exist."""
+        ...
+
+    def mark(self, meeting_id: str, *, todo: int | None = None, mail: bool = False) -> None:
+        """To-do `todo` went into Reminders, or the follow-up mail was drafted."""
+        ...
+
+    def folder(self, meeting_id: str) -> Path: ...
 
     def unfinished(self) -> list[str]:
         """Meetings with chunks on disk that aren't transcribed yet, for recovery after a crash."""

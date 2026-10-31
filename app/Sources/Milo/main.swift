@@ -76,7 +76,16 @@ let lifecycle = AppLifecycle(
         model.onBubbleAction = { action in
             switch action {
             case .permissions: setupWindow.open()
+            case .microphone: SystemPermissions().openSettings(.microphone)
+            case .callAudio: SystemPermissions().openSettings(.screenRecording)
+            case .copyConsent: break  // MiloModel copies it itself
+            case let .openMeeting(id): window.show(meeting: id)
             }
+        }
+        model.meeting.onOpen = { window.show(meeting: $0) }
+        model.meeting.copy = { text in
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
         }
         let statusMenu = StatusMenu(controller: controller, panel: overlay, window: window, settings: settingsWindow,
                                     setup: setupWindow, paths: paths)

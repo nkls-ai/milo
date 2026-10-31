@@ -5,7 +5,7 @@ import logging
 import re
 import unicodedata
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 
 from milo.core.events import Confirm, ConfirmDone
 from milo.core.logtext import private
@@ -181,9 +181,12 @@ class Approvals:
         self._one_at_a_time = asyncio.Lock()
         self.permits = permits or Permits()
         self._pending: tuple[str, str, asyncio.Future[str], bool] | None = None
-        """id, question, the answer to come ("yes", "no", "always"), whether Allow always was offered."""
+        """id, question, the answer to come ("yes", "no", "always" or a choice's id), whether Allow always was
+        offered."""
         self._money = False
         """The waiting question is about money: only a click on Yes answers it."""
+        self._choices: tuple[tuple[str, str], ...] = ()
+        """The waiting question's own buttons, (id, label) each, shown instead of Yes and No."""
         self._remote_only = False
         self.relays: list[QuestionRelay] = []
 
@@ -243,9 +246,16 @@ class Approvals:
                 return True
         return await self._ask(summary, detail, speak, scope=None if money else scope, money=money) in ALLOWED
 
-    def answer(self, id: str, yes: bool, *, via: str = "button", always: bool = False) -> bool:
+    async def choose(self, question: str, choices: Sequence[tuple[str, str]], *, speak: bool = True) -> str:
+        """Ask with buttons of its own, (id, label) each, instead of Yes and No. Returns the id clicked; "yes" or
+        "no" for a spoken or typed answer, a choice-less button or the phone; "timeout" if nobody answered. It has
+        no scope and isn't about money, so no Allow always: an "always" among the choices is the asker's own."""
+        return await self._ask(question, "", speak, choices=tuple(choices))
+
+    def answer(self, id: str, yes: bool, *, via: str = "button", always: bool = False, choice: str = "") -> bool:
         """Answer the waiting question `id`. `always`: the Allow always button, which counts only where it was
-        offered. False if it isn't the one waiting (already answered, timed out)."""
+        offered. `choice`: one of the question's own buttons, if it has them; it wins over `yes` and `always`.
+        False if it isn't the one waiting (already answered, timed out)."""
         if self._pending is None or self._pending[0] != id or self._pending[2].done():
             return False
         if self._remote_only and via != REMOTE:
@@ -254,6 +264,11 @@ class Approvals:
         if self._money and yes and via != "button":
             log.info("a %s yes to a question about money, which only a click answers", via)
             return False
+        labels = dict(self._choices)
+        if choice in labels:
+            self._transcript.user(labels[choice], via)
+            self._pending[2].set_result(choice)
+            return True
         always = yes and always and via == "button" and self._pending[3]
         self._transcript.user("Allow always" if always else "Yes" if yes else "No", via)
         self._pending[2].set_result("always" if always else "yes" if yes else "no")
@@ -288,9 +303,12 @@ class Approvals:
         return bool(shown) and question.startswith(shown)
 
     async def _ask(self, question: str, detail: str = "", speak: bool = True, *, scope: Scope | None = None,
-                   money: bool = False) -> str:
-        """Returns "yes", "always", "no", "timeout", or "allowed" when `scope` was allowed before. A `money` question
-        has no scope, and while the owner is away it is "no" without asking."""
+                   money: bool = False, choices: tuple[tuple[str, str], ...] = ()) -> str:
+        """Returns "yes", "always", "no", "timeout", "allowed" when `scope` was allowed before, or the id of one of
+        `choices`. A `money` question has no scope, and while the owner is away it is "no" without asking. A
+        question with `choices` shows only those buttons, so it takes no scope (no Allow always) and no money."""
+        if choices:
+            scope, money = None, False
         async with self._one_at_a_time:
             # Checked in the lock: the yes to a question waiting before this one may cover it.
             covered = self.permits.covers(scope) if scope is not None else ""
@@ -309,6 +327,7 @@ class Approvals:
                     return "no"
             self._pending = (id, question, future, scope is not None)
             self._money = money
+            self._choices = choices
             log.info("asking before an action%s: %s", " (money)" if money else "", private(question))
             if not money:
                 relayed = self._relay(id, question, detail)
@@ -321,7 +340,8 @@ class Approvals:
                 self._transcript.say(f"Asked on your phone: {text}", Emotion.THINKING)
                 self._speaker.say(f"Asked on your phone: {question}", Emotion.THINKING, speak=False)
             else:
-                self._ui.emit(Confirm(id, question, always=scope is not None, money=money))
+                self._ui.emit(Confirm(id, question, always=scope is not None, money=money,
+                                      choices=tuple({"id": c, "label": label} for c, label in choices)))
                 self._transcript.say(text, Emotion.THINKING)
                 self._speaker.say(question, Emotion.THINKING, speak=speak and self._speak and not self._quiet())
             answer = "no"
@@ -333,12 +353,13 @@ class Approvals:
             finally:
                 self._pending = None
                 self._money = False
+                self._choices = ()
                 if not self._remote_only:
                     self._ui.emit(ConfirmDone(id, answer))
                 self._remote_only = False
                 for relay in self.relays:
                     try:
-                        relay.closed(id, "yes" if answer == "always" else answer)
+                        relay.closed(id, "yes" if answer == "always" and not choices else answer)
                     except Exception:
                         log.exception("a question relay failed")
             log.info("the answer was %s", answer)

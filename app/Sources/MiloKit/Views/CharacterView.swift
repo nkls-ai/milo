@@ -3,9 +3,18 @@ import SwiftUI
 /// Milo in the overlay: the wren, posed by the life layer and the app's state.
 struct CharacterView: View {
     @ObservedObject var model: MiloModel
+    /// Meeting notes: he holds his notepad while he takes them and while he writes them up.
+    @ObservedObject var meeting: MeetingModel
     @StateObject private var life = CharacterLifeDriver()
 
-    private var asleep: Bool { model.drowsy && model.state == .idle && model.bubble == nil }
+    init(model: MiloModel) {
+        self.model = model
+        meeting = model.meeting
+    }
+
+    private var noting: Bool { model.recording || meeting.status.phase == .writing }
+
+    private var asleep: Bool { model.drowsy && model.state == .idle && model.bubble == nil && !noting }
 
     /// The brain's state, except that he perks up the moment a held key opens his ears, a beat before the
     /// brain says so.
@@ -18,7 +27,8 @@ struct CharacterView: View {
         CharacterFigure(for: model.character, state: state, emotion: model.emotion, asleep: asleep,
                         connected: model.connected, pose: life.pose, flight: model.flight,
                         words: Self.words(in: model.partial), asking: model.question != nil,
-                        working: model.workingWindow != nil || model.handsActive, size: 120, live: model.live)
+                        working: model.workingWindow != nil || model.handsActive, noting: noting, size: 120,
+                        live: model.live)
             .frame(width: 132, height: 132)
             .background(LifeAnchor(driver: life))
             .onAppear {

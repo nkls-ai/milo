@@ -32,8 +32,9 @@ public enum BrainCommand: Equatable, Sendable {
     case handsResult(id: String, ok: Bool, result: [String: JSONValue], error: String = "")
     /// The user took over the mouse or keyboard ("user") or pressed esc ("escape").
     case handsStop(reason: String)
-    /// The user clicked Yes or No on the question `id`, or Allow always (`always`, with yes) where it was offered.
-    case confirmAnswer(id: String, yes: Bool, always: Bool = false)
+    /// The user clicked Yes or No on the question `id`, Allow always (`always`, with yes) where it was offered, or
+    /// one of the question's own choices (`choice`, its id; "yes" and "always" also say yes).
+    case confirmAnswer(id: String, yes: Bool, always: Bool = false, choice: String = "")
     /// The answer to `app_request` `id`.
     case appResponse(id: String, outcome: AppOutcome)
     /// The user clicked Stop on the helper `id`.
@@ -70,8 +71,16 @@ public enum BrainCommand: Equatable, Sendable {
     /// What the app records: on connect, on a change of tracks, and once it stopped. `id` "" when nothing.
     /// `error` is plain words for the user when a track can't be recorded.
     case meetingRecording(id: String, on: Bool, tracks: [String], error: String = "")
-    /// The user chose "Take meeting notes" or "Stop taking notes" in the menu.
+    /// The user started or stopped meeting notes: the menu, the shortcut, or Stop by Milo or on the meeting's page.
     case meetingToggle(Bool)
+    /// Pause (true) or go on with the notes. The recorder writes silence while paused.
+    case meetingPause(Bool)
+    /// The window shows meeting `id`: send its status, its lines and its notes.
+    case openMeeting(id: String)
+    /// "Add to Reminders" on to-do `index` of meeting `id`; -1 adds all of the user's own.
+    case meetingTodo(id: String, index: Int)
+    /// "Draft the follow-up mail" on meeting `id`.
+    case meetingMail(id: String)
     /// The user fixed words Milo had pasted. Only these pairs leave the app, never the field's text (ADR 21).
     case dictationFixed([DictationFix])
 }
@@ -106,7 +115,7 @@ extension BrainCommand: Encodable {
         case always
         case section, key, value
         case bundle, title, track, index, path, start, seconds, tracks
-        case conversation, before, query, span, fixes, heard, meant
+        case conversation, before, query, span, fixes, heard, meant, choice
         case idleSeconds = "idle_s"
     }
 
@@ -168,11 +177,12 @@ extension BrainCommand: Encodable {
         case let .handsStop(reason):
             try c.encode("hands_stop", forKey: .type)
             try c.encode(reason, forKey: .reason)
-        case let .confirmAnswer(id, yes, always):
+        case let .confirmAnswer(id, yes, always, choice):
             try c.encode("confirm_answer", forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(yes, forKey: .yes)
             if always { try c.encode(true, forKey: .always) }
+            if !choice.isEmpty { try c.encode(choice, forKey: .choice) }
         case let .appResponse(id, outcome):
             try c.encode("app_response", forKey: .type)
             try c.encode(id, forKey: .id)
@@ -246,6 +256,19 @@ extension BrainCommand: Encodable {
         case let .meetingToggle(on):
             try c.encode("meeting_toggle", forKey: .type)
             try c.encode(on, forKey: .on)
+        case let .meetingPause(on):
+            try c.encode("meeting_pause", forKey: .type)
+            try c.encode(on, forKey: .on)
+        case let .openMeeting(id):
+            try c.encode("open_meeting", forKey: .type)
+            try c.encode(id, forKey: .id)
+        case let .meetingTodo(id, index):
+            try c.encode("meeting_todo", forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(index, forKey: .index)
+        case let .meetingMail(id):
+            try c.encode("meeting_mail", forKey: .type)
+            try c.encode(id, forKey: .id)
         case let .dictationFixed(fixes):
             try c.encode("dictation_fixed", forKey: .type)
             var list = c.nestedUnkeyedContainer(forKey: .fixes)

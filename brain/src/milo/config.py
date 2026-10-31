@@ -244,6 +244,16 @@ class LoggingSettings:
 MEETING_AUTO = ("ask", "calendar", "off")
 
 
+def app_names(text: str) -> tuple[str, ...]:
+    """"Zoom, Microsoft Teams" as ("Zoom", "Microsoft Teams"), each once, in order."""
+    names: dict[str, str] = {}
+    for name in text.split(","):
+        name = " ".join(name.split())
+        if name and name.lower() not in names:
+            names[name.lower()] = name
+    return tuple(names.values())
+
+
 @dataclass(frozen=True)
 class MeetingSettings:
     """[meetings]. The diarizer's own options go in a table named after it, like [meetings.sherpa_onnx]."""
@@ -262,8 +272,16 @@ class MeetingSettings:
     """After the call, offer a follow-up mail draft to the others."""
     end_after_s: float = 30.0
     """Notes stop this long after the call ends, so a dropped connection doesn't split a meeting in two."""
+    always: str = ""
+    """Call apps Milo takes notes in without asking, by name and comma-separated: "Zoom, Microsoft Teams". Set by
+    "Always for Zoom" on his question."""
+    never: str = ""
+    """Call apps Milo never asks about, like "WhatsApp". Set by "Never for WhatsApp" on his question."""
 
     def __post_init__(self):
+        for key in ("always", "never"):
+            if not isinstance(getattr(self, key), str):
+                raise ConfigError(f"[meetings] {key} must be text: app names separated by commas")
         if self.auto not in MEETING_AUTO:
             raise ConfigError(f"[meetings] auto must be one of {', '.join(MEETING_AUTO)}")
         if self.end_after_s < 0:

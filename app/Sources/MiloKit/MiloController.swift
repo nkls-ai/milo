@@ -111,9 +111,11 @@ public final class MiloController {
     }
 
     public func start() {
-        model.onAnswer = { [weak self] question, answer in
-            self?.brain.send(.confirmAnswer(id: question.id, yes: answer != .no, always: answer == .always))
+        model.onAnswer = { [weak self] question, answer, choice in
+            self?.brain.send(.confirmAnswer(id: question.id, yes: answer != .no, always: answer == .always,
+                                            choice: choice))
         }
+        model.meeting.send = { [weak self] in self?.brain.send($0) }
         model.onStopHelper = { [weak self] id in self?.brain.send(.stopHelper(id: id)) }
         // The screen work stops here at once; the brain stops the rest.
         model.onStopAll = { [weak self] in

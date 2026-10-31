@@ -6,12 +6,12 @@ import logging
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .brain import Brain
-from .config import Config, brief_time
+from .config import Config, app_names, brief_time
 from .core.clock import SystemClock
 from .core.conversations import SplitRules
 from .core.ports import Harness, LiveModel, PlaybackTap, TimedTranscriber, Transcriber, Vocabulary, Voice
@@ -339,7 +339,8 @@ def _meetings(p: Parts) -> None:
         # careful: the draft comes from other people's words, so the helper's tools ask before changes too
         draft_mail=(lambda task: helpers.submit(task, title="Follow-up mail", screen=False, careful=True))
         if switches.enabled and switches.mail else None,
-        options=MeetingOptions(m.auto, m.keep_audio, m.offer_reminders, m.offer_mail, m.end_after_s),
+        options=MeetingOptions(m.auto, m.keep_audio, m.offer_reminders, m.offer_mail, m.end_after_s,
+                               app_names(m.always), app_names(m.never)),
         connected=p.server.connected, private=attention.private, quiet=attention.in_conversation,
         on_episode=p.mem.memory.record if p.mem is not None else None,
         match=diarizer.match if diarizer else 0.6)
@@ -459,13 +460,33 @@ def _brain(p: Parts) -> None:
     def use_allowed(changed: Config) -> None:
         p.permits.use(changed.approvals.allowed_apps)
 
+    def use_meetings(changed: Config) -> None:
+        if p.meetings is not None:
+            m = changed.meetings
+            p.meetings.options = replace(p.meetings.options, auto=m.auto, always=app_names(m.always),
+                                         never=app_names(m.never))
+
     live = {("ui", "dictate_key"): use_ui, ("ui", "talk_key"): use_ui,
             ("ui", "whats_this_key"): use_ui, ("ui", "meeting_key"): use_ui, ("ui", "voice"): use_voice,
             ("dictation", "stream"): use_stream, ("dictation", "learn"): use_learn, ("chat", "updates"): use_updates,
             ("hands", "show_window"): lambda changed: None,  # the app reads it from the next `settings`
-            ("approvals", "ask"): use_ask, ("approvals", "allowed_apps"): use_allowed}
+            ("approvals", "ask"): use_ask, ("approvals", "allowed_apps"): use_allowed,
+            ("meetings", "auto"): use_meetings, ("meetings", "always"): use_meetings,
+            ("meetings", "never"): use_meetings}
     settings = Settings(TomlConfigFile(p.workspace.config_path), p.config, p.ui, live)
     p.permits.save = lambda apps: settings.keep("approvals", "allowed_apps", apps)
+    if p.meetings is not None:
+        meetings = p.meetings
+
+        def remember(key: str, app: str) -> None:
+            """"Always for Zoom" or "Never for Zoom": into config.toml like any setting, out of the other list."""
+            other = "never" if key == "always" else "always"
+            mine, theirs = getattr(meetings.options, key), getattr(meetings.options, other)
+            if any(a.lower() == app.lower() for a in theirs):
+                settings.change("meetings", other, ", ".join(a for a in theirs if a.lower() != app.lower()))
+            settings.change("meetings", key, ", ".join(app_names(", ".join([*mine, app]))))
+
+        meetings.remember = remember
     usage = UsageService(JsonlUsageHistory(p.workspace.usage_path, p.workspace.dictation_history_path),
                          CliAccounts(p.config, p.workspace.home), p.ui, p.clock)
     p.brain = Brain(p.ui, listening, p.live_talk, p.context, p.heartbeat, p.config.ui, p.transcript,

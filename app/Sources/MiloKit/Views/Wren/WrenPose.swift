@@ -55,6 +55,10 @@ struct WrenPose: Equatable {
     var crestSway = 0.0
     /// Breathing, -1...1, for renders; on screen Core Animation breathes him.
     var breath = 0.0
+    /// 0 no notepad ... 1 a notepad held up in front of him, for meeting notes.
+    var pad = 0.0
+    /// The pencil's place along the notepad's line, -1...1: scribbling moves it.
+    var pen = 0.0
 
     static let rest = WrenPose()
 }
@@ -65,6 +69,7 @@ enum WrenChannel: Int, CaseIterable {
     case turn, lean, squash, lift, headTilt, headX, headY, gazeX, gazeY
     case lidL, lidR, lowerL, lowerR, eyeL, eyeR, browL, browR, browTiltL, browTiltR
     case beak, blush, wingL, wingR, openL, openR, fly, tail, tailFan, scarf, scarfToss, scarfUp, feet, crest, crestSway
+    case pad, pen
 
     var keyPath: WritableKeyPath<WrenPose, Double> {
         switch self {
@@ -102,6 +107,8 @@ enum WrenChannel: Int, CaseIterable {
         case .feet: \.feet
         case .crest: \.crest
         case .crestSway: \.crestSway
+        case .pad: \.pad
+        case .pen: \.pen
         }
     }
 
@@ -131,6 +138,8 @@ enum WrenChannel: Int, CaseIterable {
         case .feet: (0.2, 1)
         case .crest: (0.26, 0.5)                   // perks up with a little bounce
         case .crestSway: (0.4, 0.28)               // soft feathers: they wobble after every move
+        case .pad: (0.36, 0.72)                    // the notepad comes up with a little settle
+        case .pen: (0.1, 0.75)                     // the pencil follows the scribble closely
         }
     }
 

@@ -305,6 +305,32 @@ def test_always_on_a_question_that_offers_no_always_is_a_plain_yes():
     assert s.approvals.permits.always == ()
 
 
+def test_a_question_with_choices_shows_only_them_and_its_always_is_the_askers_own():
+    """The meeting question's "Always for Zoom" is a choice the asker saves itself, not Allow always: it adds no
+    app to allowed_apps. And a choice sent for a question without choices is a plain answer."""
+    s = Stack()
+
+    async def run():
+        asking = asyncio.create_task(s.approvals.choose("Should I take notes?", [("yes", "Take notes"),
+                                                                                 ("always", "Always for Zoom")]))
+        await settle()
+        [c] = s.sink.of(Confirm)
+        assert (c.always, c.money) == (False, False)
+        assert c.choices == ({"id": "yes", "label": "Take notes"}, {"id": "always", "label": "Always for Zoom"})
+        s.approvals.answer(c.id, True, always=True, choice="always")
+        chose = await asking
+        asking = asyncio.create_task(s.approvals.confirm("Send this to Anna?"))
+        await settle()
+        c = s.sink.of(Confirm)[-1]
+        assert c.choices == ()
+        s.approvals.answer(c.id, True, choice="always")
+        return chose, await asking
+
+    assert asyncio.run(run()) == ("always", True)
+    assert [d.answer for d in s.sink.of(ConfirmDone)] == ["always", "yes"]
+    assert s.approvals.permits.always == ()
+
+
 # ---- the parts
 
 
