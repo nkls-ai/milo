@@ -268,6 +268,8 @@ class LiveTalk:
         self._system: str | None = None
         """The system prompt the running conversation started with. None: start one before the next turn."""
         self._last_turn_at: float | None = None
+        self._started_at: float | None = None
+        """When the running conversation started. One nobody talked to goes stale after `idle_reset_s` too."""
         self._starting = asyncio.Lock()  # warm() at boot and the first turn may race
         self._notes: list[str] = []
         self._earlier: list[str] = []
@@ -643,8 +645,10 @@ class LiveTalk:
 
     def _needs_fresh_conversation(self, system: str | None = None) -> bool:
         system = self._system_prompt() if system is None else system
-        idle = self._last_turn_at is not None and self._clock.monotonic() - self._last_turn_at > self._idle_reset_s
-        # A conversation nobody has talked to yet (warmed at boot) is kept unless its prompt went stale.
+        last = self._last_turn_at if self._last_turn_at is not None else self._started_at
+        idle = last is not None and self._clock.monotonic() - last > self._idle_reset_s
+        # A conversation nobody has talked to yet (warmed at boot) is kept unless its prompt changed or it sat
+        # unused past idle_reset_s: by then the model's prompt cache has expired too.
         unused_but_stale = self._last_turn_at is None and system != self._system
         return self._system is None or idle or unused_but_stale
 
@@ -653,7 +657,7 @@ class LiveTalk:
             system = self._system_prompt()
             if self._needs_fresh_conversation(system):
                 await self._model.start(system)
-                self._system, self._last_turn_at = system, None
+                self._system, self._last_turn_at, self._started_at = system, None, self._clock.monotonic()
                 self._saw_screen = False
                 self._tainted = False
                 if self._memory is not None:
