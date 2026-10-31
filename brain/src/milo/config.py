@@ -155,10 +155,11 @@ class ApprovalSettings:
     """How long Milo waits for a yes. No answer means no."""
     speak: bool = True
     """Say the question aloud, besides showing it."""
-    ask: str = "task"
-    """How often Milo asks about work in an app (ADR 0022): "step" (every step that would ask), "task" (one Allow
-    covers the rest of that task in that app) or "auto" (what the user asked for needs no question). Sending,
-    deleting and buying ask every time, and passwords, money and security settings are refused, in every mode."""
+    ask: str = "auto"
+    """How often Milo asks about work in an app (ADR 0022, 0023): "auto", the default (what the user asked for needs
+    no question), "task" (one Allow covers the rest of that task in that app) or "step" (every step that would ask).
+    What can't be undone, sending and sharing, and buying or anything with money ask every time, in every mode;
+    passwords, card numbers and security settings are refused."""
     allowed_apps: tuple[dict, ...] = ()
     """Apps the user said Allow always to, each {name, bundle}. Milo adds them; the Settings window takes them away."""
 

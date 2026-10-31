@@ -236,7 +236,7 @@ def test_never_kinds_are_refused_even_for_an_always_allowed_app():
 
     async def run():
         return [await s.approvals.approve(kind, "x?", careful=True, scope=scope)
-                for kind in ("password", "money", "security")]
+                for kind in ("password", "security")]
 
     assert all(d.answer == "refused" and not d.allowed for d in asyncio.run(run()))
     assert s.sink.of(Confirm) == []
@@ -449,9 +449,9 @@ def test_auto_mode_still_refuses_passwords_and_security_and_asks_before_deleting
 
     async def kinds():
         return [(await s.approvals.approve(k, "x?", careful=True, scope=Scope((AppRef("Notes"),), "t"))).answer
-                for k in ("password", "money", "security")]
+                for k in ("password", "security")]
 
-    assert asyncio.run(kinds()) == ["refused"] * 3
+    assert asyncio.run(kinds()) == ["refused"] * 2  # money asks now, with a button only (ADR 0023)
 
 
 def test_auto_mode_a_page_cant_turn_a_look_into_work():

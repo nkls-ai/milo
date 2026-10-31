@@ -1,14 +1,22 @@
 """Which computer-use actions may run on their own, which wait for the user's yes, and which never run.
 
 Pure: it reads the tool, its arguments and what the app said the action would touch (`target`, from the
-describe step: app, title, role, secure). It errs towards asking where it matters and stays quiet for what
-can be undone: opening an app, reading, and making a new document with sheet_write or write_document never
-ask. A button that mentions sending, deleting, paying and the like asks first, and so does anything that
-could run code: every free-form AppleScript, typing into a terminal, and any change in System Settings.
-Replacing filled cells asks.
-Password fields, the keychain and security settings are off limits. A word list can be talked around by a
-determined agent; it is a brake, not a sandbox, so everything the worker does also shows in the Milo
-window and stops when the user touches the mouse.
+describe step: app, title, role, secure). The line is whether the action can be undone (ADR 0023):
+
+- Opening an app, reading, and making a new document with sheet_write or write_document never ask.
+- What can be undone (moving files or mail to the Trash, deleting a note, which Notes keeps in Recently Deleted)
+  is `UNDO`: it asks only in "Every step" mode.
+- Work inside an open document (replacing filled cells, a script that stays in one app) asks once per task, and
+  not at all in auto mode (ADR 0022).
+- What can't be undone asks every time, in every mode: emptying the Trash, deleting for good, Don't Save,
+  replacing a file on disk, uninstalling, closing an account, cancelling a subscription, sending, sharing and
+  publishing. A delete button in an app Milo doesn't know asks too, since it may be for good. So does anything
+  that could run code: every free-form AppleScript, typing into a terminal, and any change in System Settings.
+- Buying and anything else with money is `MONEY`: it asks every time, and only a click on Yes answers it.
+- Password fields, card-number and security-code fields, the keychain and security settings are off limits.
+
+A word list can be talked around by a determined agent; it is a brake, not a sandbox, so everything the worker
+does also shows in the Milo window and stops when the user touches the mouse.
 """
 
 from __future__ import annotations
@@ -20,7 +28,11 @@ from enum import StrEnum
 
 class Risk(StrEnum):
     OK = "ok"
+    UNDO = "undo"
+    """It can be undone (the Trash, Recently Deleted): asks only in "Every step" mode."""
     ASK = "ask"
+    MONEY = "money"
+    """Buying, paying, moving money: asks every time, and only a click on Yes counts."""
     NEVER = "never"
 
 
@@ -33,19 +45,55 @@ class Verdict:
 
 OK = Verdict(Risk.OK)
 
-_RISKY_WORDS = (
-    "send", "send now", "delete", "remove", "erase", "buy", "buy now", "purchase", "pay", "checkout", "check out",
-    "order", "place order", "submit", "transfer", "withdraw", "empty trash", "empty bin", "discard", "overwrite",
-    "replace", "uninstall", "unsubscribe", "publish", "post", "confirm", "sell", "cancel subscription",
-    "close account", "delete account", "share", "trash",
-    # German, since Milo's users speak it too.
-    "senden", "absenden", "abschicken", "löschen", "entfernen", "kaufen", "jetzt kaufen", "bezahlen", "zahlen",
-    "bestellen", "kostenpflichtig bestellen", "überweisen", "papierkorb leeren", "verwerfen", "ersetzen",
-    "kündigen", "veröffentlichen", "bestätigen", "teilen",
+_MONEY_WORDS = (
+    "buy", "buy now", "purchase", "pay", "pay now", "checkout", "check out", "order", "place order", "transfer",
+    "withdraw", "sell", "kaufen", "jetzt kaufen", "bezahlen", "jetzt bezahlen", "zahlen", "bestellen",
+    "kostenpflichtig bestellen", "überweisen", "überweisung", "verkaufen", "abheben",
 )
-
-_RISKY = re.compile(r"(?<!\w)(" + "|".join(re.escape(w) for w in sorted(_RISKY_WORDS, key=len, reverse=True))
+# Can't be undone: these ask every time, whatever the mode.
+_FOR_GOOD_WORDS = (
+    "send", "send now", "submit", "publish", "post", "share", "confirm", "senden", "absenden", "abschicken",
+    "veröffentlichen", "teilen", "bestätigen",
+    "empty trash", "empty bin", "empty the trash", "papierkorb leeren", "delete immediately", "delete permanently",
+    "delete forever", "sofort löschen", "endgültig löschen", "erase", "don't save", "don’t save",
+    "do not save", "nicht sichern", "nicht speichern", "discard", "discard changes", "verwerfen", "overwrite",
+    "überschreiben", "replace", "ersetzen", "uninstall", "deinstallieren", "unsubscribe", "abbestellen",
+    "cancel subscription", "abo kündigen", "kündigen", "close account", "delete account", "konto löschen",
+    "delete", "remove", "löschen", "entfernen", "trash",
+)
+# Moving something to the Trash can always be undone, in any app.
+_TRASH_WORDS = ("move to trash", "move to the trash", "move to bin", "in den papierkorb", "in den papierkorb legen")
+_RISKY_WORDS = _MONEY_WORDS + _FOR_GOOD_WORDS + _TRASH_WORDS
+_MONEY_SET = frozenset(_MONEY_WORDS)
+_TRASH_SET = frozenset(_TRASH_WORDS)
+_RISKY = re.compile(r"(?<!\w)(" + "|".join(re.escape(w) for w in sorted(set(_RISKY_WORDS), key=len, reverse=True))
                     + r")(?!\w)", re.IGNORECASE)
+# Apps where a plain "Delete" keeps what it deletes: Notes (Recently Deleted), Mail (the Trash mailbox), Photos
+# (Recently Deleted) and Finder (the Trash). Only these exact labels count, so "Delete Mailbox", "Delete Account" or
+# "Delete…" (a dialog follows, often because it is for good) there still ask every time.
+_TRASH_APPS = ("notes", "notizen", "com.apple.notes", "mail", "com.apple.mail", "photos", "fotos",
+               "com.apple.photos", "finder", "com.apple.finder")
+_TRASH_LABEL = re.compile(r"^\s*(delete|löschen|trash|in den papierkorb)(\s+(\d+\s+)?(note|notes|notiz|notizen|message"
+                          r"|messages|e-?mails?|photos?|videos?|items?|objekte?|fotos?))?\s*$",
+                          re.IGNORECASE)
+# Documents where deleting cells, rows or text is undone with ⌘Z: work inside the document (ADR 0022's scope).
+_DOCUMENT_APPS = ("microsoft excel", "com.microsoft.excel", "numbers", "com.apple.iwork.numbers", "pages",
+                  "com.apple.iwork.pages", "keynote", "com.apple.iwork.keynote", "microsoft word",
+                  "com.microsoft.word", "microsoft powerpoint", "com.microsoft.powerpoint", "textedit",
+                  "com.apple.textedit")
+_DOCUMENT_EDIT = re.compile(r"^\s*(delete|löschen|clear|clear contents|inhalte löschen|cut|ausschneiden|replace all"
+                            r"|alle ersetzen|replace & find|delete (rows?|columns?|cells?|text)|(zeilen|spalten|zellen)"
+                            r" löschen)\s*(…|\.\.\.)?\s*$", re.IGNORECASE)
+# A web page writes its own labels, so "Move to Trash" there is only the page's word for it: it asks.
+_BROWSERS = ("safari", "google chrome", "chrome", "firefox", "arc", "microsoft edge", "brave browser", "opera",
+             "com.apple.safari", "com.google.chrome", "org.mozilla.firefox", "company.thebrowser.browser",
+             "com.microsoft.edgemac", "com.brave.browser", "com.operasoftware.opera")
+# Where the focus is when Delete only deletes text.
+_TEXT_ROLES = ("text field", "text area", "search field", "combo box", "password field", "text entry area")
+# Card numbers and security codes: never typed, like passwords.
+_CARD = re.compile(r"(card\s*number|kartennummer|credit\s*card|kreditkarte|\bcvv2?\b|\bcvc2?\b|security\s*code"
+                   r"|sicherheitscode|prüfnummer|kartenprüf)", re.IGNORECASE)
+
 _SECRET = re.compile(r"(?<!\w)(password|passwort|kennwort|passcode|keychain|schlüsselbund)(?!\w)", re.IGNORECASE)
 # Only for wording the question; every script asks anyway.
 _CODE = re.compile(r"\b(do\s+shell\s+script|do\s+script|do\s+javascript|run\s+script|load\s+script|osascript"
@@ -70,12 +118,15 @@ _CODE_APPS = ("terminal", "iterm", "iterm2", "warp", "ghostty", "alacritty", "ki
 _MODIFIER_ORDER = ("ctrl", "option", "shift", "cmd")
 _ALIASES = {"command": "cmd", "⌘": "cmd", "control": "ctrl", "⌃": "ctrl", "alt": "option", "opt": "option",
             "⌥": "option", "⇧": "shift", "backspace": "delete", "enter": "return", "esc": "escape"}
-# Shortcuts that send or delete in common Mac apps.
+# Shortcuts that send or delete in common Mac apps. ⌘⌫ moves to the Trash (Finder, Mail, Photos, Notes) or deletes
+# text, which ⌘Z undoes; ⌥⌘⌫ deletes for good, ⇧⌘⌫ empties the Trash.
 _RISKY_COMBOS = {
-    "cmd+delete": "delete", "cmd+forwarddelete": "delete", "shift+cmd+delete": "empty trash",
-    "option+shift+cmd+delete": "empty trash", "cmd+return": "send", "shift+cmd+d": "send",
-    "ctrl+cmd+return": "send", "option+cmd+delete": "delete",
+    "cmd+delete": "move to the Trash", "cmd+forwarddelete": "move to the Trash", "shift+cmd+delete": "empty the Trash",
+    "option+shift+cmd+delete": "empty the Trash", "cmd+return": "send", "shift+cmd+d": "send",
+    "ctrl+cmd+return": "send", "option+cmd+delete": "delete it for good",
 }
+UNDO_REASONS = frozenset({"move to the Trash", "delete a note", "delete"})
+"""Reasons for an UNDO verdict, for the question and the log."""
 _PRESS_KEYS = ("return", "space", "keypadenter")
 
 
@@ -98,10 +149,10 @@ def app_names(*names: object) -> set[str]:
     return out
 
 
-WORK = frozenset({"run a script", "overwrite", "replace", "ersetzen", "use"})
+WORK = frozenset({"run a script", "replace cells", "change the document", "use"})
 """Reasons that are about the work in the app itself. An Allow covers them for the rest of the task, and Allow
-always for that app (ADR 0022). Sending, deleting, buying, code and settings are not among them: they ask every
-time."""
+always for that app (ADR 0022). Sending, deleting for good, buying, code and settings are not among them: they ask
+every time."""
 
 
 # What a script may not do for an Allow to cover it: write or open files and links itself, or work in Finder.
@@ -129,6 +180,8 @@ def classify(tool: str, args: dict, target: dict) -> Verdict:
     title = " ".join(str(target.get(k) or "") for k in ("title", "description")).strip()
     if tool in ("type", "ax_set_value") and target.get("secure"):
         return Verdict(Risk.NEVER, "a password field")
+    if tool in ("type", "ax_set_value") and _CARD.search(title):
+        return Verdict(Risk.NEVER, "a card number or security code field")
     if tool in ("click", "ax_press", "ax_set_value", "type", "key", "scroll"):
         if apps & set(_SECRET_APPS) or (apps & set(_SETTINGS_APPS) and _SECURITY_WORDS.search(title)):
             return Verdict(Risk.NEVER, "a security setting")
@@ -145,18 +198,32 @@ def classify(tool: str, args: dict, target: dict) -> Verdict:
     if tool in ("click", "ax_press"):
         if target.get("unresolved"):
             return Verdict(Risk.ASK, "click something I can't name")
-        return _words(title)
+        return _button(title, apps)
     if tool == "key":
         combo = normalize_combo(str(args.get("combo", "")))
         if combo in _RISKY_COMBOS:
-            return Verdict(Risk.ASK, _RISKY_COMBOS[combo])
+            reason = _RISKY_COMBOS[combo]
+            if reason not in UNDO_REASONS:
+                return Verdict(Risk.ASK, reason)
+            # ⌘⌫ moves to the Trash in the apps that keep one, and deletes text or cells in documents. Elsewhere
+            # (Reminders, Calendar, Contacts, a web page, an app Milo doesn't know) it may delete for good.
+            if apps & set(_TRASH_APPS + _DOCUMENT_APPS):
+                return Verdict(Risk.UNDO, reason)
+            return Verdict(Risk.ASK, "delete")
+        if combo in ("delete", "forwarddelete") and apps and str(target.get("role") or "") not in _TEXT_ROLES:
+            # Delete on a selected item, not in a text field: the Trash in Mail or Photos, a cell's content in a
+            # document, but a reminder, an event or a card for good.
+            if apps & set(_TRASH_APPS):
+                return Verdict(Risk.UNDO, "delete")
+            if not apps & set(_DOCUMENT_APPS):
+                return Verdict(Risk.ASK, "delete")
         if combo in _PRESS_KEYS:
-            return _words(title)  # return on a focused "Send" button sends
+            return _button(title, apps)  # return on a focused "Send" button sends
         return OK
     if tool == "sheet_write":
         if target.get("new") or target.get("made") or int(target.get("filled") or 0) == 0:
             return OK  # a new document, one Milo made in this task, or empty cells
-        return Verdict(Risk.ASK, "overwrite")
+        return Verdict(Risk.ASK, "replace cells")
     if tool == "run_applescript":
         # A word list can't tell what a script does (strings can be built, apps named in variables), so
         # every script waits for a yes. Scripts about passwords never run.
@@ -166,10 +233,33 @@ def classify(tool: str, args: dict, target: dict) -> Verdict:
         if _CODE.search(script):
             return Verdict(Risk.ASK, "run other programs or type for you")
         risky = _words(script)
-        return risky if risky.risk is Risk.ASK else Verdict(Risk.ASK, "run a script")
+        if risky.risk is Risk.MONEY:
+            return risky
+        return Verdict(Risk.ASK, risky.reason) if risky.reason else Verdict(Risk.ASK, "run a script")
     return OK
 
 
+def _button(label: str, apps: set[str]) -> Verdict:
+    """A click on a button or menu item labelled `label` in one of `apps`."""
+    if apps & set(_BROWSERS):
+        verdict = _words(label)
+        return Verdict(Risk.ASK, "delete") if verdict.risk is Risk.UNDO else verdict
+    if apps & set(_TRASH_APPS) and _TRASH_LABEL.match(label):
+        return Verdict(Risk.UNDO, "delete a note" if apps & {"notes", "notizen", "com.apple.notes"} else "delete")
+    if apps & set(_DOCUMENT_APPS) and _DOCUMENT_EDIT.match(label):
+        return Verdict(Risk.ASK, "change the document")
+    return _words(label)
+
+
 def _words(text: str) -> Verdict:
-    m = _RISKY.search(text)
-    return Verdict(Risk.ASK, m.group(1).lower()) if m else OK
+    """Money anywhere in `text` wins; then anything that can't be undone; moving to the Trash alone can be."""
+    found = [m.group(1).lower() for m in _RISKY.finditer(text)]
+    if not found:
+        return OK
+    money = [w for w in found if w in _MONEY_SET]
+    if money:
+        return Verdict(Risk.MONEY, money[0])
+    for_good = [w for w in found if w not in _TRASH_SET]
+    if for_good:
+        return Verdict(Risk.ASK, for_good[0])
+    return Verdict(Risk.UNDO, "move to the Trash")

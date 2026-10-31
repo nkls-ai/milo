@@ -2,16 +2,19 @@ import Foundation
 import Combine
 
 /// A yes-or-no question Milo waits on before an action. `always`: it is about working in an app, so it also
-/// offers Allow always (ADR 22).
+/// offers Allow always (ADR 22). `money`: it buys or pays, so it never offers always and only a click on Yes
+/// answers it (ADR 23).
 public struct PendingQuestion: Equatable, Sendable {
     public let id: String
     public let text: String
     public let always: Bool
+    public let money: Bool
 
-    public init(id: String, text: String, always: Bool = false) {
+    public init(id: String, text: String, always: Bool = false, money: Bool = false) {
         self.id = id
         self.text = text
-        self.always = always
+        self.always = always && !money
+        self.money = money
     }
 }
 
@@ -151,8 +154,8 @@ public final class MiloModel: ObservableObject {
             partial = text.isEmpty ? nil : text
         case let .looking(on):
             looking = on
-        case let .confirm(id, text, always):
-            question = PendingQuestion(id: id, text: text, always: always)
+        case let .confirm(id, text, always, money):
+            question = PendingQuestion(id: id, text: text, always: always, money: money)
             scheduleBubbleHide()
         case let .confirmDone(id, _):
             guard question?.id == id else { return }

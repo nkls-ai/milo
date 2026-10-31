@@ -191,12 +191,14 @@ class FlyTo(Event):
 @dataclass(frozen=True)
 class Confirm(Event):
     """Milo asks a yes-or-no question before an action. Shown with Yes and No until `confirm_done` for this id.
-    `always`: the question is about working in an app, so it also offers Allow always (ADR 0022)."""
+    `always`: the question is about working in an app, so it also offers Allow always (ADR 0022). `money`: it buys
+    or pays, so it shows as a money question and only a click on Yes answers it (ADR 0023)."""
 
     type: ClassVar[str] = "confirm"
     id: str
     question: str
     always: bool = False
+    money: bool = False
 
 
 @dataclass(frozen=True)

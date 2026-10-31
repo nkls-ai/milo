@@ -114,9 +114,10 @@ struct TodayView: View {
                             .font(.system(size: 13.5, weight: .medium, design: .rounded))
                             .foregroundStyle(theme.ink)
                             .fixedSize(horizontal: false, vertical: true)
-                        Text("Or hold \(talkKey) and say yes or no.")
+                        Text(question.money ? "This involves money. \(QuestionView.moneyNote)"
+                                            : "Or hold \(talkKey) and say yes or no.")
                             .font(.system(size: 11))
-                            .foregroundStyle(theme.ink.opacity(0.5))
+                            .foregroundStyle(question.money ? theme.accent : theme.ink.opacity(0.5))
                     }
                     Spacer(minLength: 8)
                     AnswerButtons(always: question.always) { model.answer($0) }

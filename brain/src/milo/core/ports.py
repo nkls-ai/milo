@@ -294,9 +294,12 @@ class AppHands(Protocol):
 class Confirmer(Protocol):
     """Asks the user before an action. Any tool or service that is about to do something it can't undo uses it."""
 
-    async def confirm(self, summary: str, *, scope: Scope | None = None) -> bool:
+    async def confirm(self, summary: str, *, scope: Scope | None = None, undo: bool = False,
+                      money: bool = False) -> bool:
         """Ask `summary`, a plain yes-or-no question naming the thing and the consequence. `scope`: the work in an
-        app it is about, which an earlier Allow may already cover (ADR 0022); None asks every time.
+        app it is about, which an earlier Allow may already cover (ADR 0022); None asks every time. `undo`: it can be
+        undone, so only "Every step" mode asks. `money`: it buys or pays, so it asks every time and only a click on
+        Yes counts (ADR 0023).
 
         True only for a yes. No, no answer before the timeout, or an error mean False.
         """
@@ -349,8 +352,10 @@ class Channel(Protocol):
 class QuestionRelay(Protocol):
     """Somewhere else Approvals can ask its questions, like the owner's phone."""
 
-    def asked(self, id: str, question: str, detail: str) -> Relayed | None:
-        """A question started. None: not passed on. Never raises."""
+    def asked(self, id: str, question: str, detail: str, *, money: bool = False) -> Relayed | None:
+        """A question started. None: not passed on. Never raises. A `money` question can only be answered with a
+        click at the Mac: the relay may tell the owner about it, without buttons, and says `only` when the owner is
+        away, so it isn't asked at all."""
         ...
 
     def closed(self, id: str, answer: str) -> None:

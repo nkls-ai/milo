@@ -21,6 +21,8 @@ VERSION = "0.1.0"
 
 # The app each connection changes things in, so an Allow for one change there covers the next (ADR 0022).
 APPS = {"notes": "Notes", "files": "Finder"}
+# Kinds that can't be undone (ADR 0023), for the MCP destructiveHint.
+DESTRUCTIVE = ("delete", "discard", "overwrite_file")
 
 
 class Toolbox:
@@ -75,7 +77,8 @@ class BrainPhone:
 def listing(tool: Tool) -> dict:
     read_only = tool.kind == "read"
     return {"name": tool.name, "description": tool.description, "inputSchema": tool.schema(),
-            "annotations": {"readOnlyHint": read_only, "destructiveHint": False, "openWorldHint": False}}
+            "annotations": {"readOnlyHint": read_only, "destructiveHint": tool.kind in DESTRUCTIVE,
+                            "openWorldHint": False}}
 
 
 def mcp_server(toolbox: Toolbox) -> McpServer:

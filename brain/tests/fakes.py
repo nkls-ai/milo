@@ -683,10 +683,13 @@ class FakeConfirm:
         self.answers = deque(answers)
         self.asked: list[str] = []
         self.scopes: list = []
+        self.kinds: list[str] = []
+        """"undo", "money" or "" per question."""
 
-    async def confirm(self, summary: str, *, scope=None) -> bool:
+    async def confirm(self, summary: str, *, scope=None, undo=False, money=False) -> bool:
         self.asked.append(summary)
         self.scopes.append(scope)
+        self.kinds.append("money" if money else "undo" if undo else "")
         return self.answers.popleft() if self.answers else False
 
 

@@ -27,22 +27,34 @@ ALLOWED = ("yes", "always", "allowed")
 REMOTE = "message"
 """`via` for answers from the owner's phone (a relay)."""
 
-# What each kind of action gets unless config.toml says otherwise ([approvals.levels]).
+# What each kind of action gets unless config.toml says otherwise ([approvals.levels]). The line is whether it can
+# be undone (ADR 0023).
 DEFAULT_LEVELS: dict[str, ActionLevel] = {
     "read": ActionLevel.READ,  # reading, searching, listing
     "draft": ActionLevel.READ,  # a mail draft, nothing leaves the Mac
     "change": ActionLevel.CHANGE,  # a calendar entry, a note, a reminder: can be undone
+    "trash": ActionLevel.CHANGE,  # to the Trash or Recently Deleted: can be undone, asks only in "Every step" mode
     "send": ActionLevel.ASK_FIRST,  # mail, messages
     "share": ActionLevel.ASK_FIRST,  # anything going to another person
-    "delete": ActionLevel.ASK_FIRST,
+    "delete": ActionLevel.ASK_FIRST,  # for good: emptying the Trash, places without one, uninstalling
+    "discard": ActionLevel.ASK_FIRST,  # Don't Save: unsaved changes are gone
+    "overwrite_file": ActionLevel.ASK_FIRST,  # a file on disk replaced by another
     "buy": ActionLevel.ASK_FIRST,
+    "money": ActionLevel.ASK_FIRST,  # payments, transfers, withdrawals, selling
     "shortcut": ActionLevel.ASK_FIRST,  # a user's shortcut can do any of the above
     "password": ActionLevel.NEVER,
-    "money": ActionLevel.NEVER,  # transfers, payments beyond a purchase the user confirmed
     "security": ActionLevel.NEVER,  # security and privacy settings
 }
 # Kinds config.toml can't make less strict.
-ALWAYS_NEVER = ("password", "money", "security")
+ALWAYS_NEVER = ("password", "security")
+MONEY_KINDS = ("buy", "money")
+"""Always asked, and only a click on Yes answers (ADR 0023). config.toml may make them never, not less strict than
+ask_first."""
+UNDOABLE_KINDS = ("trash",)
+"""Changes that remove something the user can get back. Like any change they don't ask, except in "Every step"
+mode."""
+_STRICTNESS = (ActionLevel.READ, ActionLevel.CHANGE, ActionLevel.ASK_FIRST, ActionLevel.NEVER)
+MONEY_YES = "That one involves money, so only a click on Yes counts."
 
 _YES = ("yes", "yeah", "yep", "yup", "sure", "ok", "okay", "go ahead", "do it", "please do", "of course",
         "send it", "ja", "jawohl", "klar", "gerne", "genau", "mach das", "mach es", "mach")
@@ -52,11 +64,18 @@ _MAX_ANSWER_WORDS = 6
 
 
 class ActionPolicy:
-    """Which ActionLevel each kind of action gets. Unknown kinds are ask_first."""
+    """Which ActionLevel each kind of action gets. Unknown kinds are ask_first.
+
+    Older configs said `delete` for every delete. It now means deleting for good. `delete = "never"` without a
+    `trash` line makes trash never too, so it still keeps Milo from deleting anything. `delete = "ask_first"` was the
+    old default, which the template wrote out, so it says nothing about the Trash."""
 
     def __init__(self, levels: Mapping[str, object] | None = None):
         self._levels = dict(DEFAULT_LEVELS)
-        for kind, value in (levels or {}).items():
+        levels = dict(levels or {})
+        if "trash" not in levels and str(levels.get("delete")) == "never":
+            levels["trash"] = levels["delete"]
+        for kind, value in levels.items():
             if kind not in DEFAULT_LEVELS:
                 raise ConfigError(f"[approvals.levels] unknown action {kind!r}; known: {', '.join(DEFAULT_LEVELS)}")
             try:
@@ -66,6 +85,9 @@ class ActionPolicy:
                                   f"{', '.join(lv.value for lv in ActionLevel)}") from None
             if kind in ALWAYS_NEVER and level is not ActionLevel.NEVER:
                 raise ConfigError(f"[approvals.levels] {kind} is always never")
+            if kind in MONEY_KINDS and _STRICTNESS.index(level) < _STRICTNESS.index(ActionLevel.ASK_FIRST):
+                log.warning("[approvals.levels] %s = %s: buying and money always ask first", kind, level.value)
+                level = ActionLevel.ASK_FIRST
             self._levels[kind] = level
 
     def level(self, kind: str) -> ActionLevel:
@@ -139,6 +161,11 @@ class Approvals:
     (Allow earlier in the same task, or Allow always for the app) it isn't asked at all; otherwise it offers a
     third button, Allow always. Only a click on that button means always: a spoken or typed yes, or a yes from
     the phone, allows this time. Questions without a scope ask every time and never offer always.
+
+    What can be undone (`undo`, the `trash` kind) asks only in "Every step" mode (ADR 0023). A question about money
+    (`money`, the `buy` and `money` kinds) asks in every mode, never offers always, and only a click on Yes answers
+    it: a spoken or typed yes, or a yes from the phone, doesn't count, and while the owner is away it isn't asked
+    at all (the answer is no).
     """
 
     def __init__(self, ui: UiState, speaker: Speaker, policy: ActionPolicy | None = None, *,
@@ -155,6 +182,8 @@ class Approvals:
         self.permits = permits or Permits()
         self._pending: tuple[str, str, asyncio.Future[str], bool] | None = None
         """id, question, the answer to come ("yes", "no", "always"), whether Allow always was offered."""
+        self._money = False
+        """The waiting question is about money: only a click on Yes answers it."""
         self._remote_only = False
         self.relays: list[QuestionRelay] = []
 
@@ -162,11 +191,23 @@ class Approvals:
     def pending(self) -> bool:
         return self._pending is not None
 
+    @property
+    def money_pending(self) -> bool:
+        """A question about money waits: nothing may act on the screen until it is answered, so no click can land
+        on its Yes button but the user's."""
+        return self._pending is not None and self._money
+
     def asks(self, kind: str, *, careful: bool = False) -> bool:
-        """Whether approve() asks the user about `kind`: when it is ask_first, or a change for a careful
-        helper (one asked for in a conversation that read outside text, like the screen)."""
+        """Whether approve() asks the user about `kind`: when it is ask_first, a change for a careful helper (one
+        asked for in a conversation that read outside text, like the screen), or a change that removes something
+        (trash) in "Every step" mode."""
         level = self.policy.level(kind)
-        return level is ActionLevel.ASK_FIRST or (careful and level is ActionLevel.CHANGE)
+        return level is ActionLevel.ASK_FIRST or (level is ActionLevel.CHANGE and (
+            careful or (kind in UNDOABLE_KINDS and self.asks_undoable())))
+
+    def asks_undoable(self) -> bool:
+        """Whether what can be undone asks at all: only in "Every step" mode (ADR 0023)."""
+        return self.permits.ask == "step"
 
     async def approve(self, kind: str, summary: str, *, careful: bool = False,
                       scope: Scope | None = None) -> Decision:
@@ -178,15 +219,20 @@ class Approvals:
             return Decision(False, level, "refused")
         if not self.asks(kind, careful=careful):
             return Decision(True, level, "auto")
-        answer = await self._ask(summary, scope=scope if level is ActionLevel.CHANGE else None)
+        answer = await self._ask(summary, scope=scope if level is ActionLevel.CHANGE else None,
+                                 money=kind in MONEY_KINDS)
         return Decision(answer in ALLOWED, level, answer)
 
-    async def confirm(self, summary: str, *, detail: str = "", speak: bool = True,
-                      scope: Scope | None = None) -> bool:
+    async def confirm(self, summary: str, *, detail: str = "", speak: bool = True, scope: Scope | None = None,
+                      undo: bool = False, money: bool = False) -> bool:
         """Confirmer: ask, unless `scope` is work the user already allowed. `detail` shows under the question in
         the Milo window, e.g. the whole task. speak=False only shows it, for a question asked while the user is in
-        a call."""
-        return await self._ask(summary, detail, speak, scope=scope) in ALLOWED
+        a call. `undo`: the action can be undone, so only "Every step" mode asks. `money`: it buys or pays, so it
+        asks every time and only a click on Yes counts."""
+        if undo and not money and not self.asks_undoable():
+            log.info("can be undone, so not asking: %s", private(summary))
+            return True
+        return await self._ask(summary, detail, speak, scope=None if money else scope, money=money) in ALLOWED
 
     def answer(self, id: str, yes: bool, *, via: str = "button", always: bool = False) -> bool:
         """Answer the waiting question `id`. `always`: the Allow always button, which counts only where it was
@@ -195,6 +241,9 @@ class Approvals:
             return False
         if self._remote_only and via != REMOTE:
             log.info("an answer at the Mac to a question only the phone may answer")
+            return False
+        if self._money and yes and via != "button":
+            log.info("a %s yes to a question about money, which only a click answers", via)
             return False
         always = yes and always and via == "button" and self._pending[3]
         self._transcript.user("Allow always" if always else "Yes" if yes else "No", via)
@@ -209,6 +258,11 @@ class Approvals:
         yes = yes_or_no(text)
         if yes is None:
             return False
+        if yes and self._money:
+            # Taken as the answer so it isn't a turn of its own, but it doesn't say yes: the button has to.
+            self._transcript.say(MONEY_YES, Emotion.NEUTRAL)
+            self._speaker.say(MONEY_YES, Emotion.NEUTRAL, speak=self._speak and via == "voice")
+            return True
         return self.answer(self._pending[0], yes, via=via)
 
     def _still_showing(self, question: str) -> bool:
@@ -216,8 +270,10 @@ class Approvals:
         shown = self._ui.bubble.strip()
         return bool(shown) and question.startswith(shown)
 
-    async def _ask(self, question: str, detail: str = "", speak: bool = True, *, scope: Scope | None = None) -> str:
-        """Returns "yes", "always", "no", "timeout", or "allowed" when `scope` was allowed before."""
+    async def _ask(self, question: str, detail: str = "", speak: bool = True, *, scope: Scope | None = None,
+                   money: bool = False) -> str:
+        """Returns "yes", "always", "no", "timeout", or "allowed" when `scope` was allowed before. A `money` question
+        has no scope, and while the owner is away it is "no" without asking."""
         async with self._one_at_a_time:
             # Checked in the lock: the yes to a question waiting before this one may cover it.
             covered = self.permits.covers(scope) if scope is not None else ""
@@ -226,9 +282,19 @@ class Approvals:
                 return "allowed"
             id = uuid.uuid4().hex[:12]
             future: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+            if money:
+                scope = None
+                relayed = self._relay(id, question, detail, money=True)
+                if any(r.only for r in relayed):
+                    log.info("not asking about money while the owner is away: %s", private(question))
+                    self._transcript.say(f"I stopped before this, since it involves money and you're away: "
+                                         f"{question}", Emotion.NEUTRAL)
+                    return "no"
             self._pending = (id, question, future, scope is not None)
-            log.info("asking before an action: %s", private(question))
-            relayed = self._relay(id, question, detail)
+            self._money = money
+            log.info("asking before an action%s: %s", " (money)" if money else "", private(question))
+            if not money:
+                relayed = self._relay(id, question, detail)
             self._remote_only = any(r.only for r in relayed)
             timeout_s = max([self._timeout_s, *(r.wait_s for r in relayed)])
             question, detail = fit_bubble(question, detail)
@@ -238,7 +304,7 @@ class Approvals:
                 self._transcript.say(f"Asked on your phone: {text}", Emotion.THINKING)
                 self._speaker.say(f"Asked on your phone: {question}", Emotion.THINKING, speak=False)
             else:
-                self._ui.emit(Confirm(id, question, always=scope is not None))
+                self._ui.emit(Confirm(id, question, always=scope is not None, money=money))
                 self._transcript.say(text, Emotion.THINKING)
                 self._speaker.say(question, Emotion.THINKING, speak=speak and self._speak and not self._quiet())
             answer = "no"
@@ -249,6 +315,7 @@ class Approvals:
                 self._transcript.say(NO_ANSWER, Emotion.NEUTRAL)
             finally:
                 self._pending = None
+                self._money = False
                 if not self._remote_only:
                     self._ui.emit(ConfirmDone(id, answer))
                 self._remote_only = False
@@ -262,11 +329,11 @@ class Approvals:
                 self.permits.allowed(scope, always=answer == "always")
             return answer
 
-    def _relay(self, id: str, question: str, detail: str) -> list[Relayed]:
+    def _relay(self, id: str, question: str, detail: str, *, money: bool = False) -> list[Relayed]:
         relayed = []
         for relay in self.relays:
             try:
-                taken = relay.asked(id, question, detail)
+                taken = relay.asked(id, question, detail, money=True) if money else relay.asked(id, question, detail)
             except Exception:
                 log.exception("a question relay failed")
                 continue

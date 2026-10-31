@@ -84,6 +84,10 @@ struct OverlayRenderTests {
                 + "so the months are easy to compare with October and the year before… (all of it is in the Milo window)",
                 always: true))
         },
+        Moment(name: "11e-confirm-money") { m in
+            // Buying asks in every mode, with Yes and No only, and says it is about money (ADR 23).
+            m.apply(.confirm(id: "q", question: "I'm about to click “Buy Now” in Safari. Go ahead?", money: true))
+        },
         Moment(name: "12-error") { m in
             m.show(MiloController.pasteBlocked, action: .permissions)
         },

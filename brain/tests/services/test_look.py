@@ -163,12 +163,14 @@ def answering(s: Stack, yes: bool, *texts: str) -> list[str]:
 
 
 def test_a_task_from_a_screen_turn_needs_the_users_yes():
-    s = Stack(eyes=FakeEyes(EXCEL), model=FakeLiveModel(
+    # In "Once per task" and "Every step" modes. In auto, the default, the user's own words asking for work are the
+    # yes (ADR 0022, 0023: tests/services/test_undo_line.py).
+    s = Stack(ask="task", eyes=FakeEyes(EXCEL), model=FakeLiveModel(
         ["[thinking] Let me look. <look/>"], ["[happy] I'll fill it in. <task>Fill column C in Budget.xlsx</task>"]))
     asked = answering(s, False, "look at this and fill it in")
     assert asked == ["Fill column C in Budget.xlsx?"]
     assert s.harness.calls == []
-    s2 = Stack(eyes=FakeEyes(EXCEL), model=FakeLiveModel(
+    s2 = Stack(ask="task", eyes=FakeEyes(EXCEL), model=FakeLiveModel(
         ["[thinking] <look/>"], ["[happy] On it. <task>Fill column C</task>"]))
     answering(s2, True, "fill this in")
     assert len(s2.harness.calls) == 1
@@ -196,7 +198,7 @@ def _recording(reply, note):
 
 
 def test_a_task_question_shows_the_whole_task_under_it_in_the_window():
-    s = Stack(eyes=FakeEyes(EXCEL), model=FakeLiveModel(
+    s = Stack(ask="task", eyes=FakeEyes(EXCEL), model=FakeLiveModel(
         ["[thinking] <look/>"], ["[happy] On it. <task>Fill column C. Use the totals from row 9.</task>"]))
     details = []
     confirm = s.approvals.confirm

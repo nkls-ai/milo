@@ -123,9 +123,10 @@ public struct SettingsView: View {
                         title: "How often Milo asks before he acts", detail: "While he works in an app for you.")
             choices(ask)
             Text(ask.value.string == "auto"
-                 ? "Milo does what you ask without checking first. He still asks before he sends, deletes or buys, "
-                   + "and never touches passwords, money or security settings."
-                 : "Sending, deleting and buying always ask. Passwords, money and security settings he never touches.")
+                 ? "Milo does what you ask without checking first. He always stops for things that can't be undone, "
+                   + "sending, buying and money. Passwords and security settings he never touches."
+                 : "He always stops for things that can't be undone, sending, buying and money. Passwords and "
+                   + "security settings he never touches.")
                 .font(.system(size: 11.5, weight: ask.value.string == "auto" ? .medium : .regular))
                 .foregroundStyle(ask.value.string == "auto" ? theme.accent : theme.ink.opacity(0.65))
                 .fixedSize(horizontal: false, vertical: true)

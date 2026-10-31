@@ -84,8 +84,8 @@ class Stack:
     routine_state: MemoryState = field(default_factory=MemoryState)
     max_routine_runs: int = 6
     config_file: MemoryConfigFile = field(default_factory=MemoryConfigFile)
-    ask: str = "task"
-    """[approvals] ask: how often Milo asks about work in an app (ADR 0022)."""
+    ask: str | None = None
+    """[approvals] ask: how often Milo asks about work in an app (ADR 0022). None: the default (auto)."""
     allowed_apps: list | None = None
     """[approvals] allowed_apps: the apps the user said Allow always to."""
     channel: FakeChannel | None = None
@@ -104,7 +104,8 @@ class Stack:
         self.context = UserContext(self.clock)
         self.conversation = Conversation(self.harness, self.ledger, self.clock, self.idle_reset_s)
         self.speaker = Speaker(self.voice, self.output, self.ui, self.executors["tts"])
-        approvals = {"ask": self.ask, **({"allowed_apps": self.allowed_apps} if self.allowed_apps else {})}
+        approvals = {**({"ask": self.ask} if self.ask else {}),
+                     **({"allowed_apps": self.allowed_apps} if self.allowed_apps else {})}
         self.config_file.raw = {**self.config_file.raw,
                                 "approvals": {**self.config_file.raw.get("approvals", {}), **approvals}}
         settings = self.config_file.read().approvals

@@ -62,6 +62,9 @@ HICCUP = "Something went wrong on my side. Try again in a moment."
 INTERRUPTED = "Someone talked to me at the Mac, so I stopped. Ask me again?"
 PAUSED = "I'm paused on your Mac, so I can't do anything from here. Switch me back on in Milo's menu on the Mac."
 TOO_MANY = "That's a lot of messages at once. Give me a minute."
+MONEY_AWAY = ("I stopped before this, because it involves money: {question}\n\nOnly a click on Yes at your Mac "
+              "can allow that, so I left it.")
+MONEY_AT_MAC = "Waiting at your Mac: {question}\n\nIt involves money, so only a click on Yes there counts."
 CANT_READ = "I can't open photos, files or voice notes from here yet. Tell me in words?"
 HELP = ("Write to me like you'd talk to me at your Mac: ask a question, or ask me to do something there. "
         "I'll tell you when it's done, and ask you here before anything risky.\n\n"
@@ -438,12 +441,19 @@ class MessageService:
 
     # ---- questions (QuestionRelay)
 
-    def asked(self, id: str, question: str, detail: str) -> Relayed | None:
+    def asked(self, id: str, question: str, detail: str, *, money: bool = False) -> Relayed | None:
         if not self._reachable():
             return None
         away = self.away()
         if not (away or self.writing()):
             return None
+        if money:
+            # Only a click at the Mac says yes to money (ADR 0023): the phone hears about it, with no buttons.
+            self._spawn(self._send(MONEY_AWAY.format(question=question) if away
+                                   else MONEY_AT_MAC.format(question=question)))
+            log.info("a question about money: told %s, %s", self._channel.name,
+                     "not asked" if away else "asked at the Mac")
+            return Relayed(0, only=True) if away else None
         self._questions[id] = question
         text = f"{question}\n\n{untrusted(detail, 1500)}" if detail else question
         self._spawn(self._ask(id, text))

@@ -31,7 +31,7 @@ struct SettingsRenderTests {
         Setting(section: "ui", key: "voice", value: true),
         Setting(section: "hands", key: "show_window", value: true),
         Setting(section: "approvals", key: "ask", value: "task", options: ["step", "task", "auto"],
-                labels: ["Every step", "Once per task", "Don't ask (auto)"], live: true),
+                labels: ["Every step", "Once per task", "Only when it matters (auto)"], live: true),
         Setting(section: "approvals", key: "allowed_apps", value: .array([
             .object(["name": "Microsoft Excel", "bundle": ""]),
             .object(["name": "Numbers", "bundle": "com.apple.iWork.Numbers"]),

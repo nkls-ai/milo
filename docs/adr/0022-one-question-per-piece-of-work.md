@@ -1,6 +1,6 @@
 # 22. One question per piece of work, Allow always, and auto mode
 
-Date: 2026-10-31. Status: accepted. Changes [ADR 9](0009-approvals-and-action-levels.md) and [ADR 14](0014-scripts-milo-writes-and-short-questions.md).
+Date: 2026-10-31. Status: accepted. Changes [ADR 9](0009-approvals-and-action-levels.md) and [ADR 14](0014-scripts-milo-writes-and-short-questions.md). Changed by [ADR 23](0023-stop-for-what-cant-be-undone.md): auto is the default, moving to the Trash no longer asks outside "Every step", and money asks with a button only instead of being refused.
 
 ## Context
 
@@ -24,8 +24,8 @@ Terminals and other programs that run commands, System Settings, password manage
 **`[approvals] ask`**, shown in Settings as "How often Milo asks before he acts":
 
 - `step` ("Every step"): every scoped question asks, as before this ADR.
-- `task` ("Once per task", the default): Allow covers the scope for the rest of that helper's run. A task ends when its helper ends (done, failed, stopped). A change made while it runs keeps the same helper and its Allow. A follow-up to a finished helper is a new helper and asks again. When a question from the tool socket can't tell which of several helpers asks, no task's Allow covers it; only Allow always does.
-- `auto` ("Don't ask (auto)", off by default): a helper the user asked for (`Helper.user_asked`) does scoped work without asking. Everything else behaves like `task`.
+- `task` ("Once per task", the default until ADR 23): Allow covers the scope for the rest of that helper's run. A task ends when its helper ends (done, failed, stopped). A change made while it runs keeps the same helper and its Allow. A follow-up to a finished helper is a new helper and asks again. When a question from the tool socket can't tell which of several helpers asks, no task's Allow covers it; only Allow always does.
+- `auto` ("Only when it matters (auto)", the default since ADR 23): a helper the user asked for (`Helper.user_asked`) does scoped work without asking. Everything else behaves like `task`.
 
 **Allow always** is a third button on scoped questions. It adds the app to `[approvals] allowed_apps` in config.toml, and from then on no scoped question about that app asks, in any mode. Settings lists the apps, each with Remove. The window can only remove apps: `set_setting` with a list that adds one is refused, so only the button adds them.
 

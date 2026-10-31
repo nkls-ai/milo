@@ -25,6 +25,8 @@ STOPPED = ("The user stopped you: they took over the mouse or keyboard. Don't us
            "this task. Tell the user in one sentence how far you got.")
 TURNED_OFF = "AppleScript is turned off in Milo's settings ([hands] applescript)."
 STOPPED_SAY = "Okay, I stopped. It's all yours."
+MONEY_WAIT = ("The user is answering a question about money. Nothing on the screen may happen until they have: wait "
+              "for that answer, then go on.")
 KEEP_IT = ("The user wants to keep their {what} right now, and this app only takes that action with the real "
            "{what}. Do this part another way (run_applescript, ax_press, ax_set_value) or tell the user what is left.")
 NOT_ALLOWED = ("macOS doesn't let Milo control {app} yet. Tell the user to switch on {app} under Milo in System "
@@ -126,6 +128,8 @@ class HandsService:
         spec, args = validate(tool, args)
         if tool == "run_applescript" and not self._applescript:
             raise HandsError(TURNED_OFF)
+        if spec.acts and getattr(self._confirm, "money_pending", False):
+            raise HandsError(MONEY_WAIT)
         async with self._lock:
             self._check()
             task_id = self._task_id
@@ -139,11 +143,13 @@ class HandsService:
                     self._step(task_id, step, StepStatus.FAILED)
                     raise HandsError(f"Not allowed: Milo never touches {verdict.reason}. Ask the user to do this "
                                      "part.")
-                if verdict.risk is not Risk.ASK:
+                if verdict.risk is Risk.OK:
                     break
                 self._transcript.task_step(task_id, step)  # the user can read the whole thing before answering
                 question = confirm_question(tool, args, target, verdict.reason)
-                if not await self._confirm.confirm(question, scope=self._scope(tool, args, target, verdict, app)):
+                if not await self._confirm.confirm(question, scope=self._scope(tool, args, target, verdict, app),
+                                                   undo=verdict.risk is Risk.UNDO,
+                                                   money=verdict.risk is Risk.MONEY):
                     self._step(task_id, step, StepStatus.FAILED)
                     raise HandsError(f"The user said no (or didn't answer) to: {question} Don't try it another "
                                      "way; tell the user what is left to do.")
@@ -184,7 +190,7 @@ class HandsService:
                 self._protected.mentioned_in(str(args.get("script", ""))):
             verdict = Verdict(Risk.NEVER, "his own settings, memory or routines from a script")
         app = _app_of(tool, args, target)
-        if verdict.risk is Risk.OK and self._needs_clearing(tool, acts, target, app):
+        if verdict.risk in (Risk.OK, Risk.UNDO) and self._needs_clearing(tool, acts, target, app):
             verdict = Verdict(Risk.ASK, "use")
         return verdict, app
 
@@ -207,8 +213,9 @@ class HandsService:
     def _scope(self, tool: str, args: dict, target: dict, verdict: Verdict, app: str) -> Scope | None:
         """The work in an app a question is about, which an Allow covers for the rest of this task (ADR 0022).
         None for anything else: sending, deleting, code, settings, files, clicks on something unnamed, and scripts
-        that don't say which apps they talk to or reach outside them."""
-        if verdict.reason not in WORK:
+        that don't say which apps they talk to or reach outside them. What can be undone (UNDO) gets one too, so Allow
+        always for an app covers it in "Every step" mode; in the other modes it doesn't ask at all (ADR 0023)."""
+        if verdict.reason not in WORK and verdict.risk is not Risk.UNDO:
             return None
         if tool == "run_applescript":
             script = str(args.get("script", ""))

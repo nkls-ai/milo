@@ -111,7 +111,8 @@ struct RevealingText: View {
     }
 }
 
-/// Milo's yes-or-no question with big, plain buttons. A spoken "yes" or "no" on the talk key works too.
+/// Milo's yes-or-no question with big, plain buttons. A spoken "yes" or "no" on the talk key works too, except for a
+/// question about money: it says so at the top, and only a click on Yes answers it (ADR 23).
 struct QuestionView: View {
     @Environment(\.miloTheme) private var theme
     let question: PendingQuestion
@@ -119,7 +120,8 @@ struct QuestionView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Okay to go ahead?", systemImage: "hand.raised.fill")
+            Label(question.money ? "This involves money" : "Okay to go ahead?",
+                  systemImage: question.money ? "creditcard.fill" : "hand.raised.fill")
                 .font(.system(size: 10.5, weight: .semibold, design: .rounded))
                 .foregroundStyle(theme.accent)
                 .labelStyle(TightLabel())
@@ -131,12 +133,23 @@ struct QuestionView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
                 .help(question.text)
+            if question.money {
+                Text(QuestionView.moneyNote)
+                    .font(.system(size: 11))
+                    .foregroundStyle(theme.ink.opacity(0.65))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             AnswerButtons(always: question.always, answer: answer)
                 .padding(.top, 2)
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Milo asks: \(question.text)")
+        .accessibilityLabel(question.money ? "Milo asks about money: \(question.text)" : "Milo asks: \(question.text)")
     }
+}
+
+extension QuestionView {
+    /// Under a money question, in the bubble, the window and Today.
+    static let moneyNote = "Only a click on Yes counts for this, not a spoken yes."
 }
 
 /// An icon and a title, closer together than the system's label.
@@ -185,8 +198,8 @@ struct AnswerButtons: View {
         Button("Allow always") { answer(.always) }
             .buttonStyle(AnswerButtonStyle(prominent: false, compact: true))
             .accessibilityHint("Milo won't ask about work in this app again. Take it back in Settings.")
-            .help("Milo won't ask about work in this app again. Sending, deleting and buying still ask. "
-                  + "Take it back in Settings.")
+            .help("Milo won't ask about work in this app again. Things that can't be undone, sending, buying and "
+                  + "money still ask. Take it back in Settings.")
     }
 
     private var no: some View {

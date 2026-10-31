@@ -44,7 +44,7 @@ SETTINGS = (
             ("Control-Option-N", "Control-Shift-N", "Control-Option-R", "Off")),
     Setting("ui", "voice"),
     Setting("hands", "show_window"),
-    Setting("approvals", "ask", ASK, ("Every step", "Once per task", "Don't ask (auto)")),
+    Setting("approvals", "ask", ASK, ("Every step", "Once per task", "Only when it matters (auto)")),
     Setting("approvals", "allowed_apps"),
 )
 ALLOWED_APPS = ("approvals", "allowed_apps")

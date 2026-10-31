@@ -1,6 +1,6 @@
 # 9. Approvals: four action levels and one confirm flow
 
-Date: 2026-10-30. Status: accepted. How often a question about work in an app asks, Allow always and auto mode: [ADR 22](0022-one-question-per-piece-of-work.md).
+Date: 2026-10-30. Status: accepted. How often a question about work in an app asks, Allow always and auto mode: [ADR 22](0022-one-question-per-piece-of-work.md). The line between asking and not asking is now whether it can be undone, and money asks instead of being refused: [ADR 23](0023-stop-for-what-cant-be-undone.md).
 
 ## Context
 

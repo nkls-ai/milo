@@ -68,6 +68,8 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .confirmDone(id: "3b9e7a01c4d2", answer: "yes"),
             .confirm(id: "5c1d2e3f4a5b", question: "Replace 8 filled cells in “Budget”?", always: true),
             .confirmDone(id: "5c1d2e3f4a5b", answer: "always"),
+            .confirm(id: "7d8e9f0a1b2c", question: "I'm about to click “Buy Now” in Safari. Go ahead?", money: true),
+            .confirmDone(id: "7d8e9f0a1b2c", answer: "no"),
             .appRequest(id: "a41f", op: "calendar.add_event", args: .object([
                 "title": .string("Doctor"), "start": .string("2026-11-05T15:00:00"), "end": .string("2026-11-05T16:00:00"),
             ])),

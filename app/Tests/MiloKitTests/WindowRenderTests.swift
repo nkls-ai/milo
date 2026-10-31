@@ -29,6 +29,7 @@ struct WindowRenderTests {
             try render(.conversation("c-hamburg"), name: "older-\(mode)", dark: dark)
             try render(.task("t-photos"), name: "task-done-\(mode)", dark: dark)
             try render(.task("t-excel"), name: "task-running-\(mode)", dark: dark, busy: true)
+            try render(.live, name: "live-money-\(mode)", dark: dark, busy: true, money: true)
             try render(.live, name: "search-\(mode)", dark: dark, search: "photos")
             try render(.live, name: "empty-\(mode)", dark: dark, empty: true)
             try render(.live, name: "narrow-\(mode)", dark: dark, size: CGSize(width: 440, height: 580))
@@ -42,7 +43,8 @@ struct WindowRenderTests {
         }
     }
 
-    private func render(_ page: WindowPage, name: String, dark: Bool, busy: Bool = false, empty: Bool = false,
+    private func render(_ page: WindowPage, name: String, dark: Bool, busy: Bool = false, money: Bool = false,
+                        empty: Bool = false,
                         search: String = "", usage: UsageModel = UsageModel(),
                         size: CGSize = CGSize(width: 780, height: 580), sidebar: Bool = false) throws {
         let model = MiloModel(scheduler: ManualScheduler())
@@ -53,7 +55,9 @@ struct WindowRenderTests {
                 HelperInfo(id: "t-excel", title: "Budget table in Excel", status: .working,
                            step: "Typing “Monday” in Excel", progress: 0.4),
             ]))
-            model.apply(.confirm(id: "q1", question: "Replace 8 filled cells in “Budget”?", always: true))
+            model.apply(money ? .confirm(id: "q1", question: "I'm about to click “Buy Now” in Safari. Go ahead?",
+                                         money: true)
+                              : .confirm(id: "q1", question: "Replace 8 filled cells in “Budget”?", always: true))
         }
         if !empty && busy { transcript.apply(.reminders(Day.reminders)) }
         if !search.isEmpty {

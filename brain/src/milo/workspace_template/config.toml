@@ -67,10 +67,11 @@ files_scope = "~"                 # files outside this folder are never searched
 # How long Milo waits for your yes. No answer means no.
 timeout_s = 60
 speak = true                      # say the question out loud, besides showing it
-# How often Milo asks about work in an app (ADR 22): "step" (every step that would ask), "task" (one Allow
-# covers the rest of that task in that app) or "auto" (what you asked for needs no question). Sending, deleting
-# and buying still ask, and passwords, money and security settings he never does, in every mode.
-ask = "task"
+# How often Milo asks before he acts (ADR 22, 23): "auto" (what you asked for needs no question), "task" (one
+# Allow covers the rest of that task in that app) or "step" (every step that would ask). In every mode he stops
+# and asks for what can't be undone, for sending and sharing, and for buying or anything with money (only a
+# click on Yes counts for money). Passwords, card numbers and security settings he never touches.
+ask = "auto"
 # Apps you chose "Allow always" for. Settings › "How often Milo asks" lists them, with Remove.
 allowed_apps = []
 
@@ -79,12 +80,16 @@ allowed_apps = []
 read = "read"                     # looking things up
 draft = "read"                    # mail drafts: nothing leaves your Mac
 change = "change"                 # calendar entries, reminders, notes
+trash = "change"                  # to the Trash or Recently Deleted: can be undone
 send = "ask_first"
 share = "ask_first"               # anything going to another person
-delete = "ask_first"
-buy = "ask_first"
+delete = "ask_first"              # for good: can't be undone
+discard = "ask_first"             # Don't Save
+overwrite_file = "ask_first"      # replacing a file on disk
+buy = "ask_first"                 # buy and money: never less than ask_first, and only a click on Yes counts
+money = "ask_first"               # payments, transfers
 shortcut = "ask_first"            # your own shortcuts can do any of the above
-# password, money and security are always "never".
+# password and security are always "never".
 
 [messages]
 # Reach Milo on this Mac from your phone, through a chat app. Setup: docs/setup/messages.md.

@@ -16,10 +16,10 @@ from tests.services.stack import Stack, settle
 def test_default_levels_follow_the_three_action_levels():
     p = ActionPolicy()
     assert p.level("read") is ActionLevel.READ and p.level("draft") is ActionLevel.READ
-    assert p.level("change") is ActionLevel.CHANGE
-    for kind in ("send", "share", "delete", "buy", "shortcut"):
+    assert p.level("change") is ActionLevel.CHANGE and p.level("trash") is ActionLevel.CHANGE
+    for kind in ("send", "share", "delete", "discard", "overwrite_file", "buy", "money", "shortcut"):
         assert p.level(kind) is ActionLevel.ASK_FIRST
-    for kind in ("password", "money", "security"):
+    for kind in ("password", "security"):
         assert p.level(kind) is ActionLevel.NEVER
     assert p.level("launch_rockets") is ActionLevel.ASK_FIRST, "unknown kinds ask"
 
@@ -27,7 +27,7 @@ def test_default_levels_follow_the_three_action_levels():
 def test_levels_are_configurable_but_never_stays_never():
     assert ActionPolicy({"change": "ask_first", "shortcut": "change"}).level("change") is ActionLevel.ASK_FIRST
     with pytest.raises(ConfigError, match="always never"):
-        ActionPolicy({"money": "ask_first"})
+        ActionPolicy({"password": "ask_first"})
     with pytest.raises(ConfigError, match="unknown action"):
         ActionPolicy({"sned": "never"})
     with pytest.raises(ConfigError, match="must be one of"):
@@ -123,7 +123,8 @@ def test_every_line_break_and_wide_characters_count_towards_the_bubble(text):
 
 def test_never_is_refused_without_a_question():
     s = Stack()
-    assert ask(s, lambda: s.approvals.approve("money", "Transfer?")) == Decision(False, ActionLevel.NEVER, "refused")
+    assert ask(s, lambda: s.approvals.approve("security", "Turn off the firewall?")) == \
+        Decision(False, ActionLevel.NEVER, "refused")
     assert not s.sink.of(Confirm)
 
 

@@ -478,10 +478,13 @@ class HelperQuestions:
         self._orchestrator = orchestrator
         self._screen = screen
 
-    async def confirm(self, summary: str, *, detail: str = "", scope: Scope | None = None) -> bool:
+    async def confirm(self, summary: str, *, detail: str = "", scope: Scope | None = None, undo: bool = False,
+                      money: bool = False) -> bool:
+        if undo and not money and not self._approvals.asks_undoable():
+            return True  # can be undone and nobody asks about it in this mode: the helper doesn't need you
         helper = self._orchestrator().asking(screen=self._screen)
         try:
-            return await self._approvals.confirm(summary, detail=detail, scope=scope)
+            return await self._approvals.confirm(summary, detail=detail, scope=scope, undo=undo, money=money)
         finally:
             self._orchestrator().answered(helper)
 

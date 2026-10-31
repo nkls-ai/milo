@@ -3,8 +3,8 @@
 A question about working in an app (replacing filled cells, a script that only talks to that app, borrowing the
 mouse there, a careful helper's first change) carries a `Scope`: the apps it acts in and the task that asks. The
 user's Allow then covers that work for the rest of the task, and Allow always covers it in that app from now on.
-Questions without a scope (sending, deleting, buying, scripts that can run other programs, terminals, system
-settings) ask every time, and the never-rules come before any of this.
+Questions without a scope (sending, deleting for good, Don't Save, buying and money, scripts that can run other
+programs, terminals, system settings) ask every time, and the never-rules come before any of this (ADR 0023).
 """
 
 from __future__ import annotations
@@ -20,13 +20,13 @@ log = logging.getLogger("milo.permits")
 class Permits:
     """What the user already allowed: work in an app for one task (Allow), or always (Allow always).
 
-    `ask` is "step" (an Allow covers only that step), "task" (the rest of that task in that app) or "auto" (work
-    the user asked for needs no question at all: `user_asked(task)` says whether they did; anything else is
-    asked once per task). Allow always works in every mode. `save` gets the always-allowed apps whenever they
+    `ask` is "auto", the default (work the user asked for needs no question at all: `user_asked(task)` says whether
+    they did; anything else is asked once per task), "task" (the rest of that task in that app) or "step" (an
+    Allow covers only that step). Allow always works in every mode. `save` gets the always-allowed apps whenever they
     change, as dicts for config.toml.
     """
 
-    def __init__(self, ask: str = "task", always: Iterable[AppRef | Mapping | str] = (),
+    def __init__(self, ask: str = "auto", always: Iterable[AppRef | Mapping | str] = (),
                  save: Callable[[list[dict]], None] | None = None):
         self.ask = ask
         self._always: list[AppRef] = []

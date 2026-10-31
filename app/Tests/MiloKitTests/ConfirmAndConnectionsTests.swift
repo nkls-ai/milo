@@ -60,7 +60,7 @@ private final class Rig {
     @Test func autoModeFollowsTheSettingsAndTheMenuTurnsItOff() {
         let (rig, brain, _, _) = controller()
         let ask = Setting(section: "approvals", key: "ask", value: "auto", options: ["step", "task", "auto"],
-                          labels: ["Every step", "Once per task", "Don't ask (auto)"], live: true)
+                          labels: ["Every step", "Once per task", "Only when it matters (auto)"], live: true)
         brain.emit(.settings(SettingsReport(settings: [ask])))
         #expect(rig.controller.autoMode)
         rig.controller.endAutoMode()

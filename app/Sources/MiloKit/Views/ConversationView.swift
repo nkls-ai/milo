@@ -466,9 +466,17 @@ struct QuestionBar: View {
                     .font(.system(size: 13.5, weight: .medium, design: .rounded))
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
-                Text("Or hold \(talkKey) and say yes or no.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                if question.money {
+                    Label("This involves money. \(QuestionView.moneyNote)", systemImage: "creditcard.fill")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(theme.accent)
+                        .labelStyle(TightLabel())
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("Or hold \(talkKey) and say yes or no.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             AnswerButtons(always: question.always, answer: answer)
@@ -478,7 +486,7 @@ struct QuestionBar: View {
         .background(theme.ink.opacity(0.05))
         .overlay(alignment: .top) { Rectangle().fill(theme.rule).frame(height: 1) }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Milo asks: \(question.text)")
+        .accessibilityLabel(question.money ? "Milo asks about money: \(question.text)" : "Milo asks: \(question.text)")
     }
 }
 
