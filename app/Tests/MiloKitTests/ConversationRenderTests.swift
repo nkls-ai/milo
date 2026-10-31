@@ -180,7 +180,16 @@ enum Samples {
         TranscriptEntry(id: "m2", date: at(4), kind: .milo, text: question, emotion: .thinking),
     ]
 
+    /// Text Milo wrote (ADR 33): the window keeps it with a Copy button, whether it went into a field or not.
+    static let written: [TranscriptEntry] = [
+        TranscriptEntry(id: "u3", date: at(0), kind: .user, text: "write Anna that I'm ten minutes late", via: .voice),
+        TranscriptEntry(id: "w3", date: at(3), kind: .milo,
+                        text: "Hi Anna,\n\nI'm running about ten minutes late. Sorry!\n\nNiklas", written: true),
+        TranscriptEntry(id: "m3", date: at(3), kind: .milo, text: "It's in Mail, have a look.", emotion: .happy),
+    ]
+
     static let all: [(String, [TranscriptEntry], MiloState)] = [
+        ("written", written, .idle),
         ("empty", [], .idle),
         ("one-turn", oneTurn, .idle),
         ("long-reply", longReply, .speaking),

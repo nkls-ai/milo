@@ -52,6 +52,9 @@ public final class MiloController {
     public let meetings: MeetingController?
     /// Learns from the user's fixes to pasted dictation; nil without a field reader.
     public let pasteWatcher: PasteWatcher?
+    /// Pastes text Milo wrote where the user was when the talk key went down (ADR 0033); nil without a field probe.
+    /// It answers the brain's `text.*` ops.
+    public let writing: WriteRequests?
     public private(set) var muted = false
     /// The dictation style the brain uses, from its `settings`; nil while no brain is connected.
     public var dictationStyle: DictationStyle? {
@@ -93,8 +96,9 @@ public final class MiloController {
                 keys: KeyEventSource, context: ContextProvider, accessibility: AccessibilityPermission,
                 scheduler: Scheduler, connections: AppConnections? = nil, settings: Settings = Settings(),
                 screen: ScreenController? = nil, meetings: MeetingController? = nil,
-                pasteWatcher: PasteWatcher? = nil) {
+                pasteWatcher: PasteWatcher? = nil, writing: WriteRequests? = nil) {
         self.model = model
+        self.writing = writing
         self.screen = screen
         self.meetings = meetings
         self.pasteWatcher = pasteWatcher
@@ -134,6 +138,11 @@ public final class MiloController {
             .sink { [weak self] in self?.model.presence.hideAfter = $0 }
         usage.send = { [weak self] in self?.brain.send($0) }
         pasteWatcher?.onFixes = { [weak self] in self?.brain.send(.dictationFixed($0)) }
+        writing?.onPasted = { [weak self] text in
+            self?.model.pasted(text)
+            self?.pasteWatcher?.stop()  // not dictation: nothing to learn from what the user does to it
+        }
+        writing?.onKept = { [weak self] in self?.model.offerCopy($0) }
         brain.onEvent = { [weak self] in self?.received($0) }
         brain.onConnectionChange = { [weak self] in self?.connectionChanged($0) }
         // Development brains are started by hand; only launch one if nothing answers.
@@ -237,7 +246,8 @@ public final class MiloController {
         case let .usage(report):
             usage.apply(report)
         case let .appRequest(id, op, args):
-            guard let connections else {
+            // Text Milo wrote goes to `writing`; Calendar, Reminders, the player and the system's permissions further.
+            guard let connections = op.hasPrefix("text.") ? writing ?? connections : connections else {
                 brain.send(.appResponse(id: id, outcome: .failure(Self.noConnections)))
                 return
             }
@@ -330,6 +340,7 @@ public final class MiloController {
         case let .start(mode):
             model.press(mode)
             brain.send(.listenStart(mode, tentative: true))
+            if mode == .talk { writing?.capture() }  // where what Milo writes may go
         case let .confirm(mode), let .lock(mode):
             model.hold(mode)
             brain.send(.listenConfirm)

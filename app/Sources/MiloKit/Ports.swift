@@ -52,6 +52,49 @@ public protocol FocusedTextReader: AnyObject {
     func read(_ done: @escaping (FocusedText?) -> Void)
 }
 
+/// The element with the keyboard focus, as Accessibility sees it, for pasting text Milo wrote (ADR 0033).
+public struct FocusedField: Equatable, Sendable {
+    public var pid: Int32
+    /// The app's name, as the user knows it: "Mail".
+    public var app: String
+    public var bundle: String
+    /// The same number for the same field while it exists; another field gets another.
+    public var field: Int
+    /// Its Accessibility role: "AXTextArea", "AXTextField", "AXWebArea", …
+    public var role: String
+    /// Its title, description, placeholder and help, lower-cased: tells a terminal's input from a text field.
+    public var label: String
+    /// It takes typed text: a text role, a settable value, or editable web content.
+    public var editable: Bool
+    /// A password field, or any field in a password app. Never pasted into.
+    public var secure: Bool
+    /// One of Milo's own windows.
+    public var milo: Bool
+
+    public init(pid: Int32, app: String, bundle: String = "", field: Int, role: String = "AXTextArea",
+                label: String = "", editable: Bool = true, secure: Bool = false, milo: Bool = false) {
+        self.pid = pid
+        self.app = app
+        self.bundle = bundle
+        self.field = field
+        self.role = role
+        self.label = label
+        self.editable = editable
+        self.secure = secure
+        self.milo = milo
+    }
+}
+
+/// Reads the focused element and takes Milo's own pasted text back out of it (ADR 0033).
+public protocol FieldProbe: AnyObject {
+    /// The focused element now, read with a short timeout off the main queue; nil when nothing has the focus or it
+    /// can't be read. `done` runs on the main queue.
+    func focused(_ done: @escaping (FocusedField?) -> Void)
+    /// Deletes `text` from the focused field `field`, only when it sits right before the caret with nothing selected.
+    /// `done(true)` on the main queue once it is gone.
+    func remove(_ text: String, from field: Int, _ done: @escaping (Bool) -> Void)
+}
+
 /// Keyboard events from every app. Callbacks arrive on the main queue.
 public protocol KeyEventSource: AnyObject {
     var onEvent: ((KeyEvent) -> Void)? { get set }

@@ -117,6 +117,10 @@ public final class MiloModel: ObservableObject {
     @Published public private(set) var bubbleAction: BubbleAction?
     /// Called when the user clicks the bubble's button. Set by main.swift.
     public var onBubbleAction: ((BubbleAction) -> Void)?
+    /// Puts text on the clipboard. Set by main.swift.
+    public var copy: ((String) -> Void)?
+    /// Text Milo wrote that didn't go into a field (ADR 0033), and when: the next bubble offers Copy for it.
+    private var copyOffer: (text: String, at: TimeInterval)?
     /// When Milo started thinking, on `now`'s clock; nil while he isn't.
     public private(set) var thinkingSince: TimeInterval?
     /// The mode of the newest recording, for the colour of what comes after it.
@@ -334,7 +338,7 @@ public final class MiloModel: ObservableObject {
             clearBubble()
             return scheduleBubbleHide()
         }
-        let action = action ?? undoAction(for: text)
+        let action = action ?? undoAction(for: text) ?? takeCopyOffer(for: text)
         reveal.show(text, speaking: state == .speaking && (action == nil || action?.paced == true), at: now())
         bubble = text
         if bubbleAction != action { bubbleAction = action }
@@ -345,12 +349,34 @@ public final class MiloModel: ObservableObject {
     public func performBubbleAction() {
         guard let bubbleAction else { return }
         if case let .undo(id) = bubbleAction { return undo(id) }
+        if case let .copy(text) = bubbleAction {
+            copy?(text)
+            return show(Self.copied)
+        }
         if bubbleAction == .copyConsent {
             // Done here, so the bubble can say it worked.
             meeting.copyConsent()
             return show(Self.copiedConsent)
         }
         onBubbleAction?(bubbleAction)
+    }
+
+    /// What the bubble says once text Milo wrote is on the clipboard.
+    public static let copied = "Copied. Paste it where you like."
+    /// How long text Milo kept is offered under the next bubble.
+    public static let copyOfferFor: TimeInterval = 30
+
+    /// Text Milo wrote stays in his window instead of a field: the line he says about it gets a Copy button.
+    public func offerCopy(_ text: String) {
+        copyOffer = (text, now())
+    }
+
+    /// The Copy for the bubble that says `text`: kept while the same line grows piece by piece as he speaks it.
+    private func takeCopyOffer(for text: String) -> BubbleAction? {
+        if case .copy = bubbleAction, let shown = bubble, text.hasPrefix(shown) { return bubbleAction }
+        guard let offer = copyOffer else { return nil }
+        copyOffer = nil
+        return now() - offer.at <= Self.copyOfferFor ? .copy(offer.text) : nil
     }
 
     /// What the bubble says once the note for the call's chat is on the clipboard.
@@ -413,7 +439,10 @@ public final class MiloModel: ObservableObject {
         // A question stays up until it is answered or over.
         guard let text = bubble, state != .speaking, question == nil else { return }
         // An Undo stays a while longer, so there is time to reach it.
-        let longer: TimeInterval = if case .undo = bubbleAction { Self.undoLinger } else { 0 }
+        let longer: TimeInterval = switch bubbleAction {
+        case .undo, .copy: Self.undoLinger
+        default: 0
+        }
         hideBubble = scheduler.after(Self.bubbleDuration(for: text) + longer) { [weak self] in
             guard let self else { return }
             clearBubble()
@@ -444,15 +473,24 @@ public enum BubbleAction: Equatable, Sendable {
     case access(AccessNeed, AccessApp?)
     /// Takes back what the task did (its id), under the bubble that says its result.
     case undo(String)
+    /// Puts text Milo wrote on the clipboard, when it didn't go into a field (ADR 0033).
+    case copy(String)
 
     /// Its words keep pace with Milo's voice, like an answer without a button: it sits under what he is saying.
     public var paced: Bool {
-        if case .undo = self { true } else { false }
+        switch self {
+        case .undo, .copy: true
+        default: false
+        }
     }
 
     /// The symbol before its title, for the quieter buttons.
     public var icon: String? {
-        if case .undo = self { "arrow.uturn.backward" } else { nil }
+        switch self {
+        case .undo: "arrow.uturn.backward"
+        case .copy: "doc.on.doc"
+        default: nil
+        }
     }
 
     public var title: String {
@@ -461,6 +499,7 @@ public enum BubbleAction: Equatable, Sendable {
         case .copyConsent: "Copy a note for the chat"
         case .openMeeting: "Open notes"
         case .undo: "Undo"
+        case .copy: "Copy"
         }
     }
 
@@ -478,6 +517,7 @@ public enum BubbleAction: Equatable, Sendable {
             case .ui, .screen: "Opens Milo's permissions window"
             }
         case .undo: "Puts back what Milo changed in this task"
+        case .copy: "Copies the text Milo wrote, to paste it yourself"
         }
     }
 }

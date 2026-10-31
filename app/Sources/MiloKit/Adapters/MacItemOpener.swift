@@ -10,14 +10,18 @@ public final class MacItemOpener {
     private var icons: [String: CGImage] = [:]
     /// Shows Today in the Milo window, for Milo's own reminders.
     private let showToday: () -> Void
+    /// Shows the conversation going on in the Milo window, where text Milo wrote waits to be copied.
+    private let showConversation: () -> Void
 
-    public init(showToday: @escaping () -> Void) {
+    public init(showToday: @escaping () -> Void, showConversation: @escaping () -> Void = {}) {
         self.showToday = showToday
+        self.showConversation = showConversation
     }
 
     public func open(_ action: ActionDone) {
         switch DonePlace.of(action) {
         case .today: showToday()
+        case .conversation: showConversation()
         case let .event(app, title, start): openEvent(app: app, title: title, start: start)
         case let .reminder(app, title): openReminder(app: app, title: title)
         case let .page(page): if let url = URL(string: page) { NSWorkspace.shared.open(url) }

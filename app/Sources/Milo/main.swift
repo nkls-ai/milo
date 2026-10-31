@@ -24,6 +24,10 @@ let controlledApps = ControlledApps(defaults: defaults)
 let accessRequests = AccessRequests(source: access, apps: controlledApps,
                                     next: MediaRequests(player: SystemMediaPlayer(), next: EventKitConnections()))
 let brain = UnixSocketBrainClient(socketPath: paths.socket.path)
+// Dictation and the text Milo writes (ADR 33) paste through one inserter, so a clipboard saved by one is the one restored.
+let inserter = PasteboardInserter(scheduler: scheduler)
+let writing = WriteRequests(probe: AXFieldProbe(), inserter: inserter,
+                            trusted: { SystemAccessibilityPermission().isTrusted(prompt: false) })
 let screen = ScreenController(
     model: model, brain: brain,
     ports: ScreenPorts(reader: SystemScreenReader(screensFolder: paths.screens),
@@ -37,7 +41,7 @@ let controller = MiloController(
     launcher: UVBrainLauncher(
         configuration: .init(brainDir: brainDir, logURL: paths.brainStdoutLog, lockURL: paths.brainLock),
         scheduler: scheduler),
-    inserter: PasteboardInserter(scheduler: scheduler),
+    inserter: inserter,
     keys: NSEventKeySource(),
     context: WorkspaceContextProvider(),
     accessibility: SystemAccessibilityPermission(),
@@ -50,7 +54,8 @@ let controller = MiloController(
     screen: screen,
     meetings: MeetingController(model: model, brain: brain, recorder: MacMeetingRecorder(brainLock: paths.brainLock),
                                 signals: MacCallSignals(), scheduler: scheduler, hotkey: CarbonHotkey()),
-    pasteWatcher: PasteWatcher(reader: AXFocusedText(), words: SpellCheckWords(), scheduler: scheduler))
+    pasteWatcher: PasteWatcher(reader: AXFocusedText(), words: SpellCheckWords(), scheduler: scheduler),
+    writing: writing)
 
 accessRequests.onAsking = { screen.systemAsks($0) }
 
@@ -77,7 +82,7 @@ let lifecycle = AppLifecycle(
         overlay.onClick = { window.toggle() }
         model.onOpenHelper = { window.show(helper: $0) }
         // A click on a done card opens the item where it lives.
-        let opener = MacItemOpener(showToday: { window.showToday() })
+        let opener = MacItemOpener(showToday: { window.showToday() }, showConversation: { window.showConversation() })
         model.done.onOpen = { opener.open($0) }
         model.done.icon = { opener.icon($0) }
         let setupWindow = SetupWindow(
@@ -95,8 +100,12 @@ let lifecycle = AppLifecycle(
             // Automation has a switch per app under Milo; Accessibility and Screen Recording have the
             // permissions window, with its drag tile and restart.
             case let .access(need, app): need == .control ? access.openSettings(need, app: app) : setupWindow.open()
-            case .undo: break  // MiloModel sends it itself
+            case .undo, .copy: break  // MiloModel does these itself
             }
+        }
+        model.copy = { text in
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
         }
         model.meeting.onOpen = { window.show(meeting: $0) }
         model.meeting.copy = { text in

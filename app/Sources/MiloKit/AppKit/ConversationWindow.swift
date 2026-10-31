@@ -81,6 +81,14 @@ public final class ConversationWindow: NSWindow {
         route.go(.today)
     }
 
+    /// Show it at the conversation going on, where text Milo wrote waits to be copied.
+    public func showConversation() {
+        if !isVisible { controller.requestHistory() }
+        NSApp.activate(ignoringOtherApps: true)
+        makeKeyAndOrderFront(nil)
+        route.go(.live)
+    }
+
     /// Show it, or hide it if it is open.
     public func toggle() {
         if isVisible {
