@@ -27,7 +27,7 @@ from milo.services.connections import in_brain, reach
 from milo.services.reply_stream import ReplyParser
 from milo.services.today import Today
 from tests.fakes import FakeClock, FakeEyes, FakeHarness, FakeLiveModel, ListReminders
-from tests.services.stack import Stack, settle
+from tests.services.stack import Stack, settle, until
 
 DENTIST = {"id": "x1", "title": "Dentist", "start": "2026-10-29T15:00", "end": "2026-10-29T16:00", "location": "",
            "notes": "", "calendar": "Home"}
@@ -564,6 +564,25 @@ def test_milos_own_reminder_gets_a_card_and_an_undo(tmp_path):
     asyncio.run(say(s, "undo that"))
     assert s.reminders.items == []
 
+
+
+def test_a_reminder_the_user_asked_for_doesnt_ask_on_a_day_with_shared_entries(tmp_path):
+    """Replayed from the real Milo (2026-10-31): Halloween in a shared calendar made "remind me to call Anna" ask."""
+    halloween = {**DENTIST, "id": "x3", "title": "Halloween", "shared": True}
+    s = stack(tmp_path, ["[happy] I'll remind you at nine. <reminder>2026-10-30 09:00 Call Anna</reminder>"],
+              ["[happy] Got it. <reminder>2026-10-30 10:00 Read the offsite plan</reminder>"],
+              world={"events": [halloween]})
+    asyncio.run(say(s, "Remind me to call Anna tomorrow at 9"))
+    assert s.sink.of(Confirm) == [] and [r.text for r in s.reminders.items] == ["Call Anna"]
+
+    async def run():  # "okay" asks for nothing: a reminder in its reply could come from the shared entry
+        s.live_talk.start("okay")
+        await until(lambda: s.approvals.pending)
+        s.approvals.answer(s.sink.of(Confirm)[0].id, False)
+        await settle()
+
+    asyncio.run(run())
+    assert len(s.reminders.items) == 1
 
 class Notes:
     recording = True

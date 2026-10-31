@@ -67,8 +67,9 @@ def test_a_reminder_from_a_reply_to_screen_data_waits_for_the_users_yes():
 
 def test_after_a_look_a_later_reminder_or_fact_waits_for_a_yes_too():
     # Changed with tag_policy (2026-10-31): before, only the reply to the screen data itself asked; a later turn of
-    # the same conversation set them at once, though the model still has the screen text.
-    s = Stack(eyes=FakeEyes(EXCEL), model=FakeLiveModel(
+    # the same conversation set them at once, though the model still has the screen text. In "task" mode: in auto
+    # mode at the Mac the user's own "remind me" is the yes (test_quick_actions).
+    s = Stack(ask="task", eyes=FakeEyes(EXCEL), model=FakeLiveModel(
         ["[thinking] <look/>"], ["[neutral] It's your budget."],
         ["[happy] Sure. <reminder>2026-11-01 09:00 Pay the rent</reminder><remember>The user pays 900 rent</remember>"]))
     asked = answering(s, False, "look at this", "remind me to pay the rent tomorrow")

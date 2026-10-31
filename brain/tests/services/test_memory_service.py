@@ -49,7 +49,8 @@ def test_a_turn_with_nothing_to_remember_goes_in_plain():
 
 
 def test_recalled_outside_text_makes_later_tags_ask_first():
-    s = stack(model=FakeLiveModel(["[neutral] She asked to move dinner."],
+    """In "task" mode: in auto mode at the Mac the user's own "remember …" is the yes."""
+    s = stack(ask="task", model=FakeLiveModel(["[neutral] She asked to move dinner."],
                                   ["[happy] Noted. <remember>The user likes dinner on Fridays.</remember>"]))
     mail = Episode(new_id(s.clock.now()), s.clock.now() - timedelta(days=1), "task",
                    "Task: read Anna's email. Result: she asks to move dinner to Friday.", trusted=False)

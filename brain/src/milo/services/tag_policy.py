@@ -13,11 +13,12 @@ from dataclasses import dataclass
 
 _WORK = re.compile(r"\b((fix|fill|put|add|make|change|update|correct|write|enter|insert|sort|format|create|build|"
                    r"finish|complete|edit|move|rename|copy|paste|replace|open|go|show|play|send|remind|check|find|"
-                   r"summari[sz]e|start|stop|set|take|search|google|look up|delete|remove|cancel|schedule|save|archive)"
+                   r"summari[sz]e|start|stop|set|take|search|google|look up|delete|remove|cancel|schedule|save|archive|"
+                   r"remember)"
                    r"(es|s|ed|d|ing)?|"
                    r"(mach|füll|änder|korrigier|trag|schreib|erstell|sortier|formatier|bearbeit|füg|erledig|"
                    r"kopier|ersetz|verschieb|benenn|öffne|zeig|spiel|schick|erinner|stell|such|lösch|entfern|absag|"
-                   r"speicher|notier|plan)\w*)\b", re.IGNORECASE)
+                   r"speicher|notier|plan|merk)\w*)\b", re.IGNORECASE)
 _QUESTION = re.compile(r"^\s*(what|why|how|who|whom|whose|where|when|which|is|are|was|were|does|did|do|has|have|"
                        r"was|warum|wieso|weshalb|wie|wer|wo|wann|welche\w*|ist|sind|hat|haben)\b", re.IGNORECASE)
 
@@ -55,14 +56,14 @@ class TagPolicy:
     @property
     def outside(self) -> bool:
         """The conversation has read outside text: every tag that takes effect at once waits for a yes. An <open> of
-        a file, <remember> and <reminder> always, and <write> goes in only when the user's own words asked for
-        writing (Writer decides); the ones that can be closed or undone as `ask_undoable` says."""
+        a file always, and <write> goes in only when the user's own words asked for writing (Writer decides); the
+        ones that can be closed, undone or forgotten as `ask_undoable` says."""
         return self.tainted or self.now or self.saw_screen
 
     @property
     def ask_undoable(self) -> bool:
-        """An <open> of an address the user's words didn't name and an act tag (as a careful action). Each can be
-        closed or undone, so in auto mode at the Mac, when the user's own message asks for something (`own_work`:
+        """An <open> of an address the user's words didn't name, an act tag (as a careful action), a <reminder> and
+        a <remember>. Each can be closed, undone or forgotten, so in auto mode at the Mac, when the user's own message asks for something (`own_work`:
         "open the link", "add that to my calendar"), it just happens even after outside text (ADR 0022, 0028):
         sending, deleting for good and paying still ask (Approvals). A reply to "thanks" after a mail still asks:
         only the mail could have put an action there."""
