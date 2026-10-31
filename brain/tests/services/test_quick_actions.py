@@ -634,6 +634,26 @@ def test_ops_go_to_the_app_for_what_it_holds():
         asyncio.run(ops("reminders.list", {}))
 
 
+def test_today_asks_the_app_for_everything_at_once_and_doesnt_wait_for_a_slow_player():
+    """Calendar and Reminders are a round trip to the app each, and the system's player may take 0.5 s to say
+    nothing. One after the other they missed the 0.3 s a turn waits, and the turn went without the day."""
+    clock = FakeClock()
+
+    async def app(op, args):
+        if op == "media.state":
+            await asyncio.sleep(5)  # the player won't say
+        await asyncio.sleep(0.15)
+        if op == "calendar.events":
+            return [DENTIST]
+        if op == "reminders.list":
+            return [{"id": "r1", "title": "Buy milk", "due": "2026-10-29T18:00", "done": False}]
+        return {}
+
+    today = Today(AppOps(call=app, via_app=("calendar", "reminders", "media")), clock)
+    text, _ = asyncio.run(today.note())
+    assert "Dentist" in text and "Buy milk" in text, "both in within the 0.3 s"
+
+
 def test_today_fetches_through_the_app_and_waits_only_briefly():
     clock = FakeClock()
     seen = []

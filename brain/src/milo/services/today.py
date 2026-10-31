@@ -29,6 +29,8 @@ log = logging.getLogger("milo.today")
 REFRESH_S = 300.0
 WAIT_S = 0.3
 """How long a turn waits for a stale block before it goes without the fresh one."""
+MEDIA_S = 0.25
+"""How long the block waits for the player."""
 MAX_EVENTS = 24
 MAX_TODOS = 12
 TITLE_CHARS = 60
@@ -192,28 +194,19 @@ class Today:
         return self._clock.monotonic() - self._fetched_at > self._refresh_s
 
     async def _refresh(self) -> None:
+        """Calendar, Reminders and the player at once: each is a round trip to the app."""
         now = self._clock.now()
         today = now.date()
         start = datetime.combine(today, datetime.min.time())
         snap = Snapshot(day=today, music=self._snap.music)
         self._dirty = False
         try:
-            if self._ops.has("calendar"):
-                found = await self._ops("calendar.events", {"start": start.isoformat(timespec="minutes"),
-                                                            "end": (start + timedelta(days=2)).isoformat(
-                                                                timespec="minutes"), "query": ""})
-                snap.events = [e for e in found or [] if isinstance(e, dict)][:MAX_EVENTS]
-            if self._ops.has("reminders"):
-                found = await self._ops("reminders.list", {"query": "", "include_done": False})
-                horizon = start + timedelta(days=2)
-                due = [r for r in found or [] if isinstance(r, dict) and not r.get("done")
-                       and (_time(r.get("due")) or horizon) < horizon]
-                snap.todos = sorted(due, key=lambda r: str(r.get("due")))[:MAX_TODOS]
-            if self._ops.has("media"):
-                try:
-                    snap.music = str((await self._ops("media.state", {}) or {}).get("state", ""))
-                except OpsError:
-                    snap.music = ""
+            events, todos, snap.music = await asyncio.gather(self._calendar(start), self._todos(start), self._music())
+            snap.events = [e for e in events if isinstance(e, dict)][:MAX_EVENTS]
+            horizon = start + timedelta(days=2)
+            due = [r for r in todos if isinstance(r, dict) and not r.get("done")
+                   and (_time(r.get("due")) or horizon) < horizon]
+            snap.todos = sorted(due, key=lambda r: str(r.get("due")))[:MAX_TODOS]
         except OpsError as e:
             log.info("no fresh day for the talker: %s", e)
             self._fetched_at = self._clock.monotonic()
@@ -224,3 +217,27 @@ class Today:
             return
         self._snap = snap
         self._fetched_at = self._clock.monotonic()
+
+    async def _calendar(self, start: datetime) -> list:
+        if not self._ops.has("calendar"):
+            return []
+        return await self._ops("calendar.events", {"start": start.isoformat(timespec="minutes"),
+                                                   "end": (start + timedelta(days=2)).isoformat(timespec="minutes"),
+                                                   "query": ""}) or []
+
+    async def _todos(self, start: datetime) -> list:
+        if not self._ops.has("reminders"):
+            return []
+        return await self._ops("reminders.list", {"query": "", "include_done": False}) or []
+
+    async def _music(self) -> str:
+        """Whether music plays. The system's player may take its time to say nothing (ADR 0029): after `MEDIA_S`
+        the block keeps what it knew, so the events don't wait for it."""
+        if not self._ops.has("media"):
+            return self._snap.music
+        try:
+            return str((await asyncio.wait_for(self._ops("media.state", {}), MEDIA_S) or {}).get("state", ""))
+        except TimeoutError:
+            return self._snap.music
+        except OpsError:
+            return ""
