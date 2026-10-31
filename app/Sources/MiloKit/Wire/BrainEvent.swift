@@ -56,6 +56,9 @@ public enum BrainEvent: Equatable, Sendable {
     /// The user lent Milo one real device ("mouse" or "keyboard") for an action that can't be done in the
     /// background. The app hands it back on its own a while after the last such action, or when the session ends.
     case handsBorrow(on: Bool, what: String)
+    /// Milo needs the system's permission for work in progress (ADR 25): the system is about to ask ("ask"), or
+    /// it said no ("no", with Fix it under the bubble).
+    case access(AccessNote)
     /// Everything Milo knows about the user, for the "What Milo knows" window; sent after get_facts and each change.
     case facts([MemoryFact])
     /// The user's routines by name, and the recipe drafts waiting for a look.
@@ -104,6 +107,7 @@ extension BrainEvent: Decodable {
         case settings, restart, error
         case conversations, current, more, info, query, results, reminders
         case choices, lines, reset
+        case need, app, bundle
     }
 
     public init(from decoder: Decoder) throws {
@@ -156,6 +160,13 @@ extension BrainEvent: Decodable {
         case "hands_borrow":
             self = .handsBorrow(on: try c.decode(Bool.self, forKey: .on),
                                 what: try c.decodeIfPresent(String.self, forKey: .what) ?? "")
+        case "access":
+            let name = try c.decodeIfPresent(String.self, forKey: .app) ?? ""
+            let bundle = try c.decodeIfPresent(String.self, forKey: .bundle) ?? ""
+            self = .access(AccessNote(
+                need: AccessNeed(rawValue: try c.decode(String.self, forKey: .need)) ?? .control,
+                state: AccessState(rawValue: try c.decode(String.self, forKey: .state)) ?? .unknown,
+                text: try text(), app: name.isEmpty && bundle.isEmpty ? nil : AccessApp(name: name, bundle: bundle)))
         case "facts": self = .facts(try c.decode([MemoryFact].self, forKey: .facts))
         case "routines":
             self = .routines(try c.decodeIfPresent([RoutineInfo].self, forKey: .routines) ?? [],

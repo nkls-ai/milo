@@ -38,9 +38,15 @@ public final class StatusMenu: NSObject, NSMenuDelegate, NSMenuItemValidation {
     private var remoteStatusItem: NSMenuItem!
     private var remotePauseItem: NSMenuItem!
     private var remoteForgetItem: NSMenuItem!
+    /// "Apps Milo may control": read from `apps` each time it opens; any row opens System Settings (ADR 25).
+    private let apps: ControlledApps?
+    private let access: AccessSource?
+    private var appsMenu: NSMenu?
 
     public init(controller: MiloController, panel: OverlayPanel, window: ConversationWindow, settings: SettingsWindow,
-                setup: SetupWindow, paths: MiloPaths) {
+                setup: SetupWindow, paths: MiloPaths, apps: ControlledApps? = nil, access: AccessSource? = nil) {
+        self.apps = apps
+        self.access = access
         self.controller = controller
         self.panel = panel
         self.window = window
@@ -110,6 +116,13 @@ public final class StatusMenu: NSObject, NSMenuDelegate, NSMenuItemValidation {
         menu.addItem(.separator())
         add(menu, "Settings…", #selector(openSettings))
         add(menu, "Check permissions…", #selector(openSetup))
+        if apps != nil {
+            let list = NSMenu()
+            list.delegate = self
+            list.autoenablesItems = false
+            appsMenu = list
+            menu.addItem(withTitle: "Apps Milo may control", action: nil, keyEquivalent: "").submenu = list
+        }
         // For whoever set Milo up: out of the way of everyone else.
         let troubleshoot = NSMenu()
         add(troubleshoot, "Restart Milo's brain", #selector(restartBrain))
@@ -203,11 +216,40 @@ public final class StatusMenu: NSObject, NSMenuDelegate, NSMenuItemValidation {
     /// Each time a menu opens: ticks the dictation style the brain uses in the submenu, and shows Milo by
     /// message as the brain last reported it in the main menu.
     public func menuNeedsUpdate(_ menu: NSMenu) {
+        if menu === appsMenu { return updateApps(menu) }
         guard menu === styleMenu else { return updateRemoteItems() }
         for item in menu.items {
             item.state = item.representedObject as? String == controller.dictationStyle?.rawValue ? .on : .off
             item.isEnabled = controller.dictationStyle != nil  // no brain yet: nothing to switch
         }
+    }
+
+    /// The rows of "Apps Milo may control": each app macOS was asked about, ticked when allowed.
+    static func appRows(_ entries: [ControlledApps.Entry]) -> [(title: String, allowed: Bool)] {
+        entries.map { ($0.allowed ? $0.app.label : "\($0.app.label): not allowed", $0.allowed) }
+    }
+
+    private func updateApps(_ menu: NSMenu) {
+        guard let apps else { return }
+        if let access { apps.refresh(from: access) }  // a switch flipped in System Settings shows next time
+        menu.removeAllItems()
+        let rows = Self.appRows(apps.entries)
+        if rows.isEmpty {
+            let none = menu.addItem(withTitle: "None yet. macOS asks the first time Milo needs an app.", action: nil,
+                                    keyEquivalent: "")
+            none.isEnabled = false
+        }
+        for row in rows {
+            let item = add(menu, row.title, #selector(openAutomation))
+            item.state = row.allowed ? .on : .off
+            item.toolTip = "Switch it on or off in System Settings › Privacy & Security › Automation, under Milo."
+        }
+        menu.addItem(.separator())
+        add(menu, "Change in System Settings…", #selector(openAutomation))
+    }
+
+    @objc private func openAutomation() {
+        access?.openSettings(.control, app: nil)
     }
 
     /// A click on the menu bar icon brings Milo back if he left the screen, and his wait starts over.

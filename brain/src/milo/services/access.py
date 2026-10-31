@@ -41,7 +41,7 @@ WORKER_CONTROL = ("The user didn't allow Milo to control {app}; they were shown 
                   "done another way, do that; otherwise stop and tell the user in one sentence what is left.")
 WORKER_NEEDS = {
     Need.UI: ("Milo may not read or work other apps' windows on this computer yet; the user was shown how to allow "
-              "it. Use sheet_write, sheet_read, write_document or run_applescript if they fit; otherwise stop and "
+              "it. Use sheet_write, sheet_read, write_document or a script if they fit; otherwise stop and "
               "tell the user in one sentence what is left."),
     Need.SCREEN: ("Milo may not take screenshots on this computer yet; the user was shown how to allow it. Use "
                   "window_text, ax_tree or ax_find instead."),
@@ -77,19 +77,25 @@ class AccessGate:
         self._lock = asyncio.Lock()
         self._ids = itertools.count(1)
 
-    async def before(self, tool: str, args: dict, task_id: str,
-                     script_apps: Callable[[str], list[AppRef] | None]) -> None:
-        """Raises HandsError in words for the worker when the system won't let `tool` run. `script_apps` finds the
-        apps a script names (services/hands.py)."""
+    async def before(self, tool: str, args: dict, task_id: str) -> None:
+        """Before Milo looks at what `tool` would touch: the checks that start nothing and ask nobody (the screen,
+        other apps' windows), and filling cells, whose look already reads the sheet through the app. Raises
+        HandsError in words for the worker when the system won't let `tool` run."""
         if tool == "screenshot":
             return await self.need(Need.SCREEN, task_id)
         if tool in _UI_TOOLS:
             return await self.need(Need.UI, task_id)
+        if tool == "sheet_write":
+            return await self.control(AppRef(str(args["app"])), task_id)
+
+    async def before_running(self, tool: str, args: dict, task_id: str, apps: list[AppRef] | None = None) -> None:
+        """Once Milo's own checks passed and the user said yes where he asked, just before `tool` runs: the apps it
+        controls. Never earlier, so an action Milo refuses or the user turns down never starts an app or brings up
+        the system's question. `apps`: the apps a script names, which services/hands.py reads from it."""
         if tool in _APP_TOOLS:
             return await self.control(AppRef(str(args["app"])), task_id)
-        if tool == "run_applescript":
-            for app in script_apps(str(args["script"])) or ():
-                await self.control(app, task_id)
+        for app in apps or ():
+            await self.control(app, task_id)
 
     async def control(self, app: AppRef, task_id: str = "") -> None:
         """Milo may control `app`, or raises HandsError. The first time the system would ask, Milo says so first."""

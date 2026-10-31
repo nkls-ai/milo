@@ -139,7 +139,7 @@ class HandsService:
             self._check()
             task_id = self._task_id
             if self._access is not None:
-                await self._access.before(tool, args, task_id, script_apps)
+                await self._access.before(tool, args, task_id)
                 self._check()
             target = await self._describe(tool, args) if spec.acts else {}
             self._check()
@@ -177,6 +177,14 @@ class HandsService:
                 self._step(task_id, step, StepStatus.FAILED)
                 raise HandsError("What this would touch kept changing on the screen, so Milo didn't do it. Look "
                                  "again (screenshot or ax_tree) before you try.")
+            if self._access is not None:  # after Milo's own yes, so a refused action never starts the app
+                named = script_apps(str(args["script"])) if tool == "run_applescript" else None
+                try:
+                    await self._access.before_running(tool, args, task_id, named)
+                except HandsError:
+                    self._step(task_id, step, StepStatus.FAILED)
+                    raise
+                self._check()
             self._transcript.task_step(task_id, step)
             if spec.acts:
                 self._start_session(target)

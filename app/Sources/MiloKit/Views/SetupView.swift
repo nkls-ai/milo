@@ -7,9 +7,15 @@ public struct SetupView: View {
     @Environment(\.miloTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let done: () -> Void
+    /// The apps macOS was asked about, read-only, and what opens their switches (ADR 25). nil: no list.
+    let apps: ControlledApps?
+    let openAutomation: () -> Void
 
-    public init(setup: SetupModel, done: @escaping () -> Void) {
+    public init(setup: SetupModel, apps: ControlledApps? = nil, openAutomation: @escaping () -> Void = {},
+                done: @escaping () -> Void) {
         self.setup = setup
+        self.apps = apps
+        self.openAutomation = openAutomation
         self.done = done
     }
 
@@ -25,6 +31,7 @@ public struct SetupView: View {
                         .padding(.top, 10)
                         .padding(.leading, 4)
                     ForEach(setup.rows.filter(\.optional)) { card($0) }
+                    if let apps { ControlledAppsCard(apps: apps, open: openAutomation) }
                     tryIt.padding(.top, 10)
                 }
                 .padding(22)
@@ -204,5 +211,49 @@ public struct DragHelperView: View {
         .padding(16)
         .frame(width: 210)
         .background(theme.tint)
+    }
+}
+
+/// "Apps Milo may control": each app macOS was asked about and its answer. The switches are macOS's, so the
+/// button opens them in System Settings rather than changing anything here (ADR 25).
+struct ControlledAppsCard: View {
+    @ObservedObject var apps: ControlledApps
+    let open: () -> Void
+    @Environment(\.miloTheme) private var theme
+
+    var body: some View {
+        ThemedCard(padding: 12) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Apps Milo may control")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .foregroundStyle(theme.ink)
+                Text("macOS asks once per app, the first time I work in it. I'll tell you just before it does.")
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(theme.ink.opacity(0.7))
+                    .fixedSize(horizontal: false, vertical: true)
+                if apps.entries.isEmpty {
+                    Text("None yet.")
+                        .font(.system(size: 12.5, design: .rounded))
+                        .foregroundStyle(theme.ink.opacity(0.55))
+                }
+                ForEach(apps.entries) { entry in
+                    HStack(spacing: 8) {
+                        Image(systemName: entry.allowed ? "checkmark.circle.fill" : "minus.circle")
+                            .foregroundStyle(entry.allowed ? theme.primary : theme.ink.opacity(0.45))
+                        Text(entry.app.label)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(theme.ink)
+                        Spacer(minLength: 0)
+                        Text(entry.allowed ? "Allowed" : "Not allowed")
+                            .font(.system(size: 12, design: .rounded))
+                            .foregroundStyle(theme.ink.opacity(0.6))
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+                Button("Change in System Settings", action: open)
+                    .buttonStyle(PillButtonStyle(prominent: false))
+                    .padding(.top, 2)
+            }
+        }
     }
 }

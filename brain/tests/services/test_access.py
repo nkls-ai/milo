@@ -255,3 +255,42 @@ def test_the_bridge_asks_the_app_and_an_app_that_doesnt_know_the_op_means_unknow
         assert await places == ("/c",)
 
     asyncio.run(go())
+
+
+# ---- Milo's own yes comes first
+
+
+def test_a_script_the_user_turns_down_never_starts_the_app_or_brings_up_the_systems_question():
+    s, worker, access = stack([BOLD], apps={"Microsoft Excel": "ask"})
+    s.permits.ask = "step"
+
+    async def go():
+        async def say_no():
+            seen = 0
+            while True:
+                await asyncio.sleep(0)
+                for c in s.sink.of(Confirm)[seen:]:
+                    s.approvals.answer(c.id, False)
+                seen = len(s.sink.of(Confirm))
+        bot = asyncio.create_task(say_no())
+        s.tasks.submit("format it", title="format it", screen=True, user_asked=True)
+        await s.tasks.idle()
+        bot.cancel()
+    asyncio.run(go())
+    assert s.sink.of(Confirm), "Milo asked his own question"
+    assert access.calls == [], "no check, no start, no system question"
+    assert notes(s) == []
+
+
+def test_a_script_milo_never_runs_doesnt_touch_the_system_either():
+    password = ("run_applescript", {"script": 'tell application "Keychain Access" to get password of item 1'})
+    s, worker, access = stack([password], apps={"Keychain Access": "ask"})
+    run(s, "get it")
+    assert access.calls == []
+
+
+def test_the_tool_socket_checks_only_the_apps_the_connection_tools_script():
+    gate = AccessGate(FakeAccess(apps={"Microsoft Excel": "ask"}), RecordingSink(), pause_s=0)
+    requests = ToolRequests(approvals=None, bridge=None, access=gate)
+    answer = asyncio.run(requests.handle({"op": "access", "app": "Microsoft Excel"}))
+    assert answer["ok"] is False and "only for the apps" in answer["error"]

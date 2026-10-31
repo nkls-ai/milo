@@ -85,6 +85,22 @@ private func entries(_ key: String) throws -> [[String: Any]] {
                 HelperInfo(id: "f2f2f2f2f2f2", title: "Dentist email", status: .done),
             ]),
             .handsBorrow(on: true, what: "mouse"),
+            .access(AccessNote(need: .control, state: .ask,
+                               text: "macOS will ask once whether I may use Microsoft Excel. Click Allow.", app: AccessApp(name: "Microsoft Excel", bundle: "com.microsoft.Excel"))),
+            .access(AccessNote(need: .control, state: .no,
+                               text: "Okay, I won't use Microsoft Excel. If you change your mind, Fix it shows the switch.",
+                               app: AccessApp(name: "Microsoft Excel", bundle: "com.microsoft.Excel"))),
+            .access(AccessNote(need: .ui, state: .no,
+                               text: "To work in other apps' windows I need Accessibility. Fix it shows where to switch it on.")),
+            .appRequest(id: "a51f", op: "access.check", args: .object([
+                "need": .string("control"), "app": .string("Microsoft Excel"), "bundle": .string(""), "launch": .bool(true),
+            ])),
+            .appRequest(id: "a52f", op: "access.request", args: .object([
+                "need": .string("control"), "app": .string("Microsoft Excel"), "bundle": .string("com.microsoft.Excel"),
+            ])),
+            .appRequest(id: "a53f", op: "access.places", args: .object([
+                "app": .string("Microsoft Excel"), "bundle": .string("com.microsoft.Excel"),
+            ])),
             .facts([
                 MemoryFact(id: "01JBF6Z3Q8M2X4K7N9P0R5T6VW", text: "The user's name is Niklas.", topic: "basics",
                            since: "2026-10-30T09:12:00", pinned: true),
@@ -264,6 +280,17 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             ]))),
             .appResponse(id: "a42f", outcome: .failure(
                 "Milo isn't allowed to use your calendar. Turn it on in System Settings › Privacy & Security › Calendars.")),
+            .appResponse(id: "a51f", outcome: .success(.object([
+                "access": .string("ask"), "app": .string("Microsoft Excel"), "bundle": .string("com.microsoft.Excel"),
+                "system": .string("macOS"), "button": .string("Allow"),
+            ]))),
+            .appResponse(id: "a52f", outcome: .success(.object([
+                "access": .string("no"), "app": .string("Microsoft Excel"), "bundle": .string("com.microsoft.Excel"),
+                "system": .string("macOS"),
+            ]))),
+            .appResponse(id: "a53f", outcome: .success(.object([
+                "sandboxed": .bool(true), "places": .array([.string("/Users/you/Library/Containers/com.microsoft.Excel/Data")]),
+            ]))),
             .stopHelper(id: "c0ffee12ab34"),
             .stopAll,
             .handsResult(id: "hands-7", ok: false, result: ["borrow": "mouse"],

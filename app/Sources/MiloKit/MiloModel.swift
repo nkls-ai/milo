@@ -165,6 +165,9 @@ public final class MiloModel: ObservableObject {
             emotion = new
         case let .bubble(text), let .status(text):
             show(text)
+        case let .access(note):
+            // "no" gets Fix it; "ask" is the line before the system's own question, and stays plain.
+            show(note.text, action: note.state == .no ? .access(note.need, note.app) : nil)
         case let .heard(text):
             heard = text
         case let .level(value):
@@ -377,10 +380,12 @@ public enum BubbleAction: Equatable, Sendable {
     case copyConsent
     /// Shows a meeting's notes in the Milo window.
     case openMeeting(String)
+    /// Opens where the user lets Milo control an app, work other apps' windows or see the screen (ADR 25).
+    case access(AccessNeed, AccessApp?)
 
     public var title: String {
         switch self {
-        case .permissions, .microphone, .callAudio: "Fix it"
+        case .permissions, .microphone, .callAudio, .access: "Fix it"
         case .copyConsent: "Copy a note for the chat"
         case .openMeeting: "Open notes"
         }
@@ -394,6 +399,11 @@ public enum BubbleAction: Equatable, Sendable {
         case .callAudio: "Opens the screen and system audio recording settings in System Settings"
         case .copyConsent: "Copies a line telling the others that Milo takes notes, to paste into the call's chat"
         case .openMeeting: "Shows the meeting's notes in the Milo window"
+        case let .access(need, app):
+            switch need {
+            case .control: "Opens System Settings where you let Milo control \(app?.label ?? "the app")"
+            case .ui, .screen: "Opens Milo's permissions window"
+            }
         }
     }
 }

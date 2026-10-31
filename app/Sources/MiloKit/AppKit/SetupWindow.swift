@@ -9,8 +9,10 @@ public final class SetupWindow: NSWindow, NSWindowDelegate {
     private let model: MiloModel
     private var helper: NSPanel?
     private var watching: Set<AnyCancellable> = []
+    private var apps: ControlledApps?
+    private var access: AccessSource?
 
-    public init(setup: SetupModel, model: MiloModel) {
+    public init(setup: SetupModel, model: MiloModel, apps: ControlledApps? = nil, access: AccessSource? = nil) {
         self.setup = setup
         self.model = model
         super.init(contentRect: NSRect(x: 0, y: 0, width: 560, height: 820),
@@ -19,8 +21,12 @@ public final class SetupWindow: NSWindow, NSWindowDelegate {
         titlebarAppearsTransparent = true
         isReleasedWhenClosed = false
         delegate = self
-        contentView = NSHostingView(rootView: SetupView(setup: setup, done: { [weak self] in self?.close() })
+        contentView = NSHostingView(rootView: SetupView(setup: setup, apps: apps,
+                                                        openAutomation: { access?.openSettings(.control, app: nil) },
+                                                        done: { [weak self] in self?.close() })
             .themed(by: model))
+        self.apps = apps
+        self.access = access
         center()
         setup.restart = { Relaunch.now() }
         model.$state.sink { [weak setup] in setup?.noticed($0) }.store(in: &watching)
@@ -36,6 +42,7 @@ public final class SetupWindow: NSWindow, NSWindowDelegate {
 
     public func open() {
         setup.startWatching()
+        if let apps, let access { apps.refresh(from: access) }
         NSApp.activate(ignoringOtherApps: true)
         makeKeyAndOrderFront(nil)
     }

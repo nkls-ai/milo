@@ -20,6 +20,8 @@ public final class MacHands: HandsExecutor {
     private var script: Process?
     private let lock = NSLock()
     private var lent: Set<String> = []
+    /// Where a sandboxed app may save without macOS asking (AccessSource.places), for the script guard.
+    private let places: (AccessApp) -> [String]?
 
     /// The devices the user lent ("mouse", "keyboard"); set on the main queue, read on the hands queue. An
     /// action falls back to the real pointer or keyboard only for a device that was actually lent, so a yes to
@@ -31,13 +33,15 @@ public final class MacHands: HandsExecutor {
 
     private func lent(_ need: Delivery.Need) -> Bool { borrowed.contains(need.rawValue) }
 
-    public convenience init(screensFolder: URL) {
-        self.init(shots: ScreenShots(folder: screensFolder), apps: FrontApps())
+    /// `places`: where an app can save without macOS stopping it to ask for file access; nil for anywhere.
+    public convenience init(screensFolder: URL, places: @escaping (AccessApp) -> [String]? = { _ in nil }) {
+        self.init(shots: ScreenShots(folder: screensFolder), apps: FrontApps(), places: places)
     }
 
-    init(shots: ScreenShots, apps: FrontApps) {
+    init(shots: ScreenShots, apps: FrontApps, places: @escaping (AccessApp) -> [String]? = { _ in nil }) {
         self.shots = shots
         self.apps = apps
+        self.places = places
     }
 
     public func perform(_ tool: String, args: [String: JSONValue],
@@ -70,7 +74,7 @@ public final class MacHands: HandsExecutor {
     // MARK: Actions
 
     private func run(_ tool: String, _ args: [String: JSONValue], front: NSRunningApplication?) throws -> [String: JSONValue] {
-        if tool != "list_apps" && tool != "open_app" && tool != "run_applescript" && !AXIsProcessTrusted() {
+        if Self.needsAccessibility(tool, args) && !AXIsProcessTrusted() {
             throw HandsFailure(AX.notTrusted)
         }
         switch tool {
@@ -93,6 +97,13 @@ public final class MacHands: HandsExecutor {
         case "scroll": return try scroll(args)
         default: throw HandsFailure("Milo has no action called \(tool).")
         }
+    }
+
+    /// Whether an action reads or works another app's window. Scripts, opening apps and describing those don't, so
+    /// they work without Accessibility.
+    static func needsAccessibility(_ tool: String, _ args: [String: JSONValue]) -> Bool {
+        let free: Set<String> = ["list_apps", "open_app", "run_applescript"]
+        return !free.contains(tool == "describe" ? args["tool"]?.string ?? "" : tool)
     }
 
     /// What an action would touch, for the brain's safety check and for Milo to fly to.
@@ -247,6 +258,8 @@ public final class MacHands: HandsExecutor {
     }
 
     private func appleScript(_ source: String) throws -> [String: JSONValue] {
+        // A sandboxed app saving outside its folders would stop at macOS's file access question (ADR 25).
+        if let refusal = SandboxGuard.refusal(script: source, places: places) { throw HandsFailure(refusal) }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         process.arguments = ["-"]
