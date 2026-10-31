@@ -414,7 +414,7 @@ def _talk(p: Parts) -> None:
                     quiet=p.attention.user_speaking, language=p.language.get)
     p.live_talk = live_talk = LiveTalk(
         p.live_model, p.speaker, p.ui, p.context, p.clock, p.profile, p.reminders, p.ledger,
-        _persona(p.workspace.persona_path), config.chat.conversation_idle_reset_s, helpers, p.transcript,
+        _persona(p.workspace.persona_path), config.chat.conversation_idle_reset_s, helpers, transcript=p.transcript,
         eyes=p.eyes, approvals=p.approvals, memory=mem.turns if mem is not None else None,
         backchannel=p.backchannel, routines=p.routines, meetings=p.meetings, undo=p.undo,
         opener=Opener(AppHands(p.bridge), p.ui, p.clock), language=p.language, quick=p.quick, writer=writer,

@@ -52,7 +52,7 @@ class LiveTalk:
 
     def __init__(self, model: LiveModel, speaker: Speaker, ui: UiState, context: UserContext, clock: Clock,
                  profile: ProfileMemory, reminders: ReminderBook, ledger: UsageLedger,
-                 persona: Callable[[], str], idle_reset_s: float, tasks: Orchestrator,
+                 persona: Callable[[], str], idle_reset_s: float, tasks: Orchestrator, *,
                  transcript: Transcript | None = None, eyes: ScreenEyes | None = None,
                  approvals: Approvals | None = None, memory: TurnMemory | None = None,
                  backchannel: Backchannel | None = None, routines: Routines | None = None,
