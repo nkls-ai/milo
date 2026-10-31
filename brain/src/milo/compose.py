@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
@@ -279,6 +278,7 @@ def _presence(p: Parts) -> None:
 
 def _helpers(p: Parts) -> None:
     """Computer use, the helpers that do the real work, and the routines they follow."""
+    from .adapters.region import region
     from .memory.routines import JsonStateFile, MarkdownRoutineBook
     from .memory.undo_shelf import FileUndoShelf
 
@@ -299,7 +299,7 @@ def _helpers(p: Parts) -> None:
         p.hands = HandsService(AppHands(p.bridge), HelperQuestions(p.approvals, p.later("helpers"), screen=True),
                                p.ui, transcript=ScreenSteps(p.transcript, p.later("helpers")),
                                applescript=config.hands.applescript,
-                               locale=_mac_locale(), protected=workspace.protected, access=p.access,
+                               locale=region(), protected=workspace.protected, access=p.access,
                                before_change=undo.before_change, language=p.language.get)
         p.hands_server = HandsSocketServer(workspace.hands_socket_path, p.hands.call)
     p.memory_requests = MemoryRequests(mem.memory, p.approvals, mem.profile.remember) if mem is not None else None
@@ -618,16 +618,6 @@ def _live_settings(text: str) -> tuple[str, int]:
     return config.chat.updates, config.harness.max_helpers
 
 
-def _mac_locale() -> str:
-    """The Mac's region setting, like "en_US@rg=dezzzz", for money formats. "" if it can't be read."""
-    try:
-        done = subprocess.run(["/usr/bin/defaults", "read", "-g", "AppleLocale"], capture_output=True, text=True,
-                              timeout=5, stdin=subprocess.DEVNULL)
-    except (OSError, subprocess.TimeoutExpired):
-        return ""
-    return done.stdout.strip()
-
-
 def _persona(path: Path):
     """Read persona.md on every conversation start, so the user's edits apply without a restart."""
 
@@ -646,7 +636,7 @@ def _cloud_engine(config: Config, ctx: AdapterContext):
     name = config.stt.talk
     if not name:
         if config.stt.cloud_dictation:
-            log.warning("[stt] cloud_dictation needs [stt] talk to name a service; dictation stays on this Mac")
+            log.warning("[stt] cloud_dictation needs [stt] talk to name a service; dictation stays on this computer")
         return None
     options = config.section("stt").get(name, {})
     if not isinstance(options, dict):

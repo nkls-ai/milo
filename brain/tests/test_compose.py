@@ -51,7 +51,11 @@ def cheap(**edits) -> str:
 
 
 @pytest.fixture
-def build(tmp_path):
+def build(tmp_path, monkeypatch):
+    # These tests describe the wiring on a Mac, so they get the Mac's default engines on any OS (CI runs Linux).
+    from milo.adapters import platform
+
+    monkeypatch.setattr(platform, "current", lambda: platform.MACOS)
     runtimes = []
 
     def _build(config_text: str):

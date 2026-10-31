@@ -10,9 +10,9 @@ It reads code, not comments: imports, attribute uses and string values. Docstrin
 left alone, so a comment may still say how macOS behaves.
 
 `ALLOWED` is today's state, one (file, rule) pair per line with why it is there. It is the to-do list for a port:
-moving a coupling out deletes its line, and a line that matches nothing any more fails too, so the list only
-shrinks. A new coupling in core needs a new line here and a reason a reviewer will accept; usually the answer is
-an adapter or a port instead.
+moving a coupling out deletes its line, and a line that matches nothing any more fails too. `CEILING` holds the
+count and only goes down, so the list only shrinks: a new coupling in core needs a new line here and a `GROWN`
+entry with a reason a reviewer will accept. Usually the answer is an adapter, a port or `milo.system` instead.
 """
 
 from __future__ import annotations
@@ -143,11 +143,6 @@ def findings() -> list[Finding]:
 
 
 ALLOWED: dict[tuple[str, str], str] = {
-    # The composition root reads the region the Mac way; a `Locale` port with a per-platform adapter replaces it.
-    ("compose.py", "mac-command"): "_mac_locale runs `defaults read -g AppleLocale` for money formats",
-    ("compose.py", "mac-framework"): "_mac_locale: AppleLocale is the macOS name of the region setting",
-    ("compose.py", "mac-path"): "_mac_locale: /usr/bin/defaults",
-    ("compose.py", "mac-word"): "a log line says dictation stays \"on this Mac\"",
     # Config: key names chosen for a Mac.
     ("config.py", "mac-keys"): "push-to-talk key names (fn, right_option) and the cmd/option combo grammar",
     ("settings.py", "mac-keys"): "Settings labels for the Mac's push-to-talk keys (Right Option, fn)",
@@ -219,6 +214,34 @@ ALLOWED: dict[tuple[str, str], str] = {
 }
 
 
+CEILING = 56
+"""How many ALLOWED lines there were at the last count (2026-10-31: 57, less the one in GROWN). It only goes down:
+when a coupling moves out and its line goes, lower it too. It never goes up."""
+
+GROWN: dict[tuple[str, str], str] = {
+    ("services/live_talk.py", "posix-strftime"): "the rule is newer than this line, and live_talk.py is being fixed "
+                                                 "on another branch; both go when that lands",
+}
+"""ALLOWED lines added past CEILING, each with why the coupling can't be an adapter or a port yet. A reviewer reads
+this dict; growing ALLOWED without a line here fails test_allowlist_only_grows_with_a_reason."""
+
+
+def test_allowlist_only_grows_with_a_reason():
+    unexplained = len(ALLOWED) - CEILING - len(GROWN)
+    assert unexplained <= 0, (f"ALLOWED grew by {unexplained} line(s) with no GROWN entry. Move the coupling into an "
+                              "adapter or milo.system, or add its (file, rule) to GROWN with why it can't move yet.")
+    assert unexplained == 0, f"ALLOWED shrank: lower CEILING to {len(ALLOWED) - len(GROWN)}, so it stays down."
+    assert set(GROWN) <= set(ALLOWED), "a GROWN line whose coupling is gone: delete it from both"
+    assert all(len(reason.split()) >= 8 for reason in GROWN.values()), "say why it can't move, in a sentence"
+
+
+def test_the_docs_state_todays_count():
+    files = len({path for path, _ in ALLOWED})
+    text = (SRC.parents[2] / "docs" / "ARCHITECTURE.md").read_text(encoding="utf-8")
+    assert f"today's {len(ALLOWED)} exceptions in {files} files" in text, \
+        f"docs/ARCHITECTURE.md (Portability) should say \"today's {len(ALLOWED)} exceptions in {files} files\""
+
+
 def test_core_names_no_new_macos_couplings():
     new: dict[tuple[str, str], list[Finding]] = {}
     for f in findings():
@@ -238,7 +261,7 @@ def test_allowlist_has_no_stale_lines():
 
 
 def test_allowlist_lines_say_why():
-    assert all(reason.strip() for reason in ALLOWED.values())
+    assert all(len(reason.split()) >= 3 for reason in ALLOWED.values()), "each line says why, in a few words"
     assert all(rule in TEXT_RULES or rule in ("mac-command", "mac-import", "posix", "platform-branch")
                for _, rule in ALLOWED)
 

@@ -23,8 +23,9 @@ brain/src/milo/
                   (which language a message is in, SpokenLanguage), routines (the recipe format and plain-word schedules), dictionary (the dictation dictionary's
                   format, when a learned fix applies, the replacements). Depends on nothing.
   adapters/       concrete engines, each registering itself by name
-    harness/      codex, claude (agent harnesses), claude_live (the streaming chat model)
-    stt/          mlx_whisper
+    harness/      codex, claude (agent harnesses), claude_live (the streaming chat model), openai_compat (any
+                  OpenAI-style chat API as the chat model: OpenAI, OpenRouter, Ollama, LM Studio)
+    stt/          mlx_whisper, elevenlabs (Scribe: streaming for [stt] talk, whole recordings for [stt] use)
     diarize/      sherpa_onnx (voice embeddings for meeting notes, TitaNet-small by default)
     tts/          omnivoice, say
     audio/        sounddevice (mic in, speaker out), wav (a real-time virtual sound card that writes WAV files,
@@ -33,7 +34,10 @@ brain/src/milo/
     connect/      mac (Calendar and Reminders through the app, Mail and Notes through AppleScript,
                   Shortcuts, Spotlight files), fake (a made-up world in ~/Milo/fake)
     channel/      telegram (Bot API long polling), imessage (experimental: chat.db and Messages AppleScript)
-    headless/     none: no microphone, no voice, no speaker, for tests and the eval
+    headless/     none: no microphone, no voice, no speaker, no connections, for tests, the eval and platforms
+                  without connections yet
+    platform.py   which engines each OS gets when config.toml leaves `use` out (the one place that asks the OS)
+    region.py     the user's region for money formats (AppleLocale on a Mac, LC_MONETARY elsewhere)
     embed/        mlx_e5 (multilingual-e5-small in MLX), hash (hashed words, no model; tests and CI)
   connect/        the MCP tool server the worker loads (python -m milo.connect)
   eval/           the 30-task eval (python -m milo.eval) and the on-screen eval (python -m milo.eval.screen)
@@ -72,6 +76,8 @@ brain/src/milo/
                   (throttled meters), quiet (wait for a turn to end), fallback_voice
   transport/      Unix socket JSONL servers: brain.sock (an EventSink), hands.sock, and the tool socket and its
                   client
+  system/         the OS primitives the core needs (secret-file ownership, the instance lock, process groups,
+                  local sockets): posix.py, and windows.py with the same functions as NotImplementedError stubs
   mcp_server.py   the milo-mac MCP stdio server the worker CLI starts; forwards calls to hands.sock
   brain.py        routes inbound commands to services
   config.py       reads config.toml into sections
@@ -93,7 +99,7 @@ Rules that keep the parts swappable:
 
 ## Portability
 
-Milo runs on macOS only, but the brain's core and the protocol must not depend on it, so a Windows or Linux app can drive the same brain later ([ADR 27](adr/0027-a-platform-boundary.md)). macOS belongs in brain adapters (picked by name, defaults per platform from `compose.py`) and in the app's adapters behind `app/Sources/MiloKit/Ports.swift`. On the wire go plain words, opaque ids and top-left global points, never native enums or key codes. `brain/tests/test_portability.py` reads every core module (`core`, `services`, `memory`, `proactive`, `connect`, `transport` and the top-level modules) and fails on a new macOS or POSIX coupling: AppleScript, bundle ids, macOS paths and commands, ⌘ keys, System Settings, Apple frameworks and apps, "Mac" in what the user or the model reads, `fcntl` and `AF_UNIX`, `sys.platform`. Its `ALLOWED` list holds today's 62 exceptions, each with its reason. It is the to-do list for a port, and it can only get shorter: a line that no longer matches fails too.
+Milo runs on macOS only, but the brain's core and the protocol must not depend on it, so a Windows or Linux app can drive the same brain later ([ADR 27](adr/0027-a-platform-boundary.md)). macOS belongs in brain adapters and in the app's adapters behind `app/Sources/MiloKit/Ports.swift`. Adapters are picked by name in `config.toml`; a part that leaves `use` out gets the `Platform`'s engine (`core/platform.py`), and `adapters/platform.py` is the one place that asks which OS this is. On a Mac that is today's set (mlx_whisper, omnivoice with `say` behind it, mlx_e5, the mac connections); on Linux and Windows it is ElevenLabs for hearing and voice, the hash embedder, no fallback voice and no connections, until they have local engines. The workspace template names no Mac engine for that reason. POSIX calls (`flock`, uids and modes, process groups, Unix sockets) go through `milo.system`, one module per OS family. Apple-only packages (`mlx`, `mlx-whisper`) carry a `sys_platform == 'darwin'` marker, so `uv sync` works on Linux and Windows. On the wire go plain words, opaque ids and top-left global points, never native enums or key codes. `brain/tests/test_portability.py` reads every core module (`core`, `services`, `memory`, `proactive`, `connect`, `transport` and the top-level modules) and fails on a new macOS or POSIX coupling: AppleScript, bundle ids, macOS paths and commands, ⌘ keys, System Settings, Apple frameworks and apps, "Mac" in what the user or the model reads, `fcntl` and `AF_UNIX`, `%-d`-style strftime flags (use `core/dates.py`), `sys.platform`. Its `ALLOWED` list holds today's 57 exceptions in 29 files, each with its reason. It is the to-do list for a port, and it can only get shorter: a line that no longer matches fails, `CEILING` holds the count and only goes down, and a line added past it needs a `GROWN` entry saying why it can't move. A test checks that this paragraph states the count.
 
 For every new feature:
 
@@ -105,6 +111,21 @@ For every new feature:
 - Key combos and risk words are data that say what a key or a label means on that platform.
 - In the app, logic goes in `MiloKit` files that import only Foundation or Combine. AppKit, AX, CGEvent and ScreenCaptureKit go in `Adapters/` or `AppKit/`.
 - An Apple-only Python package gets a `sys_platform == 'darwin'` marker and is imported only inside its adapter's methods.
+- An OS call the core can't avoid (a lock, a socket, a process, file ownership) is a function in `milo.system`, written for POSIX and stubbed for Windows. A new default engine goes in `adapters/platform.py`, not in the template or `config.py`.
+- Dates in text are `core/dates.py`'s English words, never `%-d` or a locale's `%A`/`%B`.
+
+### Porting guide
+
+What a Windows or Linux Milo still needs, most work first. The brain resolves its dependencies for Linux and Windows and imports without the Apple-only packages, and `.github/workflows/brain.yml` runs its tests on Ubuntu; talking works with `[chat]` on Claude or any `openai_compat` provider and ElevenLabs for hearing and voice.
+
+1. **A native shell.** The app is the whole face of Milo and none of it runs outside Apple's frameworks: the overlay panel and the wren (CALayer, `WrenView`, `FlightDriver`), the bubble, the Milo window, settings and setup. On Windows: C# with WPF (a layered, topmost, click-through window) and the wren drawn again in Composition or Win2D from `WrenPose` and `WrenRig`'s numbers. It ports `MiloController`, `MiloModel`, `Presence`, `TakeoverDetector`, `ScreenController` and `Delivery` from `MiloKit` and speaks `protocol/messages.json`, with `app_hello` (ADR 27) once the brain reads it.
+2. **Hands.** `MacHands`, `Accessibility` and `MacWindowWatcher` become UI Automation (Invoke, Value, Text and Scroll patterns), `SendInput` for borrowed input, Windows.Graphics.Capture for screenshots and `SetWinEventHook` for the window outline; on Linux AT-SPI2, XTest or libei, and the ScreenCast portal. Which apps take what in the background has to be found out again, app by app. The brain side: `run_script` with PowerShell in place of `run_applescript`, the `ScriptDialect` port for `sheets.py` and `documents.py` (Excel through COM), and the risk data per platform (Recycle Bin, Shift+Delete, Outlook's send keys).
+3. **Push-to-talk and paste.** A low-level keyboard hook for a bare modifier (`right_ctrl`, `right_alt`), the clipboard and `SendInput` Ctrl+V, and reading the field back for ADR 21 through UI Automation. Wayland mostly can't do the bare-modifier key or the overlay.
+4. **The EventKit replacement and connections.** Calendar and Reminders run in the Mac app through EventKit; elsewhere a `connect.outlook` adapter (Outlook COM or Microsoft Graph) or Evolution Data Server / CalDAV, plus mail, notes and files (Windows Search). Until one exists, the platform's connections are `none` and the worker gets none of those tools.
+5. **The brain's Windows primitives.** `brain/src/milo/system/windows.py`: named pipes with a DACL for the three sockets, a named mutex for the lock, owner SIDs and DACLs for secrets, Job Objects for the harness CLIs and their trees. Each stub says what to use. Also `adapters/region.py` (GetUserDefaultLocaleName) and `adapters/power.py` (no `pmset`).
+6. **Local engines.** A `stt.faster_whisper` or `stt.whisper_cpp` adapter (the quick-pass timing here was tuned on MLX and needs measuring again), an ONNX e5 embedder, OmniVoice on `cuda` or `cpu` (`device = ""` picks), and Piper as the offline fallback voice. Each goes into `adapters/platform.py` as that OS's default once it exists.
+7. **Meeting audio.** WASAPI process loopback on Windows 10 2004 and later, PipeWire monitor streams on Linux.
+8. **Words.** Twelve core files still say "Mac" in what the user or the model reads, and more name Mac apps (Finder, Numbers, Safari) or System Settings. They should come from a `Platform` wording table or from the app. `test_portability.py`'s `ALLOWED` lists every one.
 
 ## Cross-module interfaces
 
