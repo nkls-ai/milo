@@ -109,6 +109,13 @@ class ElevenLabsVoice:
         self._last_used = -KEEP_WARM_S
         self._loop: asyncio.AbstractEventLoop | None = None
 
+    @property
+    def clip_key(self) -> str:
+        """What a clip rendered by this voice sounds like, so a cached one is only reused for the same: every
+        render costs credits (services/backchannel.py)."""
+        settings = ",".join(f"{k}={v}" for k, v in sorted(self.voice_settings.items()))
+        return f"elevenlabs {self.model} {self.voice_id} {settings} {self.language}"
+
     # ---- Voice
 
     def warm(self) -> None:

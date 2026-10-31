@@ -50,6 +50,11 @@ class FallbackVoice:
         return self._voice.sample_rate
 
     @property
+    def clip_key(self) -> str | None:
+        """The main voice's clip key while it speaks; None while the fallback does, so its clips aren't kept."""
+        return None if self._using_fallback() else getattr(self._voice, "clip_key", None)
+
+    @property
     def first_audio_s(self) -> float:
         return getattr(self._voice, "first_audio_s", 0.0)
 

@@ -132,6 +132,8 @@ class LiveTalk:
         YouTube for the search."""
         self._via = ""
         """Where the turn came from: "voice" or "typed" at the Mac, "message" from the phone."""
+        self._speak = True
+        """Whether the reply being written is spoken. Its acts' and undos' lines follow it: typed asks for no audio."""
         self._effects = ReplyEffects(ui, profile, reminders, tasks, start_open=self._start_open, approvals=approvals,
                                      routines=routines, undo=undo, quick=quick, computer=computer)
         """Does what a finished reply's tags say, asking first where its TagPolicy says so."""
@@ -365,6 +367,8 @@ class LiveTalk:
         `screen`: the message carries screen data, so the reply may not remember facts or look again.
         `tags=False` ignores every tag (a spoken helper update must not start anything).
         """
+        if tags:
+            self._speak = speak
         self._ui.thinking = True
         self._ui.set_state(MiloState.THINKING)
         self._ui.set_emotion(Emotion.THINKING)
@@ -610,7 +614,7 @@ class LiveTalk:
         if self._quick is None:
             log.info("ignoring %d act tag(s): quick actions are off", len(acts))
             return
-        self._quick.start(acts, outside=rule.ask_undoable, via=self._via)
+        self._quick.start(acts, outside=rule.ask_undoable, via=self._via, speak=self._speak)
 
     def _write_now(self, texts: Sequence[str], rule: TagPolicy) -> None:
         """Paste what <write> wrote the moment its tag closes (ADR 0033). After outside text it goes in only when the
@@ -636,7 +640,7 @@ class LiveTalk:
             self._ui.thinking = True
             self._look_started = asyncio.create_task(self._eyes.look("window"))
         self._effects.apply(parser, rule, held=held, remember=remember, language=self._language.code)
-        self._effects.take_back(parser)
+        self._effects.take_back(parser, speak=self._speak)
 
     def _hiccup(self) -> None:
         self._system = None  # the conversation may be broken: start a fresh one next turn

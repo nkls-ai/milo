@@ -142,11 +142,11 @@ class ReplyEffects:
             self._asking.add(asking)
             asking.add_done_callback(self._asking.discard)
 
-    def take_back(self, parser: ReplyParser) -> None:
+    def take_back(self, parser: ReplyParser, *, speak: bool = True) -> None:
         """<undo> tags. Like stopping, undoing never asks first: it only puts back what a helper changed, and Undo
         itself asks when the user changed it since."""
         for ref in parser.undos if self._undo is not None else ():
-            self._undo.undo(ref)
+            self._undo.undo(ref, said=bool(parser.spoken.strip()), speak=speak)
 
     async def _ask_then_apply(self, turn: asyncio.Task | None,
                               effects: list[tuple[str, str, Callable[[], None]]]) -> None:

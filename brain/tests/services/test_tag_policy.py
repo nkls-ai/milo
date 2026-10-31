@@ -84,3 +84,14 @@ def test_only_words_that_ask_for_the_tag_itself_let_it_skip_the_question():
     assert rule("what did I ask you to remember?").ask_fact("The user likes tea")
     assert rule("remind me to call Anna").ask_fact("Anna is the user's sister"), "a reminder isn't a fact"
     assert rule("remind me to call Anna", via="message").ask_reminder("Call Anna"), "from the phone the plain rule"
+
+
+def test_undo_that_asks_for_work():
+    """Live, "undo that" right after Milo put the dentist on the calendar asked "Delete “Dentist”…?": the calendar
+    in the conversation counts as outside text, and "undo" wasn't one of the verbs that ask for work."""
+    def rule(request: str):
+        return policy(tainted=True, saw_screen=False, now=False, auto=True, via="voice", request=request)
+
+    assert not rule("undo that").ask_undoable
+    assert not rule("mach das rückgängig").ask_undoable
+    assert rule("what did you undo?").ask_undoable, "a question asks for nothing"

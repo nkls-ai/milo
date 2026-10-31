@@ -188,7 +188,12 @@ import Testing
         #expect(DoneCardText.opens(ActionDone(kind: .note, title: "Packliste", app: "Notes", lang: "de")) ==
                 "Öffnet es in Notes")
         #expect(DoneCardText.spoken(ActionDone(kind: .todo, title: "Milch", app: "Reminders", lang: "de"), now: now)
-                .hasPrefix("Zu deinen To-dos hinzugefügt: Milch"))
+                .hasPrefix("To-do: Milch"))
+        let deleted = DoneCardText.spoken(ActionDone(kind: .event, title: "Dentist", detail: "Deleted",
+                                                     when: at("2026-11-01T11:00:00+01:00"), app: "Calendar",
+                                                     lang: "en"), now: now)
+        #expect(deleted.hasPrefix("Calendar: Dentist, ") && deleted.contains("Deleted"),
+                "a deleted event never reads \"Added\"")
     }
 
     // MARK: Clicks through the panel

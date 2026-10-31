@@ -239,7 +239,8 @@ def _presence(p: Parts) -> None:
     p.hearing_engine = _cloud_engine(config, p.ctx)
     p.hearing = CloudHearing(p.hearing_engine, dictation=config.stt.cloud_dictation, on_switch=p.notices[1]) \
         if p.hearing_engine is not None else None
-    p.backchannel = Backchannel(speaker, enabled=config.chat.backchannels)
+    p.backchannel = Backchannel(speaker, enabled=config.chat.backchannels,
+                                cache=workspace.state_dir / "voice" / "clips")
     rules = SplitRules(idle_s=config.chat.conversation_idle_reset_s)
     store = JsonlConversationStore(workspace.conversations_dir)
     try:

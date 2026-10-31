@@ -14,8 +14,12 @@ last, never the same clip twice in a row, and never while Milo is held or someon
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import re
+from pathlib import Path
+
+import numpy as np
 
 from milo.core.types import Audio, Emotion
 
@@ -41,9 +45,12 @@ def is_greeting(text: str) -> bool:
 class Backchannel:
     """Arms one filler per turn and plays it if the reply is late (see the module docstring)."""
 
-    def __init__(self, speaker: Speaker, *, enabled: bool = True):
+    def __init__(self, speaker: Speaker, *, enabled: bool = True, cache: Path | None = None):
         self._speaker = speaker
         self.enabled = enabled
+        self._cache = cache
+        """Where rendered clips are kept between runs. A paid voice charged for every clip on every start: 57
+        restarts in a day used up more than a tenth of the month's ElevenLabs credits."""
         self._clips: dict[str, Audio] = {}
         self._last: str | None = None
         self._last_at: float | None = None
@@ -61,9 +68,29 @@ class Backchannel:
         voice = self._speaker.voice
         for text in CLIPS:
             try:
-                self._clips[text] = shape(voice.synthesize(text), voice.sample_rate)
+                self._clips[text] = shape(self._render(voice, text), voice.sample_rate)
             except Exception:
                 log.exception("could not render the backchannel %r", text)
+
+    def _render(self, voice, text: str) -> Audio:
+        """The clip from the cache when this very voice made it before, else rendered (and kept, if the voice that
+        rendered it has a key: not a fallback that stood in)."""
+        key = getattr(voice, "clip_key", None)
+        path = None
+        if self._cache is not None and key:
+            path = self._cache / (hashlib.sha256(f"{key}\n{text}".encode()).hexdigest()[:24] + ".npy")
+            try:
+                return np.load(path)
+            except (OSError, ValueError):
+                pass
+        audio = voice.synthesize(text)
+        if path is not None and getattr(voice, "clip_key", None) == key:
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                np.save(path, np.asarray(audio, dtype=np.float32))
+            except OSError as e:
+                log.info("could not keep the backchannel %r: %s", text, e)
+        return audio
 
     def arm(self, text: str = "", *, first: bool = False) -> None:
         """A reply to `text` started: listen for it being late. `first`: the conversation's first turn, which

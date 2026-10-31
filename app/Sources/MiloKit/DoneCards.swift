@@ -160,15 +160,16 @@ public enum DoneCardText {
         return "\(date.formatted(day)), \(hour)"
     }
 
-    /// What VoiceOver says for the card.
+    /// What VoiceOver says for the card. An event, a to-do, a reminder or a timer can also have been deleted, ticked
+    /// off or stopped, which the detail says ("Deleted"), so those name only what it is.
     public static func spoken(_ action: ActionDone, now: Date, locale: Locale = .current) -> String {
         let (w, dates) = words(action, locale)
         let what: String = switch action.kind {
-        case .event: w("Added to your calendar")
-        case .todo: w("Added to your to-dos")
-        case .reminder: w("Reminder set")
+        case .event: w("Calendar")
+        case .todo: w("To-do")
+        case .reminder: w("Reminder")
         case .note: w("Note written")
-        case .timer: w("Timer set")
+        case .timer: w("Timer")
         case .draft: w("Draft written")
         case .shortcut: w("Shortcut ran")
         case .music: w("Music")
@@ -220,9 +221,8 @@ public enum DoneCardText {
             "I'll remind you": "Ich erinnere dich", "In your notes": "In deinen Notizen", "Timer running": "Timer läuft",
             "Draft, not sent": "Entwurf, nicht gesendet", "Shortcut ran": "Kurzbefehl ausgeführt", "Music": "Musik",
             "Opened": "Geöffnet", "Done": "Erledigt", "Rings at %@": "Klingelt um %@", "Today": "Heute",
-            "Tomorrow": "Morgen", "Added to your calendar": "Im Kalender eingetragen",
-            "Added to your to-dos": "Zu deinen To-dos hinzugefügt", "Reminder set": "Erinnerung gestellt",
-            "Note written": "Notiz geschrieben", "Timer set": "Timer gestellt", "Draft written": "Entwurf geschrieben",
+            "Tomorrow": "Morgen", "Calendar": "Kalender", "To-do": "To-do", "Reminder": "Erinnerung",
+            "Note written": "Notiz geschrieben", "Timer": "Timer", "Draft written": "Entwurf geschrieben",
             "Shows your reminders in the Milo window": "Zeigt deine Erinnerungen im Milo-Fenster",
             "Shows it": "Zeigt es", "Opens it": "Öffnet es", "Opens it in %@": "Öffnet es in %@",
             "Ready to copy": "Bereit zum Kopieren", "Written": "Geschrieben", "Written, ready to copy": "Geschrieben, bereit zum Kopieren",

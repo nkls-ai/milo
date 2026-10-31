@@ -41,6 +41,7 @@ MEDIA_S = 0.25
 """How long the block waits for the player."""
 MAX_EVENTS = 24
 MAX_TODOS = 12
+MAX_UNDATED = 15
 TITLE_CHARS = 60
 REMINDER_CHARS = 200
 
@@ -55,6 +56,11 @@ def inert(text: object, limit: int = TITLE_CHARS) -> str:
 class Snapshot:
     events: list[dict] = field(default_factory=list)
     todos: list[dict] = field(default_factory=list)
+    undated: list[dict] = field(default_factory=list)
+    """Open to-dos with no due date soon, on the user's own lists: most to-dos. Without them the model guessed a
+    title for "I called the bank", or translated it ("Paket abholen" for "Pick up the parcel"), and found nothing."""
+    more: bool = False
+    """There are more of them than `undated` holds."""
     music: str = ""
     day: date | None = None
 
@@ -182,6 +188,12 @@ class Today:
                 handle = self._handle("t", (str(t.get("id", "")),), t)
                 lines.append(f"- {handle} {inert(t.get('title'))}" + (f", {when}" if when else "")
                              + (" (shared)" if shared else ""))
+        if snap.undated:
+            # Shared lists stay out: someone else wrote them, and they would make every turn outside text. A tick
+            # still finds them by title.
+            lines.append("Other to-dos:" + (" (some; the rest are on the list too)" if snap.more else ""))
+            lines += [f"- {self._handle('t', (str(t.get('id', '')),), t)} {inert(t.get('title'))}"
+                      for t in snap.undated]
         own = [r for r in self._reminders.all() if not r.done] if self._reminders is not None else []
         if own:
             lines.append("Milo's reminders:")
@@ -254,6 +266,9 @@ class Today:
             due = [r for r in todos if isinstance(r, dict) and not r.get("done")
                    and (parse_local(r.get("due")) or horizon) < horizon]
             snap.todos = sorted(due, key=lambda r: str(r.get("due")))[:MAX_TODOS]
+            undated = [r for r in todos if isinstance(r, dict) and not r.get("done") and not r.get("shared")
+                       and r not in due]
+            snap.undated, snap.more = undated[:MAX_UNDATED], len(undated) > MAX_UNDATED
         except ToolError as e:
             log.info("no fresh day for the talker: %s", e)
             self._fetched_at, self._read = self._clock.monotonic(), False

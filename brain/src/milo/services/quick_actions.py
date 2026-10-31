@@ -79,8 +79,9 @@ and the day instead: <event do="cancel" title="Dentist" on="2026-11-12"/>.
 - <todo due="2026-11-05T18:00">Buy milk</todo> adds a to-do to the user's Reminders, on their phone too. due is \
 optional; list="..." if they named a list. Use <reminder> only when the user wants you to remind them yourself.
 - <todo do="done" id="t1"/> ticks a to-do off: "I bought the oat milk", "take it off my list", "streich \
-Hafermilch von der Liste". <todo do="delete" id="t1"/> only when they say delete. id is its handle from <today>; \
-for one not there give its title as they said it: <todo do="done" title="oat milk"/>.
+Hafermilch von der Liste". When the user says they did something that may be on their list ("I called the bank"), \
+tick it off at once; never ask whether to. <todo do="delete" id="t1"/> only when they say delete. id is its handle \
+from <today>; for one not there give its title as they said it, in its words: <todo do="done" title="oat milk"/>.
 - <note title="Packing list">the text</note> writes a new note in Notes.
 - <timer minutes="10">Pasta</timer> sets a timer (seconds="90" or hours="1" work too). Milo rings when it's up. \
 <timer do="cancel" title="Pasta"/> stops one ("mach den Timer aus"); without title, the only one running.
@@ -125,6 +126,10 @@ class _Plan:
     run: Callable[[], Awaitable[_Done]]
     sure: bool = True
     """False: Milo only guessed what it is about (an event found by part of its title). It asks first, every time."""
+    light: bool = False
+    """So small and so plain to see that in auto mode outside text in the conversation doesn't make it ask: ticking a
+    to-do off. Milo says which one and its card unticks it. The user says "I bought the milk", not "tick it off", so
+    their words rarely ask for it as work, and an invite in <today> made every such tick a question."""
 
 
 @dataclass
@@ -191,6 +196,7 @@ class QuickActions:
         self._by_turn: dict[asyncio.Task, list[asyncio.Task]] = {}
         self._lines: dict[asyncio.Task, list[str]] = {}
         self._spoke: weakref.WeakKeyDictionary[asyncio.Task, str] = weakref.WeakKeyDictionary()  # what replies said
+        self._silent: weakref.WeakSet[asyncio.Task] = weakref.WeakSet()  # acts of a turn that answers without audio
         self._allowed: set[str] = set()
         """Apps the system lets Milo control, found before the first script there (ADR 0025)."""
 
@@ -207,17 +213,20 @@ class QuickActions:
         if turn is not None and spoken.strip():
             self._spoke[turn] = spoken
 
-    def start(self, acts: Sequence[ActRequest], *, outside: bool, via: str = "voice") -> None:
+    def start(self, acts: Sequence[ActRequest], *, outside: bool, via: str = "voice", speak: bool = True) -> None:
         """Start the act tags of the reply streaming now, each in its own task, so the calendar has the event by the
         time the reply ends (ADR 0028's pattern for <open>). `outside`: the conversation's rule for tags (outside
         text in it, or in the message being answered). The act asks itself, once its target is known, so the
         question can say what it is about ("It's an invite"): an act from outside text asks before any change, like
         a careful helper, and waits for the reply to end so the bubble shows the question. Stopping or pausing notes
-        and a timer never ask, like a stop."""
+        and a timer never ask, like a stop. speak=False: the turn answers in the bubble only (typed), and so do its
+        acts' lines; a timer still rings aloud."""
         turn = asyncio.current_task()
         lang = words.language(self._language())
         for act in acts:
-            self._start(act, outside=outside, turn=turn, via=via, lang=lang)
+            task = self._start(act, outside=outside, turn=turn, via=via, lang=lang)
+            if not speak:
+                self._silent.add(task)
 
     def reminded(self, reminder: Reminder, said: str) -> None:
         """A <reminder> tag set one of Milo's own reminders: give it an Undo and a card."""
@@ -244,13 +253,15 @@ class QuickActions:
 
     # ---- running one act
 
-    def _start(self, act: ActRequest, *, outside: bool, turn: asyncio.Task | None, via: str, lang: str) -> None:
+    def _start(self, act: ActRequest, *, outside: bool, turn: asyncio.Task | None, via: str,
+               lang: str) -> asyncio.Task:
         task = asyncio.create_task(self._run(act, outside=outside, turn=turn, via=via, lang=lang))
         self._running.add(task)
         task.add_done_callback(self._running.discard)
         if via == "message" and turn is not None:
             self._by_turn.setdefault(turn, []).append(task)
             self._lines.setdefault(turn, [])
+        return task
 
     async def _run(self, act: ActRequest, *, outside: bool, turn: asyncio.Task | None, via: str,
                    lang: str) -> None:
@@ -261,7 +272,8 @@ class QuickActions:
                 level = self._approvals.policy.level(plan.approval)
                 if level is ActionLevel.NEVER:
                     raise Problem("Milo isn't allowed to do that.")
-                if not plan.sure or self._approvals.asks(plan.approval, careful=outside):
+                if not plan.sure or self._approvals.asks(plan.approval, careful=outside and not (
+                        plan.light and self._approvals.permits.ask == "auto")):
                     if turn is not None and via != "message":
                         await asyncio.wait({turn})  # ask once the reply is over, so the bubble shows the question
                     if not plan.sure:  # whatever the user allowed before: the question is which one, not whether
@@ -319,7 +331,7 @@ class QuickActions:
             return  # the reply already said it; the card shows it happened
         loop = asyncio.get_running_loop()
         deadline = loop.time() + self._wait_s
-        speak = via != "message"
+        speak = via != "message" and asyncio.current_task() not in self._silent
         while self._quiet() or self._speaker.active:
             if loop.time() >= deadline:
                 speak = False
@@ -402,7 +414,7 @@ class QuickActions:
         when = dates.when(start, self._clock.now().date(), lang, all_day=all_day)
         return _Plan("change", say("acts.ask.event", lang, title=inert(title, 50), when=when), APPS["calendar"], run)
 
-    async def _event(self, act: ActRequest) -> tuple[dict, bool]:
+    async def _event(self, act: ActRequest, lang: str) -> tuple[dict, bool]:
         """The event a move or cancel means: its handle from <today>, else its title on a day. False with it when
         no title matched exactly and it is one whose title only contains the words."""
         ref = act.get("id") or act.get("event")
@@ -420,16 +432,16 @@ class QuickActions:
         exact = [e for e in hits if str(e.get("title", "")).casefold() == title.casefold()]
         found = exact or hits
         if not found:
-            raise Problem(f"I couldn't find “{inert(title, 50)}” in your calendar")
+            raise Problem(say("acts.why_not_in_calendar", lang, title=inert(title, 50)))
         if len(found) > 1 and not day:
             days = sorted({str(e.get("start", ""))[:10] for e in found})
             if len(days) > 1:
-                raise Problem(f"there are several “{inert(title, 50)}”, say which day")
+                raise Problem(say("acts.why_several", lang, title=inert(title, 50)))
         return found[0], bool(exact)
 
     async def _move(self, act: ActRequest, lang: str) -> _Plan:
         calendar = self._need("calendar")
-        e, sure = await self._event(act)
+        e, sure = await self._event(act, lang)
         old_start, old_end = _time(e.get("start"), "start"), _time(e.get("end"), "end")
         start = _time(act.get("start"), "start")
         if start is None or old_start is None:
@@ -445,7 +457,8 @@ class QuickActions:
             self.today.changed()
             spoken = dates.when(start, self._clock.now().date(), lang)
             return _Done("event", title, say("acts.moved", lang, title=title, when=spoken),
-                         detail=str(e.get("location") or ""), when=_iso(start), app="Calendar",
+                         detail=", ".join(p for p in (say("acts.card_moved", lang), str(e.get("location") or "")) if p),
+                         when=_iso(start), app="Calendar",
                          reverse=[{"op": "event.move", "id": e["id"], "at": _iso(start), "start": _iso(old_start),
                                    "end": _iso(old_end or old_start), "title": title}])
 
@@ -456,7 +469,7 @@ class QuickActions:
 
     async def _cancel(self, act: ActRequest, lang: str) -> _Plan:
         calendar = self._need("calendar")
-        e, sure = await self._event(act)
+        e, sure = await self._event(act, lang)
         start = _time(e.get("start"), "start")
         title = str(e.get("title") or "the event")
         others = _others(e)
@@ -466,7 +479,8 @@ class QuickActions:
         async def run() -> _Done:
             gone = await reach(calendar.delete_event, e["id"], start) or e
             self.today.changed()
-            return _Done("event", title, say("acts.cancelled", lang, title=title), detail="",
+            return _Done("event", title, say("acts.cancelled", lang, title=title),
+                         detail=say("acts.card_deleted", lang),
                          when=_iso(start) if start else "", app="Calendar",
                          reverse=[{"op": "event.add", **{k: gone.get(k, e.get(k, "")) for k in
                                                          ("title", "start", "end", "location", "notes", "calendar")},
@@ -509,7 +523,7 @@ class QuickActions:
                  if isinstance(r, dict) and not r.get("done")]
         hits, exact = _matching(todos, title, lambda r: str(r.get("title", "")))
         if not hits:
-            raise Problem(f"I couldn't find “{inert(title, 50)}” on your list")
+            raise Problem(say("acts.why_not_on_list", lang, title=inert(title, 50)))
         _one(hits, lambda r: str(r.get("title", "")), "acts.which_todo", lang)
         return hits[0], exact
 
@@ -527,7 +541,8 @@ class QuickActions:
 
         # Ticked off can be unticked: a to-do found by part of its title goes ahead, and the line names the one it was.
         return _Plan("change", say("acts.ask.todo_done", lang, title=inert(title, 50))
-                     + (say("acts.ask.shared_list", lang) if t.get("shared") else ""), APPS["reminders"], run)
+                     + (say("acts.ask.shared_list", lang) if t.get("shared") else ""), APPS["reminders"], run,
+                     light=not t.get("shared"))
 
     async def _delete_todo(self, act: ActRequest, lang: str) -> _Plan:
         reminders = self._need("reminders")
@@ -564,14 +579,14 @@ class QuickActions:
                 raise Problem("I don't know which reminder you mean")
             hits, _ = _matching([r for r in book.all() if not r.done], title, lambda r: r.text)
             if not hits:
-                raise Problem(f"I have no reminder “{inert(title, 50)}”")
+                raise Problem(say("acts.why_no_reminder", lang, title=inert(title, 50)))
             _one(hits, lambda r: r.text, "acts.which_reminder", lang)
             found = hits[0]
         reminder = found
 
         async def run() -> _Done:
             if not book.remove(reminder.id):
-                raise Problem("that reminder is gone already")
+                raise Problem(say("acts.why_reminder_gone", lang))
             self.today.changed()
             return _Done("reminder", reminder.text, say("acts.reminder_cancelled", lang, title=reminder.text),
                          detail=say("acts.card_cancelled", lang), when=_iso(reminder.due),
@@ -612,7 +627,7 @@ class QuickActions:
                 except ValueError:
                     raise Problem(f"{key} must be a number") from None
         if not 0 < seconds <= MAX_TIMER_S:
-            raise Problem("a timer runs from a second to a day")
+            raise Problem(say("acts.why_timer_range", lang))
         title = act.text.replace("\n", " ")[:60] or act.get("title")
 
         async def run() -> _Done:
@@ -632,7 +647,7 @@ class QuickActions:
         title = act.get("title") or act.text
         hits = _matching(running, title, lambda t: t.title)[0] if title else running
         if not hits:
-            raise Problem(f"no timer “{inert(title, 50)}” is running")
+            raise Problem(say("acts.why_no_timer", lang, title=inert(title, 50)))
         _one(hits, lambda t: t.title or dates.span((t.rings - self._clock.now()).total_seconds(), lang),
              "acts.which_timer", lang)
         timer = hits[0]

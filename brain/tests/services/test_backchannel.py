@@ -1,6 +1,7 @@
 import asyncio
 import time
 from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 
 import pytest
 
@@ -253,3 +254,26 @@ def test_what_a_greeting_is():
     assert is_greeting("Hey, Milo.") and is_greeting("Moin") and is_greeting("good morning milo")
     assert not is_greeting("Hey Milo, set a timer for ten minutes please")
     assert not is_greeting("what time is it") and not is_greeting("")
+
+
+def test_clips_are_rendered_once_per_voice_and_kept(tmp_path):
+    """Every start rendered the four clips again; with a paid voice each start cost credits."""
+    class PaidVoice(FakeVoice):
+        clip_key = "elevenlabs v4 milo"
+
+    voice = PaidVoice()
+    speaker = SimpleNamespace(voice=voice)  # all warm() reads
+    Backchannel(speaker, cache=tmp_path).warm()
+    assert voice.spoken == list(CLIPS)
+    again = Backchannel(speaker, cache=tmp_path)
+    again.warm()
+    assert voice.spoken == list(CLIPS), "the next start renders nothing"
+    assert set(again._clips) == set(CLIPS)
+
+    voice.clip_key = "elevenlabs v4 another voice"
+    Backchannel(speaker, cache=tmp_path).warm()
+    assert voice.spoken == list(CLIPS) * 2, "another voice gets its own"
+
+    standing_in = FakeVoice()  # the fallback, or a voice that says nothing about itself: never kept
+    Backchannel(SimpleNamespace(voice=standing_in), cache=tmp_path / "x").warm()
+    assert not (tmp_path / "x").exists()

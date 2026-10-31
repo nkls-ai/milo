@@ -16,6 +16,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import weakref
 from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from pathlib import Path
@@ -76,6 +77,7 @@ class Undo:
         self._settling: dict[str, asyncio.Task] = {}
         """Fingerprints being taken right after a task ended, by task."""
         self._running: set[asyncio.Task] = set()
+        self._silent: weakref.WeakSet[asyncio.Task] = weakref.WeakSet()  # undos a typed turn asked for
         self.reverse: Callable[[dict], Awaitable[bool]] | None = None
         """Takes back one step a quick action recorded (services/quick_actions.py, ADR 0029); False when the user
         chose to keep a change made since. Raises with plain words."""
@@ -219,9 +221,15 @@ class Undo:
 
     # ---- taking it back
 
-    def undo(self, ref: str = "") -> asyncio.Task:
-        """Take back the task `ref` (a task id, the talker's helper number, or "" for the newest one that can be)."""
-        return self._spawn(self._undo(ref))
+    def undo(self, ref: str = "", *, said: bool = False, speak: bool = True) -> asyncio.Task:
+        """Take back the task `ref` (a task id, the talker's helper number, or "" for the newest one that can be).
+        `said`: the reply that asked for it already told the user ("Reminder removed."), so a quick action taken back
+        adds no "Undid …" of its own. What went wrong is always said. speak=False: a typed turn, so its lines only
+        show."""
+        task = self._spawn(self._undo(ref, said))
+        if not speak:
+            self._silent.add(task)
+        return task
 
     async def idle(self) -> None:
         """Wait until nothing is being settled or undone. For tests."""
@@ -237,7 +245,7 @@ class Undo:
                                "said": record.get("said", "")})
         return UndoPoints(points[:self.keep_tasks])
 
-    async def _undo(self, ref: str) -> None:
+    async def _undo(self, ref: str, said: bool = False) -> None:
         lang = self._language()
         task = self._resolve(ref)
         if task is None:
@@ -256,7 +264,7 @@ class Undo:
         self._set(task, record, "undoing")
         try:
             if record.get("reverse"):
-                return await self._run_back(task, record, title, lang)
+                return await self._run_back(task, record, title, lang, said)
             await self._take_back(task, record, title, lang)
         except Exception:
             log.exception("undo of %s failed", task)
@@ -311,7 +319,7 @@ class Undo:
             parts.append(say("undo.only_opened" if rest else "undo.no_change", lang, title=title))
         await self._tell(" ".join(parts))
 
-    async def _run_back(self, task: str, record: dict, title: str, lang: str) -> None:
+    async def _run_back(self, task: str, record: dict, title: str, lang: str, said: bool = False) -> None:
         """A quick action's steps, newest first. A step done stays done, so trying again goes on where it stopped."""
         if self.reverse is None:
             self._set(task, record, "ready")
@@ -332,7 +340,8 @@ class Undo:
             step["done"] = True
             self._shelf.save(task, record)
         self._set(task, record, "undone")
-        await self._tell(say("undo.undid", lang, title=title))
+        if not said:
+            await self._tell(say("undo.undid", lang, title=title))
 
     def _hand_on(self, task: str, record: dict, rest: list[dict], lang: str) -> Helper:
         """What no copy covers goes to a helper, with the record of what the task did."""
@@ -464,7 +473,7 @@ class Undo:
         """Say it once Milo isn't talking or listening, like a helper's result; after `wait_s` only show it."""
         loop = asyncio.get_running_loop()
         deadline = loop.time() + self._wait_s
-        speak = True
+        speak = asyncio.current_task() not in self._silent
         while self._quiet() or self._speaker.active:
             if loop.time() >= deadline:
                 speak = False

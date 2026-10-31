@@ -13,7 +13,8 @@ from dataclasses import dataclass
 
 _WORK = re.compile(r"\b((fix|fill|put|add|make|change|update|correct|write|enter|insert|sort|format|create|build|"
                    r"finish|complete|edit|move|rename|copy|paste|replace|open|go|show|play|send|remind|check|find|"
-                   r"summari[sz]e|start|stop|set|take|search|google|look up|delete|remove|cancel|schedule|save|archive)"
+                   r"summari[sz]e|start|stop|set|take|search|google|look up|delete|remove|cancel|schedule|save|archive|"
+                   r"undo|revert)"
                    r"(es|s|ed|d|ing)?|"
                    # Only in their action form: "Mark", "Haken" and "Streichholz" ask for nothing.
                    r"(tick|cross)(es|s|ed|ing)?\s+(\w+\s+){0,4}?(off|out)|mark(s|ed|ing)?\s+(\w+\s+){0,4}?"
