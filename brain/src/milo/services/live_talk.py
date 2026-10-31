@@ -502,6 +502,8 @@ class LiveTalk:
         return shown
 
     def _end_reply(self, shown: str | None, parser: ReplyParser) -> None:
+        if self._quick is not None:
+            self._quick.replied(parser.spoken)
         if shown is not None:
             self._transcript.reply_finished(shown, parser.spoken, parser.emotion or Emotion.NEUTRAL)
 

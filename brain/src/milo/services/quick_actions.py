@@ -17,8 +17,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import logging
 import uuid
+import weakref
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -87,6 +89,14 @@ are due, Milo's own reminders, his timers and the music. Answer questions about 
 - Anything else, or anything you'd first have to look up (mail, notes, files, the web, the calendar beyond \
 tomorrow), is a <task>.
 """
+
+
+def _names(spoken: str, title: str) -> bool:
+    """The reply's words name the act: they share a word with its title ("the tea" for "Tea", "Dentist")."""
+    def stems(text: str) -> set[str]:
+        return {w[:5] for w in re.findall(r"[^\W\d_]{3,}", text.lower())}
+
+    return bool(stems(spoken) & stems(title))
 
 
 class Problem(Exception):
@@ -167,6 +177,7 @@ class QuickActions:
         self._running: set[asyncio.Task] = set()
         self._by_turn: dict[asyncio.Task, list[asyncio.Task]] = {}
         self._lines: dict[asyncio.Task, list[str]] = {}
+        self._spoke: weakref.WeakKeyDictionary[asyncio.Task, str] = weakref.WeakKeyDictionary()  # what replies said
         self._allowed: set[str] = set()
         """Apps the system lets Milo control, found before the first script there (ADR 0025)."""
 
@@ -174,6 +185,14 @@ class QuickActions:
 
     def rules(self) -> str:
         return RULES
+
+    def replied(self, spoken: str) -> None:
+        """The reply of the current turn has ended, having said `spoken`. The model is told to say nothing about an
+        act, but often says it anyway ("Three minutes for the tea, starting now"): then a done act the reply named
+        shows its card and adds no second line. What went wrong is always said."""
+        turn = asyncio.current_task()
+        if turn is not None and spoken.strip():
+            self._spoke[turn] = spoken
 
     def start(self, acts: Sequence[ActRequest], *, outside: bool, via: str = "voice") -> None:
         """Start the act tags of the reply streaming now, each in its own task, so the calendar has the event by the
@@ -253,7 +272,7 @@ class QuickActions:
         task = self._record(done) if (done.reverse or done.changes) else ""
         if done.kind:
             self._card(done, task, lang)
-        await self._say(done.line, via, turn, Emotion.HAPPY)
+        await self._say(done.line, via, turn, Emotion.HAPPY, title=done.title)
 
     def _record(self, done: _Done) -> str:
         if self._undo is None:
@@ -269,7 +288,8 @@ class QuickActions:
     def _card(self, done: _Done, task: str, lang: str) -> None:
         self._ui.emit(ActionDone(done.kind, done.title, done.detail, done.when, done.app, task, lang))
 
-    async def _say(self, text: str, via: str, turn: asyncio.Task | None, emotion: Emotion) -> None:
+    async def _say(self, text: str, via: str, turn: asyncio.Task | None, emotion: Emotion, *,
+                   title: str = "") -> None:
         """The line once Milo is done speaking and the user isn't talking; after `wait_s` it only shows. A reply by
         message takes it along instead."""
         if via == "message" and turn is not None and turn in self._lines:
@@ -280,6 +300,8 @@ class QuickActions:
             self.to_phone(text)
         if turn is not None and turn is not asyncio.current_task():
             await asyncio.wait({turn})  # the act started while the reply streamed: its line comes after the reply
+        if title and turn is not None and _names(self._spoke.get(turn, ""), title):
+            return  # the reply already said it; the card shows it happened
         loop = asyncio.get_running_loop()
         deadline = loop.time() + self._wait_s
         speak = via != "message"

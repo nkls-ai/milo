@@ -785,3 +785,15 @@ def test_milos_own_reminders_sit_after_the_days_to_dos():
     text, outside = asyncio.run(today.note())
     assert text.index("Dentist") < text.index("Milo's reminders:\n- 2026-11-02 09:00 Call Anna")
     assert outside is False, "Milo's own reminders are no outside text"
+
+
+def test_a_reply_that_already_said_the_act_gets_no_second_line(tmp_path):
+    """On the real Milo a timer said "Three minutes for the tea, starting now." then "Tea: 3 minutes timer is
+    running." A reply that names the act keeps its card and adds no line; one that doesn't still gets it."""
+    s = stack(tmp_path, ['[happy] Three minutes for the tea, starting now. <timer minutes="3">Tea</timer>'],
+              ['[happy] Sure. <timer minutes="5">Eggs</timer>'])
+    asyncio.run(say(s, "set a timer for 3 minutes for tea"))
+    assert said(s) == "Three minutes for the tea, starting now."
+    assert [c.title for c in cards(s)] == ["Tea"]
+    asyncio.run(say(s, "and one for 5 minutes"))
+    assert said(s).endswith("Sure. Eggs: 5 minutes timer is running."), "\"Sure\" doesn't say it: Milo's line does"
