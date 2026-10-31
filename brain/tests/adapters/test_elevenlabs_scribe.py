@@ -153,3 +153,22 @@ def test_learned_words_join_the_keyterms_up_to_a_cap(tmp_path):
     assert ("keyterms", "Claude Code") in parse_qsl(urlsplit(scribe._url()).query)
     scribe.use_vocabulary([])
     assert scribe.keyterms == ("Milo",)
+
+
+def test_the_committed_text_says_which_language_it_was(tmp_path):
+    # Milo answers in the language of the message (ADR 0028): the session asks Scribe to detect it.
+    async def attempt(fake):
+        server, url = await started(fake)
+        async with server:
+            session = engine(url, tmp_path).session()
+            session.feed(np.zeros(1600, np.float32))
+            text = await session.finish()
+            return text, session.language, fake.query
+
+    stamped = {"message_type": "committed_transcript_with_timestamps", "text": "open YouTube", "language_code": "eng",
+               "words": []}
+    text, language, query = asyncio.run(attempt(FakeScribe(stamped)))
+    assert (text, language) == ("open YouTube", "eng"), "the stamped message alone is enough"
+    assert query["include_language_detection"] == ["true"]
+    text, language, _ = asyncio.run(attempt(FakeScribe()))
+    assert text.startswith("heard") and language == "", "no language said: the brain guesses from the words"

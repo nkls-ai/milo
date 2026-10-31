@@ -119,6 +119,9 @@ class TranscriptionSession(Protocol):
         """Drop the recording. Nothing more is sent."""
         ...
 
+    # Optional: `language`, the code of the language the service heard ("en", "deu"), read after finish(); an
+    # engine that can't say leaves it out. Transcribers may likewise have `heard_language` for their last pass.
+
 
 @runtime_checkable
 class StreamingTranscriber(Protocol):

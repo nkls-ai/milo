@@ -52,11 +52,11 @@ class Desk(ExcelApp):
         return await super().act(tool, args)
 
 
-TIDY = [("key", {"combo": "cmd+delete"}),  # last year's copy to the Trash, in Finder
+TIDY = [("key", {"combo": "cmd+delete", "app": "Finder"}),  # last year's copy to the Trash, in Finder
         ("ax_press", {"element": "note-delete"})]  # the old budget note, to Recently Deleted
 """What can be undone."""
 
-FOR_GOOD = [("key", {"combo": "shift+cmd+delete"}), ("ax_press", {"element": "dont-save"}),
+FOR_GOOD = [("key", {"combo": "shift+cmd+delete", "app": "Finder"}), ("ax_press", {"element": "dont-save"}),
             ("ax_press", {"element": "buy"}), ("ax_press", {"element": "transfer"})]
 """Emptying the Trash, Don't Save, buying, a bank transfer."""
 
@@ -229,7 +229,7 @@ def test_by_default_make_the_whole_excel_red_asks_nothing_and_the_work_runs():
 
 
 @pytest.mark.parametrize("step, question", [
-    (("key", {"combo": "shift+cmd+delete"}), "I'm about to press ⇧⌘Delete in Finder, which may empty the Trash. Go ahead?"),
+    (("key", {"combo": "shift+cmd+delete", "app": "Finder"}), "I'm about to press ⇧⌘Delete in Finder, which may empty the Trash. Go ahead?"),
     (("ax_press", {"element": "buy"}), "I'm about to click “Buy Now” in Safari. Go ahead?"),
 ])
 def test_by_default_the_same_task_still_stops_before_emptying_the_trash_or_buying(step, question):

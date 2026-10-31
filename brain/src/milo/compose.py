@@ -14,6 +14,7 @@ from .brain import Brain
 from .config import Config, app_names, brief_time
 from .core.clock import SystemClock
 from .core.conversations import SplitRules
+from .core.language import SpokenLanguage
 from .core.ports import Harness, LiveModel, PlaybackTap, TimedTranscriber, Transcriber, Vocabulary, Voice
 from .core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, CHANNELS, DIARIZERS, EMBEDDERS, HARNESSES, LIVE_MODELS,
                             STREAMING_TRANSCRIBERS, TEXT_CLEANERS, TRANSCRIBERS, VOICES, AdapterContext, ConfigError,
@@ -41,6 +42,7 @@ from .services.episode_stubs import EpisodeDictations, EpisodeEyes, EpisodeTrans
 from .services.listening import Listening
 from .services.live_talk import LiveTalk, untrusted
 from .services.meetings import MeetingOptions, MeetingService
+from .services.opener import Opener
 from .services.messages import MessageService, MessageSettings
 from .services.orchestrator import HelperQuestions, Orchestrator
 from .services.permits import Permits
@@ -255,10 +257,11 @@ def _presence(p: Parts) -> None:
                                           memory=mem.memory.search if mem is not None else None,
                                           reminders=p.reminders)
     p.permits = Permits(config.approvals.ask, config.approvals.allowed_apps)  # saves once Settings exists
+    p.language = language = SpokenLanguage()  # the latest message's language: replies, helpers, questions follow it
     p.approvals = approvals = Approvals(ui, speaker, ActionPolicy(config.approval_levels),
                                         timeout_s=config.approvals.timeout_s, speak=config.approvals.speak,
                                         quiet=attention.in_conversation, transcript=p.transcript,
-                                        permits=p.permits)
+                                        permits=p.permits, language=language.get)
     attention.attach(question=lambda: approvals.pending)
     p.bridge = AppBridge(p.server)  # each request to one app; one that hangs up fails what it owed at once
     p.server.on_client_gone.append(p.bridge.app_gone)
@@ -291,7 +294,7 @@ def _helpers(p: Parts) -> None:
         p.hands = HandsService(AppHands(p.bridge), HelperQuestions(p.approvals, p.later("helpers"), screen=True),
                                p.ui, transcript=p.transcript, applescript=config.hands.applescript,
                                locale=_mac_locale(), protected=workspace.protected, access=p.access,
-                               before_change=undo.before_change)
+                               before_change=undo.before_change, language=p.language.get)
         p.hands_server = HandsSocketServer(workspace.hands_socket_path, p.hands.call)
     p.memory_requests = MemoryRequests(mem.memory, p.approvals, mem.profile.remember) if mem is not None else None
     p.eyes = AppEyes(p.bridge)
@@ -369,7 +372,8 @@ def _talk(p: Parts) -> None:
         p.live_model, p.speaker, p.ui, p.context, p.clock, p.profile, p.reminders, p.ledger,
         _persona(p.workspace.persona_path), config.chat.conversation_idle_reset_s, p.helpers, p.transcript,
         eyes=p.eyes, approvals=p.approvals, memory=mem.turns if mem is not None else None,
-        backchannel=p.backchannel, routines=p.routines, meetings=p.meetings, undo=p.undo)
+        backchannel=p.backchannel, routines=p.routines, meetings=p.meetings, undo=p.undo,
+        opener=Opener(AppHands(p.bridge), p.ui, p.clock), language=p.language)
     p.attention.attach(turn=lambda: live_talk.busy)
     p.helpers.on_result = live_talk.note
     p.updates.speak = live_talk.speak_update

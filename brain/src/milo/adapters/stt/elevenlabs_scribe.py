@@ -89,6 +89,7 @@ class ScribeRealtime:
         query: list[tuple[str, str]] = [("model_id", "scribe_v2_realtime"), ("audio_format", f"pcm_{STT_SAMPLE_RATE}"),
                                         ("commit_strategy", "manual")]
         query += [("secondary_languages", lang) for lang in self.languages]
+        query.append(("include_language_detection", "true"))  # the committed text then says its language_code
         query += [("keyterms", term) for term in self.keyterms]
         return f"{self.server}/v1/speech-to-text/realtime?{urlencode(query)}"
 
@@ -104,6 +105,10 @@ class ScribeSession:
         self._error: str | None = None
         self._committed = False
         self._seconds = 0.0
+        self._stamped: list[str] = []
+        """Texts of committed_transcript_with_timestamps, used only if no plain committed_transcript came."""
+        self.language = ""
+        """The language_code of the committed text ("eng", "deu"), "" until the service says."""
         self._task = asyncio.create_task(self._run(url, key)) if url is not None else None
 
     @classmethod
@@ -134,7 +139,7 @@ class ScribeSession:
             self.cancel()
         if self._error is not None:
             raise VoiceUnavailable(self._error)
-        return " ".join(t for t in self._texts if t).strip()
+        return " ".join(t for t in (self._texts or self._stamped) if t).strip()
 
     def cancel(self) -> None:
         if self._task is not None and not self._task.done():
@@ -197,8 +202,11 @@ class ScribeSession:
             kind = message.get("message_type", "")
             if kind == "partial_transcript" and self._on_partial is not None and not self._committed:
                 self._on_partial(" ".join(t for t in [*self._texts, str(message.get("text", "")).strip()] if t))
-            elif kind == "committed_transcript":
-                self._texts.append(str(message.get("text", "")).strip())
+            elif kind in ("committed_transcript", "committed_transcript_with_timestamps"):
+                if message.get("language_code"):
+                    self.language = str(message["language_code"])
+                texts = self._texts if kind == "committed_transcript" else self._stamped
+                texts.append(str(message.get("text", "")).strip())
                 if self._committed:
                     self._final.set()
             elif "error" in message or kind.endswith("error"):

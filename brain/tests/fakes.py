@@ -164,6 +164,7 @@ class FakeTranscriptionSession:
         self.fed: list[int] = []  # sample counts, in order
         self.cancelled = False
         self.finished = False
+        self.language = ""
 
     def feed(self, audio: Audio) -> None:
         self.fed.append(len(audio))
@@ -172,6 +173,7 @@ class FakeTranscriptionSession:
         self.finished = True
         if self.engine.fail:
             raise VoiceUnavailable(self.engine.fail)
+        self.language = self.engine.language
         return self.engine.texts.popleft() if self.engine.texts else ""
 
     def cancel(self) -> None:
@@ -181,9 +183,11 @@ class FakeTranscriptionSession:
 class FakeStreamingTranscriber:
     """Answers each session with the next scripted text, or raises VoiceUnavailable(`fail`) if set."""
 
-    def __init__(self, *texts: str, fail: str = ""):
+    def __init__(self, *texts: str, fail: str = "", language: str = ""):
         self.texts = deque(texts)
         self.fail = fail
+        self.language = language
+        """The language_code each session reports after finish(), like Scribe's ("eng"); "" for none."""
         self.sessions: list[FakeTranscriptionSession] = []
 
     def session(self, on_partial=None) -> FakeTranscriptionSession:
@@ -638,6 +642,15 @@ class FakeEyes:
         return self.captures.popleft() if self.captures else ScreenCapture(error="nothing to see")
 
 
+def with_app(port: "FakeHands", tool: str, args: dict) -> dict:
+    """A worker names the app its click, typing or key is for (ADR 0028): here, the app the fake describes there."""
+    if tool not in ("click", "type", "key") or "app" in args:
+        return args
+    by_point = getattr(port, "targets_by_point", {})
+    target = by_point[args["x"]] if tool == "click" and args.get("x") in by_point else port.targets.get(tool, {})
+    return {**args, "app": target["app"]} if target.get("app") else args
+
+
 class FakeHands:
     """AppHands. `targets[tool]` answers describe; `results[tool]` is a dict or a HandsError to raise, or a list
     of those, one per call.
@@ -656,6 +669,8 @@ class FakeHands:
         self.calls.append((tool, args))
         if tool == "describe":
             return dict(self.targets.get(args["tool"], {}))
+        if tool == "focus_app" and tool not in self.results:  # the app comes to the front, as a real one does
+            return {"app": args["app"], "bundle": "", "front": True}
         if self.gate is not None:
             await asyncio.wait([asyncio.ensure_future(self.gate.wait()),
                                 asyncio.ensure_future(self._cancelled.wait())], return_when=asyncio.FIRST_COMPLETED)
@@ -674,7 +689,7 @@ class FakeHands:
 
     @property
     def actions(self) -> list[str]:
-        return [tool for tool, _ in self.calls if tool != "describe"]
+        return [tool for tool, _ in self.calls if tool not in ("describe", "focus_app")]
 
 
 class FakeConfirm:

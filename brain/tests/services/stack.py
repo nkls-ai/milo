@@ -13,6 +13,8 @@ from milo.config import UiSettings
 from milo.core.events import Bubble, StateChanged
 from milo.core.types import LiveMode, MiloState
 from milo.memory.recall import HybridRecaller, render
+from milo.core.language import SpokenLanguage
+from milo.services.opener import Opener
 from milo.services.access import AccessGate
 from milo.services.app_bridge import AppBridge
 from milo.services.approvals import Approvals
@@ -120,8 +122,9 @@ class Stack:
                                 "approvals": {**self.config_file.raw.get("approvals", {}), **approvals}}
         settings = self.config_file.read().approvals
         self.permits = Permits(settings.ask, settings.allowed_apps)
+        self.language = SpokenLanguage()
         self.approvals = Approvals(self.ui, self.speaker, timeout_s=self.confirm_timeout_s,
-                                   quiet=lambda: self.live_talk.busy, permits=self.permits)
+                                   quiet=lambda: self.live_talk.busy, permits=self.permits, language=self.language.get)
         self.bridge = AppBridge(self.sink, timeout_s=self.confirm_timeout_s)
         self.gate = AccessGate(self.access, self.sink, pause_s=0) if self.access is not None else None
         self.undo = None
@@ -131,7 +134,9 @@ class Stack:
                              self.clock, confirm=self.approvals, speaker=self.speaker, helpers=lambda: self.tasks,
                              quiet=lambda: self.live_talk.busy, wait_s=self.wait_s, poll_s=0.005)
         self.hands = HandsService(self.hands_port, self.approvals, self.ui, access=self.gate,
-                                  before_change=self.undo.before_change if self.undo is not None else None)
+                                  before_change=self.undo.before_change if self.undo is not None else None,
+                                  language=self.language.get)
+        self.opener = Opener(self.hands_port, self.ui, self.clock)
         self.runner = TaskRunner(self.harness, self.ledger, self.clock, self.context, background=self.background,
                                  hands=self.hands)
         self.tasks = Orchestrator(self.runner, self.speaker, self.ui, self.clock,
@@ -159,7 +164,8 @@ class Stack:
         self.live_talk = LiveTalk(self.model, self.speaker, self.ui, self.context, self.clock, self.profile,
                                   self.reminders, self.ledger, lambda: self.persona, self.idle_reset_s, self.tasks,
                                   eyes=self.eyes, approvals=self.approvals, memory=self.turn_memory,
-                                  routines=self.routines, undo=self.undo)
+                                  routines=self.routines, undo=self.undo, opener=self.opener,
+                                  language=self.language)
         self.tasks.on_result = self.live_talk.note
         self.dictation = DictationService(UpperCleaner(), self.history, self.ui)
         self.listening = Listening(self.mic, self.transcriber, executor, self.ui, self.dictation, self.live_talk,

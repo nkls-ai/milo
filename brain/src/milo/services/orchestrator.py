@@ -141,18 +141,20 @@ class Orchestrator:
 
     def submit(self, description: str, *, title: str = "", screen: bool | None = None,
                careful: bool = False, instructions: str = "",
-               on_finish: Callable[[Helper], None] | None = None, own: str = "", user_asked: bool = False) -> Helper:
+               on_finish: Callable[[Helper], None] | None = None, own: str = "", user_asked: bool = False,
+               language: str = "") -> Helper:
         """Hand off a task. Returns at once with the new helper, queued or already working. `careful`: the
         conversation that asked for it read the screen, so its tools ask before changes too. `instructions`
         replace the description for the worker (a routine's recipe); `on_finish` hears how it ended. `own`
         = "routine": the window shows it as a conversation of its own (a routine run on its schedule).
-        `user_asked`: the user asked for it in a conversation without outside text (Helper.user_asked)."""
+        `user_asked`: the user asked for it in a conversation without outside text (Helper.user_asked).
+        `language`: the code of the language the user asked in ("de"); the helper answers in it."""
         screen = (needs_screen(description) if screen is None else screen) and self._runner.has_screen
         self._numbers += 1
         name = short_title(description, title)
         helper = Helper(self._transcript.task_started(description, title=name, own=own), self._numbers, name,
                         description, screen, self._clock.monotonic(), careful=careful, instructions=instructions,
-                        on_finish=on_finish, user_asked=user_asked)
+                        on_finish=on_finish, user_asked=user_asked, language=language)
         log.info("helper %d %s%s, %s", helper.number, "on the screen" if screen else "in the background",
                  " (careful)" if careful else "", private(description))
         self._add(helper)
