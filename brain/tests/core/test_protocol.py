@@ -56,6 +56,7 @@ OUTBOUND = {
     "conversation": lambda m: ev.ConversationOpened(m["id"], m["info"], m["entries"]),
     "search_results": lambda m: ev.SearchResults(m["query"], m["results"]),
     "reminders": lambda m: ev.RemindersList(m["reminders"]),
+    "action_done": lambda m: ev.ActionDone(m["kind"], m["title"], m["detail"], m["when"], m["app"], m["undo"]),
     "usage": lambda m: ev.UsageReport(m["span"], m["today"], m["since"], m["daily"], m["sources"], m["apps"],
                                       m["accounts"]),
 }

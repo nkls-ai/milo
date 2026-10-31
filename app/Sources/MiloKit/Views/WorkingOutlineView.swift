@@ -10,6 +10,14 @@ struct WorkingOutlineView: View {
 
     /// His theme; the outline passes a new one when `[ui] character` changes.
     var theme = Theme.for(.milo)
+    /// What he does right now, in plain words (`MiloModel.workingStep`); nil shows no caption.
+    var caption: String?
+    /// The panel has `captionRoom` points below the window: the caption sits on the bottom edge, half outside.
+    /// Without it (a window down to the screen's edge) the caption sits just inside.
+    var below = true
+
+    /// Points the panel reaches below the window's outline for the caption.
+    static let captionRoom: CGFloat = 14
 
     var body: some View {
         WorkingEdge(theme: theme, radius: 12, width: 3)
@@ -17,6 +25,46 @@ struct WorkingOutlineView: View {
                 WorkingTag(text: Self.label, theme: theme).padding(10)
             }
             .padding(2)
+            .padding(.bottom, below ? Self.captionRoom : 0)
+            .overlay(alignment: .bottom) {
+                ZStack {
+                    if let caption {
+                        WorkingCaption(text: caption, theme: theme)
+                            .id(caption)
+                            .transition(.opacity)
+                    }
+                }
+                .padding(.bottom, below ? 0 : 10)
+                .padding(.horizontal, 24)
+                .animation(.easeInOut(duration: 0.18), value: caption)
+            }
+    }
+}
+
+/// The current step under the outline: "Typing “youtube.com” in Safari". A small paper pill on the window's bottom
+/// edge, with a lavender dot that means Milo's hands are at it.
+struct WorkingCaption: View {
+    let text: String
+    let theme: Theme
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle().fill(theme.primary).frame(width: 6, height: 6)
+            Text(text)
+                .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                .foregroundStyle(theme.ink)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .padding(.horizontal, 11)
+        .frame(height: 24)
+        .background(Capsule().fill(theme.tint.opacity(contrast == .increased ? 1 : 0.97))
+            .shadow(color: theme.primary.opacity(0.25), radius: 6, y: 2))
+        .overlay(Capsule().strokeBorder(contrast == .increased ? theme.ink.opacity(0.6) : theme.primary.opacity(0.35),
+                                        lineWidth: contrast == .increased ? 1.5 : 1))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Milo: \(text)")
     }
 }
 

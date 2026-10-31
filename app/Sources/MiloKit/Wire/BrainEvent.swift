@@ -87,6 +87,8 @@ public enum BrainEvent: Equatable, Sendable {
     case searchResults(query: String, results: [SearchHit])
     /// Open reminders of today and tomorrow, for Today.
     case reminders([ReminderItem])
+    /// Milo just did something small: a card shows it by him.
+    case actionDone(ActionDone)
     case unknown(String)
 }
 
@@ -201,6 +203,7 @@ extension BrainEvent: Decodable {
             self = .searchResults(query: try c.decodeIfPresent(String.self, forKey: .query) ?? "",
                                   results: try c.decodeIfPresent([SearchHit].self, forKey: .results) ?? [])
         case "reminders": self = .reminders(try c.decodeIfPresent([ReminderItem].self, forKey: .reminders) ?? [])
+        case "action_done": self = .actionDone(try ActionDone(from: decoder))
         default: self = .unknown(type)
         }
     }

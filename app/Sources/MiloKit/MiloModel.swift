@@ -52,7 +52,14 @@ public final class MiloModel: ObservableObject {
     /// Milo is looking at the screen: a small eye shows on him.
     @Published public var looking = false
     /// The worker agent is acting on screen: the "Milo is working" frame shows.
-    @Published public var handsActive = false
+    @Published public var handsActive = false {
+        didSet { if !handsActive && workingStep != nil { workingStep = nil } }
+    }
+    /// What Milo does on screen right now, in plain words ("Typing “youtube.com” in Safari"), from the newest step of
+    /// his hands (`activity` with a `hands_` id). The caption under the working outline shows it; nil once he stops.
+    @Published public private(set) var workingStep: String?
+    /// The cards that come out of Milo when he has done something small: an event, a to-do, a timer.
+    public let done: DoneCards
     /// Milo records a meeting: a red dot shows on him and in the menu bar. Set by the meeting controller.
     @Published public var recording = false
     /// The user lent Milo the real mouse and keyboard: the frame around the screen shows, and any touch stops him.
@@ -126,8 +133,10 @@ public final class MiloModel: ObservableObject {
         self.scheduler = scheduler
         now = clock
         meeting = MeetingModel(clock: clock)
+        done = DoneCards(scheduler: scheduler)
         presence = Presence(scheduler: scheduler, clock: clock)
         presence.watch(self)
+        done.onUndo = { [weak self] id in self?.undoFromCard(id) }
     }
 
     /// How long "Got it" stays after the key comes up. Long enough to read, short enough not to hold anything up.
@@ -208,7 +217,14 @@ public final class MiloModel: ObservableObject {
             meetingChanged(from: before, to: status)
         case .meetingLines, .meetingNotes:
             meeting.apply(event)
-        case .dictation, .uiConfig, .history, .entry, .replyDelta, .activity, .lookRequest, .handsRequest,
+        case let .actionDone(action):
+            done.add(action)
+        case let .activity(_, step):
+            // The caption under the outline follows the hands' own steps; the worker's steps are its business.
+            if step.id.hasPrefix(Self.handsStep), step.status == .running, workingStep != step.title {
+                workingStep = step.title
+            }
+        case .dictation, .uiConfig, .history, .entry, .replyDelta, .lookRequest, .handsRequest,
              .handsSession, .flyTo, .appRequest, .handsBorrow, .facts, .settings, .usage, .meetingRecord,
              .conversations, .conversation, .searchResults, .reminders, .unknown:
             break
@@ -262,6 +278,15 @@ public final class MiloModel: ObservableObject {
         guard undoPoint(id)?.state == .ready else { return }
         onUndo?(id)
     }
+
+    /// Undo on a done card. A task the brain hasn't listed yet still goes: the brain knows its own tasks.
+    private func undoFromCard(_ id: String) {
+        if let point = undoPoint(id), point.state != .ready { return }
+        onUndo?(id)
+    }
+
+    /// The id every step of Milo's hands starts with (`HandsService` in the brain), as opposed to the worker's.
+    static let handsStep = "hands_"
 
     /// The Undo for the bubble that says `text`: the newest task that can be undone, if Milo is saying what it did.
     func undoAction(for text: String) -> BubbleAction? {

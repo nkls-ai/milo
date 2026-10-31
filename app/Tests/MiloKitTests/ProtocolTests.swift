@@ -251,6 +251,11 @@ private func entries(_ key: String) throws -> [[String: Any]] {
                 ReminderItem(due: try #require(RoutineInfo.parseTime("2026-10-30T15:30")), text: "Leave for the dentist"),
                 ReminderItem(due: try #require(RoutineInfo.parseTime("2026-10-31T09:00")), text: "Call Anna"),
             ]),
+            .actionDone(ActionDone(kind: .event, title: "Dentist", detail: "Dr. Lee, Main Street 4",
+                                   when: try #require(RoutineInfo.parseTime("2026-11-05T15:00")), app: "Calendar",
+                                   undo: "a7b8c9d0e1f2")),
+            .actionDone(ActionDone(kind: .reminder, title: "Call the dentist",
+                                   when: try #require(RoutineInfo.parseTime("2026-10-30T09:00")))),
         ])
     }
 
