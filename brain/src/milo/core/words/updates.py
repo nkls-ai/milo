@@ -9,7 +9,7 @@ WORDS: dict[str, dict[str, str]] = {
         "fr": "J'ouvre {app}…",
         "es": "Abriendo {app}…",
     },
-    "app": {
+    "working": {
         "en": "Working in {app} now…",
         "de": "Ich bin gerade in {app}…",
         "fr": "Je travaille dans {app}…",

@@ -63,7 +63,7 @@ def progress_line(helper: Helper, installed: Callable[[str], bool] = is_installe
     match = _APP_IN_TITLE.search(step.title)
     app = next((g for g in match.groups() if g), "").strip() if match else ""
     if app and installed(app):
-        return say("updates.open" if step.title.startswith("Opening ") else "updates.app", lang, app=app)
+        return say("updates.open" if step.title.startswith("Opening ") else "updates.working", lang, app=app)
     words = step.title.lower()
     topic = next((t for word, t in _TOPICS if word in words), "")
     if topic:
