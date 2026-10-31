@@ -135,7 +135,10 @@ class ReplyDelta(Event):
 
 @dataclass(frozen=True)
 class Activity(Event):
-    """A step of the running task `task_id` started or ended. The app replaces the step with the same id."""
+    """A step of the running task `task_id` started or ended. The app replaces the step with the same id.
+
+    Steps of Milo's hands on screen have ids starting with `hands_` (HandsService); the app shows the running one
+    under the working outline (ADR 0028)."""
 
     type: ClassVar[str] = "activity"
     task_id: str

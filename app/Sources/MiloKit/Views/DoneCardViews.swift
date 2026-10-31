@@ -14,7 +14,7 @@ struct DoneCardStack: View {
         done = model.done
     }
 
-    static let width: CGFloat = 156
+    static let width: CGFloat = 172
     static let height: CGFloat = 56
     /// How far each card behind peeks out above the one in front while they lie as a deck.
     static let peek: CGFloat = 7
@@ -27,10 +27,9 @@ struct DoneCardStack: View {
             ForEach(Array(cards.enumerated()), id: \.element.id) { index, card in
                 let depth = cards.count - 1 - index  // 0 is the newest, in front
                 DoneCardView(card: card, point: card.action.undo.isEmpty ? nil : point(card.action), done: done,
-                             now: Date())
+                             now: Date(), face: open || depth == 0)
                     .scaleEffect(open ? 1 : 1 - 0.05 * CGFloat(depth), anchor: .bottom)
                     .offset(y: -CGFloat(depth) * (open ? Self.height + Self.gap : Self.peek))
-                    .opacity(open || depth == 0 ? 1 : 0.75)
                     .zIndex(Double(index))
                     .allowsHitTesting(open || depth == 0)
                     .transition(reduceMotion ? .opacity : Self.flight)
@@ -76,12 +75,14 @@ struct DoneCardView: View {
     let point: UndoPoint?
     let done: DoneCards
     let now: Date
+    /// In front, or fanned out: everything shows. Behind another card in the deck only its paper peeks out.
+    var face = true
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
         let action = card.action
         Button { done.open(card.id) } label: {
-            HStack(spacing: 9) {
+            HStack(spacing: 8) {
                 DoneGlyph(card: card, icon: action.app.isEmpty ? nil : done.icon?(action.app))
                 VStack(alignment: .leading, spacing: 1) {
                     Text(action.title.isEmpty ? DoneCardText.line(action, now: now) : action.title)
@@ -95,17 +96,19 @@ struct DoneCardView: View {
                 }
                 Spacer(minLength: 0)
             }
+            .opacity(face ? 1 : 0)
             .padding(.leading, 8)
-            .padding(.trailing, 10)
+            // Room for Undo, which sits on top of the card's button so a click on it is its own.
+            .padding(.trailing, point == nil ? 10 : 8 + CardUndo.size + 4)
             .frame(width: DoneCardStack.width, height: DoneCardStack.height)
             .floatingSurface(shape)
             .contentShape(shape)
         }
         .buttonStyle(PressScale())
-        .overlay(alignment: .topTrailing) { DrawnCheck().offset(x: 5, y: -5) }
-        .overlay(alignment: .bottomTrailing) {
-            if let point {
-                CardUndo(point: point) { _ in done.undo(card.id) }.padding(5)
+        .overlay(alignment: .topTrailing) { DrawnCheck().offset(x: 5, y: -5).opacity(face ? 1 : 0) }
+        .overlay(alignment: .trailing) {
+            if let point, face {
+                CardUndo(point: point) { _ in done.undo(card.id) }.padding(.trailing, 8)
             }
         }
         .help(DoneCardText.opens(action))
@@ -115,28 +118,46 @@ struct DoneCardView: View {
     }
 }
 
-/// Undo on a card: smaller than the task card's, the same three states.
+/// Undo on a card: a small round button with the undo arrow, then a turning arrow while it undoes and a dimmed one
+/// once it is undone.
 private struct CardUndo: View {
     @Environment(\.miloTheme) private var theme
+    @Environment(\.colorSchemeContrast) private var contrast
     let point: UndoPoint
     let undo: (String) -> Void
+    @State private var hovered = false
+
+    static let size: CGFloat = 24
 
     var body: some View {
-        Group {
-            switch point.state {
-            case .ready:
-                Button { undo(point.id) } label: { Text("Undo") }
-                    .buttonStyle(UndoButtonStyle())
-                    .controlSize(.mini)
-                    .help("Take back “\(point.title)”")
-                    .accessibilityHint("Takes back what Milo just did")
-            case .undoing:
-                Text("Undoing…").foregroundStyle(theme.ink.opacity(0.55))
-            case .undone:
-                Text("Undone").foregroundStyle(theme.ink.opacity(0.5))
+        switch point.state {
+        case .ready:
+            Button { undo(point.id) } label: {
+                Image(systemName: "arrow.uturn.backward")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(theme.primary)
+                    .frame(width: Self.size, height: Self.size)
+                    .background(Circle().fill(theme.primary.opacity(hovered ? 0.2 : 0.1)))
+                    .overlay(Circle().strokeBorder(theme.primary.opacity(contrast == .increased ? 0.8 : 0.28),
+                                                   lineWidth: 1))
+                    .contentShape(Circle())
             }
+            .buttonStyle(PressScale())
+            .onHover { hovered = $0 }
+            .help("Undo “\(point.title)”")
+            .accessibilityLabel("Undo")
+            .accessibilityHint("Takes back what Milo just did")
+        case .undoing:
+            ProgressView().controlSize(.small).frame(width: Self.size, height: Self.size)
+                .accessibilityLabel("Undoing")
+        case .undone:
+            Image(systemName: "arrow.uturn.backward.circle")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(theme.ink.opacity(0.4))
+                .frame(width: Self.size, height: Self.size)
+                .help("Undone")
+                .accessibilityLabel("Undone")
         }
-        .font(.system(size: 10, weight: .semibold, design: .rounded))
     }
 }
 
@@ -202,7 +223,7 @@ struct DoneGlyph: View {
     /// The app's icon, for something Milo opened.
     var icon: CGImage?
 
-    static let size: CGFloat = 38
+    static let size: CGFloat = 36
 
     var body: some View {
         Group {

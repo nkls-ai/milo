@@ -134,12 +134,14 @@ public enum DoneCardText {
         }
     }
 
-    /// "Today 15:00", "Tomorrow 09:00", "Thu 5 Nov, 15:00"; a timer says when it rings.
+    /// "Today 15:00", "Tomorrow 09:00", "Thu 5 Nov, 15:00"; a timer says when it rings, and an event only its time,
+    /// since its calendar page shows the day.
     static func when(for kind: ActionDone.Kind, _ date: Date, now: Date, calendar: Calendar, locale: Locale) -> String {
         var clock = Date.FormatStyle(date: .omitted, time: .shortened, locale: locale, calendar: calendar)
         clock.timeZone = calendar.timeZone
         let hour = date.formatted(clock)
         if kind == .timer { return "Rings at \(hour)" }
+        if kind == .event { return hour }
         if calendar.isDate(date, inSameDayAs: now) { return "Today \(hour)" }
         if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now), calendar.isDate(date, inSameDayAs: tomorrow) {
             return "Tomorrow \(hour)"
@@ -163,7 +165,11 @@ public enum DoneCardText {
         case .opened: "Opened"
         case .other: "Done"
         }
-        return "\(what): \(action.title), \(line(action, now: now))"
+        var said = "\(what): \(action.title), \(line(action, now: now))"
+        if action.kind == .event, let when = action.when {
+            said += ", \(when.formatted(.dateTime.weekday(.wide).day().month(.wide)))"
+        }
+        return said
     }
 
     /// What a click on the card does, for VoiceOver and the tooltip.

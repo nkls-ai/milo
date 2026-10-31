@@ -147,11 +147,14 @@ import Testing
         func at(_ text: String) -> Date { ISO8601DateFormatter().date(from: text)! }
         let now = at("2026-11-04T10:00:00+01:00")
         func line(_ action: ActionDone) -> String { DoneCardText.line(action, now: now, calendar: calendar, locale: locale) }
-        #expect(line(ActionDone(kind: .event, title: "Standup", when: at("2026-11-04T15:00:00+01:00"))) == "Today 15:00")
-        #expect(line(ActionDone(kind: .event, title: "Dentist", detail: "Dr. Lee", when: at("2026-11-05T09:30:00+01:00")))
-                == "Tomorrow 9:30, Dr. Lee")
-        #expect(line(ActionDone(kind: .event, title: "Trip", when: at("2026-11-12T08:00:00+01:00"))) ==
+        #expect(line(ActionDone(kind: .reminder, title: "Standup", when: at("2026-11-04T15:00:00+01:00"))) ==
+                "Today 15:00")
+        #expect(line(ActionDone(kind: .reminder, title: "Dentist", detail: "Dr. Lee",
+                                when: at("2026-11-05T09:30:00+01:00"))) == "Tomorrow 9:30, Dr. Lee")
+        #expect(line(ActionDone(kind: .reminder, title: "Trip", when: at("2026-11-12T08:00:00+01:00"))) ==
                 "Thu 12 Nov, 8:00")
+        #expect(line(ActionDone(kind: .event, title: "Dentist", detail: "Dr. Lee", when: at("2026-11-12T08:00:00+01:00")))
+                == "8:00, Dr. Lee", "the calendar page shows the day")
         #expect(line(ActionDone(kind: .timer, title: "Pasta", when: at("2026-11-04T10:12:00+01:00"))) == "Rings at 10:12")
         #expect(line(ActionDone(kind: .todo, title: "Buy milk", app: "Reminders")) == "In Reminders")
         #expect(line(ActionDone(kind: .draft, title: "To Anna")) == "Draft, not sent")
