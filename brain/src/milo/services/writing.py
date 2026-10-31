@@ -30,8 +30,8 @@ from milo.core.events import ActionDone
 from milo.core.logtext import private
 from milo.core.ports import EventSink
 from milo.core.types import Emotion
+from milo.core.words import has, language, say
 
-from milo.core.words import language
 from .speaker import Speaker
 from .transcript import Transcript, unrecorded
 
@@ -63,26 +63,6 @@ with no words. In your reply to the screen, write the <write> tag.
 - One <write> per reply. When the user wants it changed ("shorter", "more polite"), write all of it again.
 - "Undo that" right after one is <undo/>.
 """
-
-LINES: dict[str, dict[str, str]] = {
-    "pasted": {"en": "It's in {app}, have a look.", "de": "Steht in {app}, schau mal drüber."},
-    "pasted_here": {"en": "It's in, have a look.", "de": "Steht drin, schau mal drüber."},
-    "here": {"en": "Here it is, ready to copy.", "de": "Hier ist es, zum Kopieren."},
-    "moved": {"en": "You'd moved on, so I didn't paste it. It's in my window to copy.",
-              "de": "Du warst schon woanders, also hab ich's nicht eingefügt. Es liegt zum Kopieren in meinem Fenster."},
-    "no_field": {"en": "I didn't find a text field there, so it's in my window to copy.",
-                 "de": "Ich hab dort kein Textfeld gefunden. Es liegt zum Kopieren in meinem Fenster."},
-    "terminal": {"en": "I don't paste into a terminal, so it's in my window to copy.",
-                 "de": "In ein Terminal füge ich nichts ein. Es liegt zum Kopieren in meinem Fenster."},
-    "secure": {"en": "That's a password field, so I didn't paste. It's in my window to copy.",
-               "de": "Das ist ein Passwortfeld, da füge ich nichts ein. Es liegt zum Kopieren in meinem Fenster."},
-    "outside": {"en": "This comes from something I read, so look it over first. It's in my window to copy.",
-                "de": "Das stammt aus etwas, das ich gelesen habe, schau es erst durch. Es liegt zum Kopieren in "
-                      "meinem Fenster."},
-    "failed": {"en": "I couldn't paste it, so it's in my window to copy.",
-               "de": "Ich konnte es nicht einfügen. Es liegt zum Kopieren in meinem Fenster."},
-}
-"""The line after a <write>, by what happened: "pasted", or why it is only in the window (the app's `why`)."""
 
 # The user's own words ask for something written: then outside text read before can't be what started it. The writing
 # verb has to lead the request ("answer this email", "okay, write Anna back", "can you reply to Tom"), so a question or
@@ -130,8 +110,8 @@ def first_words(text: str) -> str:
 
 
 def line(key: str, lang: str, **values: str) -> str:
-    templates = LINES.get(key) or LINES["failed"]
-    return templates.get(lang, templates["en"]).format(**values)
+    """The line for `key` (core/words/writing.py); an unknown reason from the app says it failed."""
+    return say(f"writing.{key}" if has(f"writing.{key}") else "writing.failed", lang, **values)
 
 
 class Writer:
