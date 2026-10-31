@@ -30,6 +30,11 @@ public protocol TextInserter: AnyObject {
     func copy(_ text: String)
 }
 
+/// The character just before the caret in another app's focused field: nil at its start, or when it can't be read.
+public protocol CaretPeek: AnyObject {
+    func characterBeforeCaret() -> Character?
+}
+
 /// The text field that has the keyboard focus in another app, as Accessibility reads it.
 public struct FocusedText: Equatable, Sendable {
     /// The same number for the same field while it exists; another field gets another.

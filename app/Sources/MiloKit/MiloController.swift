@@ -81,6 +81,7 @@ public final class MiloController {
     private let brain: BrainClient
     private let launcher: BrainLauncher
     private let inserter: TextInserter
+    private let caret: CaretPeek?
     private let keys: KeyEventSource
     private let context: ContextProvider
     private let accessibility: AccessibilityPermission
@@ -96,7 +97,7 @@ public final class MiloController {
                 keys: KeyEventSource, context: ContextProvider, accessibility: AccessibilityPermission,
                 scheduler: Scheduler, connections: AppConnections? = nil, settings: Settings = Settings(),
                 screen: ScreenController? = nil, meetings: MeetingController? = nil,
-                pasteWatcher: PasteWatcher? = nil, writing: WriteRequests? = nil) {
+                pasteWatcher: PasteWatcher? = nil, writing: WriteRequests? = nil, caret: CaretPeek? = nil) {
         self.model = model
         self.writing = writing
         self.screen = screen
@@ -105,6 +106,7 @@ public final class MiloController {
         self.brain = brain
         self.launcher = launcher
         self.inserter = inserter
+        self.caret = caret
         self.keys = keys
         self.context = context
         self.accessibility = accessibility
@@ -213,15 +215,17 @@ public final class MiloController {
         if let screen, screen.apply(event) { return }
         if let meetings, meetings.apply(event) { return }
         switch event {
-        case let .dictation(text):
+        case let .dictation(words):
             // Without Accessibility macOS drops Milo's Cmd-V without an error. An ad-hoc signed
             // rebuild loses the permission while System Settings still shows it switched on.
             if accessibility.isTrusted(prompt: false) {
+                let before = words.first?.isWhitespace == false ? caret?.characterBeforeCaret() : nil
+                let text = DictationSpacing.spaced(words, after: before)
                 inserter.insert(text)
                 model.pasted(text)
                 if learnsFromFixes { pasteWatcher?.pasted(text) } else { pasteWatcher?.stop() }
             } else {
-                inserter.copy(text)
+                inserter.copy(words)
                 NSLog("Milo: not trusted for Accessibility, dictation left on the clipboard")
                 model.show(Self.pasteBlocked, action: .permissions)
             }

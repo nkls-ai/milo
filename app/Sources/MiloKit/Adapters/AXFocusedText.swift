@@ -39,6 +39,31 @@ public final class AXFocusedText: FocusedTextReader {
     }
 }
 
+/// CaretPeek through Accessibility. Asks the field for one character, so a long document isn't copied over, with
+/// a short timeout, since it runs right before a paste.
+public final class AXCaretPeek: CaretPeek {
+    public init() {}
+
+    public func characterBeforeCaret() -> Character? {
+        guard AXIsProcessTrusted() else { return nil }
+        let system = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(system, 0.1)
+        guard let element: AXUIElement = AX.attribute(system, kAXFocusedUIElementAttribute) else { return nil }
+        AXUIElementSetMessagingTimeout(element, 0.1)
+        guard AX.pid(element) != getpid(), !AX.isSecure(element),
+              let selection: AXValue = AX.attribute(element, kAXSelectedTextRangeAttribute) else { return nil }
+        var range = CFRange()
+        guard AXValueGetValue(selection, .cfRange, &range), range.location > 0 else { return nil }
+        var one = CFRange(location: range.location - 1, length: 1)
+        guard let wanted = AXValueCreate(.cfRange, &one) else { return nil }
+        var result: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(
+            element, kAXStringForRangeParameterizedAttribute as CFString, wanted, &result) == .success
+        else { return nil }
+        return (result as? String)?.last
+    }
+}
+
 /// WordList over the Mac's spell checker, in the languages the user set in System Settings: a word counts if
 /// any of them knows it.
 public final class SpellCheckWords: WordList {

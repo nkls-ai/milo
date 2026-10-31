@@ -55,7 +55,8 @@ let controller = MiloController(
     meetings: MeetingController(model: model, brain: brain, recorder: MacMeetingRecorder(brainLock: paths.brainLock),
                                 signals: MacCallSignals(), scheduler: scheduler, hotkey: CarbonHotkey()),
     pasteWatcher: PasteWatcher(reader: AXFocusedText(), words: SpellCheckWords(), scheduler: scheduler),
-    writing: writing)
+    writing: writing,
+    caret: AXCaretPeek())
 
 accessRequests.onAsking = { screen.systemAsks($0) }
 

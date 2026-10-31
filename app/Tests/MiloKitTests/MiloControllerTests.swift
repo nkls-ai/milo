@@ -7,6 +7,7 @@ private final class Harness {
     let brain = FakeBrainClient()
     let launcher = FakeBrainLauncher()
     let inserter = FakeTextInserter()
+    let caret = FakeCaretPeek()
     let keys = FakeKeySource()
     let context = FakeContextProvider()
     let accessibility = FakeAccessibility()
@@ -21,7 +22,7 @@ private final class Harness {
         model = MiloModel(scheduler: scheduler)
         controller = MiloController(model: model, brain: brain, launcher: launcher, inserter: inserter,
                                     keys: keys, context: context, accessibility: accessibility,
-                                    scheduler: scheduler)
+                                    scheduler: scheduler, caret: caret)
         controller.onBindingsChange = { [unowned self] in bindingChanges.append($0) }
         if start { controller.start() }
     }
@@ -290,6 +291,26 @@ private final class Harness {
     }
 
     // MARK: Brain events
+
+    @Test func aDictationRightAfterAWordGetsASpace() {
+        let h = Harness()
+        h.caret.before = "n"  // "…was pattern|"
+        h.brain.emit(.dictation("And why can't I see you?"))
+        #expect(h.inserter.inserted == [" And why can't I see you?"], "not \"patternAnd\"")
+        h.brain.emit(.dictation(" and then"))
+        #expect(h.inserter.inserted.last == " and then", "a later phrase brings its own space")
+        #expect(h.caret.peeks == 1, "and the field isn't asked again")
+    }
+
+    @Test func spacingFollowsWhatIsBeforeTheCaret() {
+        #expect(DictationSpacing.spaced("Hi", after: nil) == "Hi", "the start of a field")
+        #expect(DictationSpacing.spaced("Hi", after: " ") == "Hi")
+        #expect(DictationSpacing.spaced("Hi", after: "\n") == "Hi")
+        #expect(DictationSpacing.spaced("Hi", after: ".") == " Hi")
+        #expect(DictationSpacing.spaced("Hi", after: "(") == "Hi")
+        #expect(DictationSpacing.spaced("Hi", after: "„") == "Hi")
+        #expect(DictationSpacing.spaced(", and more", after: "d") == ", and more")
+    }
 
     @Test func dictationInsertsTextAndLeavesTheBubbleAlone() {
         let h = Harness()

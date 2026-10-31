@@ -33,6 +33,12 @@ final class FakeTextInserter: TextInserter {
     func copy(_ text: String) { copied.append(text) }
 }
 
+final class FakeCaretPeek: CaretPeek {
+    var before: Character?
+    private(set) var peeks = 0
+    func characterBeforeCaret() -> Character? { peeks += 1; return before }
+}
+
 final class FakeKeySource: KeyEventSource {
     var onEvent: ((KeyEvent) -> Void)?
     private(set) var started = false
