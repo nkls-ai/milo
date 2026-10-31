@@ -112,13 +112,14 @@ class Undo:
         except Exception:
             log.exception("could not keep an undo point for %s", tool)
 
-    def keep_file(self, ref: str, path: str) -> str:
-        """The worker's undo_point: copy a file before the task changes it. Raises ValueError with plain words."""
+    async def keep_file(self, ref: str, path: str) -> str:
+        """The worker's undo_point: copy a file before the task changes it. Raises ValueError with plain words.
+        The copy runs on a thread: a file may be 200 MB."""
         task = self._task(ref)
-        record = self._open(task)
-        if any(f["path"] == str(Path(path).expanduser()) for f in record["files"]):
+        if any(f["path"] == str(Path(path).expanduser()) for f in self._open(task)["files"]):
             return f"Already kept: Undo can put {Path(path).name} back."
-        kept = self._shelf.keep_file(task, path)
+        kept = await asyncio.to_thread(self._shelf.keep_file, task, path)
+        record = self._open(task)  # read again: a note may have come in while the copy ran
         record["files"].append(kept)
         self._shelf.save(task, record)
         name = Path(kept["path"]).name
@@ -167,7 +168,7 @@ class Undo:
             for doc in record["docs"]:
                 doc["after"] = await self._fingerprint(doc)
             for kept in record["files"]:
-                kept["after"] = self._shelf.digest(kept["path"])
+                kept["after"] = await asyncio.to_thread(self._shelf.digest, kept["path"])
             self._shelf.save(task, record)
         self.expire()
 
@@ -237,7 +238,8 @@ class Undo:
         docs = [d for d in record["docs"] if d.get("copy")]
         files = record["files"]
         changed = [f"“{d['document']}”" for d in docs if await self._fingerprint(d) != d.get("after")]
-        changed += [Path(f["path"]).name for f in files if self._shelf.digest(f["path"]) != f.get("after")]
+        changed += [Path(f["path"]).name for f in files
+                    if await asyncio.to_thread(self._shelf.digest, f["path"]) != f.get("after")]
         if changed:
             names = _and(changed)
             question = f"{names} changed since “{title}”. Undo anyway? Your changes since would be lost."
@@ -256,7 +258,7 @@ class Undo:
                 failed.append(f"“{doc['document']}”")
         for kept in files:
             try:
-                self._shelf.put_back(task, kept)
+                await asyncio.to_thread(self._shelf.put_back, task, kept)
                 restored.append(Path(kept["path"]).name)
             except OSError as e:
                 log.warning("undo: could not put a file back: %s", e)
