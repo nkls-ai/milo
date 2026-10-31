@@ -16,12 +16,12 @@ import asyncio
 import hashlib
 import json
 import logging
-import re
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from milo.core.events import UndoPoints
+from milo.core.hands import only_opens
 from milo.core.ports import AppHands, Clock, Confirmer, EventSink, UndoShelf
 from milo.core.types import Emotion, HandsError
 
@@ -406,11 +406,6 @@ tell application "{snapshots.EXCEL}" to return "document" & tab & (name of activ
 end timeout"""
 
 
-_OPENERS = frozenset({"cmd+t", "cmd+n", "cmd+shift+n", "cmd+l", "cmd+tab", "cmd+space"})
-"""Keys that open a tab, a window or Spotlight, or move the focus: nothing to put back."""
-_MODIFIERS = {"cmd": "cmd", "command": "cmd", "⌘": "cmd", "shift": "shift", "⇧": "shift"}
-
-
 def _only_opens(change: dict) -> bool:
     """A recorded step that only opened something: an app, a page, a new tab or window."""
     tool, _, args = str(change.get("detail") or "").partition(" ")
@@ -419,12 +414,9 @@ def _only_opens(change: dict) -> bool:
     if tool != "key":
         return False
     try:
-        combo = str(json.loads(args).get("combo") or "")
+        return only_opens(str(json.loads(args).get("combo") or ""))
     except (ValueError, AttributeError):
         return False
-    *mods, key = [p for p in re.split(r"[+\s]+", combo.lower()) if p] or [""]
-    named = sorted({_MODIFIERS.get(m, m) for m in mods})
-    return "+".join([*named, key]) in _OPENERS
 
 
 def _detail(tool: str, args: dict) -> str:
