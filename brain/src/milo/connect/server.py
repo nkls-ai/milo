@@ -7,12 +7,11 @@ from milo.core.ports import Connections
 from milo.core.types import ToolError
 from milo.transport.tool_client import BrainClient, refusal
 
+from .brief import OWN
 from .mcp import McpServer
-from .memory_tools import INSTRUCTIONS as MEMORY_INSTRUCTIONS
 from .memory_tools import MEMORY_TOOLS, RemoteMemory
-from .milo_tools import INSTRUCTIONS as MILO_INSTRUCTIONS
 from .milo_tools import MILO_TOOLS, RemoteMilo
-from .tools import INSTRUCTIONS, Tool, by_name
+from .tools import Tool, by_name
 
 log = logging.getLogger("milo.connect")
 
@@ -27,18 +26,21 @@ DESTRUCTIVE = ("delete", "discard", "overwrite_file")
 
 class Toolbox:
     """Runs a tool after its approval. A connection that asks the brain itself (Calendar and Reminders
-    through Milo.app, where the brain applies the level) has `approves_itself` set."""
+    through Milo.app, where the brain applies the level) has `approves_itself` set. `kinds` limits it to the
+    connections a helper's task needs (core/task_scope.py); Milo's own tools are always there."""
 
     def __init__(self, connections: Connections, brain: BrainClient, memory: RemoteMemory | None = None,
-                 milo: RemoteMilo | None = None):
+                 milo: RemoteMilo | None = None, *, kinds: frozenset[str] | None = None):
         self._connections = connections
         self._brain = brain
         self._memory = memory
         self._milo = milo
         self._allowed: set[str] = set()
         """Apps the system lets Milo control, as the brain found before the first script there."""
-        self.tools = (by_name(connections) | ({t.name: t for t in MEMORY_TOOLS} if memory is not None else {})
-                      | ({t.name: t for t in MILO_TOOLS} if milo is not None else {}))
+        tools = (by_name(connections) | ({t.name: t for t in MEMORY_TOOLS} if memory is not None else {})
+                 | ({t.name: t for t in MILO_TOOLS} if milo is not None else {}))
+        self.tools = {name: t for name, t in tools.items()
+                      if kinds is None or t.connection == OWN or t.connection in kinds}
 
     def call(self, name: str, args: dict) -> Any:
         tool = self.tools[name]
@@ -64,14 +66,6 @@ class Toolbox:
         if self._brain.access(app):
             self._allowed.add(app)
 
-    @property
-    def has_memory(self) -> bool:
-        return self._memory is not None
-
-    @property
-    def has_milo(self) -> bool:
-        return self._milo is not None
-
 
 class BrainPhone:
     """The send_to_phone tool's connection: the brain checks the file, asks the user and sends it."""
@@ -93,6 +87,6 @@ def listing(tool: Tool) -> dict:
 
 
 def mcp_server(toolbox: Toolbox) -> McpServer:
-    instructions = (INSTRUCTIONS + (MEMORY_INSTRUCTIONS if toolbox.has_memory else "")
-                    + (MILO_INSTRUCTIONS if toolbox.has_milo else ""))
-    return McpServer("milo", VERSION, [listing(t) for t in toolbox.tools.values()], toolbox.call, instructions)
+    """No server instructions: Codex would repeat them in every tool's description. The helper's prompt carries
+    them once (connect/brief.py)."""
+    return McpServer("milo", VERSION, [listing(t) for t in toolbox.tools.values()], toolbox.call)

@@ -20,6 +20,7 @@ from milo.core.control import STEERING, STEERING_FOLDERS, Protected, clear_steer
 from milo.core.hands import mac_server
 from milo.core.ports import PlanCallback, SessionCallback, StepCallback
 from milo.core.registry import HARNESSES, AdapterContext, options_from
+from milo.core.task_scope import ToolScope, server_env
 from milo.core.types import REPLY_SCHEMA, HarnessError, Reply, ToolServer, Usage
 
 from ._activity import ClaudeActivity, RunWatch, lines
@@ -49,6 +50,9 @@ def settings(deny: Sequence[str], no_writes: Sequence[str] = (), no_reads: Seque
 class ClaudeOptions:
     binary: str = ""
     model: str = ""
+    light_model: str = ""
+    """For helpers off the screen whose task names its connections (ToolScope.simple), e.g. "claude-haiku-5-5".
+    "": `model` does those too. Not measured yet with Claude (ADR 0032)."""
     permission_mode: str = "acceptEdits"
     timeout_s: float = 180
     disallowed_tools: tuple[str, ...] = ()
@@ -61,7 +65,8 @@ class ClaudeOptions:
 class ClaudeHarness:
     name = "claude"
 
-    def __init__(self, binary: str, workdir: Path, *, model: str = "", permission_mode: str = "acceptEdits",
+    def __init__(self, binary: str, workdir: Path, *, model: str = "", light_model: str = "",
+                 permission_mode: str = "acceptEdits",
                  timeout_s: float = 180, mac_tools: Sequence[str] = (), tool_servers: tuple[ToolServer, ...] = (),
                  mcp_config: Path | None = None, disallowed_tools: tuple[str, ...] = (),
                  protected: Protected | None = None, restricted: bool = True):
@@ -70,6 +75,7 @@ class ClaudeHarness:
         self.binary = binary
         self.workdir = workdir
         self.model = model
+        self.light_model = light_model
         self.permission_mode = permission_mode
         self.timeout_s = timeout_s
         self.mac_tools = tuple(mac_tools)
@@ -87,11 +93,22 @@ class ClaudeHarness:
         self.no_reads = [str((protected.home / "secrets").resolve())] if protected is not None else []
         self.restricted = restricted
         self.servers = (*mac_server(self.mac_tools), *tool_servers)
-        if self.servers and mcp_config is not None:
-            mcp_config.parent.mkdir(parents=True, exist_ok=True)
-            mcp_config.write_text(json.dumps(mcp_servers(self.servers)))
 
-    def command(self, prompt: str, session_id: str | None) -> list[str]:
+    def _config(self, servers: tuple[ToolServer, ...], scope: ToolScope | None) -> str:
+        """The --mcp-config value: a file per scope (helpers of different scopes may start at once), else JSON."""
+        if self.mcp_config is None:
+            return json.dumps(mcp_servers(servers))
+        key = server_env(scope)[0][1].replace(",", "-") if scope is not None and server_env(scope) else ""
+        path = self.mcp_config.with_name(f"{self.mcp_config.stem}-{key}.json") if key else self.mcp_config
+        text = json.dumps(mcp_servers(servers))
+        if not path.is_file() or path.read_text() != text:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            staged = path.with_name(path.name + ".milo")
+            staged.write_text(text)
+            staged.replace(path)
+        return str(path)
+
+    def command(self, prompt: str, session_id: str | None, scope: ToolScope | None = None) -> list[str]:
         cmd = [self.binary, "-p", "--output-format", "stream-json", "--verbose",
                "--json-schema", json.dumps(REPLY_SCHEMA), "--permission-mode", self.permission_mode,
                *(["--restricted"] if self.restricted else ["--setting-sources", "project,local"]),
@@ -99,21 +116,23 @@ class ClaudeHarness:
                "--tools", ",".join(t for t in BUILTIN_TOOLS if t not in self.disallowed_tools)]
         if session_id:
             cmd += ["--resume", session_id]
-        if self.model:
-            cmd += ["--model", self.model]
+        model = self.light_model if scope is not None and scope.simple and self.light_model else self.model
+        if model:
+            cmd += ["--model", model]
         # Strict: the worker gets Milo's MCP servers only, not whatever else Claude Code has configured.
         cmd += ["--strict-mcp-config"]
-        if self.servers:
+        servers = scope.servers(self.servers) if scope is not None else self.servers
+        if servers:
             # -p can't ask for permission, so Milo's tools are allowed up front: the brain checks each call and
             # asks the user when it matters.
-            config = str(self.mcp_config) if self.mcp_config is not None else json.dumps(mcp_servers(self.servers))
-            cmd += ["--mcp-config", config, "--allowedTools", *(f"mcp__{s.name}" for s in self.servers)]
+            cmd += ["--mcp-config", self._config(servers, scope), "--allowedTools", *(f"mcp__{s.name}" for s in servers)]
         if self.disallowed_tools:
             cmd += ["--disallowedTools", *self.disallowed_tools]
         return cmd + ["--", prompt]
 
     async def reply(self, prompt: str, session_id: str | None, *, on_step: StepCallback | None = None,
-                    on_session: SessionCallback | None = None, on_plan: PlanCallback | None = None) -> Reply:
+                    on_session: SessionCallback | None = None, on_plan: PlanCallback | None = None,
+                    scope: ToolScope | None = None) -> Reply:
         on_line = lines(ClaudeActivity(on_step, self.workdir).line if on_step is not None else None,
                         RunWatch(on_session, on_plan).line if on_session or on_plan else None)
         try:
@@ -121,7 +140,7 @@ class ClaudeHarness:
             clear_steering(self.workdir)  # nothing a helper left there steers this one (ADR 0020)
         except OSError as e:
             raise HarnessError(f"the worker's folder isn't safe to work in: {e}", transient=False) from None
-        code, out, err = await run(self.command(prompt, session_id), cwd=self.workdir, timeout_s=self.timeout_s,
+        code, out, err = await run(self.command(prompt, session_id, scope), cwd=self.workdir, timeout_s=self.timeout_s,
                                    on_line=on_line, done=is_result)
         return parse_result(result_line(out), code, err, session_id)
 
@@ -179,6 +198,7 @@ def _claude(options: Mapping[str, Any], ctx: AdapterContext) -> ClaudeHarness:
         find_binary(o.binary, "claude", section="harness.claude"),
         ctx.worker_dir,
         model=o.model,
+        light_model=o.light_model,
         permission_mode=o.permission_mode,
         timeout_s=o.timeout_s,
         mac_tools=ctx.mac_tools,

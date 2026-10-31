@@ -1,6 +1,6 @@
 # 11. The talker and its helpers
 
-Date: 2026-10-30. Status: accepted. Builds on [ADR 5](0005-live-chat.md), which handed `<task>` work to the harness one task at a time. Changed by [ADR 28](0028-open-at-once-and-answer-in-the-users-language.md): the talker opens apps, pages and files itself (`<open>`), without a helper.
+Date: 2026-10-30. Status: accepted. Builds on [ADR 5](0005-live-chat.md), which handed `<task>` work to the harness one task at a time. Changed by [ADR 28](0028-open-at-once-and-answer-in-the-users-language.md): the talker opens apps, pages and files itself (`<open>`), without a helper. Changed by [ADR 32](0032-helpers-get-only-what-their-task-needs.md): each helper gets only the tools its task names, a voice task says one line at 8 s, and the `helpers` event follows the screen helper's Mac steps.
 
 ## Context
 

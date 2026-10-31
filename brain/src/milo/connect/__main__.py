@@ -16,6 +16,7 @@ def main() -> None:
     from milo.core.clock import SystemClock
     from milo.core.logtext import log_content
     from milo.core.registry import CONNECTIONS, AdapterContext
+    from milo.core.task_scope import TOOLS_ENV, served
     from milo.memory.workspace import Workspace
 
     from milo.transport.tool_client import BrainClient
@@ -42,7 +43,8 @@ def main() -> None:
     brain = BrainClient(workspace.tools_socket_path)
     if config.messages.enabled:
         connections = dataclasses.replace(connections, phone=BrainPhone(brain))
-    toolbox = Toolbox(connections, brain, RemoteMemory(brain) if config.memory.enabled else None, RemoteMilo(brain))
+    toolbox = Toolbox(connections, brain, RemoteMemory(brain) if config.memory.enabled else None, RemoteMilo(brain),
+                      kinds=served(os.environ.get(TOOLS_ENV)))
     logging.getLogger("milo.connect").info("serving %d tools (%s)", len(toolbox.tools), name)
     mcp_server(toolbox).serve(sys.stdin, sys.stdout)
 

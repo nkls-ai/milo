@@ -46,7 +46,7 @@ class FakeHarness:
         """Reported to on_step on every call, before the reply."""
 
     async def reply(self, prompt: str, session_id: str | None, *, on_step=None, on_session=None,
-                    on_plan=None) -> Reply:
+                    on_plan=None, scope=None) -> Reply:
         self.calls.append((prompt, session_id))
         if on_session is not None:
             on_session(session_id or f"s{len(self.calls)}")
@@ -76,6 +76,7 @@ class WorkerScript:
         self.cancelled = False
         self.prompt = ""
         self.session_id: str | None = None
+        self.scope = None
 
 
 class ScriptedHarness:
@@ -96,9 +97,9 @@ class ScriptedHarness:
         self.scripts.extend(scripts)
 
     async def reply(self, prompt: str, session_id: str | None, *, on_step=None, on_session=None,
-                    on_plan=None) -> Reply:
+                    on_plan=None, scope=None) -> Reply:
         script = self.scripts.popleft() if self.scripts else WorkerScript("ok")
-        script.prompt, script.session_id = prompt, session_id
+        script.prompt, script.session_id, script.scope = prompt, session_id, scope
         self.played.append(script)
         self.running += 1
         self.most_at_once = max(self.most_at_once, self.running)
@@ -1066,5 +1067,8 @@ class FakeAccess:
 
 
 def without_undo_id(prompt: str) -> str:
-    """A worker's prompt without the line that tells it its task id for undo points (ADR 0026)."""
+    """A worker's prompt without its tools (connect/brief.py, ADR 0032) and the line that tells it its task id for
+    undo points (ADR 0026)."""
+    prompt = re.sub(r"\n\nYour tools for this task\..*?(?=\n\n\((?:You have only|Task id))", "", prompt, flags=re.S)
+    prompt = re.sub(r"\n\n\(You have only the tools.*?NEEDS_TOOLS\.\)", "", prompt, flags=re.S)
     return re.sub(r"\n\n\(Task id for undo_point and undo_note: [\w-]+\.\)$", "", prompt)

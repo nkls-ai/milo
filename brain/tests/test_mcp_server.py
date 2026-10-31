@@ -5,7 +5,7 @@ import json
 import subprocess
 import sys
 
-from milo.core.hands import BY_NAME, INSTRUCTIONS, TOOLS
+from milo.core.hands import BY_NAME, TOOLS
 from milo.mcp_server import handle, serve, tool_result
 
 ORDER = ["list_apps", "open_url", "open_app", "sheet_write", "sheet_read", "write_document", "window_text", "ax_tree", "ax_find", "ax_press",
@@ -27,12 +27,12 @@ def rpc(method: str, params: dict | None = None, id: int | None = 1) -> dict:
     return message if id is None else {**message, "id": id}
 
 
-def test_initialize_announces_tools_and_the_route_order():
+def test_initialize_announces_the_tools_but_leaves_the_route_order_to_the_prompt():
     result = handle(rpc("initialize", {"protocolVersion": "2025-03-26"}), FakeClient({}))["result"]
     assert result["protocolVersion"] == "2025-03-26"
     assert result["capabilities"] == {"tools": {}}
     assert result["serverInfo"]["name"] == "milo-mac"
-    assert result["instructions"] == INSTRUCTIONS
+    assert "instructions" not in result, "the screen helper's prompt has them once (milo.connect.brief)"
 
 
 def test_tools_list_has_every_tool_in_preference_order_with_strict_schemas():

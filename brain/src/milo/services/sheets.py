@@ -161,11 +161,79 @@ def ranges(text: str) -> list[str]:
     """"A1:B1, A9:B9" -> ["A1:B1", "A9:B9"]. Raises HandsError."""
     return [check_range(r) for r in text.split(",") if r.strip()]
 
+
+# Excel's standard colours, so "blue" looks like the blue in its own menu. German names too: the worker passes on the
+# user's words.
+COLOURS = {
+    "red": (255, 0, 0), "dark red": (192, 0, 0), "orange": (255, 192, 0), "yellow": (255, 255, 0),
+    "light green": (146, 208, 80), "green": (0, 176, 80), "dark green": (0, 97, 0), "light blue": (0, 176, 240),
+    "blue": (0, 112, 192), "dark blue": (0, 32, 96), "purple": (112, 48, 160), "pink": (255, 153, 204),
+    "brown": (153, 102, 51), "grey": (128, 128, 128), "gray": (128, 128, 128), "light grey": (217, 217, 217),
+    "light gray": (217, 217, 217), "black": (0, 0, 0), "white": (255, 255, 255),
+    "rot": (255, 0, 0), "dunkelrot": (192, 0, 0), "gelb": (255, 255, 0), "hellgrün": (146, 208, 80),
+    "grün": (0, 176, 80), "dunkelgrün": (0, 97, 0), "hellblau": (0, 176, 240), "blau": (0, 112, 192),
+    "dunkelblau": (0, 32, 96), "lila": (112, 48, 160), "violett": (112, 48, 160), "rosa": (255, 153, 204),
+    "braun": (153, 102, 51), "grau": (128, 128, 128), "hellgrau": (217, 217, 217), "schwarz": (0, 0, 0),
+    "weiß": (255, 255, 255), "weiss": (255, 255, 255),
+}
+WHOLE = ("sheet", "header")
+"""Targets besides ranges: every used cell, and the first row of them."""
+_HEX = re.compile(r"^#?([0-9a-fA-F]{6})$")
+
+
+def colour(name: str) -> tuple[int, int, int]:
+    """"blue", "hellblau" or "#0070C0" -> (0, 112, 192). Raises HandsError."""
+    key = " ".join(name.lower().split())
+    if key in COLOURS:
+        return COLOURS[key]
+    m = _HEX.match(key)
+    if not m:
+        raise HandsError(f"{name!r} is not a colour Milo knows: say red, blue, light green, … or #RRGGBB.")
+    h = m.group(1)
+    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+
+def colours(text: str) -> list[tuple[str, tuple[int, int, int]]]:
+    """"A1:D1 blue, sheet light green" -> [("A1:D1", (0, 112, 192)), ("sheet", (146, 208, 80))]. A target is a
+    range, "sheet" (every used cell, never the whole grid) or "header" (the first row of those). Raises HandsError."""
+    out = []
+    for part in (p.strip() for p in text.split(",")):
+        if not part:
+            continue
+        target, _, name = part.partition(" ")
+        if not name.strip():
+            raise HandsError(f"{part!r} needs a range and a colour, like \"A1:D1 blue\" or \"sheet red\".")
+        target = target.lower() if target.lower() in WHOLE else check_range(target)
+        out.append((target, colour(name)))
+    return out
+
+
+def _excel_target(target: str) -> str:
+    return {"sheet": "(used range of ws)", "header": "(row 1 of (used range of ws))"}.get(
+        target, f'range "{target}" of ws')
+
+
+def _numbers_target(target: str) -> str:
+    return {"sheet": "cell range", "header": "row 1"}.get(target, f'range "{target}"')
+
+
+def _rgb(c: tuple[int, int, int], scale: int = 1) -> str:
+    return "{" + ", ".join(str(v * scale) for v in c) + "}"
+
 _RUNNING = 'if application "{app}" is not running then error "{app} isn\'t open."\n'
 
 
 def describe_script(app: str, rows: list, start: str) -> str:
-    """Which document a write would go into, and how many of its target cells already hold something."""
+    """Which document a write would go into, and how many of its target cells already hold something. With no
+    rows (only colours) none do."""
+    if not rows:
+        tell = ('tell application "Microsoft Excel"\n  if (count of workbooks) is 0 then error "Excel has no '
+                'workbook open."\n  set docName to name of active workbook\n  set sheetName to name of active sheet\n'
+                if app == EXCEL else
+                'tell application "Numbers"\n  if (count of documents) is 0 then error "Numbers has no document '
+                'open."\n  set docName to name of front document\n  set sheetName to name of active sheet of front '
+                'document\n')
+        return _RUNNING.format(app=app) + tell + "end tell\nset vals to {}\n" + _NAMES + _COUNT_FILLED
     b = block(rows, start)
     col, row = cell(b.first)
     last_col, last_row = col + b.columns - 1, row + b.rows - 1
@@ -222,12 +290,21 @@ return out & linefeed & "filled" & tab & filled
 
 
 def write_script(app: str, rows: list, start: str = "A1", *, new_document: bool = False, header: bool = False,
-                 bold: str = "", money: str = "", decimals: str = "", locale: str = "") -> str:
+                 bold: str = "", money: str = "", decimals: str = "", locale: str = "", fill: str = "",
+                 font_color: str = "") -> str:
     """Fill the front sheet (of a new document if asked) with `rows` from `start`. Formula cells start with =.
 
     `bold`, `money` and `decimals` are ranges, several joined with commas. Money is in the currency of
-    `locale` (the Mac's region, like "en_US@rg=dezzzz"), with two decimals.
+    `locale` (the Mac's region, like "en_US@rg=dezzzz"), with two decimals. `fill` and `font_color` colour
+    ranges, "sheet" or "header" (see `colours`). Without rows it only formats, so "make the header blue" is one call.
     """
+    fills, fonts = colours(fill), colours(font_color)
+    if not rows and not (fills or fonts or bold or money or decimals):
+        raise HandsError("sheet_write needs rows or a colour, bold, money or decimals to set.")
+    if not rows:
+        if new_document:
+            raise HandsError("A new document needs rows.")
+        return _format_script(app, ranges(bold), ranges(money), ranges(decimals), fills, fonts, locale)
     b = block(rows, start)
     col, row = cell(b.first)
     bolds = ([f"{b.first}:{column_letters(col + b.columns - 1)}{row}"] if header else []) + ranges(bold)
@@ -246,6 +323,7 @@ def write_script(app: str, rows: list, start: str = "A1", *, new_document: bool 
         lines += [f'  set bold of font object of range "{r}" of ws to true' for r in bolds]
         lines += [f'  set number format of range "{r}" of ws to {literal("0.00")}' for r in decimal_ranges]
         lines += [f'  set number format of range "{r}" of ws to {literal(excel_money(locale))}' for r in moneys]
+        lines += _excel_colours(fills, fonts)
         lines += [f'  autofit columns of range "{b.range}" of ws', "  activate",
                   "  set docName to name of wb", "  set sheetName to name of ws", "end tell"]
         return "\n".join(lines) + "\n" + _NAMES + "return out\n"
@@ -274,9 +352,54 @@ def write_script(app: str, rows: list, start: str = "A1", *, new_document: bool 
                                                                                           else 0:]]
     lines += [f'    set format of range "{r}" to number' for r in decimal_ranges]
     lines += [f'    set format of range "{r}" to currency' for r in moneys]
+    lines += _numbers_colours(fills, fonts)
     lines += ["  end tell", "  activate", "  set docName to name of doc", "  set sheetName to name of active sheet of doc",
               "end tell"]
     return "\n".join(lines) + "\n" + _NAMES + "return out\n"
+
+
+def _excel_colours(fills, fonts) -> list[str]:
+    return ([f"  set color of interior object of {_excel_target(t)} to {_rgb(c)}" for t, c in fills]
+            + [f"  set color of font object of {_excel_target(t)} to {_rgb(c)}" for t, c in fonts])
+
+
+def _numbers_colours(fills, fonts) -> list[str]:
+    """Numbers takes 16-bit colours."""
+    return ([f"    set background color of {_numbers_target(t)} to {_rgb(c, 257)}" for t, c in fills]
+            + [f"    set text color of {_numbers_target(t)} to {_rgb(c, 257)}" for t, c in fonts])
+
+
+def _format_script(app: str, bolds: list[str], moneys: list[str], decimal_ranges: list[str], fills, fonts,
+                   locale: str) -> str:
+    """Formatting only, in the front sheet of the front document: no cell changes its value."""
+    if app == EXCEL:
+        lines = ['tell application "Microsoft Excel"',
+                 '  if (count of workbooks) is 0 then error "Excel has no workbook open."',
+                 "  set wb to active workbook", "  set ws to active sheet of wb"]
+        lines += [f'  set bold of font object of range "{r}" of ws to true' for r in bolds]
+        lines += [f'  set number format of range "{r}" of ws to {literal("0.00")}' for r in decimal_ranges]
+        lines += [f'  set number format of range "{r}" of ws to {literal(excel_money(locale))}' for r in moneys]
+        lines += _excel_colours(fills, fonts)
+        lines += ["  set docName to name of wb", "  set sheetName to name of ws", "end tell"]
+        return "\n".join(lines) + "\n" + _NAMES + "return out\n"
+    lines = ['tell application "Numbers"', '  if (count of documents) is 0 then error "Numbers has no document open."',
+             "  set doc to front document", "  tell table 1 of active sheet of doc"]
+    lines += [f'    set font name of range "{r}" to "HelveticaNeue-Bold"' for r in bolds]
+    lines += [f'    set format of range "{r}" to number' for r in decimal_ranges]
+    lines += [f'    set format of range "{r}" to currency' for r in moneys]
+    lines += _numbers_colours(fills, fonts)
+    lines += ["  end tell", "  set docName to name of doc", "  set sheetName to name of active sheet of doc", "end tell"]
+    return "\n".join(lines) + "\n" + _NAMES + "return out\n"
+
+
+def write_summary(args: dict, found: dict) -> str:
+    """What sheet_write tells the worker it did."""
+    where = f"“{found.get('document', '')}”, sheet “{found.get('sheet', '')}”, in {args['app']}"
+    if not args.get("rows"):
+        return f"Coloured the cells in {where}." if args.get("fill") or args.get("font_color") else \
+            f"Formatted the cells in {where}."
+    made = "Made a new document and filled" if args.get("new_document") else "Filled"
+    return f"{made} {block(args['rows'], args.get('start', 'A1')).range} in {where}."
 
 
 def read_script(app: str, range: str = "") -> str:

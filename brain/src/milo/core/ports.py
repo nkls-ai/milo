@@ -17,6 +17,7 @@ import numpy as np
 from .access import AccessAnswer, Need
 from .conversations import ConversationInfo
 from .dictionary import Entries
+from .task_scope import ToolScope
 from .events import Event
 from .meetings import Chunk, MeetingInfo, MeetingNotes, TimedWord, Track, TranscriptLine, Turn
 from .memory import ConsolidationReport, Document, Episode, Fact, Hit, IndexItem, Recall, TurnContext
@@ -50,8 +51,13 @@ class Harness(Protocol):
     name: str
 
     async def reply(self, prompt: str, session_id: str | None, *, on_step: StepCallback | None = None,
-                    on_session: SessionCallback | None = None, on_plan: PlanCallback | None = None) -> Reply:
+                    on_session: SessionCallback | None = None, on_plan: PlanCallback | None = None,
+                    scope: ToolScope | None = None) -> Reply:
         """Answer `prompt`, continuing `session_id` if given. Raises HarnessError.
+
+        `scope` is what a helper's turn needs (core/task_scope.py): the connection server serves only its kinds,
+        the instructions leave out what it has no use for, and a simple one may run on a lighter model. None:
+        everything, as for the chat model's own turns.
 
         `on_step` hears about the commands, file edits and tool calls while the agent works, `on_session`
         the session id once the CLI has one (so a stopped turn can be resumed), and `on_plan` how far the

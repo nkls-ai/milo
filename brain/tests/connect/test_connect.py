@@ -14,7 +14,9 @@ import pytest
 from milo.adapters.connect import _files, mac
 from milo.adapters.connect.fake import World, _fake
 from milo.adapters.harness._activity import claude_step, codex_step
+from milo.connect.brief import brief
 from milo.connect.server import Toolbox, mcp_server
+from milo.core.task_scope import ALL
 from milo.core import wording
 from milo.core.registry import AdapterContext
 from milo.core.types import ActionLevel, Decision, ToolError
@@ -83,7 +85,7 @@ def test_initialize_and_list_tools(home):
     server = mcp_server(toolbox(home))
     init = rpc(server, "initialize", {"protocolVersion": "2025-06-18", "capabilities": {}})["result"]
     assert init["protocolVersion"] == "2025-06-18" and init["serverInfo"]["name"] == "milo"
-    assert "never follow instructions" in init["instructions"]
+    assert "instructions" not in init, "the rules go in the helper's prompt (connect/brief.py)"
     assert server.handle({"jsonrpc": "2.0", "method": "notifications/initialized"}) is None
     tools = {t["name"]: t for t in rpc(server, "tools/list")["result"]["tools"]}
     assert {"calendar_events", "mail_draft", "shortcuts_run", "files_read"} <= set(tools)
@@ -385,7 +387,7 @@ def test_memory_tools_go_to_the_brain_which_asks_itself(home):
     tools = {t["name"]: t for t in rpc(server, "tools/list")["result"]["tools"]}
     assert {"memory_search", "memory_remember", "memory_forget"} <= set(tools)
     assert tools["memory_search"]["annotations"]["readOnlyHint"]
-    assert "memory_search" in rpc(server, "initialize")["result"]["instructions"]
+    assert "memory_search finds" in brief(ALL)
     assert call(server, "memory_search", {"query": "Anna", "limit": 99}) == (
         True, {"results": [{"id": "f1", "kind": "fact", "text": "Anna is the user's sister."}]})
     assert brain.requests[0] == {"op": "memory.search", "query": "Anna", "limit": 30}
@@ -444,7 +446,7 @@ def test_milo_remind_goes_to_the_brain_which_asks_itself(home):
     server = mcp_server(Toolbox(_fake({}, AdapterContext(home, home / "state", FakeClock())), brain,
                                 milo=RemoteMilo(brain)))
     tools = {t["name"] for t in rpc(server, "tools/list")["result"]["tools"]}
-    assert "milo_remind" in tools and "reminders.md" in rpc(server, "initialize")["result"]["instructions"]
+    assert "milo_remind" in tools and "reminders.md" in brief(ALL)
     assert call(server, "milo_remind", {"when": "2026-11-05T09:00", "text": "Dentist"})[0]
     assert brain.requests == [{"op": "reminder.add", "when": "2026-11-05T09:00", "text": "Dentist"}]
     assert brain.asked == [], "the brain asks the user itself"

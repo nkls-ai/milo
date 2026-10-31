@@ -9,6 +9,10 @@ happens then depends on `[chat] updates`:
 - chatty: Milo also says it, phrased by the chat model, at most once every `spoken_gap_s`. Otherwise a note.
 
 Results and questions that need a yes don't go through here: they always come through.
+
+Whatever the mode (except quiet), a task the user asked for by voice that is still at work after about 8 s gets one
+short spoken line in the user's language, from what it is doing ("Opening Microsoft Excel now…"), built here from
+plain words, with no model call (`progress_line`, ADR 0032). Then Milo stays quiet until the result or a question.
 """
 
 from __future__ import annotations
@@ -24,7 +28,7 @@ from milo.core.events import Bubble
 from milo.core.ports import Clock, EventSink
 from milo.core.types import Step
 
-from .helpers import Helper
+from .helpers import _APP_IN_TITLE, Helper, is_installed_app
 
 log = logging.getLogger("milo.updates")
 
@@ -34,6 +38,54 @@ FIRST_AFTER_S = 5.0
 """Nothing in the first seconds: the talker has just said it is on it."""
 GAP_S = 20.0
 """At most one milestone per helper in this long."""
+
+
+PROGRESS_AFTER_S = 8.0
+"""A voice task still at work after this long gets its one spoken line."""
+
+_LINES = {
+    "en": {"open": "Opening {app} now…", "app": "Working in {app} now…", "calendar": "Checking your calendar…",
+           "mail": "Going through your mail…", "reminders": "Looking at your reminders…",
+           "notes": "Looking in your notes…", "files": "Looking through your files…", "web": "Looking it up online…",
+           "edit": "Making the changes now…", "": "Still on it…"},
+    "de": {"open": "Ich öffne gerade {app}…", "app": "Ich bin gerade in {app}…",
+           "calendar": "Ich schaue in deinen Kalender…", "mail": "Ich gehe deine Mails durch…",
+           "reminders": "Ich schaue in deine Erinnerungen…", "notes": "Ich schaue in deine Notizen…",
+           "files": "Ich suche in deinen Dateien…", "web": "Ich schaue online nach…",
+           "edit": "Ich mache gerade die Änderungen…", "": "Bin noch dran…"},
+    "fr": {"open": "J'ouvre {app}…", "app": "Je travaille dans {app}…", "calendar": "Je regarde ton agenda…",
+           "mail": "Je parcours tes mails…", "reminders": "Je regarde tes rappels…", "notes": "Je regarde tes notes…",
+           "files": "Je cherche dans tes fichiers…", "web": "Je cherche en ligne…", "edit": "Je fais les changements…",
+           "": "J'y suis encore…"},
+    "es": {"open": "Abriendo {app}…", "app": "Trabajando en {app}…", "calendar": "Mirando tu calendario…",
+           "mail": "Revisando tu correo…", "reminders": "Mirando tus recordatorios…", "notes": "Mirando tus notas…",
+           "files": "Buscando en tus archivos…", "web": "Buscándolo en internet…", "edit": "Haciendo los cambios…",
+           "": "Sigo en ello…"},
+}
+"""The spoken line for each kind of work. Other languages get English."""
+_TOPICS = (("calendar", "calendar"), ("mail", "mail"), ("email", "mail"), ("draft", "mail"), ("reminder", "reminders"),
+           ("note", "notes"), ("file", "files"), ("folder", "files"))
+"""Words in the titles of Milo's own tool steps (core/wording.py) and what they are about."""
+_BOOKKEEPING = ("Noting how things were", "Keeping a copy of", "Checking which apps are open")
+
+
+def progress_line(helper: Helper, installed: Callable[[str], bool] = is_installed_app) -> str:
+    """One short spoken line about what `helper` is doing, in its user's language. Only the kind of work and the name
+    of an app installed here go in, never a file name or other text the step may carry."""
+    lines = _LINES.get(helper.language, _LINES["en"])
+    steps = [s for s in helper.steps if not s.title.startswith(_BOOKKEEPING)]
+    step = next((s for s in reversed(steps) if s.kind == "app"), steps[-1] if steps else None)
+    if step is None:
+        return lines[""]
+    match = _APP_IN_TITLE.search(step.title)
+    app = next((g for g in match.groups() if g), "").strip() if match else ""
+    if app and installed(app):
+        return lines["open" if step.title.startswith("Opening ") else "app"].format(app=app)
+    words = step.title.lower()
+    topic = next((t for word, t in _TOPICS if word in words), "")
+    if topic:
+        return lines[topic]
+    return lines.get({"web": "web", "edit": "edit", "search": "files"}.get(step.kind, ""), lines[""])
 
 
 class UpdateMode(StrEnum):
@@ -113,6 +165,13 @@ class Updates:
     @property
     def mode(self) -> UpdateMode:
         return self._mode()
+
+    def busy(self) -> bool:
+        return self._busy()
+
+    def spoke(self) -> None:
+        """Milo just said something about a helper himself: chatty mode's gap starts again from now."""
+        self._spoken_at = self._noted_at = self._clock.monotonic()
 
     def milestone(self, helper: Helper, text: str, plain: str | None = None) -> None:
         """`text` goes in the bubble. `plain` is the same news without outside text (helpers.plain_step), for

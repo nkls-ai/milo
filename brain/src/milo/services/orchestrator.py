@@ -21,6 +21,7 @@ from dataclasses import replace
 from milo.core.events import Helpers
 from milo.core.logtext import private
 from milo.core.ports import Clock, EventSink
+from milo.core.task_scope import scope_for
 from milo.core.types import Decision, Emotion, HarnessError, Reply, Scope, Step
 
 from . import helpers as board_text
@@ -28,9 +29,10 @@ from .approvals import MONEY_KINDS, Parked
 from .helpers import Helper, HelperStatus, plain_step, reads_outside, short_title
 from .quiet import POLL_S
 from .speaker import Speaker
-from .task_runner import NEEDS_SCREEN, TASK_FAILED, TaskRunner, answered_prompt, follow_up_prompt, steer_prompt
+from .task_runner import (NEEDS_SCREEN, NEEDS_TOOLS, TASK_FAILED, TaskRunner, answered_prompt, follow_up_prompt,
+                          steer_prompt)
 from .transcript import Transcript, unrecorded
-from .updates import Milestones, Updates
+from .updates import PROGRESS_AFTER_S, Milestones, UpdateMode, Updates, progress_line
 
 log = logging.getLogger("milo.helpers")
 
@@ -48,6 +50,10 @@ waits (ADR 0031)."""
 MAX_TOOL_WAIT_S = 200.0
 """No question keeps a tool call waiting longer: Codex ends a tool call after 240 s (adapters/harness/codex.py)."""
 _YES = ("yes", "always", "allowed")
+VOICE_WITHIN_S = 120.0
+"""A task counts as asked for by voice when the user's last turn was spoken this recently."""
+PROGRESS_WAIT_S = 6.0
+"""When Milo is busy at the moment for the spoken progress line, it waits this much longer at most, then skips it."""
 
 # Words that mean working in an app on the screen, for tasks the talker didn't mark either way.
 _SCREEN_WORDS = re.compile(
@@ -74,7 +80,7 @@ class Orchestrator:
                  quiet: Callable[[], bool] = lambda: False, updates: Updates | None = None,
                  milestones: Milestones | None = None, inert: Callable[[str, int], str] = lambda s, n: s[:n],
                  wait_s: float = WAIT_FOR_QUIET_S, poll_s: float = POLL_S, shown_after_s: float = SHOWN_AFTER_S,
-                 coalesce_s: float = COALESCE_S):
+                 coalesce_s: float = COALESCE_S, progress_after_s: float = PROGRESS_AFTER_S):
         self._runner = runner
         self._speaker = speaker
         self._sink = sink
@@ -89,6 +95,7 @@ class Orchestrator:
         self._poll_s = poll_s
         self._shown_after_s = shown_after_s
         self._coalesce_s = coalesce_s
+        self._progress_after_s = progress_after_s
         self._helpers: list[Helper] = []
         self._numbers = 0
         self._supervisors: dict[str, asyncio.Task] = {}
@@ -160,9 +167,12 @@ class Orchestrator:
         screen = (needs_screen(description) if screen is None else screen) and self._runner.has_screen
         self._numbers += 1
         name = short_title(description, title)
+        spoken = not own and self._transcript.last_via(VOICE_WITHIN_S) == "voice"  # before the task's own entry
         helper = Helper(self._transcript.task_started(description, title=name, own=own), self._numbers, name,
                         description, screen, self._clock.monotonic(), careful=careful, instructions=instructions,
-                        on_finish=on_finish, user_asked=user_asked, language=language)
+                        on_finish=on_finish, user_asked=user_asked, language=language,
+                        scope=None if instructions else scope_for(description, screen=screen),
+                        spoken=spoken)
         log.info("helper %d %s%s, %s", helper.number, "on the screen" if screen else "in the background",
                  " (careful)" if careful else "", private(description))
         self._add(helper)
@@ -201,7 +211,9 @@ class Orchestrator:
                                                       title=helper.title),
                         self._next_number(), helper.title, helper.description, helper.screen, self._clock.monotonic(),
                         session_id=helper.session_id, amendments=[*helper.amendments, change], follow_up=change,
-                        careful=careful, instructions=helper.instructions, user_asked=user_asked)
+                        careful=careful, instructions=helper.instructions, user_asked=user_asked,
+                        language=helper.language,
+                        scope=helper.scope and scope_for(f"{helper.description}\n{change}", screen=helper.screen))
         self._add(follow)
         return follow
 
@@ -334,6 +346,7 @@ class Orchestrator:
             prompt, session = follow_up_prompt(helper.follow_up), helper.session_id
         else:
             prompt, session = self._runner.first_prompt(helper), None
+        progress = asyncio.create_task(self._progress(helper)) if helper.spoken and not helper.told else None
         try:
             while True:
                 attempt = asyncio.create_task(self._runner.run(
@@ -375,6 +388,11 @@ class Orchestrator:
                     helper.screen, helper.status, helper.session_id = True, HelperStatus.QUEUED, None
                     self._changed(now=True)
                     return
+                if reply.say.strip() == NEEDS_TOOLS and helper.scope is not None:
+                    log.info("helper %d needs more tools than its task named, running it with all", helper.number)
+                    helper.scope = None
+                    prompt, session = self._runner.first_prompt(helper), None
+                    continue
                 self._done(helper, reply)
                 return
         except asyncio.CancelledError:
@@ -388,6 +406,8 @@ class Orchestrator:
             log.exception("helper %d crashed", helper.number)
             self._failed(helper)
         finally:
+            if progress is not None:
+                progress.cancel()
             if helper.waiting is not None and not helper.waiting.done():
                 helper.waiting.cancel()  # takes the question away
             helper.waiting = None
@@ -404,6 +424,37 @@ class Orchestrator:
             return steer_prompt("; ".join(changes)), helper.session_id
         return self._runner.first_prompt(helper), None
 
+    async def _progress(self, helper: Helper) -> None:
+        """The one spoken line for a voice task that takes a while: at about 8 s, if it is still at work and nothing
+        else is being said or asked. Never in quiet mode, never more than once (ADR 0032)."""
+        await asyncio.sleep(self._progress_after_s)
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + PROGRESS_WAIT_S
+        while not helper.told:
+            if (helper.status is not HelperStatus.WORKING or self.updates is None
+                    or self.updates.mode is UpdateMode.QUIET):
+                return
+            if not (self._quiet() or self._speaker.active or self.updates.busy() or self._reports):
+                break
+            if loop.time() >= deadline:
+                helper.told = True
+                return
+            await asyncio.sleep(self._poll_s)
+        if helper.told:
+            return
+        helper.told = True
+        line = progress_line(helper)
+        log.info("helper %d: saying how it goes, %s", helper.number, line)
+        self.updates.spoke()
+        await asyncio.wait({self._speaker.say(line, Emotion.NEUTRAL, speak=True)})
+
+    def screen_step(self, id: str, step: Step) -> None:
+        """A step the Mac tools took for the screen helper `id` (HandsService already put it in the transcript): the
+        app's `helpers` event shows it as that helper's `step`, and it counts for milestones and the spoken line."""
+        helper = next((h for h in self._helpers if h.id == id and h.active), None)
+        if helper is not None:
+            self._seen(helper, step)
+
     def _step(self, helper: Helper, step: Step) -> None:
         if not helper.active:
             return
@@ -412,6 +463,9 @@ class Orchestrator:
             # What it read could steer the rest of its work: from now on it asks as usual (ADR 0022).
             helper.user_asked = False
             log.info("helper %d read outside text, so auto mode no longer covers it", helper.number)
+        self._seen(helper, step)
+
+    def _seen(self, helper: Helper, step: Step) -> None:
         if helper.record(step) and self.updates is not None:
             text = self._milestones.step(helper, step, self._clock.monotonic())
             if text is not None:
@@ -509,6 +563,20 @@ class Orchestrator:
                 if h.finished_at is not None and now - h.finished_at < self._shown_after_s]
         if ends:
             self._expire_handle = asyncio.get_running_loop().call_later(max(0.05, min(ends)), self._emit)
+
+
+class ScreenSteps:
+    """The transcript as HandsService sees it: each step of the Mac tools also goes to the orchestrator, so the screen
+    helper's `step` in the app (the caption under the outline) and its spoken line follow what it does on screen.
+    `orchestrator` returns the orchestrator, which compose builds after the Mac tools."""
+
+    def __init__(self, transcript: Transcript, orchestrator: Callable[[], Orchestrator]):
+        self._transcript = transcript
+        self._orchestrator = orchestrator
+
+    def task_step(self, id: str, step: Step) -> None:
+        self._transcript.task_step(id, step)
+        self._orchestrator().screen_step(id, step)
 
 
 class HelperQuestions:

@@ -54,7 +54,7 @@ def test_pluggable_returns_the_use_name_and_its_table(section, name, key, value)
 
 def test_pluggable_tables_belong_to_their_implementation_only():
     use, options = Config.load(TEMPLATE).pluggable("harness")
-    assert set(options) == {"binary", "model", "reasoning_effort", "sandbox", "timeout_s"}
+    assert set(options) == {"binary", "model", "light_model", "reasoning_effort", "sandbox", "timeout_s"}
     use, options = Config.load(TEMPLATE).pluggable("chat")
     assert "conversation_idle_reset_s" not in options
 

@@ -114,6 +114,17 @@ class Transcript:
         self._fresh = self._picked_up = False
         return self._add(EntryKind.USER, text, finished=True, via=via).id
 
+    def last_via(self, within_s: float) -> str:
+        """How the user's last turn in the current conversation came ("voice", "typed", "message"), if it came in
+        the last `within_s` seconds; else "". Tells a task the user just asked for by voice (ADR 0032)."""
+        if self._current is None:
+            return ""
+        last = next((e for e in reversed(self._entries())
+                     if e.conversation == self._current and e.kind is EntryKind.USER), None)
+        if last is None or (self._clock.now() - _time(last.ts)).total_seconds() > within_s:
+            return ""
+        return last.via
+
     def new_conversation(self) -> None:
         """The user wants a fresh start (⌘N): the next turn starts a new conversation."""
         self._entries()

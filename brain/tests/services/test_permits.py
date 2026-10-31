@@ -85,7 +85,7 @@ class Worker:
         self.hands = None
         self.errors: list[str] = []
 
-    async def reply(self, prompt, session_id, *, on_step=None, on_session=None, on_plan=None) -> Reply:
+    async def reply(self, prompt, session_id, *, on_step=None, on_session=None, on_plan=None, scope=None) -> Reply:
         for tool, args in self.turns.pop(0) if self.turns else []:
             try:
                 await self.hands.call(tool, with_app(self.hands._hands, tool, args))

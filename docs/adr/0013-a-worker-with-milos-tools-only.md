@@ -1,6 +1,6 @@
 # 13. The worker runs with Milo's tools only
 
-Date: 2026-10-30. Status: accepted. Builds on [ADR 2](0002-agent-clis-as-the-llm-harness.md) and [ADR 7](0007-computer-use-through-the-brain.md).
+Date: 2026-10-30. Status: accepted. Builds on [ADR 2](0002-agent-clis-as-the-llm-harness.md) and [ADR 7](0007-computer-use-through-the-brain.md). Changed by [ADR 32](0032-helpers-get-only-what-their-task-needs.md): Codex's home holds no AGENTS.md any more; each new session gets Milo's instructions, trimmed to its task, as `developer_instructions`.
 
 ## Context
 

@@ -16,6 +16,7 @@ from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
 
+from milo.core.task_scope import ToolScope
 from milo.core.types import Step, StepStatus
 
 MAX_TITLE = 32
@@ -84,6 +85,12 @@ class Helper:
     follow-ups and anything a mail or web page could have suggested are False."""
     language: str = ""
     """The language the user asked in ("de"), so its answer is spoken in that one. "" when unknown."""
+    scope: ToolScope | None = None
+    spoken: bool = False
+    """The user asked for it by voice just now: if it takes a while, Milo says one line about it (ADR 0032)."""
+    told: bool = False
+    """That line was said, or its moment passed."""
+    """The connections its task names (core/task_scope.py); None: every one, as for a routine or after NEEDS_TOOLS."""
     instructions: str = ""
     """What the worker gets instead of the description, when that is long: a routine's recipe. The
     description stays short, for the Milo window."""
@@ -138,6 +145,8 @@ class Helper:
         data = {"id": self.id, "title": self.title, "status": self.status.value, "step": self.step}
         if self.progress is not None:
             data["progress"] = round(self.progress, 2)
+        if self.screen:
+            data["screen"] = True
         return data
 
 

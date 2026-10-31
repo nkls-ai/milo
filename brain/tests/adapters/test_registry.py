@@ -18,9 +18,10 @@ EXPECTED = [
 
 # Every table in workspace_template/config.toml, keyed by registry and name.
 TEMPLATE_OPTIONS = {
-    (HARNESSES, "codex"): {"binary": "/bin/echo", "model": "", "reasoning_effort": "low",
+    (HARNESSES, "codex"): {"binary": "/bin/echo", "model": "", "light_model": "gpt-6-luna", "reasoning_effort": "low",
                            "sandbox": "workspace-write", "timeout_s": 180},
-    (HARNESSES, "claude"): {"binary": "/bin/echo", "model": "", "permission_mode": "acceptEdits", "timeout_s": 180},
+    (HARNESSES, "claude"): {"binary": "/bin/echo", "model": "", "light_model": "", "permission_mode": "acceptEdits",
+                            "timeout_s": 180},
     (LIVE_MODELS, "claude_live"): {"binary": "/bin/echo", "model": "claude-sonnet-5-5", "effort": "low"},
     (TRANSCRIBERS, "mlx_whisper"): {"model": "mlx-community/whisper-large-v3-turbo",
                                     "preview_model": "mlx-community/whisper-base-mlx", "language": "",
