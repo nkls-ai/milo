@@ -16,6 +16,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -244,7 +245,9 @@ class Undo:
                 log.warning("undo: could not put a file back: %s", e)
                 failed.append(Path(kept["path"]).name)
         rest = [c for c in record["changes"] if not c["covered"]]
-        helper = self._hand_on(task, record, rest) if rest or record["notes"] else None
+        # Notes alone record how things were, not that they changed: every change Milo saw is in `rest`. Opening a
+        # window or a tab changed nothing that needs putting back. Neither starts a helper (ADR 0026).
+        helper = self._hand_on(task, record, rest) if any(not _only_opens(c) for c in rest) else None
         if helper is None:
             self._set(task, record, "undone" if not failed else "ready")
         parts = []
@@ -257,7 +260,10 @@ class Undo:
         if helper is not None:
             parts.append("A helper is putting back the rest." if restored else
                          f"I'm undoing “{title}”: a helper is putting things back.")
-        await self._tell(" ".join(parts) or f"Undid “{title}”.")
+        if not parts:
+            parts.append(f"Nothing to undo for “{title}”: it only opened windows or tabs. Close them if you don't "
+                         f"need them." if rest else f"Nothing to undo for “{title}”: it didn't change anything.")
+        await self._tell(" ".join(parts))
 
     def _hand_on(self, task: str, record: dict, rest: list[dict]) -> Helper:
         """What no copy covers goes to a helper, with the record of what the task did."""
@@ -398,6 +404,27 @@ _ACTIVE = f"""{snapshots.MARK} name
 with timeout of 20 seconds
 tell application "{snapshots.EXCEL}" to return "document" & tab & (name of active workbook)
 end timeout"""
+
+
+_OPENERS = frozenset({"cmd+t", "cmd+n", "cmd+shift+n", "cmd+l", "cmd+tab", "cmd+space"})
+"""Keys that open a tab, a window or Spotlight, or move the focus: nothing to put back."""
+_MODIFIERS = {"cmd": "cmd", "command": "cmd", "⌘": "cmd", "shift": "shift", "⇧": "shift"}
+
+
+def _only_opens(change: dict) -> bool:
+    """A recorded step that only opened something: an app, a page, a new tab or window."""
+    tool, _, args = str(change.get("detail") or "").partition(" ")
+    if tool in ("open_app", "open_url"):
+        return True
+    if tool != "key":
+        return False
+    try:
+        combo = str(json.loads(args).get("combo") or "")
+    except (ValueError, AttributeError):
+        return False
+    *mods, key = [p for p in re.split(r"[+\s]+", combo.lower()) if p] or [""]
+    named = sorted({_MODIFIERS.get(m, m) for m in mods})
+    return "+".join([*named, key]) in _OPENERS
 
 
 def _detail(tool: str, args: dict) -> str:
