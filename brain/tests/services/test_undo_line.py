@@ -225,7 +225,7 @@ def test_by_default_make_the_whole_excel_red_asks_nothing_and_the_work_runs():
     assert s.sink.of(Confirm) == [] and worker.errors == []
     assert ("run_applescript", {"script": paint}) in s.hands_port.calls
     [helper] = s.tasks.helpers
-    assert helper.careful and helper.user_asked
+    assert helper.user_asked and not helper.careful, "the user asked for the work: it runs as theirs (ADR 0023)"
 
 
 @pytest.mark.parametrize("step, question", [

@@ -61,3 +61,15 @@ In auto mode, ADR 22's rules for `user_asked` are unchanged. A task from the rep
 - ⌘D is Don't Save in an unsaved-changes sheet and Fill Down in Excel. It isn't treated as risky, so the Don't Save it can trigger doesn't ask. Clicking the button asks.
 - The money check is a word list too. A script that mentions "order" asks as a money question and can only be answered with a click. A bank page whose button says "Confirm" asks, but not as money. The worker's instructions (`connect/tools.py`, `AGENTS.md`) tell it to stop before buying. That only reaches new workspaces: an existing `~/Milo/AGENTS.md` keeps its old line ("Never move money"), which is stricter.
 - With auto as the default, the menu bar's "auto" badge (ADR 22) is gone: it would show for everyone. The menu still says auto mode is on and can turn it off.
+
+## Update, 2026-10-31: the user's own words are the yes
+
+The morning after, auto mode still asked three times in one conversation: "Start “Excel-Zugriff prüfen”?", "Start “Excel-Tabelle rot färben”?" and "Run a script in Microsoft Excel?". The conversation counted as having read outside text (recalled memory, then the first task's result), and that made every task ask to start and run careful. In auto mode, at the Mac (voice or typed), a task now never asks to start:
+
+- When the user's own words ask for work ("mach die Mappe rot", "fix this sheet"), that request is the yes for the whole task. It runs as theirs, not careful, even after Milo read the screen or a task result.
+- Otherwise ("what's on my calendar?", "thanks" after a task result, "can you see my screen?") the task still starts, since reading never asks, but runs careful: before it changes anything in an app it asks.
+- Everything this ADR always asks about still asks: what can't be undone, sending, sharing, buying and money.
+- Routines still ask to start from such a conversation, and messages from the phone keep the old rules.
+
+What this gives up: a task the model starts after reading outside text, in a turn where the user didn't ask for work, no longer waits for a yes before it reads. A page could talk Milo into reading something and then into a step that sends it; that step asks. A web search or fetch by the worker doesn't ask, so a read could leak through one. The user chose fewer questions ("like the auto mode from Claude").
+

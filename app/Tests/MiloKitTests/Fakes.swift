@@ -193,6 +193,9 @@ final class FakeWindowWatcher: WindowWatcher {
     func move(to frame: CGRect?) { changed?(frame) }
     private(set) var broughtForward: [Int32] = []
     func bringForward(pid: Int32, frame: CGRect) { broughtForward.append(pid) }
+    /// The front window of each running app, by name.
+    var mainWindows: [String: (pid: Int32, frame: CGRect)] = [:]
+    func mainWindow(app: String, bundle: String) -> (pid: Int32, frame: CGRect)? { mainWindows[app] }
 }
 
 final class FakeInputSource: UserInputSource {

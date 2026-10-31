@@ -405,3 +405,35 @@ def test_the_same_target_moved_a_little_needs_no_second_question():
     t = Setup(ChangingHands("click", SEND, moved), FakeConfirm(True))
     t.call("click", {"x": 1, "y": 2})
     assert len(t.confirm.asked) == 1 and t.port.actions == ["click"]
+
+
+RED = 'tell application "Microsoft Excel"\n  set color of interior object of used range of active sheet to {255, 0, 0}\nend tell'
+
+
+def test_a_script_in_an_app_brings_its_window_forward_first_once_per_app():
+    # 2026-10-31: "make the sheet red" ran as a script, and the window never came to the front: only clicks and
+    # typing (through describe) did. Now the app shows the window of the app a script names, before it runs.
+    t = Setup(FakeHands(targets={"run_applescript": {"app": "Finder"}}), FakeConfirm(True, True))
+    t.call("run_applescript", {"script": RED})
+    t.call("run_applescript", {"script": RED})
+    shows = [args for tool, args in t.port.calls if tool == "show_app"]
+    assert shows == [{"app": "Microsoft Excel", "bundle": ""}], "once per app per task"
+    tools = [tool for tool, _ in t.port.calls]
+    assert tools.index("show_app") < tools.index("run_applescript")
+
+
+def test_a_sheet_write_shows_its_app_and_a_click_leaves_it_to_describe():
+    t = Setup(FakeHands(targets={"click": {**SAVE, "window": {"x": 0, "y": 0, "width": 800, "height": 600},
+                                           "pid": 7}}))
+    t.call("click", {"x": 812, "y": 430})
+    assert "show_app" not in [tool for tool, _ in t.port.calls], "describe already has the window"
+
+
+def test_a_script_that_names_no_single_app_shows_nothing_and_a_failed_show_doesnt_stop_the_work():
+    from milo.core.types import HandsError as Failed
+
+    t = Setup(FakeHands(results={"show_app": Failed("no window")}), FakeConfirm(True, True))
+    t.call("run_applescript", {"script": "return 1 + 1"})
+    assert "show_app" not in [tool for tool, _ in t.port.calls]
+    t.call("run_applescript", {"script": RED})
+    assert [tool for tool, _ in t.port.calls][-1] == "run_applescript", "the script still ran"

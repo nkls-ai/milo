@@ -508,7 +508,7 @@ def test_task_steer_and_stop_tags_reach_the_orchestrator():
 
 def test_once_task_results_are_in_a_steer_waits_for_a_yes_but_a_stop_never_does():
     gate = asyncio.Event()
-    s = Stack(model=FakeLiveModel(["[happy] On it. <task>first</task> <task>second</task>"],
+    s = Stack(ask="task", model=FakeLiveModel(["[happy] On it. <task>first</task> <task>second</task>"],
                                   ['[happy] Okay. <steer helper="2">do it differently</steer> <stop helper="2"/>']),
               harness=ScriptedHarness(WorkerScript("First done."), WorkerScript(gate, "never")))
 

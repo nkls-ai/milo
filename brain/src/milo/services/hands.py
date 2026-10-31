@@ -85,6 +85,8 @@ class HandsService:
         """Documents this task made with sheet_write: writing into them never asks."""
         self._cleared: set[str] = set()
         """Apps the user said this careful task may use."""
+        self._shown: set[str] = set()
+        """Apps whose window this task brought forward already (AppRef.key)."""
         self._active = False
         self._stopped = False
         self._lock = asyncio.Lock()
@@ -101,7 +103,7 @@ class HandsService:
         the user cleared and the documents it made."""
         self._end_session()
         if task_id != self._owner:
-            self._made, self._cleared = set(), set()
+            self._made, self._cleared, self._shown = set(), set(), set()
         self._task_id, self._owner, self._stopped, self._careful = task_id, task_id, False, careful
 
     def end(self, task_id: str) -> None:
@@ -172,6 +174,7 @@ class HandsService:
             self._transcript.task_step(task_id, step)
             if spec.acts:
                 self._start_session(target)
+                await self._show(tool, args, target)
             try:
                 try:
                     result = await self._perform(tool, args)
@@ -232,6 +235,30 @@ class HandsService:
         if not self._careful or not acts or tool in _NEW_THINGS or app in self._cleared:
             return False
         return not (tool == "sheet_write" and (target.get("new") or target.get("made")))
+
+    async def _show(self, tool: str, args: dict, target: dict) -> None:
+        """Bring the window of the app this action works in to the front and outline it, once per app per task, so
+        the user sees the work (`[hands] show_window`, which the app reads). Clicks and typing do it from what
+        `describe` found; scripts and the sheet and document tools name their app here. A new document has no
+        window yet. Failing to show never stops the work."""
+        if "window" in target or target.get("new"):
+            return
+        if tool == "run_applescript":
+            apps = script_apps(str(args["script"])) or []
+            if len(apps) != 1:
+                return
+            app = apps[0]
+        elif "app" in args:
+            app = AppRef(str(args["app"]), str(target.get("bundle") or ""))
+        else:
+            return
+        if not app.key or app.key in self._shown:
+            return
+        self._shown.add(app.key)
+        try:
+            await self._act("show_app", {"app": app.name, "bundle": app.bundle})
+        except HandsError as e:
+            log.info("couldn't show %s: %s", app.name or app.bundle, e)
 
     async def _describe(self, tool: str, args: dict) -> dict:
         """What an action would touch: the app describes clicks and typing; sheet_write reads its target."""

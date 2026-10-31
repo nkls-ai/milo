@@ -186,6 +186,17 @@ def test_a_task_the_user_asks_for_after_a_look_just_starts():
     s.harness.reply = _recording(s.harness.reply, lambda: careful.append(s.tasks.careful(screen=False)))
     assert answering(s, False, "look at this", "open Excel and make a table for the week") == []
     assert len(s.harness.calls) == 1
+    assert careful == [False], "auto mode: the user's own words asked for the work, so changes don't ask (ADR 0023)"
+    assert not s.tasks.helpers[0].careful
+
+
+def test_in_once_per_task_mode_that_task_runs_careful():
+    s = Stack(ask="task", eyes=FakeEyes(EXCEL), model=FakeLiveModel(
+        ["[thinking] <look/>"], ["[neutral] It's a budget."],
+        ["[happy] On it. <task>Open Excel and make a budget table. One row per weekday.</task>"]))
+    careful = []
+    s.harness.reply = _recording(s.harness.reply, lambda: careful.append(s.tasks.careful(screen=False)))
+    assert answering(s, False, "look at this", "open Excel and make a table for the week") == []
     assert careful == [True], "it runs careful: changes ask, opening apps and new documents don't"
     assert s.tasks.helpers[0].careful and not s.tasks.careful(screen=False), "only while the helper works"
 

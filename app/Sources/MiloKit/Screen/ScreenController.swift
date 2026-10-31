@@ -139,6 +139,10 @@ public final class ScreenController {
             brain.send(.handsResult(id: id, ok: false, result: [:], error: "stopped"))
             return
         }
+        if tool == "show_app" {
+            let shown = showApp(args["app"]?.string ?? "", bundle: args["bundle"]?.string ?? "")
+            return brain.send(.handsResult(id: id, ok: true, result: ["shown": .bool(shown)]))
+        }
         let run = { [weak self] in
             guard let self else { return }
             if stoppedLocally && tool != "describe" {
@@ -170,25 +174,18 @@ public final class ScreenController {
         }
     }
 
+    /// The brain says which app a script or a sheet tool works in (`show_app`): its main window comes forward
+    /// and gets the outline, as for a click. False when the app has no window.
+    private func showApp(_ app: String, bundle: String) -> Bool {
+        guard model.handsActive, let found = ports.windows.mainWindow(app: app, bundle: bundle) else { return false }
+        outline(window: found.frame, pid: found.pid)
+        return true
+    }
+
     /// The window and spot `describe` found: outline the window, perch Pip on it, glide the cursor there.
     private func aim(at target: HandsTarget, tool: String) {
         guard Self.pointed.contains(tool) else { return }
-        if let window = target.window {
-            if let pid = target.pid, pid != forwardPid, model.handsActive, showWindow() {
-                forwardPid = pid
-                ports.windows.bringForward(pid: pid, frame: window)
-            }
-            if let pid = target.pid, pid != watchedPid || model.workingWindow != appKit(window) {
-                watchedPid = pid
-                ports.windows.watch(pid: pid, frame: window) { [weak self] frame in
-                    guard let self, model.handsActive else { return }
-                    // nil: away (minimized, hidden, another space) or closed. The watch goes on while it is away.
-                    if let frame { show(window: frame) } else { model.workingWindow = nil }
-                }
-            }
-            // After the watch, which knows the window's number.
-            show(window: window)
-        }
+        if let window = target.window { outline(window: window, pid: target.pid) }
         guard let point = target.point else { return }
         let spot = toAppKit(ScreenPoint(x: point.x, y: point.y))
         aim = spot
@@ -196,6 +193,24 @@ public final class ScreenController {
         glideTimeout?.cancel()
         glideTimeout = scheduler.after(Self.glideWait) { [weak self] in self?.arrived() }
         ports.cursor.glide(to: spot) { [weak self] in self?.arrived() }
+    }
+
+    /// Outline the window Milo works in, follow it, and bring it to the front once per app (`showWindow`).
+    private func outline(window: CGRect, pid: Int32?) {
+        if let pid, pid != forwardPid, model.handsActive, showWindow() {
+            forwardPid = pid
+            ports.windows.bringForward(pid: pid, frame: window)
+        }
+        if let pid, pid != watchedPid || model.workingWindow != appKit(window) {
+            watchedPid = pid
+            ports.windows.watch(pid: pid, frame: window) { [weak self] frame in
+                guard let self, model.handsActive else { return }
+                // nil: away (minimized, hidden, another space) or closed. The watch goes on while it is away.
+                if let frame { show(window: frame) } else { model.workingWindow = nil }
+            }
+        }
+        // After the watch, which knows the window's number.
+        show(window: window)
     }
 
     private func arrived() {

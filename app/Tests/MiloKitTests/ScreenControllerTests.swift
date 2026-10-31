@@ -227,6 +227,35 @@ private final class Rig {
         #expect(r.windows.broughtForward == [42, 7, 7], "a new session starts fresh")
     }
 
+    @Test func showAppBringsTheWindowOfTheAppAScriptWorksInForwardAndOutlinesIt() {
+        let r = Rig()
+        r.startSession()
+        r.windows.mainWindows["Microsoft Excel"] = (pid: 9, frame: CGRect(x: 100, y: 50, width: 800, height: 600))
+        r.brain.emit(.handsRequest(id: "s1", tool: "show_app", args: ["app": "Microsoft Excel", "bundle": ""]))
+        #expect(r.windows.broughtForward == [9])
+        #expect(r.windows.watched.map(\.pid) == [9])
+        #expect(r.model.workingWindow == CGRect(x: 100, y: 350, width: 800, height: 600))
+        #expect(r.sent == [.handsResult(id: "s1", ok: true, result: ["shown": true])])
+        #expect(r.hands.performed.isEmpty, "the app shows it itself")
+    }
+
+    @Test func showAppForAnAppWithoutAWindowAnswersAndDoesNothing() {
+        let r = Rig()
+        r.startSession()
+        r.brain.emit(.handsRequest(id: "s1", tool: "show_app", args: ["app": "Numbers", "bundle": ""]))
+        #expect(r.windows.broughtForward.isEmpty && r.model.workingWindow == nil)
+        #expect(r.sent == [.handsResult(id: "s1", ok: true, result: ["shown": false])])
+    }
+
+    @Test func withShowWindowOffShowAppOnlyOutlines() {
+        let r = Rig()
+        r.screen.showWindow = { false }
+        r.startSession()
+        r.windows.mainWindows["Microsoft Excel"] = (pid: 9, frame: CGRect(x: 100, y: 50, width: 800, height: 600))
+        r.brain.emit(.handsRequest(id: "s1", tool: "show_app", args: ["app": "Microsoft Excel", "bundle": ""]))
+        #expect(r.windows.broughtForward.isEmpty && r.model.workingWindow != nil)
+    }
+
     @Test func withShowWindowOffMiloStaysBehindTheUsersWindows() {
         let r = Rig()
         r.screen.showWindow = { false }

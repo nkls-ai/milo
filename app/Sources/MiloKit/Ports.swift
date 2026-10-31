@@ -144,6 +144,9 @@ public protocol WindowWatcher: AnyObject {
     func stop()
     /// Bring that window of `pid` to the front, so the user sees Milo work in it.
     func bringForward(pid: Int32, frame: CGRect)
+    /// The running app with this bundle id, else this name, and its main window (global points, top-left
+    /// origin); nil when it isn't running or has no window.
+    func mainWindow(app: String, bundle: String) -> (pid: Int32, frame: CGRect)?
 }
 
 /// For a screen without Milo's cursor (tests, or before the overlay exists).
@@ -161,6 +164,7 @@ public final class NoWindowWatcher: WindowWatcher {
     public var windowNumber: Int? { nil }
     public func stop() {}
     public func bringForward(pid: Int32, frame: CGRect) {}
+    public func mainWindow(app: String, bundle: String) -> (pid: Int32, frame: CGRect)? { nil }
 }
 
 /// Mouse and keyboard input from every app while the worker acts. Callbacks on the main queue.

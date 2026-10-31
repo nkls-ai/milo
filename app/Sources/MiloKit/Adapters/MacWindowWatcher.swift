@@ -63,6 +63,18 @@ public final class MacWindowWatcher: WindowWatcher {
         NSRunningApplication(processIdentifier: pid)?.activate()
     }
 
+    public func mainWindow(app name: String, bundle: String) -> (pid: Int32, frame: CGRect)? {
+        let apps = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }
+        let plain = (name as NSString).lastPathComponent.replacingOccurrences(of: ".app", with: "")
+        guard let running = apps.first(where: { !bundle.isEmpty && $0.bundleIdentifier == bundle })
+                ?? apps.first(where: { !plain.isEmpty && $0.localizedName?.caseInsensitiveCompare(plain) == .orderedSame })
+        else { return nil }
+        let app = AX.application(running.processIdentifier)
+        let windows: [AXUIElement] = AX.attribute(app, kAXWindowsAttribute) ?? []
+        guard let window = AX.window(of: app) ?? windows.first, let frame = AX.frame(window) else { return nil }
+        return (running.processIdentifier, frame)
+    }
+
     public func stop() {
         poll?.invalidate()
         poll = nil
