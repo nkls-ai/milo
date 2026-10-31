@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import Contacts
 import CoreGraphics
 import EventKit
 
@@ -28,6 +29,12 @@ public final class SystemPermissions: PermissionSource {
         case .calendars: Self.eventKit(.event)
         case .reminders: Self.eventKit(.reminder)
         case .automation: Self.automation(ask: false)
+        case .contacts:
+            switch MacAppAccess.contacts() {
+            case .yes: .granted
+            case .ask: .notAsked
+            default: .denied
+            }
         }
     }
 
@@ -44,6 +51,7 @@ public final class SystemPermissions: PermissionSource {
         case .automation:
             // A question with no effect on Mail. Asking blocks until the user answers, so off the main thread.
             DispatchQueue.global(qos: .userInitiated).async { _ = Self.automation(ask: true) }
+        case .contacts: CNContactStore().requestAccess(for: .contacts) { _, _ in }
         }
     }
 
@@ -55,6 +63,7 @@ public final class SystemPermissions: PermissionSource {
         case .calendars: "Privacy_Calendars"
         case .reminders: "Privacy_Reminders"
         case .automation: "Privacy_Automation"
+        case .contacts: "Privacy_Contacts"
         }
         let pane = "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?\(page)"
         guard let url = URL(string: pane) else { return }

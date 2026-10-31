@@ -12,6 +12,10 @@ public struct ActionDone: Equatable, Sendable, Decodable {
         case written
         /// Text Milo put on the clipboard (`<copy>`): a link, an address, a code the user asked for.
         case copied
+        /// A text message Milo sent, after the user's yes (ADR 0039): the detail is what it said.
+        case message
+        /// A call Milo started, after the user's yes (ADR 0039): the detail is the number or address.
+        case call
         /// A kind a newer brain invents: a plain card with a check.
         case other
     }

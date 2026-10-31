@@ -41,9 +41,9 @@ public final class AccessRequests: AppConnections {
         switch op {
         case "access.check", "access.request":
             guard let need, need != .control || app != nil else {
-                return reply(.failure("access needs a need (control, ui or screen) and, for control, an app."))
+                return reply(.failure("access needs a need (control, ui, screen or contacts) and, for control, an app."))
             }
-            let asking = op == "access.request" && need == .control
+            let asking = op == "access.request" && (need == .control || need == .contacts)
             if asking { onAsking?(true) }
             queue.async { [self] in
                 let answer = asking ? source.request(need, app: app)

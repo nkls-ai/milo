@@ -29,6 +29,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>NSAudioCaptureUsageDescription</key><string>Milo hears the others in a call only while he takes meeting notes you said yes to. The audio stays on this Mac.</string>
   <key>NSCalendarsFullAccessUsageDescription</key><string>Milo looks at your calendar and puts appointments in it when you ask him to.</string>
   <key>NSRemindersFullAccessUsageDescription</key><string>Milo reads and adds reminders when you ask him to.</string>
+  <key>NSContactsUsageDescription</key><string>Milo finds who you mean when you ask him to text or call someone. He asks before each message or call.</string>
   <key>NSAppleEventsUsageDescription</key><string>Milo works in this app only when you ask him to, like filling in a sheet or writing a note, and you see each step. He asks before anything that can't be undone.</string>
   <key>MiloBrainDir</key><string>$ROOT/brain</string>
 </dict>

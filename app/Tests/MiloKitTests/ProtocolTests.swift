@@ -99,6 +99,8 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .actionDone(ActionDone(kind: .shortcut, title: "Lights off")),
             .actionDone(ActionDone(kind: .written, title: "Hi Anna,", app: "Mail", undo: "w-8a7b6c5d4e3f", lang: "en")),
             .actionDone(ActionDone(kind: .copied, title: "https://github.com/NiklasDob/milo", lang: "en")),
+            .actionDone(ActionDone(kind: .message, title: "Anna Berg", detail: "I'm running ten minutes late",
+                                   app: "Messages", lang: "en")),
             .handsBorrow(on: true, what: "mouse"),
             .access(AccessNote(need: .control, state: .ask,
                                text: "macOS will ask once whether I may use Microsoft Excel. Click Allow.", app: AccessApp(name: "Microsoft Excel", bundle: "com.microsoft.Excel"))),
@@ -107,6 +109,8 @@ private func entries(_ key: String) throws -> [[String: Any]] {
                                app: AccessApp(name: "Microsoft Excel", bundle: "com.microsoft.Excel"))),
             .access(AccessNote(need: .ui, state: .no,
                                text: "To work in other apps' windows I need Accessibility. Fix it shows where to switch it on.")),
+            .access(AccessNote(need: .contacts, state: .ask,
+                               text: "macOS will ask once whether I may look in your contacts. Please allow it.")),
             .appRequest(id: "a43f", op: "calendar.update_event", args: .object([
                 "id": .string("E1F2-77"), "at": .string("2026-11-05T15:00"), "start": .string("2026-11-06T10:00"),
                 "end": .string("2026-11-06T11:00"),
@@ -123,6 +127,9 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             ])),
             .appRequest(id: "a53f", op: "access.places", args: .object([
                 "app": .string("Microsoft Excel"), "bundle": .string("com.microsoft.Excel"),
+            ])),
+            .appRequest(id: "a54f", op: "contacts.find", args: .object([
+                "name": .string("Mum"), "relation": .string("mother"),
             ])),
             .appRequest(id: "a61f", op: "text.write", args: .object([
                 "text": .string("Hi Anna,\n\nI'm running ten minutes late.\n\nNiklas"), "paste": .bool(true),

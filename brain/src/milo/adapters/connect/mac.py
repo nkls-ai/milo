@@ -1,18 +1,19 @@
-"""The real connections on this Mac: Calendar and Reminders through Milo.app, Mail and Notes through
-AppleScript, the `shortcuts` command, and Spotlight for files."""
+"""The real connections on this Mac: Calendar, Reminders and Contacts through Milo.app, Mail, Notes and Messages
+through AppleScript, the `shortcuts` command, Spotlight for files, and FaceTime for calls."""
 
 from __future__ import annotations
 
 import html
 import subprocess
 import tempfile
+import urllib.parse
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from milo.adapters.home.focus import ShortcutsFocus
-from milo.core.app_connections import AppCalendar, AppReminders
+from milo.core.app_connections import AppCalendar, AppContacts, AppReminders
 from milo.core.control import Protected
 from milo.core.ports import Connections
 from milo.core.registry import CONNECTIONS, AdapterContext, options_from
@@ -24,6 +25,7 @@ from . import _files, _osascript
 from ._osascript import records
 
 SHORTCUT_TIMEOUT_S = 120
+OPEN_TIMEOUT_S = 15
 MDFIND_TIMEOUT_S = 20
 MDFIND_MAX = 400
 
@@ -299,6 +301,65 @@ class ShortcutsApp:
         return done.stdout
 
 
+# iMessage first; where that fails (no iMessage account, or the script can't reach the person through it), a text
+# message through the iPhone (Text Message Forwarding). Messages only says it failed for a number that has no
+# iMessage after the send, with a red "Not Delivered" under it.
+_MESSAGES_SEND = """
+on run argv
+	set addr to item 1 of argv
+	set body to item 2 of argv
+	tell application "Messages"
+		try
+			set svc to 1st account whose service type = iMessage and enabled is true
+			send body to participant addr of svc
+			return "iMessage"
+		on error
+			set svc to 1st account whose service type = SMS and enabled is true
+			send body to participant addr of svc
+			return "SMS"
+		end try
+	end tell
+end run
+"""
+
+
+class AppleMessages:
+    controls = "Messages"
+    """The app it scripts: the brain checks the system lets Milo control it before the first call (ADR 0025)."""
+
+    def send(self, to: str, text: str) -> dict:
+        if not to.strip() or not text.strip():
+            raise ToolError("A message needs someone to go to and some text.")
+        service = _osascript.run(_MESSAGES_SEND, to.strip(), text, app="Messages")
+        return {"to": to, "service": service or "iMessage", "app": "Messages"}
+
+
+class FaceTimeCalls:
+    """Calls by the system's own links: `tel:` rings through the iPhone (or FaceTime audio where it can't),
+    `facetime-audio:` and `facetime:` are FaceTime. FaceTime may show its own Call button before it rings."""
+
+    SCHEMES = {"phone": "tel:", "audio": "facetime-audio://", "video": "facetime://"}
+
+    def call(self, to: str, how: str = "phone") -> dict:
+        scheme = self.SCHEMES.get(how)
+        if scheme is None:
+            raise ToolError(f"I can't make a {how} call.")
+        address = to.strip()
+        if "@" not in address:
+            address = "".join(c for c in address if c.isdigit() or c == "+")
+        if not address:
+            raise ToolError("That isn't a number or an address I can call.")
+        url = scheme + urllib.parse.quote(address, safe="+@.")
+        try:
+            done = subprocess.run(["open", url], capture_output=True, text=True, timeout=OPEN_TIMEOUT_S,
+                                  stdin=subprocess.DEVNULL)
+        except (OSError, subprocess.TimeoutExpired):
+            raise ToolError("I couldn't reach FaceTime.") from None
+        if done.returncode != 0:
+            raise ToolError("FaceTime didn't start the call.")
+        return {"to": to, "how": how, "app": "FaceTime"}
+
+
 class SpotlightFiles:
     def __init__(self, scope: Path, protected: Protected | None = None):
         self.scope = scope
@@ -339,4 +400,5 @@ def _mac(options: Mapping[str, Any], ctx: AdapterContext) -> Connections:
     return Connections(calendar=AppCalendar(_app(brain)), reminders=AppReminders(_app(brain)), mail=AppleMail(),
                        notes=AppleNotes(), shortcuts=ShortcutsApp(),
                        files=SpotlightFiles(Path(o.files_scope).expanduser().resolve(), Protected(ctx.home)),
-                       focus=ShortcutsFocus(ctx.state_dir / "shortcuts"))
+                       focus=ShortcutsFocus(ctx.state_dir / "shortcuts"),
+                       contacts=AppContacts(_app(brain)), messages=AppleMessages(), calls=FaceTimeCalls())

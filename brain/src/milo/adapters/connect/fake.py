@@ -1,7 +1,7 @@
 """Made-up connections over one JSON file and a folder of files, for tests, the eval and trying Milo out.
 
 Nothing here touches the user's real apps. `world.json` holds events, reminders, mail, notes,
-shortcuts, a home and the Focus; `home/` holds the files. Every call re-reads the file, so a test can change the world between
+shortcuts, a home and the Focus, contacts, and the messages sent and calls made; `home/` holds the files. Every call re-reads the file, so a test can change the world between
 calls, and every change is written back, so a test can check what Milo did.
 """
 
@@ -24,7 +24,8 @@ from milo.core.types import ToolError
 from . import _files
 
 EMPTY_WORLD = {"events": [], "reminders": [], "mail": [], "drafts": [], "notes": [], "shortcuts": [],
-               "shortcut_runs": [], "music": "off", "home": [], "home_runs": [], "focus": {}}
+               "shortcut_runs": [], "music": "off", "home": [], "home_runs": [], "focus": {},
+               "contacts": [], "messages_sent": [], "calls": []}
 
 
 @dataclass(frozen=True)
@@ -255,6 +256,50 @@ class FakeMusic:
         return world["music"]
 
 
+class FakeContacts:
+    """`contacts` in world.json, each {name, nickname?, relation?, phones: [{label, value}], emails: [...]}.
+    `relation` is what the user's own card calls that person ("mother")."""
+
+    def __init__(self, world: World):
+        self._world = world
+
+    def find(self, name: str, relation: str = "") -> list[dict]:
+        want = name.casefold().split()
+        found = []
+        for c in self._world.load()["contacts"]:
+            words = f"{c.get('name', '')} {c.get('nickname', '')}".casefold().split()
+            if (relation and c.get("relation") == relation) or (
+                    want and all(any(w.startswith(x) for w in words) for x in want)):
+                found.append({"phones": [], "emails": [], **c})
+        return found
+
+
+class FakeMessages:
+    """Messages sent go to `messages_sent` in world.json; nothing leaves the test."""
+
+    def __init__(self, world: World):
+        self._world = world
+
+    def send(self, to: str, text: str) -> dict:
+        world = self._world.load()
+        world["messages_sent"].append({"to": to, "text": text})
+        self._world.save(world)
+        return {"to": to, "service": "fake", "app": "Messages"}
+
+
+class FakeCalls:
+    """Calls made go to `calls` in world.json; nothing rings."""
+
+    def __init__(self, world: World):
+        self._world = world
+
+    def call(self, to: str, how: str = "phone") -> dict:
+        world = self._world.load()
+        world["calls"].append({"to": to, "how": how})
+        self._world.save(world)
+        return {"to": to, "how": how, "app": "FaceTime"}
+
+
 class FakeShortcuts:
     def __init__(self, world: World):
         self._world = world
@@ -386,4 +431,5 @@ def _fake(options: Mapping[str, Any], ctx: AdapterContext) -> Connections:
     return Connections(calendar=FakeCalendar(world), reminders=FakeReminders(world), mail=FakeMail(world),
                        notes=FakeNotes(world), shortcuts=FakeShortcuts(world),
                        files=FakeFiles(world, Protected(ctx.home)), music=FakeMusic(world), home=FakeHome(world),
-                       focus=FakeFocus(world))
+                       focus=FakeFocus(world), contacts=FakeContacts(world), messages=FakeMessages(world),
+                       calls=FakeCalls(world))

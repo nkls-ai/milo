@@ -1,6 +1,6 @@
 """What Milo may do on this computer, in words that fit any operating system (ADR 0025).
 
-The brain only knows three needs and four answers. Which system switch a need is, how to ask for it, what a
+The brain only knows four needs and four answers. Which system switch a need is, how to ask for it, what a
 refusal looks like and where to fix it belong to the app, which answers `access.*` requests (core/ports.py
 `AppAccess`). A Windows or Linux app answers the same requests in its own way.
 """
@@ -20,6 +20,8 @@ class Need(StrEnum):
     """Read and work other apps' windows: press buttons, fill in fields, click and type."""
     SCREEN = "screen"
     """See the screen's pixels: screenshots."""
+    CONTACTS = "contacts"
+    """Read the user's address book: names, phone numbers and addresses (ADR 0039)."""
 
 
 class Access(StrEnum):

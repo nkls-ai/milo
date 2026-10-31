@@ -44,6 +44,7 @@ struct PermissionScene: View {
             case .calendars: PinScene(step: step)
             case .reminders: TickScene(step: step)
             case .automation: DraftScene(step: step)
+            case .contacts: ContactScene(step: step)
             case nil: TryScene(step: step, key: key)
             }
         }
@@ -346,6 +347,37 @@ private struct DraftScene: View {
                 p.closeSubpath()
             }
         }
+    }
+}
+
+/// Contacts: Milo looks up who “Anna” is, and her card lights up with a phone by it.
+private struct ContactScene: View {
+    @Environment(\.miloTheme) private var theme
+    let step: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "person.crop.circle.fill")
+                    .font(.system(size: 18))
+                    .foregroundStyle(step >= 1 ? theme.primary : theme.ink.opacity(0.3))
+                Capsule().fill(theme.ink.opacity(0.18)).frame(width: 26, height: 3.5)
+            }
+            Lines(widths: [40, 30], shown: step >= 1 ? 2 : 1)
+        }
+        .padding(8)
+        .frame(width: 72, height: 62, alignment: .topLeading)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(theme.card))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(theme.ink.opacity(0.14), lineWidth: 1))
+        .position(x: 104, y: 56)
+        Actor(state: step == 1 ? .thinking : .idle, emotion: step == 2 ? .happy : .neutral,
+              gaze: CGVector(dx: 0.6, dy: 0), size: 44, at: CGPoint(x: 30, y: 70))
+        WordChip(text: "Anna?", shown: step == 0, at: CGPoint(x: 52, y: 22))
+        Image(systemName: "phone.fill")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(theme.accent)
+            .position(x: 134, y: 26)
+            .opacity(step == 2 ? 1 : 0)
     }
 }
 

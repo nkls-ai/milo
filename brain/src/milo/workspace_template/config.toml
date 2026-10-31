@@ -79,6 +79,9 @@ notes = true
 shortcuts = true
 files = true
 music = true                      # play, pause and skip the music
+contacts = true                   # find who you mean in your contacts, for a message or a call
+messages = true                   # text someone when you ask; he asks before every message
+calls = true                      # call someone when you ask; he asks before every call
 
 [connections.mac]
 files_scope = "~"                 # files outside this folder are never searched or read

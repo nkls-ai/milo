@@ -804,6 +804,17 @@ class Home(Protocol):
 
 
 @runtime_checkable
+class Contacts(Protocol):
+    """The user's address book, read only (ADR 0039)."""
+
+    def find(self, name: str, relation: str = "") -> list[dict]:
+        """People whose name, a word of it or their nickname starts like `name`, each {name, nickname?, relation?,
+        phones: [{label, value}], emails: [{label, value}]}. `relation` ("mother", "brother", "partner"): also the
+        people the user's own card names with that relation, marked with it. Raises ToolError."""
+        ...
+
+
+@runtime_checkable
 class Focus(Protocol):
     """The system's Focus (Do Not Disturb and the user's other Focus modes)."""
 
@@ -815,6 +826,25 @@ class Focus(Protocol):
     def offer(self, name: str = "") -> bool:
         """Offer the user what `set` needs for `name`, to add with a click. False when Milo can't make it himself:
         the user has to."""
+        ...
+
+
+@runtime_checkable
+class Messages(Protocol):
+    """Text messages to other people (ADR 0039). The brain asks the user before every send."""
+
+    def send(self, to: str, text: str) -> dict:
+        """Send `text` to the phone number or address `to`. Returns {to, service?, app?}. Raises ToolError."""
+        ...
+
+
+@runtime_checkable
+class Calls(Protocol):
+    """Calls to other people (ADR 0039). The brain asks the user before every call."""
+
+    def call(self, to: str, how: str = "phone") -> dict:
+        """Start a call to the phone number or address `to`. `how`: "phone", "audio" (an internet audio call) or
+        "video". Returns {to, how, app?}. Raises ToolError."""
         ...
 
 
@@ -832,6 +862,9 @@ class Connections:
     music: Music | None = None
     home: Home | None = None
     focus: Focus | None = None
+    contacts: Contacts | None = None
+    messages: Messages | None = None
+    calls: Calls | None = None
 
 
 # ---- memory: episodes, facts and the user's things (docs/design/memory.md)

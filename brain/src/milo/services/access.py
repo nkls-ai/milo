@@ -5,7 +5,8 @@ in one line what is coming; if the user says no, he says so with a Fix it button
 "not allowed" instead of an error from deep inside a script. An app that is already allowed shows nothing.
 
 Clicks, typing and window reading need one switch, screenshots another. Both are checked before the first action
-that needs them, and a missing one shows the same Fix it note.
+that needs them, and a missing one shows the same Fix it note. Reading the address book, for a message or a call
+(ADR 0039), is a switch the system asks about once, like controlling an app: Milo says so first.
 
 Everything here is in the words of core/access.py. What a need is called on this system, how it asks and where it
 is fixed come from the app (`AppAccess`), so another system's app can answer the same requests.
@@ -33,7 +34,13 @@ ASKING = "{system} will ask once whether I may use {app}. {click}"
 REFUSED_NOW = "Okay, I won't use {app}. If you change your mind, Fix it shows the switch."
 REFUSED_BEFORE = "I'm not allowed to use {app} yet. Fix it shows the switch."
 NEEDS = {Need.UI: "To work in other apps' windows I need {label}. Fix it shows where to switch it on.",
-         Need.SCREEN: "To see the screen I need {label}. Fix it shows where to switch it on."}
+         Need.SCREEN: "To see the screen I need {label}. Fix it shows where to switch it on.",
+         Need.CONTACTS: "I'm not allowed to look in your contacts yet. Fix it shows the switch."}
+# Needs the system asks the user about in a question of its own, once, the first time Milo tries.
+ASKING_NEEDS = {Need.CONTACTS: "{system} will ask once whether I may look in your contacts. {click}"}
+REFUSED_NEEDS_NOW = {Need.CONTACTS: "Okay, I won't look in your contacts. If you change your mind, Fix it shows "
+                                    "the switch."}
+ASKING_STEPS = {Need.CONTACTS: "Asking to look in your contacts"}
 
 # What the worker hears.
 WORKER_CONTROL = ("The user didn't allow Milo to control {app}; they were shown how to change that. Don't use {app} "
@@ -45,6 +52,7 @@ WORKER_NEEDS = {
               "tell the user in one sentence what is left."),
     Need.SCREEN: ("Milo may not take screenshots on this computer yet; the user was shown how to allow it. Use "
                   "window_text, ax_tree or ax_find instead."),
+    Need.CONTACTS: "Milo may not read the user's contacts yet; the user was shown how to allow it.",
 }
 
 # The milo-mac tools by what they need. The rest (list_apps, open_app) need nothing.
@@ -117,16 +125,23 @@ class AccessGate:
                 raise HandsError(WORKER_CONTROL.format(app=app.label))
 
     async def need(self, need: Need, task_id: str = "") -> None:
-        """The system lets Milo see the screen (SCREEN) or work other apps' windows (UI), or raises HandsError."""
+        """The system lets Milo see the screen (SCREEN), work other apps' windows (UI) or read the address book
+        (CONTACTS), or raises HandsError. The first time the system would ask about the address book, Milo says so
+        first."""
         if need.value in self._yes:
             return
         answer = await self._access.check(need)
+        asked = answer.access is Access.ASK and need in ASKING_NEEDS
+        if asked:
+            async with self._lock:
+                answer = await self._ask(answer, None, task_id, need)
         if answer.access is Access.YES:
             self._yes.add(need.value)
             return
         if answer.access is Access.UNKNOWN:
             return
-        self._show(task_id, need.value, NEEDS[need].format(label=answer.label or "your permission"), need)
+        words = REFUSED_NEEDS_NOW[need] if asked else NEEDS[need]
+        self._show(task_id, need.value, words.format(label=answer.label or "your permission"), need)
         raise HandsError(WORKER_NEEDS[need])
 
     def refused(self, app: AppRef, task_id: str = "") -> str:
@@ -151,19 +166,25 @@ class AccessGate:
 
     # ---- inside
 
-    async def _ask(self, answer: AccessAnswer, app: AppRef, task_id: str) -> AccessAnswer:
-        """Say what is coming, give it a moment, then have the system ask."""
+    async def _ask(self, answer: AccessAnswer, app: AppRef | None, task_id: str,
+                   need: Need = Need.CONTROL) -> AccessAnswer:
+        """Say what is coming, give it a moment, then have the system ask. `app` for CONTROL, None for a need."""
         click = f"Click {answer.button}." if answer.button else "Please allow it."
-        line = ASKING.format(system=answer.system or "Your computer", app=app.label, click=click)
-        self._sink.emit(AccessNote(Need.CONTROL.value, Access.ASK.value, line, app.name, app.bundle))
+        system = answer.system or "Your computer"
+        if app is not None:
+            line, title = ASKING.format(system=system, app=app.label, click=click), f"Asking to use {app.label}"
+        else:
+            line, title = ASKING_NEEDS[need].format(system=system, click=click), ASKING_STEPS[need]
+        self._sink.emit(AccessNote(need.value, Access.ASK.value, line, app.name if app else "",
+                                   app.bundle if app else ""))
         if self._say is not None:
             self._say(line)
-        step = Step(f"access_{next(self._ids)}", "app", f"Asking to use {app.label}", "", StepStatus.RUNNING)
+        step = Step(f"access_{next(self._ids)}", "app", title, "", StepStatus.RUNNING)
         self._step(task_id, step)
         if self._pause_s:
             await asyncio.sleep(self._pause_s)
-        answer = await self._access.request(Need.CONTROL, app)
-        log.info("the system asked about %s: %s", app.label, answer.access.value)
+        answer = await self._access.request(need, app)
+        log.info("the system asked about %s: %s", app.label if app else need.value, answer.access.value)
         self._step(task_id, Step(step.id, step.kind, step.title, step.detail,
                                  StepStatus.FAILED if answer.access is Access.NO else StepStatus.DONE))
         return answer

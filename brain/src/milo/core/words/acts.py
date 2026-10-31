@@ -79,6 +79,24 @@ LINES: dict[str, dict[str, str]] = {
                         "de": "ein Timer läuft eine Sekunde bis einen Tag"},
     "why_no_timer": {"en": "no timer “{title}” is running", "de": "es läuft kein Timer „{title}“"},
     "declined": {"en": "Okay, I left it.", "de": "Okay, ich lasse es."},
+    # Messages and calls (ADR 0039).
+    "message_sent": {"en": "Sent to {who}.", "de": "An {who} geschickt."},
+    "calling": {"en": "Calling {who}.", "de": "Ich rufe {who} an."},
+    "video_calling": {"en": "Video call to {who}.", "de": "Videoanruf an {who}."},
+    "card_sent": {"en": "Sent", "de": "Gesendet"},
+    "card_called": {"en": "Called", "de": "Angerufen"},
+    "which_person": {"en": "Which {name}: {names}?", "de": "Wen meinst du: {names}?"},
+    "no_person": {"en": "I can't find {name} in your contacts.", "de": "Ich finde {name} nicht in deinen Kontakten."},
+    "no_address": {"en": "I have no number or address for {name}.",
+                   "de": "Ich habe keine Nummer und keine Adresse von {name}."},
+    "no_contacts": {"en": "I can't look in your contacts, so I don't know who {name} is. A number works.",
+                    "de": "Ich darf nicht in deine Kontakte schauen, also weiß ich nicht, wer {name} ist. Eine "
+                          "Nummer geht."},
+    "why_no_recipient": {"en": "say who it's for", "de": "sag, an wen"},
+    "why_no_text": {"en": "say what the message should say", "de": "sag, was drinstehen soll"},
+    "why_too_long": {"en": "that message is too long to send from here",
+                     "de": "die Nachricht ist zu lang, um sie von hier zu schicken"},
+    "why_address": {"en": "that number or address is too long to check", "de": "die Nummer oder Adresse ist zu lang"},
 }
 
 QUESTIONS: dict[str, dict[str, str]] = {
@@ -106,6 +124,10 @@ QUESTIONS: dict[str, dict[str, str]] = {
     "previous": {"en": "Go back a song?", "de": "Einen Titel zurück?"},
     "meeting_start": {"en": "Take notes of this meeting?", "de": "Bei diesem Meeting mitschreiben?"},
     "meeting_resume": {"en": "Take notes again?", "de": "Wieder mitschreiben?"},
+    "message": {"en": "Send this to {who}? “{text}”", "de": "Das an {who} schicken? „{text}“"},
+    "call": {"en": "Call {who}?", "de": "{who} anrufen?"},
+    "call_audio": {"en": "Call {who} over the internet, audio only?", "de": "{who} übers Internet anrufen, nur Ton?"},
+    "call_video": {"en": "Video call {who}?", "de": "{who} per Video anrufen?"},
     "event_changed": {"en": "“{title}” changed since. Undo anyway? Your changes since would be lost.",
                       "de": "„{title}“ wurde seitdem geändert. Trotzdem rückgängig machen? Deine Änderungen gehen "
                             "dann verloren."},

@@ -188,8 +188,8 @@ class Stack:
                                                                               self.clock))
             self.quick = QuickActions(self.connections, self.ui, self.speaker, self.clock,
                                       approvals=self.approvals, undo=self.undo, reminders=self.reminders,
-                                      meetings=self.meetings, alarms=self.alarms, quiet=lambda: self.mic.active,
-                                      wait_s=self.wait_s,
+                                      meetings=self.meetings, alarms=self.alarms, access=self.gate,
+                                      quiet=lambda: self.mic.active, wait_s=self.wait_s,
                                       language=self.language.get, poll_s=0.005)
         self.writer = None
         if self.paste is not None:
