@@ -9,7 +9,8 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from .words.dates import long_date
+from .words import say
+from .words.dates import date_time
 
 
 def first_name(address: str) -> str:
@@ -131,37 +132,37 @@ def when(value: object) -> str:
         dt = datetime.fromisoformat(str(value))
     except ValueError:
         return str(value)
-    return long_date(dt) + (f" at {dt:%H:%M}" if (dt.hour, dt.minute) != (0, 0) else "")
+    return date_time(dt, midnight=False)
 
 
 def question(tool: str, args: dict) -> str:
     """The yes-or-no question Milo asks before `tool` when its action level is ask_first."""
     match tool:
         case "calendar_add_event":
-            return f"Put {_quoted(args.get('title'), 50)} in your calendar on {when(args.get('start'))}?"
+            return say("connect.calendar_add_event", title=_quoted(args.get("title"), 50), when=when(args.get("start")))
         case "reminders_add":
-            due = f" for {when(args['due'])}" if args.get("due") else ""
-            return f"Add the reminder {_quoted(args.get('title'), 50)}{due}?"
+            due = say("connect.reminders_due", when=when(args["due"])) if args.get("due") else ""
+            return say("connect.reminders_add", title=_quoted(args.get("title"), 50), due=due)
         case "reminders_complete":
-            return "Tick off that reminder?"
+            return say("connect.reminders_complete")
         case "mail_draft":
             everyone = _everyone(args)
-            return (f"Write a draft to {everyone}? It stays in Mail until you send it." if everyone
-                    else "Write a reply draft? It stays in Mail until you send it.")
+            return say("connect.mail_draft", everyone=everyone) if everyone else say("connect.mail_reply_draft")
         case "mail_forward":
             email = args.get("email") or {}
-            what = (f"{first_name(str(email.get('from', '')))}'s email {_quoted(email.get('subject'), 50)}"
-                    if email.get("from") else "that email")
-            return f"Pass on {what} to {_everyone(args)}, with anything attached? It stays in Mail until you send it."
+            what = (say("connect.mail_forward_email", sender=first_name(str(email.get("from", ""))),
+                        subject=_quoted(email.get("subject"), 50)) if email.get("from")
+                    else say("connect.mail_forward_that"))
+            return say("connect.mail_forward", what=what, everyone=_everyone(args))
         case "notes_create":
-            return f"Make a new note called {_quoted(args.get('title'), 50)}?"
+            return say("connect.notes_create", title=_quoted(args.get("title"), 50))
         case "notes_append":
-            return "Add this to your note?"
+            return say("connect.notes_append")
         case "files_move":
             paths = args.get("paths") if isinstance(args.get("paths"), list) else []
             what = _quoted(Path(str(paths[0])).name, 40) if len(paths) == 1 else f"{len(paths)} files"
-            return f"Move {what} into {_folder(args.get('folder'))}?"
+            return say("connect.files_move", what=what, folder=_folder(args.get("folder")))
         case "shortcuts_run":
-            given = f" with {_quoted(args['input'], 80)}" if args.get("input") else ""
-            return f"I'm about to run your shortcut {_quoted(args.get('name'), 50)}{given}. Go ahead?"
-    return (title(tool, args) or "Go ahead") + "?"
+            given = say("connect.shortcuts_input", input=_quoted(args["input"], 80)) if args.get("input") else ""
+            return say("connect.shortcuts_run", name=_quoted(args.get("name"), 50), given=given)
+    return say("connect.other", title=title(tool, args) or say("connect.go_ahead"))
