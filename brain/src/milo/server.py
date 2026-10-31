@@ -259,8 +259,12 @@ async def _warm_all(engines: dict[str, Warmup]) -> None:
         return loop.run_in_executor(*warmup) if isinstance(warmup, tuple) else warmup()
 
     results = await asyncio.gather(*(start(w) for w in engines.values()), return_exceptions=True)
+    from .core.types import Interrupted
+
     for name, result in zip(names, results):
-        if isinstance(result, BaseException):
+        if isinstance(result, Interrupted):  # the user spoke first: the model is loaded, its warm-up run gave way
+            log.info("%s engine ready; its warm-up gave way to the user", name)
+        elif isinstance(result, BaseException):
             log.error("%s engine failed to load", name, exc_info=result)
         else:
             log.info("%s engine ready", name)

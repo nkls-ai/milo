@@ -54,6 +54,20 @@ def test_an_async_warmup_runs_on_the_loop_and_is_logged_with_the_others(caplog):
     assert messages == ["stt engine ready", "chat engine ready", "other engine failed to load"]
 
 
+
+def test_a_warmup_the_user_interrupted_is_no_error(caplog):
+    """2026-10-31: a press of the talk key during Whisper's warm-up run logged "stt engine failed to load" though the
+    model was loaded and the turn was heard."""
+    from milo.core.types import Interrupted
+
+    def stt_warm():
+        raise Interrupted()
+
+    caplog.set_level(logging.INFO, logger="milo")
+    asyncio.run(_warm_all({"stt": (ThreadPoolExecutor(1), stt_warm)}))
+    assert [(r.levelname, r.getMessage()) for r in caplog.records] == [
+        ("INFO", "stt engine ready; its warm-up gave way to the user")]
+
 def test_a_background_loop_that_crashes_is_logged_and_started_again(caplog):
     # M10: one bad tick used to end the loop for the brain's life, with nothing in the log until exit.
     from milo.server import supervised
