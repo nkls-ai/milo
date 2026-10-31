@@ -37,6 +37,10 @@ class FakeBrain:
         self.asked: list[tuple[str, str]] = []
         self.apps: list[str] = []
 
+    def access(self, app: str) -> bool:
+        self.controls = [*getattr(self, "controls", []), app]
+        return True
+
     def approve(self, kind: str, summary: str, app: str = "") -> Decision:
         self.asked.append((kind, summary))
         self.apps.append(app)
@@ -525,3 +529,47 @@ def test_a_folder_swapped_for_a_link_after_the_check_doesnt_redirect_a_move(home
     with pytest.raises(ToolError, match="outside|shared"):  # the swapped folder is not the one checked
         files.move([str(inbox.with_name("inbox-old") / "new.md")], str(user / "Documents" / "Later"))
     assert not list((user / "Dropbox").iterdir())
+
+
+# ---- the system's permission for the apps the connection tools script (ADR 0025)
+
+
+class Scripted:
+    """A connection that scripts an app, like AppleMail."""
+
+    controls = "Mail"
+
+    def search(self, query: str, limit: int = 20) -> list[dict]:
+        return []
+
+
+def test_the_first_mail_tool_checks_the_system_lets_milo_control_mail_once(home):
+    brain = FakeBrain()
+    box = toolbox(home, brain)
+    box._connections = type("C", (), {"mail": Scripted()})()
+    box.call("mail_search", {"query": "Anna"})
+    box.call("mail_search", {"query": "Bob"})
+    assert brain.controls == ["Mail"]
+
+
+def test_a_refusal_reaches_the_worker_in_plain_words_and_nothing_runs(home):
+    from milo.core.types import ToolError
+
+    class NoMail(FakeBrain):
+        def access(self, app):
+            raise ToolError(f"The user didn't allow Milo to control {app}.")
+
+    box = toolbox(home, NoMail())
+    ran = []
+    mail = Scripted()
+    mail.search = lambda *a, **k: ran.append(a) or []
+    box._connections = type("C", (), {"mail": mail})()
+    with pytest.raises(ToolError, match="didn't allow Milo to control Mail"):
+        box.call("mail_search", {"query": "Anna"})
+    assert ran == []
+
+
+def test_the_fake_connections_never_ask_the_system(home):
+    brain = FakeBrain()
+    toolbox(home, brain).call("mail_search", {"query": "Anna"})
+    assert getattr(brain, "controls", []) == []

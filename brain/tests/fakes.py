@@ -990,3 +990,55 @@ def json_copy(data: dict) -> dict:
     import json
 
     return json.loads(json.dumps(data))
+
+
+class FakeAccess:
+    """AppAccess (ADR 0025). `apps[name]` is what a check says about controlling that app (default yes) and
+    `clicks[name]` what the user clicks when the system asks (default yes). `ui` and `screen` answer those needs.
+    `places[name]` is where that app may write without asking (default anywhere). `sink`, if given, is looked at
+    whenever the system asks, so a test can see what Milo had shown by then (`shown`)."""
+
+    def __init__(self, apps: dict | None = None, clicks: dict | None = None, ui: str = "yes", screen: str = "yes",
+                 places: dict | None = None, sink: "RecordingSink | None" = None):
+        from milo.core.access import Access
+        self.apps = {k: Access(v) for k, v in (apps or {}).items()}
+        self.clicks = {k: Access(v) for k, v in (clicks or {}).items()}
+        self.ui, self.screen = Access(ui), Access(screen)
+        self.places_by_app = places or {}
+        self.sink = sink
+        self.calls: list[tuple[str, str, str]] = []
+        """(op, need, app name)."""
+        self.shown: list[list] = []
+        """The events the sink had when the system asked, one list per question."""
+
+    def _answer(self, need, app, state):
+        from milo.core.access import AccessAnswer
+        from milo.core.types import AppRef
+        if app is not None:
+            app = AppRef(app.name, app.bundle or {"Microsoft Excel": "com.microsoft.Excel"}.get(app.name, ""))
+        return AccessAnswer(state, app, system="macOS", label={"ui": "Accessibility", "screen": "Screen Recording"}
+                            .get(need.value, ""), button="Allow" if need.value == "control" else "")
+
+    async def check(self, need, app=None):
+        from milo.core.access import Access, Need
+        self.calls.append(("check", need.value, app.name if app else ""))
+        state = {Need.UI: self.ui, Need.SCREEN: self.screen}.get(need) or self.apps.get(app.name, Access.YES)
+        return self._answer(need, app, state)
+
+    async def request(self, need, app=None):
+        from milo.core.access import Access, Need
+        self.calls.append(("request", need.value, app.name if app else ""))
+        if self.sink is not None:
+            self.shown.append(list(self.sink.events))
+        if need is Need.CONTROL and self.apps.get(app.name) is Access.ASK:
+            self.apps[app.name] = self.clicks.get(app.name, Access.YES)  # the system remembers the click
+        return await self.check(need, app)
+
+    async def places(self, app):
+        self.calls.append(("places", "", app.name))
+        found = self.places_by_app.get(app.name)
+        return tuple(found) if found is not None else None
+
+    def asked(self) -> list[str]:
+        """The apps the system asked the user about."""
+        return [app for op, _, app in self.calls if op == "request"]

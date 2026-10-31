@@ -50,5 +50,19 @@ class BrainClient:
         return Decision(bool(r.get("allowed")), ActionLevel(r.get("level", "ask_first")), str(r.get("answer", "")))
 
 
+    def access(self, app: str) -> bool:
+        """Whether the system lets Milo control `app`; the brain tells the user what is coming first. Raises ToolError
+        with words for the worker if not. Without a brain, True: the script finds out, as before."""
+        try:
+            r = self.request({"op": "access", "app": app})
+        except ToolError as e:
+            if str(e) == NO_BRAIN:
+                return True
+            raise
+        if not r.get("allowed", True):
+            raise ToolError(str(r.get("error") or f"Milo isn't allowed to control {app}."))
+        return True
+
+
 def refusal(decision: Decision) -> str:
     return REFUSED.get(decision.answer, REFUSED["refused"])

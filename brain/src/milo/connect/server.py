@@ -35,6 +35,8 @@ class Toolbox:
         self._brain = brain
         self._memory = memory
         self._milo = milo
+        self._allowed: set[str] = set()
+        """Apps the system lets Milo control, as the brain found before the first script there."""
         self.tools = (by_name(connections) | ({t.name: t for t in MEMORY_TOOLS} if memory is not None else {})
                       | ({t.name: t for t in MILO_TOOLS} if milo is not None else {}))
 
@@ -50,8 +52,17 @@ class Toolbox:
             decision = self._brain.approve(tool.kind, tool.question({**args, **facts}), app=APPS.get(tool.connection, ""))
             if not decision.allowed:
                 raise ToolError(refusal(decision))
+        self._may_control(getattr(backend, "controls", ""))
         log.info("%s: %s", tool.connection, name)
         return tool.run(backend, args)
+
+    def _may_control(self, app: str) -> None:
+        """Before the first script in `app`, the brain checks the system lets Milo control it, and says what is
+        coming if the system is about to ask the user (ADR 0025). Raises ToolError if the user said no."""
+        if not app or app in self._allowed:
+            return
+        if self._brain.access(app):
+            self._allowed.add(app)
 
     @property
     def has_memory(self) -> bool:

@@ -14,9 +14,10 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
+from milo.core.access import Access, AccessAnswer, Need
 from milo.core.events import AppRequest, AppResponse, Event, HandsRequest, LookRequest
 from milo.core.ports import AppLink
-from milo.core.types import BorrowNeeded, HandsError, ScreenCapture
+from milo.core.types import AppRef, BorrowNeeded, HandsError, ScreenCapture
 
 log = logging.getLogger("milo.app_bridge")
 
@@ -148,3 +149,40 @@ class AppHands:
 
     def cancel(self) -> None:
         self._bridge.cancel("hands")
+
+
+class AppAccessLink:
+    """AppAccess through the app's `access.*` ops (ADR 0025). An app that can't answer (an older one, or none
+    connected) makes every answer UNKNOWN, so the work goes ahead as it did before these checks."""
+
+    def __init__(self, bridge: AppBridge):
+        self._bridge = bridge
+
+    async def check(self, need: Need, app: AppRef | None = None) -> AccessAnswer:
+        return await self._ask("access.check", need, app, launch=True)
+
+    async def request(self, need: Need, app: AppRef | None = None) -> AccessAnswer:
+        return await self._ask("access.request", need, app)
+
+    async def places(self, app: AppRef) -> tuple[str, ...] | None:
+        try:
+            result = await self._bridge.call("access.places", {"app": app.name, "bundle": app.bundle})
+        except AppError as e:
+            log.info("no places for %s: %s", app.label, e)
+            return None
+        if not isinstance(result, dict) or not result.get("sandboxed"):
+            return None
+        return tuple(str(p) for p in result.get("places") or () if p)
+
+    async def _ask(self, op: str, need: Need, app: AppRef | None, *, launch: bool = False) -> AccessAnswer:
+        args: dict = {"need": need.value}
+        if app is not None:
+            args |= {"app": app.name, "bundle": app.bundle}
+            if launch and need is Need.CONTROL:
+                args["launch"] = True  # only a running app can say; the work that follows starts it anyway
+        try:
+            result = await self._bridge.call(op, args)
+        except AppError as e:
+            log.info("%s %s: the app couldn't tell (%s)", op, need.value, e)
+            return AccessAnswer(Access.UNKNOWN, app)
+        return AccessAnswer.from_wire(result, app)

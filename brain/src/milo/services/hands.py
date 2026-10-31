@@ -14,6 +14,7 @@ from milo.core.ports import AppHands, Confirmer, EventSink
 from milo.core.types import AppRef, BorrowNeeded, HandsError, Scope, Step, StepStatus
 
 from . import documents, sheets
+from .access import AccessGate
 from .risk import WORK, Risk, Verdict, classify, coverable_script, normalize_combo, plain_app
 from .screen import NOTE, screen_data
 from .transcript import Transcript, unrecorded
@@ -66,11 +67,13 @@ class HandsService:
 
     def __init__(self, hands: AppHands, confirm: Confirmer, sink: EventSink, *,
                  transcript: Transcript | None = None, applescript: bool = True, locale: str = "",
-                 protected: Protected | None = None):
+                 protected: Protected | None = None, access: AccessGate | None = None):
         """`locale` is the Mac's region (AppleLocale, like "en_US@rg=dezzzz"): money in spreadsheets uses its
         currency. A script that names one of Milo's control files (`protected`) never runs (ADR 0020); one
         that builds the path some other way still waits for the user's yes, like every script."""
         self._protected = protected
+        self._access = access
+        """The system's permissions, checked before the first action that needs them (ADR 0025)."""
         self._hands = hands
         self._locale = locale
         self._confirm = confirm
@@ -135,6 +138,9 @@ class HandsService:
         async with self._lock:
             self._check()
             task_id = self._task_id
+            if self._access is not None:
+                await self._access.before(tool, args, task_id, script_apps)
+                self._check()
             target = await self._describe(tool, args) if spec.acts else {}
             self._check()
             step = Step(f"hands_{next(self._ids)}", "app" if spec.acts else "read", title(tool, args, target),
@@ -316,6 +322,8 @@ class HandsService:
             denied = _NOT_AUTHORIZED.search(str(e))
             if denied:
                 app = (denied.group(1) or "that app").strip().strip("“”\"")
+                if self._access is not None:
+                    raise HandsError(self._access.refused(AppRef(app), self._task_id or "")) from None
                 raise HandsError(NOT_ALLOWED.format(app=app)) from None
             raise
 
