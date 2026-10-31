@@ -37,7 +37,7 @@ def test_factory_maps_options(ctx):
 def test_transcribe_skips_silence_and_hallucinations(monkeypatch):
     outputs = iter(["Thank you.", "Ship it"])
     calls = []
-    monkeypatch.setattr(MlxWhisper, "_run", lambda self, audio, model, *_: calls.append(len(audio)) or next(outputs))
+    monkeypatch.setattr(MlxWhisper, "_run", lambda self, audio, model, *_, **kw: calls.append(len(audio)) or next(outputs))
     stt = MlxWhisper("m")
     speech = (np.random.default_rng(2).standard_normal(16000) * 0.05).astype(np.float32)
     assert stt.transcribe(np.zeros(16000, dtype=np.float32)) == ""
@@ -48,7 +48,7 @@ def test_transcribe_skips_silence_and_hallucinations(monkeypatch):
 
 def test_preview_uses_the_preview_model(monkeypatch):
     models = []
-    monkeypatch.setattr(MlxWhisper, "_run", lambda self, audio, model, *_: models.append(model) or "hi")
+    monkeypatch.setattr(MlxWhisper, "_run", lambda self, audio, model, *_, **kw: models.append(model) or "hi")
     stt = MlxWhisper("big", preview_model="small")
     speech = (np.random.default_rng(3).standard_normal(16000) * 0.05).astype(np.float32)
     assert (stt.transcribe(speech), stt.preview(speech)) == ("hi", "hi")
@@ -66,7 +66,7 @@ class FakeWhisper:
         self.language: str | None = None
         self.detected = detected
 
-    def run(self, audio, language, prompt, *, quick=False):
+    def run(self, audio, language, prompt, *, quick=False, retry=True):
         self.passes.append((language, prompt, quick))
         self.language = language or self.detected
         return "ok"
@@ -107,20 +107,41 @@ def test_a_short_pass_that_cant_be_trusted_falls_back_to_full_windows(monkeypatc
     whisper = _Whisper("m")
     paths = []
     monkeypatch.setattr(_Whisper, "_load", lambda self: object())
-    monkeypatch.setattr(_Whisper, "_run_short", lambda self, *a: paths.append("short") or None)
-    monkeypatch.setattr(_Whisper, "_run_full", lambda self, *a: paths.append("full") or "text")
+    monkeypatch.setattr(_Whisper, "_run_short", lambda self, *a, **kw: paths.append("short") or None)
+    monkeypatch.setattr(_Whisper, "_run_full", lambda self, *a, **kw: paths.append("full") or "text")
     assert whisper.run(SPEECH, None, None, quick=True) == "text"
     assert paths == ["short", "full"]
     assert whisper.run(SPEECH, None, None) == "text"
     assert paths == ["short", "full", "full"], "a pass nobody waits for takes the accurate path"
 
 
+def test_live_words_never_take_the_full_window_again(monkeypatch):
+    """Every retry in the dictation e2e run was a preview: words the next pass replaces anyway. Dictation's own
+    passes still retry, since in 106 test clips the full window got a word back the short pass missed 5 times."""
+    seen = []
+    monkeypatch.setattr(_Whisper, "run", lambda self, audio, language, prompt, *, quick=False, retry=True:
+                        seen.append((self.repo, quick, retry)) or "hi")
+    stt = MlxWhisper("big", preview_model="small")
+    stt.preview(SPEECH)
+    stt.transcribe(SPEECH, quick=True)
+    assert seen == [("small", True, False), ("big", True, True)]
+
+
+@pytest.mark.parametrize("text, tokens, ratio, logprob, wrong", [
+    ("Okay.", 2, 0.4, -0.5, ""), ("Oti", 2, 0.4, -1.49, "unsure"), ("Danke. Danke.", 4, 0.6, -0.4, "loops"),
+    ("la la la", 40, 1.0, -0.2, "loops"), ("x", 1, 3.0, -0.1, "loops")])
+def test_what_makes_a_short_pass_doubtful(text, tokens, ratio, logprob, wrong):
+    from milo.adapters.stt.mlx_whisper import doubt
+
+    assert doubt(text, tokens, 26, ratio, logprob) == wrong
+
+
 def test_long_audio_takes_the_full_path(monkeypatch):
     whisper = _Whisper("m")
     paths = []
     monkeypatch.setattr(_Whisper, "_load", lambda self: object())
-    monkeypatch.setattr(_Whisper, "_run_short", lambda self, *a: paths.append("short") or "short")
-    monkeypatch.setattr(_Whisper, "_run_full", lambda self, *a: paths.append("full") or "full")
+    monkeypatch.setattr(_Whisper, "_run_short", lambda self, *a, **kw: paths.append("short") or "short")
+    monkeypatch.setattr(_Whisper, "_run_full", lambda self, *a, **kw: paths.append("full") or "full")
     assert whisper.run(np.zeros(int(16000 * 29.5)), None, None, quick=True) == "full"
     assert whisper.run(np.zeros(16000 * 29), None, None, quick=True) == "short"
     assert paths == ["full", "short"]
@@ -130,13 +151,13 @@ def test_a_changed_mlx_whisper_turns_the_short_path_off(monkeypatch):
     whisper = _Whisper("m")
     paths = []
 
-    def broken(self, *a):
+    def broken(self, *a, **kw):
         paths.append("short")
         raise AttributeError("no _positional_embedding")
 
     monkeypatch.setattr(_Whisper, "_load", lambda self: object())
     monkeypatch.setattr(_Whisper, "_run_short", broken)
-    monkeypatch.setattr(_Whisper, "_run_full", lambda self, *a: paths.append("full") or "text")
+    monkeypatch.setattr(_Whisper, "_run_full", lambda self, *a, **kw: paths.append("full") or "text")
     assert whisper.run(SPEECH, None, None, quick=True) == "text"
     assert whisper.run(SPEECH, None, None, quick=True) == "text"
     assert paths == ["short", "full", "full"]
@@ -182,7 +203,7 @@ def test_an_interrupt_ends_the_encoding_between_layers():
 def test_interrupt_reaches_the_pass_and_the_next_pass_starts_clean(monkeypatch):
     stt = MlxWhisper("big")
     seen = []
-    monkeypatch.setattr(MlxWhisper, "_run", lambda self, *a: seen.append(self._stop.is_set()) or "ok")
+    monkeypatch.setattr(MlxWhisper, "_run", lambda self, *a, **kw: seen.append(self._stop.is_set()) or "ok")
     stt.interrupt()
     assert stt.transcribe(SPEECH) == "ok"
     assert seen == [False], "an interrupt only ends the pass running when it came"

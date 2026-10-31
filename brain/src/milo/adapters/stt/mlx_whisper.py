@@ -125,7 +125,9 @@ class MlxWhisper:
         return self._transcribe(self.model, audio, language, quick)
 
     def preview(self, audio: Audio) -> str:
-        return self._transcribe(self.preview_model, audio, self.language, True)
+        """Live words only: the next pass replaces them, so an unsure short pass is shown as it is instead of
+        being done again over full windows. Those retries were all of them in the dictation e2e run."""
+        return self._transcribe(self.preview_model, audio, self.language, True, retry=False)
 
     def interrupt(self) -> None:
         self._stop.set()
@@ -157,16 +159,16 @@ class MlxWhisper:
         whisper = self._whisper(self.model)
         return whisper._detect(whisper._load(), audio.astype(np.float32))
 
-    def _transcribe(self, model: str, audio: Audio, language: str | None, quick: bool) -> str:
+    def _transcribe(self, model: str, audio: Audio, language: str | None, quick: bool, *, retry: bool = True) -> str:
         self._stop.clear()
         if is_silent(audio):
             return ""
-        text = self._run(audio, model, language, quick)
+        text = self._run(audio, model, language, quick, retry=retry)
         return "" if is_hallucination(text) else text
 
-    def _run(self, audio: Audio, model: str, language: str | None, quick: bool) -> str:
+    def _run(self, audio: Audio, model: str, language: str | None, quick: bool, *, retry: bool = True) -> str:
         whisper = self._whisper(model)
-        text = whisper.run(audio, language, self.prompt, quick=quick)
+        text = whisper.run(audio, language, self.prompt, quick=quick, retry=retry)
         if model == self.model and whisper.language:
             self._last_language = whisper.language
         return text
@@ -205,6 +207,14 @@ def repeats(text: str) -> bool:
     return False
 
 
+def doubt(text: str, tokens: int, limit: int, ratio: float, logprob: float) -> str:
+    """What is wrong with a short pass's decode: "" nothing, "loops" (it repeats or ran past TOKENS_PER_S), or
+    "unsure" (Whisper's own confidence is low)."""
+    if tokens >= limit or ratio > 2.4 or repeats(text):
+        return "loops"
+    return "unsure" if logprob < -1.0 else ""
+
+
 def _words(text: str) -> list[str]:
     return re.sub(r"[^\w\s']", " ", text.lower()).split()
 
@@ -240,12 +250,15 @@ class _Whisper:
         if self._model is not None:
             self._run_short(self._model, np.zeros(STT_SAMPLE_RATE, dtype=np.float32), language or "en", None)
 
-    def run(self, audio: Audio, language: str | None, prompt: str | None, *, quick: bool = False) -> str:
+    def run(self, audio: Audio, language: str | None, prompt: str | None, *, quick: bool = False,
+            retry: bool = True) -> str:
+        """`retry=False`: an unsure short pass is kept as it is, and one that loops gives "", instead of doing the
+        audio again over full windows (for live words)."""
         audio = audio.astype(np.float32)
         model = self._load()
         if quick and self._short and len(audio) + PAD_S * STT_SAMPLE_RATE <= 30 * STT_SAMPLE_RATE:
             try:
-                text = self._run_short(model, audio, language, prompt)
+                text = self._run_short(model, audio, language, prompt, retry=retry)
             except Interrupted:
                 raise
             except (AttributeError, AssertionError, TypeError):
@@ -268,8 +281,9 @@ class _Whisper:
             self._model.decoder = _Decoder(self._model.decoder, self._stop)
         return self._model
 
-    def _run_short(self, model, audio: Audio, language: str | None, prompt: str | None) -> str | None:
-        """Decode from an encoding of just the audio. None: the result can't be trusted."""
+    def _run_short(self, model, audio: Audio, language: str | None, prompt: str | None, *,
+                   retry: bool = True) -> str | None:
+        """Decode from an encoding of just the audio. None: the result can't be trusted (only with `retry`)."""
         import mlx.core as mx
         from mlx_whisper.audio import HOP_LENGTH, N_FRAMES, log_mel_spectrogram
         from mlx_whisper.decoding import DecodingOptions, DecodingTask
@@ -297,12 +311,14 @@ class _Whisper:
         if result.no_speech_prob > 0.6 and result.avg_logprob < -1.0:
             return ""
         text = result.text.strip()
-        if len(result.tokens) >= limit or result.compression_ratio > 2.4 or result.avg_logprob < -1.0 \
-                or repeats(text):
-            log.info("short whisper pass looks wrong (%d tokens, ratio %.1f, logprob %.2f); full window",
-                     len(result.tokens), result.compression_ratio, result.avg_logprob)
-            return None
-        return text
+        wrong = doubt(text, len(result.tokens), limit, result.compression_ratio, result.avg_logprob)
+        if not wrong:
+            return text
+        if not retry:
+            return "" if wrong == "loops" else text
+        log.info("short whisper pass looks wrong (%s, %d tokens, ratio %.1f, logprob %.2f); full window",
+                 self.repo.rsplit("/", 1)[-1], len(result.tokens), result.compression_ratio, result.avg_logprob)
+        return None
 
     def _run_full(self, model, audio: Audio, language: str | None, prompt: str | None) -> str:
         import mlx_whisper
