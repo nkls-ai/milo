@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import Any
 
 from milo.core.ports import Connections
+from milo.core.times import local
 from milo.core.types import ToolError
 
 AppCall = Callable[[str, dict], Awaitable[Any]]
@@ -37,7 +38,7 @@ def _time(value: object) -> datetime | None:
     if not text:
         return None
     try:
-        return datetime.fromisoformat(text).replace(tzinfo=None)
+        return local(text)
     except ValueError:
         raise OpsError(f"{text!r} isn't a time like 2026-11-05T15:00") from None
 

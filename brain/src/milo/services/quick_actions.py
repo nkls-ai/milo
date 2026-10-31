@@ -28,6 +28,7 @@ from milo.core import words
 from milo.core.events import ActionDone
 from milo.core.logtext import private
 from milo.core.ports import Clock, Connections, EventSink, ReminderBook
+from milo.core.times import local
 from milo.core.types import ActionLevel, AppRef, Emotion, Reminder, ToolError
 from milo.core.wording import first_name
 from milo.core.words import dates, say
@@ -695,7 +696,7 @@ def _time(value: str, key: str) -> datetime | None:
     if not value:
         return None
     try:
-        return datetime.fromisoformat(value.strip()).replace(tzinfo=None, second=0, microsecond=0)
+        return local(value).replace(second=0, microsecond=0)
     except ValueError:
         raise Problem(f"{key} must look like 2026-11-05T15:00, not {inert(value, 30)}") from None
 

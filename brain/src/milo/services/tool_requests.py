@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Collection
-from datetime import datetime
 from typing import Any, Protocol
 
 from milo.core.ports import ReminderBook
+from milo.core.times import local
 from milo.core.types import AppRef, ChannelError, Scope
 from milo.core.wording import question, when
 
@@ -167,8 +167,7 @@ class ToolRequests:
         if not text:
             return _error("say what to remind the user of (text)")
         try:
-            due = datetime.fromisoformat(str(request.get("when") or "")).replace(tzinfo=None, second=0,
-                                                                                 microsecond=0)
+            due = local(str(request.get("when") or "")).replace(second=0, microsecond=0)
         except ValueError:
             return _error("when must look like 2026-11-05T15:00")
         if not await self._approvals.confirm(f"Should I remind you on {when(due.isoformat())}?\n› {text}"):

@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
 from milo.core.ports import Clock
+from milo.core.times import parse_local
 
 from .app_ops import AppOps, OpsError
 
@@ -40,13 +41,6 @@ def inert(text: object, limit: int = TITLE_CHARS) -> str:
     """Outside text for the block: one line, no tag can open in it, not too long."""
     text = " ".join(str(text or "").split()).replace("<", "‹").replace(">", "›")
     return text if len(text) <= limit else text[:limit - 1] + "…"
-
-
-def _time(value: object) -> datetime | None:
-    try:
-        return datetime.fromisoformat(str(value or "")).replace(tzinfo=None)
-    except ValueError:
-        return None
 
 
 @dataclass
@@ -133,7 +127,7 @@ class Today:
         if snap.todos:
             lines.append("To-dos due:")
             for t in snap.todos:
-                due = _time(t.get("due"))
+                due = parse_local(t.get("due"))
                 when = ("overdue since " + f"{due:%a %d %b}" if due and due.date() < today else
                         f"due {'today' if due and due.date() == today else 'tomorrow'} {due:%H:%M}" if due else "")
                 shared = bool(t.get("shared"))
@@ -150,7 +144,7 @@ class Today:
     @staticmethod
     def _on(e: dict, d: date) -> bool:
         """The event overlaps day `d`; one without a length counts on the day it starts."""
-        start, end = _time(e.get("start")), _time(e.get("end"))
+        start, end = parse_local(e.get("start")), parse_local(e.get("end"))
         if start is None:
             return False
         day_start = datetime.combine(d, datetime.min.time())
@@ -165,7 +159,7 @@ class Today:
         if handle is None:
             handle = self._handles[key] = f"e{len(self._handles) + 1}"
         self._events[handle] = e
-        start, end = _time(e.get("start")), _time(e.get("end"))
+        start, end = parse_local(e.get("start")), parse_local(e.get("end"))
         if e.get("all_day") or (start and end and start.time() == end.time() == datetime.min.time()):
             span = "all day"
         elif start and end and start.date() < d:
@@ -205,7 +199,7 @@ class Today:
             snap.events = [e for e in events if isinstance(e, dict)][:MAX_EVENTS]
             horizon = start + timedelta(days=2)
             due = [r for r in todos if isinstance(r, dict) and not r.get("done")
-                   and (_time(r.get("due")) or horizon) < horizon]
+                   and (parse_local(r.get("due")) or horizon) < horizon]
             snap.todos = sorted(due, key=lambda r: str(r.get("due")))[:MAX_TODOS]
         except OpsError as e:
             log.info("no fresh day for the talker: %s", e)
