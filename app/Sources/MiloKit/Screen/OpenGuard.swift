@@ -13,11 +13,20 @@ public enum OpenGuard {
         "com.apple.applescript.script", "com.apple.applescript.script-bundle", "com.apple.applescript.text",
         "com.apple.automator-workflow", "com.apple.installer-package-archive", "com.apple.installer-package",
         "com.apple.shortcut", "com.apple.systempreference.prefpane",
+        // Bundles (apps, plug-ins, frameworks) run code; document packages like a Pages file aren't bundles.
+        "com.apple.bundle", "com.apple.plugin",
+        // Internet locations open whatever address they hold, any scheme: around refuses(url:).
+        "com.apple.internet-location", "com.apple.web-internet-location", "com.apple.mail-internet-location",
+        "com.apple.ftp-internet-location", "com.apple.file-internet-location", "public.url",
+        // Links and aliases are resolved before the check; one that couldn't be is refused.
+        "com.apple.alias-file", "public.symlink",
     ]
     /// The same by file extension, for files whose type the system doesn't know.
     static let runningExtensions: Set<String> = [
         "app", "command", "tool", "sh", "zsh", "bash", "csh", "terminal", "workflow", "action", "pkg", "mpkg",
         "scpt", "scptd", "applescript", "shortcut", "prefpane", "saver", "kext", "fileloc", "jar",
+        "webloc", "inetloc", "url", "mailloc", "ftploc", "bundle", "plugin", "framework", "qlgenerator",
+        "appex", "xpc", "service", "component", "mdimporter", "osax",
     ]
 
     /// Why this address can't be opened, or nil: only web pages (http and https with a host) open as addresses.
@@ -29,15 +38,16 @@ public enum OpenGuard {
         return nil
     }
 
-    /// Why this file can't be opened, or nil. `types` are its content type and every type it conforms to.
-    /// A folder always opens. A plain file with the executable bit and no known type is refused too.
+    /// Why this file can't be opened, or nil. `path` is the resolved file (no link, no alias) and `types` its
+    /// content type and every type it conforms to. Checked by extension and type first, folders too (an app is a
+    /// folder); then a plain folder opens, and a plain file with the executable bit and no known type is refused.
     public static func refuses(path: String, isDirectory: Bool, types: [String], executable: Bool) -> String? {
-        if isDirectory && URL(fileURLWithPath: path).pathExtension.lowercased() != "app" { return nil }
         let name = URL(fileURLWithPath: path).lastPathComponent
         let ext = URL(fileURLWithPath: path).pathExtension.lowercased()
         if runningExtensions.contains(ext) || types.contains(where: runningTypes.contains) {
             return "Milo doesn't open \(name): opening it would run a program. Ask the user to open it themselves."
         }
+        if isDirectory { return nil }
         let known = types.contains { $0 != "public.data" && $0 != "public.item" && $0 != "public.content" }
         if executable && !known {
             return "Milo doesn't open \(name): it is a program. Ask the user to open it themselves."

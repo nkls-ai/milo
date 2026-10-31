@@ -232,8 +232,15 @@ public final class MacHands: HandsExecutor {
     /// Opens a document or folder in the app the system opens it with, never a named one (a terminal would run a
     /// text file), and never a file that would run code itself (OpenGuard.refuses).
     private func openFile(_ path: String) throws -> [String: JSONValue] {
-        let full = (path as NSString).expandingTildeInPath
-        let url = URL(fileURLWithPath: full)
+        // What is opened is what the link or alias points to, so that is what gets checked.
+        var url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath).resolvingSymlinksInPath()
+        if (try? url.resourceValues(forKeys: [.isAliasFileKey]))?.isAliasFile == true {
+            guard let target = try? URL(resolvingAliasFileAt: url, options: [.withoutUI, .withoutMounting]) else {
+                throw HandsFailure("\(url.lastPathComponent) is an alias Milo can't follow.")
+            }
+            url = target.resolvingSymlinksInPath()
+        }
+        let full = url.path
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: full, isDirectory: &isDirectory) else {
             throw HandsFailure("There is no file or folder at \(path).")
