@@ -12,8 +12,9 @@ from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime, time, timedelta
 from typing import Any
 
-from milo.core.words.dates import month, weekday
 from milo.core.ports import ReminderSource
+from milo.core.times import parse_local
+from milo.core.words.dates import month, weekday
 
 from .helpers import Helper, HelperStatus
 
@@ -103,12 +104,7 @@ def _span(start: object, end: object) -> str:
 
 
 def _parse(value: object) -> datetime | None:
-    if not isinstance(value, str) or not value:
-        return None
-    try:
-        return datetime.fromisoformat(value)
-    except ValueError:
-        return None
+    return parse_local(value) if isinstance(value, str) else None
 
 
 def _local(when: datetime) -> str:

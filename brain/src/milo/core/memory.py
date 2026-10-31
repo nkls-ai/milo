@@ -11,6 +11,8 @@ from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from typing import Any
 
+from .times import local
+
 EPISODE_KINDS = ("conversation", "task", "meeting", "dictation", "look", "note")
 TOPICS = ("basics", "people", "work", "preferences", "routines", "learned")
 """Fact topics, in the order the profile and the "What Milo knows" screen list them."""
@@ -29,7 +31,7 @@ def new_id(at: datetime | None = None) -> str:
 
 
 def _time(value: Any) -> datetime:
-    return datetime.fromisoformat(str(value))
+    return local(value)
 
 
 def _strings(value: Any) -> tuple[str, ...]:

@@ -12,6 +12,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+from milo.core.times import minute, parse_minute
 from milo.core.types import Reminder
 
 _LINE = re.compile(r"^\s*[-*]\s*\[([ xX])\]\s+(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})\s+(.+?)\s*$")
@@ -25,9 +26,8 @@ def parse(markdown: str) -> list[Reminder]:
         if not m:
             continue
         mark, day, clock, text = m.groups()
-        try:
-            due = datetime.strptime(f"{day} {clock}", "%Y-%m-%d %H:%M")
-        except ValueError:
+        due = parse_minute(f"{day} {clock}")
+        if due is None:
             continue
         # Stable across edits elsewhere in the file, so "already fired" survives re-parsing.
         rid = hashlib.sha1(f"{day} {clock} {text}".encode()).hexdigest()[:12]
@@ -59,7 +59,7 @@ class MarkdownReminders:
         text = " ".join(text.split())
         if not text:
             raise ValueError("a reminder needs text")
-        line = f"- [ ] {due:%Y-%m-%d %H:%M} {text}"
+        line = f"- [ ] {minute(due)} {text}"
         self.path.parent.mkdir(parents=True, exist_ok=True)
         try:
             existing = self.path.read_bytes()

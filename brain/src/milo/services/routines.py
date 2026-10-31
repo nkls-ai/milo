@@ -31,6 +31,7 @@ from milo.core.ports import Clock, EventSink, RoutineBook, StateFile
 from milo.core.routines import (RecipeError, Routine, find, parse, parse_schedule, render, schedule_or_none,
                                 slugify)
 from milo.core.task_patterns import alike, shape
+from milo.core.times import parse_local
 from milo.core.types import Emotion, Step
 from milo.core.words import dates, has, say
 
@@ -868,7 +869,5 @@ class Routines:
 
 
 def _time(text: object) -> datetime:
-    try:
-        return datetime.fromisoformat(str(text))
-    except ValueError:
-        return datetime.min
+    """A time from the state file; one that doesn't read is long ago."""
+    return parse_local(text) or datetime.min

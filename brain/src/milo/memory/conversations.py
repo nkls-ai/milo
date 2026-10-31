@@ -21,6 +21,7 @@ from pathlib import Path
 from milo.core.conversations import (ConversationInfo, Recent, SplitRules, clean_title, conversation_id, recent_words,
                                      split, task_title, title_from)
 from milo.core.memory import new_id
+from milo.core.times import parse_local
 
 from . import jsonl
 
@@ -299,7 +300,4 @@ def migrate(transcript: Path, kept: Path, store: JsonlConversationStore, rules: 
 
 
 def _time(ts: object) -> datetime:
-    try:
-        return datetime.fromisoformat(str(ts))
-    except ValueError:
-        return datetime.fromtimestamp(0)
+    return parse_local(ts) or datetime.fromtimestamp(0)

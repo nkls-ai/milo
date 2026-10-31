@@ -23,6 +23,7 @@ from pathlib import Path
 from milo.core.events import UndoPoints
 from milo.core.hands import only_opens
 from milo.core.ports import AppHands, Clock, Confirmer, EventSink, UndoShelf
+from milo.core.times import parse_local
 from milo.core.types import Emotion, HandsError
 from milo.core.words import say
 
@@ -207,7 +208,7 @@ class Undo:
         dropped = 0
         for i, task in enumerate(done):
             record = self._shelf.load(task) or {}
-            made = _when(record.get("made"))
+            made = parse_local(record.get("made"))
             if len(done) - i > self.keep_tasks or made is None or now - made > timedelta(seconds=self.keep_s):
                 self._shelf.drop(task)
                 self._mark(task, "")
@@ -499,10 +500,3 @@ def _detail(tool: str, args: dict) -> str:
 
 def _and(names: list[str], lang: str) -> str:
     return names[0] if len(names) == 1 else say("undo.and", lang, names=", ".join(names[:-1]), last=names[-1])
-
-
-def _when(value: object) -> datetime | None:
-    try:
-        return datetime.fromisoformat(str(value))
-    except ValueError:
-        return None
