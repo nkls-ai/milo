@@ -27,8 +27,6 @@ SITES = {
 
 _BARE = re.compile(r"^[a-z0-9][a-z0-9 -]{0,40}$", re.IGNORECASE)
 _HOST = re.compile(r"^[a-z0-9.-]+(?::\d+)?$", re.IGNORECASE)
-_SECOND_LEVEL = frozenset({"co", "com", "org", "net", "ac", "gov", "edu", "ne", "or"})
-"""Second-level labels under a country code (co.uk, com.au): the name a person uses sits one label further left."""
 
 
 @dataclass(frozen=True)
@@ -74,31 +72,31 @@ def resolve_url(text: str) -> str | None:
     return None
 
 
-def site_names(url: str) -> list[str]:
-    """The words a person would use for a site: the name of its domain when the host is that domain itself or its
-    www. ("youtube" for www.youtube.com, "bbc" for www.bbc.co.uk), and the SITES name when the address is exactly a
-    SITES address ("maps" for maps.google.com). Any other host has no name: youtube.com.evil.example,
-    youtube.github.io and maps.evil.google.example are pages anyone can put up under a name they don't own."""
-    parts = urlsplit(url)
-    host = (parts.hostname or "").lower().rstrip(".")
-    labels = [part for part in host.split(".") if part]
-    names = [site for site, address in SITES.items() if address == f"{parts.scheme.lower()}://{host}"]
-    if len(labels) >= 2 and not labels[-1].isdigit():
-        cut = 3 if len(labels) >= 3 and len(labels[-1]) == 2 and labels[-2] in _SECOND_LEVEL else 2
-        domain = ".".join(labels[-cut:])
-        if host in (domain, f"www.{domain}"):
-            names.append(labels[-cut])
-    return list(dict.fromkeys(names))
-
-
 def named_by(request: OpenRequest, words: str) -> bool:
     """Whether the user's own words name what is to be opened, so opening it needs no yes even after Milo read
-    outside text: the site's own name ("go on YouTube" for www.youtube.com). An app alone always counts: opening an
-    app changes nothing. A file or folder never does: a name in passing can't tell which file outside text put
-    there, so after outside text a path always asks."""
+    outside text. An app alone always counts: opening an app changes nothing. A file or folder never does: a name in
+    passing can't tell which file outside text put there.
+
+    A page counts only as a site's front page at its own address: the SITES address of a name the user said ("go on
+    YouTube"), the address the user said ("open bbc.co.uk"), or www.<word>.com for a word they said ("open figma").
+    Outside text could have written the rest: youtube.evil under the word "YouTube", or a path or query carrying what
+    Milo read out to someone's server."""
     if request.path:
         return False
-    if request.url:
-        said = set(re.findall(r"[\w-]+", (words or "").lower()))
-        return any(name in said for name in site_names(request.url))
-    return bool(request.app)
+    if not request.url:
+        return bool(request.app)
+    parts = urlsplit(request.url)
+    if parts.path not in ("", "/") or parts.query or parts.fragment or parts.port or parts.username:
+        return False
+    host = (parts.hostname or "").lower().rstrip(".")
+    text = (words or "").lower()
+    said = set(re.findall(r"[\w-]+", text))
+    for site, address in SITES.items():
+        own = (urlsplit(address).hostname or "").removeprefix("www.")
+        if host in (own, f"www.{own}") and all(word in said for word in site.split()):
+            return True
+    bare = host.removeprefix("www.")
+    if "." in bare and re.search(rf"(?<![\w.-]){re.escape(bare)}(?![\w-])", text):
+        return True
+    word = re.fullmatch(r"www\.([a-z0-9-]+)\.com", host)
+    return bool(word and word.group(1) in said)

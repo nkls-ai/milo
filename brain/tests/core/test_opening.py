@@ -3,7 +3,7 @@
 import pytest
 
 from milo.core.language import SpokenLanguage, detect, name, normalize
-from milo.core.opening import OpenRequest, named_by, resolve_url, site_names
+from milo.core.opening import OpenRequest, named_by, resolve_url
 
 
 @pytest.mark.parametrize("text, url", [
@@ -27,16 +27,6 @@ def test_only_web_pages_open_as_addresses(text):
     assert resolve_url(text) is None
 
 
-def test_the_words_for_a_site_are_its_domains_name_not_any_label():
-    assert site_names("https://www.youtube.com") == ["youtube"]
-    assert site_names("https://www.bbc.co.uk/news") == ["bbc"]
-    assert set(site_names("https://maps.google.com")) == {"maps", "google maps"}
-    assert site_names("https://youtube.com.evil.example/") == [], "a lookalike host has no name"
-    assert site_names("https://youtube.github.io") == [], "anyone's page under someone else's domain has no name"
-    assert site_names("https://evil.blogspot.com") == []
-    assert site_names("https://mail.google.com") == ["gmail"], "a subdomain only by its exact SITES address"
-
-
 def test_the_users_words_name_the_site_the_file_or_any_app():
     youtube = OpenRequest("Google Chrome", "https://www.youtube.com")
     assert named_by(youtube, "So can you open, um, Chrome for me and go on YouTube?")
@@ -45,6 +35,20 @@ def test_the_users_words_name_the_site_the_file_or_any_app():
     assert not named_by(OpenRequest(url="https://youtube.com.evil.example"), "go on YouTube")
     assert not named_by(OpenRequest(path="~/Downloads"), "open my downloads folder"), "after outside text a path asks"
     assert named_by(OpenRequest(app="Notes"), "anything")
+
+
+def test_after_outside_text_only_the_sites_own_address_counts_as_named():
+    """Outside text can make the talker write any address; the user's word "YouTube" must not carry it."""
+    assert not named_by(OpenRequest(url="https://youtube.evil"), "go on YouTube"), "another top-level domain"
+    assert not named_by(OpenRequest(url="https://www.youtube.xyz"), "go on YouTube")
+    assert not named_by(OpenRequest(url="https://youtube.evil/?d=secret"), "go on YouTube")
+    assert not named_by(OpenRequest(url="https://www.youtube.com/watch?v=x&d=secret"), "go on YouTube"), \
+        "a path or query could carry what Milo read"
+    assert named_by(OpenRequest(url="https://youtube.com/"), "go on YouTube")
+    assert named_by(OpenRequest(url="https://www.figma.com"), "open figma"), "a bare name opens as www.<name>.com"
+    assert named_by(OpenRequest(url="https://www.bbc.co.uk"), "open bbc.co.uk"), "the address the user said"
+    assert not named_by(OpenRequest(url="https://www.bbc.co.uk"), "open the BBC"), "only its address names it"
+    assert named_by(OpenRequest(url="https://mail.google.com"), "check my gmail")
 
 
 def test_what_is_opened_reads_as_the_host_the_file_or_the_app():
