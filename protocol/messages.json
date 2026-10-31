@@ -53,6 +53,7 @@
     {"type": "access", "need": "ui", "state": "no", "text": "To work in other apps' windows I need Accessibility. Fix it shows where to switch it on.", "app": "", "bundle": ""},
     {"type": "app_request", "id": "a43f", "op": "calendar.update_event", "args": {"id": "E1F2-77", "at": "2026-11-05T15:00", "start": "2026-11-06T10:00", "end": "2026-11-06T11:00"}},
     {"type": "app_request", "id": "a44f", "op": "media.pause", "args": {}},
+    {"type": "app_request", "id": "a45f", "op": "reminders.complete", "args": {"id": "R7C1-02", "done": false}},
     {"type": "app_request", "id": "a51f", "op": "access.check", "args": {"need": "control", "app": "Microsoft Excel", "bundle": "", "launch": true}},
     {"type": "app_request", "id": "a52f", "op": "access.request", "args": {"need": "control", "app": "Microsoft Excel", "bundle": "com.microsoft.Excel"}},
     {"type": "app_request", "id": "a53f", "op": "access.places", "args": {"app": "Microsoft Excel", "bundle": "com.microsoft.Excel"}},

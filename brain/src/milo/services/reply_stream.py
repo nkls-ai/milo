@@ -18,8 +18,9 @@ TAGS = ("remember", "reminder", "task", "look", "steer", "stop", "undo", "routin
 _SELF_CLOSING = ("<look/>", "<look />")
 _MARKERS = tuple(f"<{name}>" for name in TAGS) + tuple(f"</{name}>" for name in TAGS) + _SELF_CLOSING
 # Tags that may carry attributes: <task title="..." screen="yes">, <steer helper="2">, <stop helper="all"/>, <undo/>,
-# <routine do="run" name="...">, <open app="..." url="..."/>, and every act: <event title="..." start="..."/>, ...
-_WITH_ATTRS = "|".join(("task", "steer", "stop", "undo", "routine", "open", "write", *ACTS))
+# <routine do="run" name="...">, <open app="..." url="..."/>, <reminder do="cancel" id="r1"/>, and every act:
+# <event title="..." start="..."/>, ...
+_WITH_ATTRS = "|".join(("task", "steer", "stop", "undo", "routine", "open", "write", "reminder", *ACTS))
 _OPENER = re.compile(rf"<({_WITH_ATTRS})((?:\s+[a-z_]+\s*=\s*(?:\"[^\"<>]*\"|'[^'<>]*'|[^\s<>/\"']+))*)\s*(/?)>",
                      re.IGNORECASE)
 # A tag not closed yet: "<open url=..." with attributes, or "<undo/" whose ">" comes in the next chunk.
@@ -107,8 +108,8 @@ class ReplyParser:
         """Each <open> tag: an app, a web page (its address resolved, see core/opening.py) or a file to open now.
         LiveTalk opens them while the reply still streams, so it reads this list after every feed()."""
         self.acts: list[ActRequest] = []
-        """Each act tag, in order: an event, a to-do, a note, a timer, ... (services/quick_actions.py). Like opens,
-        LiveTalk starts them while the reply still streams."""
+        """Each act tag, in order: an event, a to-do, a note, a timer, ..., and a <reminder do="cancel">
+        (services/quick_actions.py). Like opens, LiveTalk starts them while the reply still streams."""
         self.writes: list[str] = []
         """Each <write> tag's text, its lines as written: Milo pastes it where the user is (services/writing.py).
         LiveTalk hands it on the moment the tag closes."""
@@ -276,7 +277,8 @@ class ReplyParser:
             if text.strip():
                 self.writes.append(text)
             return
-        if tag in ACTS:  # a note's or a draft's text keeps its lines
+        if tag in ACTS or (tag == "reminder" and attrs.get("do")):  # a note's or a draft's text keeps its lines
+            # <reminder do="cancel"> takes back one of Milo's own reminders: an act, unlike a plain <reminder>.
             lines = [" ".join(line.split()) for line in content.strip().splitlines()]
             self.acts.append(ActRequest(tag, attrs, "\n".join(lines).strip()))
             return

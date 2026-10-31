@@ -66,8 +66,8 @@ class AppReminders(_App):
     def add(self, title: str, due: datetime | None = None, notes: str = "", list_name: str = "") -> dict:
         return self._call("reminders.add", {"title": title, "due": _iso(due), "notes": notes, "list": list_name})
 
-    def complete(self, id: str) -> dict:
-        return self._call("reminders.complete", {"id": id})
+    def complete(self, id: str, done: bool = True) -> dict:
+        return self._call("reminders.complete", {"id": id, **({} if done else {"done": False})})
 
     def delete(self, id: str) -> dict:
         return self._call("reminders.delete", {"id": id})

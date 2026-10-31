@@ -237,7 +237,8 @@ def test_a_shared_calendar_is_other_peoples_text(tmp_path):
         await settle()
 
     asyncio.run(run())
-    assert "“Team offsite” (shared)" in s.model.turns[0] and "- Bring cake, due today 18:00 (shared)" in s.model.turns[0]
+    assert "“Team offsite” (shared)" in s.model.turns[0]
+    assert "- t1 Bring cake, due today 18:00 (shared)" in s.model.turns[0]
 
 
 def test_a_shared_line_keeps_the_conversation_outside_for_later_turns(tmp_path):
@@ -406,6 +407,189 @@ def test_a_todo_goes_to_reminders_and_undo_takes_it_out(tmp_path):
     assert cards(s)[0].kind == "todo" and cards(s)[0].app == "Reminders"
     asyncio.run(say(s, "undo that"))
     assert world(s)["reminders"] == []
+
+
+def _todo(id: str, title: str, due: str = "", **more) -> dict:
+    return {"id": id, "title": title, "due": due, "notes": "", "list": "Groceries", "done": False, **more}
+
+
+OAT_MILK = _todo("r5", "Buy oat milk")
+
+
+def test_a_todo_without_a_due_date_is_ticked_off_by_its_title_and_undo_unticks_it(tmp_path):
+    """Found driving the real Milo (2026-10-31): "I bought the oat milk" had no tag, and a to-do with no due date
+    isn't in <today>, so the model couldn't even see it. Milo finds it on the list by the words the user said."""
+    s = stack(tmp_path, ['[happy] <todo do="done" title="oat milk"/>'], ["[happy] <undo/>"],
+              world={"reminders": [OAT_MILK]})
+    asyncio.run(say(s, "I bought the oat milk"))
+    assert world(s)["reminders"][0]["done"] is True
+    assert said(s) == "Ticked off: Buy oat milk.", "the line names the to-do it found"
+    assert not s.sink.of(Confirm), "ticked off can be unticked: a unique match goes ahead"
+    [card] = cards(s)
+    assert (card.kind, card.title, card.detail, card.app) == ("todo", "Buy oat milk", "Done", "Reminders")
+    assert card.undo
+    asyncio.run(say(s, "undo that"))
+    assert world(s)["reminders"][0]["done"] is False
+    assert said(s).endswith("Undid “Buy oat milk”.")
+
+
+def test_a_todo_in_today_is_deleted_by_its_handle_and_undo_puts_it_back(tmp_path):
+    milk = _todo("r1", "Buy milk", "2026-10-29T18:00", notes="the organic one")
+    s = stack(tmp_path, ["[happy] Milk, at six."], ['[happy] <todo do="delete" id="t1"/>'], ["[happy] <undo/>"],
+              world={"reminders": [milk, OAT_MILK]})
+    asyncio.run(say(s, "what's on my list today", "delete the milk to-do"))
+    assert "- t1 Buy milk, due today 18:00" in s.model.turns[0]
+    assert world(s)["reminders"] == [OAT_MILK] and not s.sink.of(Confirm), "Undo makes it again: like the Trash"
+    assert said(s).endswith("Buy milk is off your list.")
+    assert (cards(s)[0].kind, cards(s)[0].detail, cards(s)[0].when) == ("todo", "Deleted", "2026-10-29T18:00")
+    asyncio.run(say(s, "undo that"))
+    [_, back] = world(s)["reminders"]
+    assert (back["title"], back["due"], back["notes"], back["list"]) == (
+        "Buy milk", "2026-10-29T18:00", "the organic one", "Groceries")
+
+
+def test_several_todos_that_fit_get_a_which_one_question_and_nothing_changes(tmp_path):
+    s = stack(tmp_path, ['[happy] <todo do="done" title="milk"/>'], ['[happy] <todo do="done" title="Buy milk"/>'],
+              world={"reminders": [OAT_MILK, _todo("r6", "Buy milk")]})
+    asyncio.run(say(s, "I got the milk"))
+    assert said(s) == "Which one: “Buy oat milk” or “Buy milk”?"
+    assert not any(r["done"] for r in world(s)["reminders"]) and not cards(s)
+    asyncio.run(say(s, "the plain milk"))
+    assert [r["done"] for r in world(s)["reminders"]] == [False, True], "an exact title is that one"
+
+
+@pytest.mark.parametrize("todo, question", [
+    (OAT_MILK, "Delete “Buy oat milk” from your Reminders?"),
+    ({**_todo("r7", "Milk"), "shared": True},
+     "Delete “Milk” from your Reminders? It's on a shared list, so others will see it.")])
+def test_deleting_a_guessed_or_shared_todo_asks_first(tmp_path, todo, question):
+    """A delete found by part of the title asks, like an event's (ADR 0029). One on a shared list asks every time:
+    a made-again copy isn't the one the others had."""
+    s = stack(tmp_path, ['[happy] <todo do="delete" title="milk"/>'], world={"reminders": [todo]})
+
+    async def run():
+        s.live_talk.start("delete the milk from my list")
+        await until(lambda: s.approvals.pending)
+        [ask] = s.sink.of(Confirm)
+        assert ask.question == question
+        await s.brain.handle(ConfirmAnswer(ask.id, False))
+        await s.quick.idle()
+
+    asyncio.run(run())
+    assert world(s)["reminders"] == [todo]
+    assert said(s).endswith("Okay, I left it.")
+
+
+def test_ticking_off_after_an_invite_asks_unless_the_user_asked(tmp_path):
+    milk = _todo("r1", "Buy milk", "2026-10-29T18:00")
+    s = strict(tmp_path, ['[happy] <todo do="done" id="t1"/>'], world={"events": [INVITE], "reminders": [milk]})
+
+    async def run():
+        s.live_talk.start("what's tomorrow")
+        await until(lambda: s.approvals.pending)
+        [ask] = s.sink.of(Confirm)
+        assert ask.question == "Tick off “Buy milk”?"
+        await s.brain.handle(ConfirmAnswer(ask.id, False))
+        await s.quick.idle()
+
+    asyncio.run(run())
+    assert world(s)["reminders"][0]["done"] is False
+
+    auto = stack(tmp_path / "auto", ['[happy] <todo do="done" id="t1"/>'],
+                 world={"events": [INVITE], "reminders": [milk]})
+    asyncio.run(say(auto, "tick off the milk"))
+    assert auto.sink.of(Confirm) == [] and world(auto)["reminders"][0]["done"] is True
+
+
+def test_a_timer_is_stopped_by_its_title_and_undo_sets_it_again(tmp_path):
+    s = stack(tmp_path, ['[happy] <timer minutes="10">Pasta</timer>'], ['[happy] <timer minutes="5">Tea</timer>'],
+              ['[happy] <timer do="cancel"/>'], ['[happy] <timer do="cancel" title="pasta"/>'], ["[happy] <undo/>"])
+    asyncio.run(say(s, "pasta timer ten minutes", "tea timer five minutes", "cancel the timer"))
+    assert said(s).endswith("Which timer: “Tea” or “Pasta”?"), "two run: Milo asks, the soonest first"
+    assert len(s.quick.timers()) == 2
+    asyncio.run(say(s, "cancel the pasta timer"))
+    assert s.quick.timers() == [("Tea", datetime(2026, 10, 29, 9, 5))]
+    assert said(s).endswith("Pasta: timer is off.")
+    card = cards(s)[-1]
+    assert (card.kind, card.title, card.detail, card.when) == ("timer", "Pasta", "Stopped", ""), \
+        "no ring that runs down to a time that won't ring"
+    asyncio.run(say(s, "undo that"))
+    assert s.quick.timers() == [("Tea", datetime(2026, 10, 29, 9, 5)), ("Pasta", datetime(2026, 10, 29, 9, 10))], \
+        "back, ringing when it would have"
+
+
+def test_stopping_a_timer_when_none_runs_says_so(tmp_path):
+    s = stack(tmp_path, ['[happy] <timer do="cancel"/>'])
+    asyncio.run(say(s, "stop the timer"))
+    assert said(s) == "No timer is running." and not cards(s)
+
+
+def test_german_stops_the_timer_and_ticks_off_the_oat_milk(tmp_path):
+    s = stack(tmp_path, ['[happy] <timer minutes="10">Nudeln</timer>'], ['[happy] <timer do="cancel"/>'],
+              ['[happy] <todo do="done" title="Hafermilch"/>'], ['[happy] <todo do="done" title="Milch"/>'],
+              world={"reminders": [_todo("r8", "Hafermilch kaufen"), _todo("r9", "Milch kaufen")]})
+    asyncio.run(say(s, "stell einen Timer für die Nudeln auf zehn Minuten", "mach den Timer aus"))
+    assert s.quick.timers() == []
+    assert said(s).endswith("Nudeln: Timer ist aus.")
+    assert cards(s)[-1].detail == "Gestoppt" and cards(s)[-1].lang == "de"
+    asyncio.run(say(s, "streich Hafermilch von der Liste"))
+    assert said(s).endswith("Abgehakt: Hafermilch kaufen.")
+    asyncio.run(say(s, "und die Milch auch, bitte"))
+    assert said(s).endswith("Abgehakt: Milch kaufen."), "the open one: Hafermilch is ticked off already"
+
+
+def test_german_asks_which_one_in_german(tmp_path):
+    s = stack(tmp_path, ['[happy] <todo do="delete" title="Milch"/>'],
+              world={"reminders": [_todo("r8", "Hafermilch kaufen"), _todo("r9", "Milch kaufen"),
+                                   _todo("r10", "Milch für Oma")]})
+    asyncio.run(say(s, "lösch die Milch von meiner Liste"))
+    assert said(s) == "Welche: „Milch kaufen“ oder „Milch für Oma“?"
+    assert len(world(s)["reminders"]) == 3
+
+
+WATER = Reminder("w1", datetime(2026, 10, 30, 9, 0), "Water the plants", False)
+
+
+def test_milos_own_reminder_is_cancelled_by_its_handle_and_undo_sets_it_again(tmp_path):
+    s = stack(tmp_path, ["[happy] At nine tomorrow."], ['[happy] <reminder do="cancel" id="r1"/>'],
+              ["[happy] <undo/>"], reminders=ListReminders(WATER))
+    asyncio.run(say(s, "when do you remind me about the plants", "cancel that reminder"))
+    assert "Milo's reminders:\n- r1 2026-10-30 09:00 Water the plants" in s.model.turns[0]
+    assert s.reminders.items == [] and not s.sink.of(Confirm)
+    assert said(s).endswith("Reminder off: Water the plants.")
+    [card] = cards(s)
+    assert (card.kind, card.title, card.detail, card.when, card.app) == (
+        "reminder", "Water the plants", "Cancelled", "2026-10-30T09:00", "")
+    asyncio.run(say(s, "undo that"))
+    assert [(r.text, r.due) for r in s.reminders.items] == [("Water the plants", datetime(2026, 10, 30, 9, 0))]
+
+
+def test_milos_own_reminder_is_found_by_its_words_and_german_works(tmp_path):
+    s = stack(tmp_path, ['[happy] <reminder do="cancel" title="plants"/>'],
+              ['[happy] <reminder do="cancel" title="Anna"/>'],
+              reminders=ListReminders(WATER, Reminder("a1", datetime(2026, 10, 30, 10, 0), "Anna anrufen", False),
+                                      Reminder("a2", datetime(2026, 10, 31, 10, 0), "Anna gratulieren", False)))
+    asyncio.run(say(s, "cancel the reminder about the plants"))
+    assert said(s) == "Reminder off: Water the plants."
+    asyncio.run(say(s, "streich die Erinnerung an Anna"))
+    assert said(s).endswith("Welche Erinnerung: „Anna anrufen“ oder „Anna gratulieren“?")
+    assert [r.text for r in s.reminders.items] == ["Anna anrufen", "Anna gratulieren"]
+
+
+def test_cancelling_milos_reminder_after_outside_text_asks(tmp_path):
+    s = strict(tmp_path, ['[happy] <reminder do="cancel" id="r1"/>'], world={"events": [INVITE]},
+               reminders=ListReminders(WATER))
+
+    async def run():
+        s.live_talk.start("what's tomorrow")
+        await until(lambda: s.approvals.pending)
+        [ask] = s.sink.of(Confirm)
+        assert ask.question == "Cancel the reminder “Water the plants”, tomorrow at 9 am?"
+        await s.brain.handle(ConfirmAnswer(ask.id, False))
+        await s.quick.idle()
+
+    asyncio.run(run())
+    assert s.reminders.items == [WATER]
 
 
 def test_a_note_and_undo_puts_it_in_recently_deleted(tmp_path):
@@ -669,6 +853,24 @@ def test_act_tags_are_parsed_and_never_spoken():
         ("note", {"title": "Pack"}, "socks\ncharger"), ("music", {"do": "pause"}, "")]
 
 
+def test_cancelling_milos_reminder_is_an_act_and_a_plain_reminder_stays_one():
+    p = ReplyParser()
+    out = "".join(p.feed(d) for d in ['[happy] Okay. <reminder do="can', 'cel" id="r1"/>',
+                                      '<reminder>2026-10-30 09:00 Call Anna</reminder>'])
+    out += p.finish()
+    assert out == "Okay. "
+    assert [(a.kind, a.attrs) for a in p.acts] == [("reminder", {"do": "cancel", "id": "r1"})]
+    assert p.reminders == [(datetime(2026, 10, 30, 9, 0), "Call Anna")]
+
+
+def test_unticking_a_todo_through_the_app_says_done_false():
+    calls = []
+    reminders = AppReminders(lambda op, args: calls.append((op, args)) or {})
+    reminders.complete("R1")
+    reminders.complete("R1", False)
+    assert calls == [("reminders.complete", {"id": "R1"}), ("reminders.complete", {"id": "R1", "done": False})]
+
+
 @pytest.mark.parametrize("seconds, lang, said", [(600, "en", "10 minutes"), (90, "en", "90 seconds"),
                                                  (5400, "de", "1 Stunde 30 Minuten"), (60, "en", "1 minute"),
                                                  (3600, "de", "1 Stunde")])
@@ -783,5 +985,5 @@ def test_milos_own_reminders_sit_after_the_days_to_dos():
     own = ListReminders(Reminder("a", datetime(2026, 11, 2, 9, 0), "Call Anna", False))
     today = Today(_via_app(app), clock, reminders=own)
     text, outside = asyncio.run(today.note())
-    assert text.index("Dentist") < text.index("Milo's reminders:\n- 2026-11-02 09:00 Call Anna")
+    assert text.index("Dentist") < text.index("Milo's reminders:\n- r1 2026-11-02 09:00 Call Anna")
     assert outside is False, "Milo's own reminders are no outside text"

@@ -9,7 +9,9 @@ stays the same and a warmed conversation isn't restarted because an event moved 
 connections (`connections` None, quick actions off) the block has only Milo's reminders. The morning brief reads the
 same day (`current`).
 
-Each event gets a short handle (e1, e2, ...), stable for the conversation, so the model can move or cancel one by it.
+Each event gets a short handle (e1, e2, ...), stable for the conversation, so the model can move or cancel one by it;
+each to-do one (t1, ...) to tick off or delete, and each of Milo's reminders one (r1, ...) to cancel, when quick
+actions are on.
 Titles are made inert like task results. Events with other people come from their invites, and events and to-dos on a
 subscribed or read-only calendar or list (`shared`) were written by someone else too: their titles are other people's
 text, marked as such, and a reply to a block carrying one follows the taint rule (`render` returns whether it does).
@@ -22,10 +24,11 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
+from typing import Any
 
 from milo.core.ports import Clock, Connections, ReminderBook
 from milo.core.times import parse_local
-from milo.core.types import ToolError
+from milo.core.types import Reminder, ToolError
 
 from .connections import reach
 
@@ -72,9 +75,9 @@ class Today:
         self._fetched_at: float | None = None
         self._dirty = True
         self._refreshing: asyncio.Task | None = None
-        self._handles: dict[tuple[str, str], str] = {}
-        self._events: dict[str, dict] = {}
-        """Every event the conversation saw, by handle."""
+        self._handles: dict[tuple[str, ...], str] = {}
+        self._seen: dict[str, dict | Reminder] = {}
+        """Every event, to-do and reminder of Milo's the conversation saw, by handle."""
         self._sent = ""
         self._read = False
         """The last refresh read the day."""
@@ -83,7 +86,7 @@ class Today:
 
     def new_conversation(self) -> None:
         self._handles.clear()
-        self._events.clear()
+        self._seen.clear()
         self._sent = ""
         self._dirty = True
 
@@ -126,7 +129,29 @@ class Today:
 
     def event(self, ref: str) -> dict | None:
         """The event a handle ("e3") names, as the conversation saw it."""
-        return self._events.get(ref.strip().lower())
+        return self._by(ref, "e")
+
+    def todo(self, ref: str) -> dict | None:
+        """The to-do a handle ("t2") names, as the conversation saw it."""
+        return self._by(ref, "t")
+
+    def reminder(self, ref: str) -> Reminder | None:
+        """Milo's own reminder a handle ("r1") names, as the conversation saw it."""
+        return self._by(ref, "r")
+
+    def _by(self, ref: str, kind: str) -> Any:
+        ref = ref.strip().lower()
+        return self._seen.get(ref) if ref.startswith(kind) else None
+
+    def _handle(self, kind: str, key: tuple[str, ...], item: dict | Reminder) -> str:
+        """The item's handle, the same for the whole conversation: e1, e2 for events, t1 for to-dos, r1 for Milo's
+        reminders."""
+        handle = self._handles.get((kind, *key))
+        if handle is None:
+            handle = f"{kind}{sum(1 for k in self._handles if k[0] == kind) + 1}"
+            self._handles[(kind, *key)] = handle
+        self._seen[handle] = item
+        return handle
 
     # ---- the block
 
@@ -154,11 +179,15 @@ class Today:
                         f"due {'today' if due and due.date() == today else 'tomorrow'} {due:%H:%M}" if due else "")
                 shared = bool(t.get("shared"))
                 outside = outside or shared
-                lines.append(f"- {inert(t.get('title'))}" + (f", {when}" if when else "") + (" (shared)" if shared else ""))
+                handle = self._handle("t", (str(t.get("id", "")),), t)
+                lines.append(f"- {handle} {inert(t.get('title'))}" + (f", {when}" if when else "")
+                             + (" (shared)" if shared else ""))
         own = [r for r in self._reminders.all() if not r.done] if self._reminders is not None else []
         if own:
             lines.append("Milo's reminders:")
-            lines += [f"- {r.due:%Y-%m-%d %H:%M} {inert(r.text, REMINDER_CHARS)}" for r in own]
+            # Handles only where an act can cancel one: without quick actions there are no connections.
+            lines += [f"- {self._handle('r', (r.id,), r) + ' ' if self.connections else ''}"
+                      f"{r.due:%Y-%m-%d %H:%M} {inert(r.text, REMINDER_CHARS)}" for r in own]
         timers = self.timers()
         if timers:
             lines.append("Timers: " + "; ".join(f"{inert(title) or 'timer'} rings at {at:%H:%M:%S}"
@@ -182,11 +211,7 @@ class Today:
         return start < day_end and end > day_start
 
     def _event_line(self, e: dict, d: date) -> tuple[str, bool]:
-        key = (str(e.get("id", "")), str(e.get("start", "")))
-        handle = self._handles.get(key)
-        if handle is None:
-            handle = self._handles[key] = f"e{len(self._handles) + 1}"
-        self._events[handle] = e
+        handle = self._handle("e", (str(e.get("id", "")), str(e.get("start", ""))), e)
         start, end = parse_local(e.get("start")), parse_local(e.get("end"))
         if e.get("all_day") or (start and end and start.time() == end.time() == datetime.min.time()):
             span = "all day"
