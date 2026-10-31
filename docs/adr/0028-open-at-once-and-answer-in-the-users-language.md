@@ -25,7 +25,7 @@ The user's bar: no slower than doing it themselves. Milo says "Opening YouTube i
 - Otherwise Milo asks "Open evil.example?" after the reply (`Approvals.confirm`).
 - Only http and https open as addresses, in the brain (`resolve_url`) and again in the app (`OpenGuard.refuses(url:)`): another scheme can run a shortcut or open a setting. A file that would run code (an app, a `.command`, an installer, an AppleScript, any bundle or plug-in, even one renamed without its extension) never opens (`OpenGuard.refuses(path:)`), and neither does an internet location (`.webloc`, `.inetloc`, `.url`, `.mailloc`), which opens whatever address it holds. The check is on the file a link or Finder alias points to, and that file is what opens. A plain folder and a document package (a Pages file) open. A file always opens in its own app, never one the model names: a terminal runs the text file it opens. A page opens in a named app only if the system says that app opens web pages.
 
-**Opening in the app.** `open_app`, `open_url` and `open_file` go through Launch Services (`/usr/bin/open`), which activates the app even while Milo isn't the active app and asks a running app with no windows for a new one, as a Dock click does. Then the app waits at most 2 s until that app is in front with a window on screen (`MacHands.arrived`) and answers `{"app", "bundle", "front"}`. `NSRunningApplication.activate()` alone is what left Chrome windowless.
+**Opening in the app.** `open_app`, `open_url` and `open_file` go through Launch Services (`/usr/bin/open`), which activates the app even while Milo isn't the active app and asks a running app with no windows for a new one, as a Dock click does. Then the app waits at most 2 s until that app is in front with a window on screen (`MacHands.arrived`) and answers `{"app", "bundle", "front"}`. The three open tools run on a queue of their own in `MacHands` (changed after review, 2026-10-31): on the one serial hands queue an `<open>` waited behind a helper's script or an Undo's Excel copy. `NSRunningApplication.activate()` alone is what left Chrome windowless.
 
 **Helpers get `open_url`.** A milo-mac tool with `url` and an optional `app`, no question, `acts`. A careful helper's `open_url` asks, since it may have read the address. The worker's routes start with `open_url` and `open_app`, "never keys, clicks or a script".
 
@@ -49,3 +49,8 @@ The user's bar: no slower than doing it themselves. Milo says "Opening YouTube i
 - The language guess knows German and English words only. Other languages rely on the transcriber, and typed text in them goes without a language line, as before.
 - Scribe's `include_language_detection` is documented but wasn't tried against the live service here. If ElevenLabs refused it, talking would fall back to Whisper with the "transcribing on this Mac" note.
 - Codex still runs in its JavaScript mode and may list tools anyway. The prompt only makes that unnecessary. Turning code mode off is a harness change left for later.
+
+## Changed after review (2026-10-31)
+
+- `open_app`, `open_url` and `open_file` have their own queue in `MacHands`. They touch none of the hands' shared state. The front-wait and the guard against Milo's own process stay. A helper's key or click can now run while an `<open>` brings another app forward; its focus check (`checkFocus`) still refuses a keystroke whose focus moved.
+- What `<open>` opened gets a card (`action_done` kind `opened`, ADR 30): the title is what was opened, the detail the address for a page.
