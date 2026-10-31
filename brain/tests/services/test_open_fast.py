@@ -205,6 +205,25 @@ def test_milos_own_lines_around_a_question_follow_the_language():
     assert "Keine Antwort, also habe ich es gelassen." in said
 
 
+def test_the_remind_question_doesnt_use_a_day_format_windows_lacks(monkeypatch):
+    """"%-d" (a day without its zero) is glibc's and macOS's; Windows' strftime raises on it (ADR 0027)."""
+    import time
+    from datetime import datetime
+
+    from milo.services.live_talk import remind_question
+
+    real = time.strftime
+
+    def windows(fmt: str, *args):
+        if "%-" in fmt:
+            raise ValueError("Invalid format string")
+        return real(fmt, *args)
+
+    monkeypatch.setattr(time, "strftime", windows)
+    assert remind_question(datetime(2026, 11, 2, 9, 0), "call Anna") == \
+        "Should I remind you on Monday 2 November at 09:00: call Anna?"
+
+
 def test_remember_and_remind_questions_follow_the_language():
     from datetime import datetime
 

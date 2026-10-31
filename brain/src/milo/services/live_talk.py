@@ -213,7 +213,7 @@ def remind_question(due: datetime, what: str, language: str = "") -> str:
                   "November", "Dezember")
         return (f"Soll ich dich am {days[due.weekday()]}, {due.day}. {months[due.month - 1]} um {due:%H:%M} "
                 f"erinnern: {what}?")
-    return f"Should I remind you on {due:%A %-d %B at %H:%M}: {what}?"
+    return f"Should I remind you on {due:%A} {due.day} {due:%B at %H:%M}: {what}?"
 
 
 class LiveTalk:
