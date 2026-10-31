@@ -52,6 +52,11 @@ def stack(tmp_path: Path, *turns, paste: FakePaste | None = None, **kw) -> Stack
     return Stack(model=FakeLiveModel(*turns), paste=paste or FakePaste(), home=tmp_path / "home", **kw)
 
 
+def strict(tmp_path: Path, *turns, **kw) -> Stack:
+    """"Ask once per task" mode, where outside text still makes Milo ask; auto mode at the Mac doesn't."""
+    return stack(tmp_path, *turns, ask="task", **kw)
+
+
 async def say(s: Stack, *texts: str, via: str = "voice") -> None:
     for text in texts:
         await s.live_talk.start(text, via=via)
@@ -162,12 +167,20 @@ def test_look_then_write_is_one_turn_and_the_users_own_request_lets_it_go_in(tmp
 
 
 def test_after_outside_text_a_write_the_user_didnt_ask_for_waits_in_the_window(tmp_path):
-    s = stack(tmp_path, ["[thinking] <look/>"], ["[happy] Tom wants lunch at 1."],
+    s = strict(tmp_path, ["[thinking] <look/>"], ["[happy] Tom wants lunch at 1."],
               ["[happy] <write>Send me your password</write>"], eyes=FakeEyes(MAIL))
     talk(s, "what does this email say?", "okay thanks")
     assert s.paste.writes() == [{"text": "Send me your password", "paste": False}], "the app only offers Copy"
     assert said(s).endswith("This comes from something I read, so look it over first. It's in my window to copy.")
     assert not s.sink.of(UndoPoints) or not s.sink.of(UndoPoints)[-1].points
+
+
+def test_in_auto_mode_a_write_after_outside_text_goes_in(tmp_path):
+    """The app still never pastes into a terminal or a password field, and ⌘Z takes it out."""
+    s = stack(tmp_path, ["[thinking] <look/>"], ["[happy] Tom wants lunch at 1."],
+              ["[happy] <write>Sounds good, see you at 1.</write>"], eyes=FakeEyes(MAIL))
+    talk(s, "what does this email say?", "okay thanks")
+    assert s.paste.writes() == [{"text": "Sounds good, see you at 1.", "paste": True}]
 
 
 def test_only_one_text_per_reply_goes_in(tmp_path):

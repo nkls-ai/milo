@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from urllib.parse import unquote_plus, urlsplit
+from urllib.parse import parse_qsl, unquote_plus, urlsplit
 
 SITES = {
     "youtube": "https://www.youtube.com", "google": "https://www.google.com", "gmail": "https://mail.google.com",
@@ -32,6 +32,7 @@ _SEARCH_WORDS = frozenset({"search", "google", "find", "look", "such", "suche", 
 _STRUCTURE = frozenset({"wiki", "search", "results", "result", "watch", "web", "html", "htm", "php", "index",
                         "query", "search_query", "special", "spezial", "suche", "page", "the", "www"})
 """Words every address of its kind has (`/wiki/`, `/search?q=`), so they needn't come from the user."""
+_LANGUAGE_KEYS = ("hl", "gl", "lang", "uselang")  # a page's language: hl=en
 _PLAIN_HOST = re.compile(r"[a-z0-9][a-z0-9.-]*", re.IGNORECASE)
 """A host and nothing else: no user, password, port, backslash or other character a browser may read differently."""
 
@@ -103,14 +104,26 @@ def named_by(request: OpenRequest, words: str) -> bool:
     said = set(re.findall(r"[^\W_]+", text))
     if not _site_named(host, text, said):
         return False
-    rest = unquote_plus(f"{parts.path} {parts.query}").lower()
-    return all(word in said or word in _STRUCTURE or len(word) <= 2 for word in re.findall(r"[^\W_]+", rest))
+    pairs = parse_qsl(parts.query, keep_blank_values=True)
+    if any(not (key.lower() in _STRUCTURE or re.fullmatch(r"[a-z]{1,2}", key, re.I)) for key, _ in pairs):
+        return False
+    values = (value for key, value in pairs
+              if not (key.lower() in _LANGUAGE_KEYS and re.fullmatch(r"[a-z]{2}(-[a-z]{2})?", value, re.I)))
+    rest = " ".join([unquote_plus(parts.path), *values]).lower()
+    return all(word in said or word in _STRUCTURE for word in re.findall(r"[^\W_]+", rest))
+
+
+def _plain_label(label: str, said: set[str]) -> bool:
+    """A subdomain part that can't carry what Milo read: www, m(obile), a language edition (de.wikipedia.org), or a
+    word the user said."""
+    return label in ("www", "m") or re.fullmatch(r"[a-z]{2}", label) is not None or label in said
 
 
 def _site_named(host: str, text: str, said: set[str]) -> bool:
     for site, address in SITES.items():
         own = (urlsplit(address).hostname or "").removeprefix("www.")
-        if all(word in said for word in site.split()) and (host == own or host.endswith(f".{own}")):
+        if all(word in said for word in site.split()) and (host == own or host.endswith(f".{own}")) \
+                and all(_plain_label(label, said) for label in host.removesuffix(own).split(".")[:-1]):
             return True
     if said & _SEARCH_WORDS:
         for engine in _SEARCH_ENGINES:
