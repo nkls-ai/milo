@@ -20,7 +20,9 @@ let defaults = environment["MILO_HOME"].flatMap { home in
 // What macOS lets Milo do, checked before he first needs it (ADR 25), and the apps he asked about.
 let access = MacAppAccess()
 let controlledApps = ControlledApps(defaults: defaults)
-let accessRequests = AccessRequests(source: access, apps: controlledApps, next: EventKitConnections())
+// The music player before Calendar and Reminders: its ops need no EventKit (ADR 29).
+let accessRequests = AccessRequests(source: access, apps: controlledApps,
+                                    next: MediaRequests(player: SystemMediaPlayer(), next: EventKitConnections()))
 let brain = UnixSocketBrainClient(socketPath: paths.socket.path)
 let screen = ScreenController(
     model: model, brain: brain,

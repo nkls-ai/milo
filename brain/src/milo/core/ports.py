@@ -469,6 +469,10 @@ class ReminderBook(ReminderSource, Protocol):
         """Append `- [ ] YYYY-MM-DD HH:MM text` to reminders.md and return the parsed reminder."""
         ...
 
+    def remove(self, id: str) -> bool:
+        """Take out the reminder `id` (Undo of one Milo just set). False if it isn't there any more."""
+        ...
+
 
 @runtime_checkable
 class UsageLedger(Protocol):
@@ -652,7 +656,19 @@ class Calendar(Protocol):
         ...
 
     def add_event(self, title: str, start: datetime, end: datetime, location: str = "", notes: str = "",
-                  calendar: str = "") -> dict: ...
+                  calendar: str = "", all_day: bool = False) -> dict: ...
+
+    def event(self, id: str, at: datetime | None = None) -> dict:
+        """One event by the id `events` gave. `at`, its start, picks the occurrence of a repeating one."""
+        ...
+
+    def move_event(self, id: str, at: datetime | None, start: datetime, end: datetime) -> dict:
+        """Move that occurrence (only it, never the rest of a series) to [start, end). Returns it as it is now."""
+        ...
+
+    def delete_event(self, id: str, at: datetime | None = None) -> dict:
+        """Delete that occurrence. Returns the event as it was, so it can be made again."""
+        ...
 
 
 @runtime_checkable
@@ -662,6 +678,10 @@ class Reminders(Protocol):
     def add(self, title: str, due: datetime | None = None, notes: str = "", list_name: str = "") -> dict: ...
 
     def complete(self, id: str) -> dict: ...
+
+    def delete(self, id: str) -> dict:
+        """Remove a reminder, for Undo of one Milo just added. Returns it as it was."""
+        ...
 
 
 @runtime_checkable
@@ -692,6 +712,10 @@ class Notes(Protocol):
     def create(self, title: str, body: str, folder: str = "") -> dict: ...
 
     def append(self, id: str, text: str) -> dict: ...
+
+    def delete(self, id: str) -> dict:
+        """Delete a note into the app's own Recently Deleted, for Undo of one Milo just made."""
+        ...
 
 
 @runtime_checkable
@@ -737,6 +761,19 @@ class Phone(Protocol):
         ...
 
 
+@runtime_checkable
+class Music(Protocol):
+    """The music player."""
+
+    def state(self) -> str:
+        """"playing", "paused" or "off" (no player running)."""
+        ...
+
+    def control(self, do: str) -> str:
+        """`do` is play, pause, next or previous. Returns the state after it."""
+        ...
+
+
 @dataclass(frozen=True)
 class Connections:
     """One implementation of each connection. None: switched off in config.toml or not available."""
@@ -748,6 +785,7 @@ class Connections:
     shortcuts: Shortcuts | None = None
     files: Files | None = None
     phone: Phone | None = None
+    music: Music | None = None
 
 
 # ---- memory: episodes, facts and the user's things (docs/design/memory.md)

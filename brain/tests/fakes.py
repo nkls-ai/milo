@@ -491,6 +491,11 @@ class ListReminders:
         self.items.append(reminder)
         return reminder
 
+    def remove(self, id: str) -> bool:
+        kept = [r for r in self.items if r.id != id]
+        removed, self.items = len(kept) != len(self.items), kept
+        return removed
+
 
 class MemoryLedger:
     def __init__(self):

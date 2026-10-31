@@ -21,6 +21,9 @@ updates = "bubble"
 voice_barge_in = false
 # A short "hm" when an answer is slow to start, so a pause never sounds like he didn't hear.
 backchannels = true
+# Calendar entries, to-dos, notes, timers, mail drafts, shortcuts and the music right away, without a
+# helper, and today's and tomorrow's calendar at hand. Each still follows [connections] below.
+quick_actions = true
 
 [chat.claude_live]
 binary = ""                       # empty: PATH, then ~/.local/bin
@@ -59,6 +62,7 @@ mail = true
 notes = true
 shortcuts = true
 files = true
+music = true                      # play, pause and skip the music
 
 [connections.mac]
 files_scope = "~"                 # files outside this folder are never searched or read

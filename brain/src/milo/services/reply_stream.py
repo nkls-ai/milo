@@ -11,14 +11,17 @@ from milo.core.types import Emotion
 
 log = logging.getLogger("milo.reply")
 
-TAGS = ("remember", "reminder", "task", "look", "steer", "stop", "undo", "routine", "title", "open")
+ACTS = ("event", "todo", "note", "timer", "draft", "shortcut", "music", "meeting")
+"""Things the talker does at once, without a helper (services/quick_actions.py, ADR 0029)."""
+TAGS = ("remember", "reminder", "task", "look", "steer", "stop", "undo", "routine", "title", "open", *ACTS)
 _SELF_CLOSING = ("<look/>", "<look />")
 _MARKERS = tuple(f"<{name}>" for name in TAGS) + tuple(f"</{name}>" for name in TAGS) + _SELF_CLOSING
 # Tags that may carry attributes: <task title="..." screen="yes">, <steer helper="2">, <stop helper="all"/>, <undo/>,
-# <routine do="run" name="...">, <open app="..." url="..."/>.
-_OPENER = re.compile(r"<(task|steer|stop|undo|routine|open)((?:\s+[a-z_]+\s*=\s*(?:\"[^\"<>]*\"|'[^'<>]*'|[^\s<>/\"']+))*)\s*(/?)>",
+# <routine do="run" name="...">, <open app="..." url="..."/>, and every act: <event title="..." start="..."/>, ...
+_WITH_ATTRS = "|".join(("task", "steer", "stop", "undo", "routine", "open", *ACTS))
+_OPENER = re.compile(rf"<({_WITH_ATTRS})((?:\s+[a-z_]+\s*=\s*(?:\"[^\"<>]*\"|'[^'<>]*'|[^\s<>/\"']+))*)\s*(/?)>",
                      re.IGNORECASE)
-_OPENING = re.compile(r"<(task|steer|stop|undo|routine|open)\s[^<>]*$", re.IGNORECASE)
+_OPENING = re.compile(rf"<({_WITH_ATTRS})\s[^<>]*$", re.IGNORECASE)
 _ATTR = re.compile(r"([a-z_]+)\s*=\s*(?:\"([^\"]*)\"|'([^']*)'|([^\s>/]+))", re.IGNORECASE)
 _MAX_OPENER = 1000  # an <open> may carry a long address
 _LONGEST_MARKER = max(map(len, _MARKERS))
@@ -36,6 +39,19 @@ class TaskRequest:
     description: str
     title: str = ""
     screen: bool | None = None
+
+
+@dataclass(frozen=True)
+class ActRequest:
+    """One act tag: which (`kind`, the tag's name), its attributes, and the text inside (a note's text, a draft's
+    body, a to-do's title)."""
+
+    kind: str
+    attrs: dict
+    text: str = ""
+
+    def get(self, key: str, default: str = "") -> str:
+        return " ".join(str(self.attrs.get(key, default)).split())
 
 
 @dataclass(frozen=True)
@@ -80,6 +96,9 @@ class ReplyParser:
         self.opens: list[OpenRequest] = []
         """Each <open> tag: an app, a web page (its address resolved, see core/opening.py) or a file to open now.
         LiveTalk opens them while the reply still streams, so it reads this list after every feed()."""
+        self.acts: list[ActRequest] = []
+        """Each act tag, in order: an event, a to-do, a note, a timer, ... (services/quick_actions.py). Like opens,
+        LiveTalk starts them while the reply still streams."""
         self.title = ""
         """A <title> tag: Milo's name for the conversation, when he was asked for one."""
         self.look: str | None = None
@@ -215,8 +234,12 @@ class ReplyParser:
         return text + "[", True
 
     def _collect(self, tag: str, content: str) -> None:
-        content = " ".join(content.split())
         attrs, self._attrs = self._attrs, {}
+        if tag in ACTS:  # a note's or a draft's text keeps its lines
+            lines = [" ".join(line.split()) for line in content.strip().splitlines()]
+            self.acts.append(ActRequest(tag, attrs, "\n".join(lines).strip()))
+            return
+        content = " ".join(content.split())
         if tag == "look":
             self.look = self.look or content
             return

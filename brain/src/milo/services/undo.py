@@ -16,7 +16,7 @@ import asyncio
 import hashlib
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -71,6 +71,21 @@ class Undo:
         self._settling: dict[str, asyncio.Task] = {}
         """Fingerprints being taken right after a task ended, by task."""
         self._running: set[asyncio.Task] = set()
+        self.reverse: Callable[[dict], Awaitable[bool]] | None = None
+        """Takes back one step a quick action recorded (services/quick_actions.py, ADR 0029); False when the user
+        chose to keep a change made since. Raises with plain words."""
+
+    # ---- quick actions (ADR 0029)
+
+    def done(self, task: str, *, title: str, said: str, reverse: list[dict] = (), changes: list[dict] = ()) -> None:
+        """A quick action did something: its Undo is ready at once. `reverse` are the steps `reverse` runs, newest
+        last; `changes` are what no step takes back, which a helper puts back as for a task."""
+        record = self._open(task)
+        record |= {"title": title, "description": title, "said": said, "state": "ready", "user_asked": True,
+                   "reverse": list(reverse), "changes": list(changes)[:MAX_CHANGES]}
+        self._shelf.save(task, record)
+        self._changed()
+        self.expire()
 
     # ---- while a task works
 
@@ -209,6 +224,8 @@ class Undo:
             return
         self._set(task, record, "undoing")
         try:
+            if record.get("reverse"):
+                return await self._run_back(task, record, title)
             await self._take_back(task, record, title)
         except Exception:
             log.exception("undo of %s failed", task)
@@ -258,6 +275,28 @@ class Undo:
             parts.append("A helper is putting back the rest." if restored else
                          f"I'm undoing “{title}”: a helper is putting things back.")
         await self._tell(" ".join(parts) or f"Undid “{title}”.")
+
+    async def _run_back(self, task: str, record: dict, title: str) -> None:
+        """A quick action's steps, newest first. A step done stays done, so trying again goes on where it stopped."""
+        if self.reverse is None:
+            self._set(task, record, "ready")
+            return await self._tell(f"I can't undo “{title}” right now.")
+        for step in reversed(record["reverse"]):
+            if step.get("done"):
+                continue
+            try:
+                taken = await self.reverse(step)
+            except Exception as e:
+                log.warning("undo: a quick action's step failed: %s", e)
+                self._set(task, record, "ready")
+                return await self._tell(f"I couldn't undo “{title}”: {str(e).rstrip('.') or 'it did not work'}.")
+            if not taken:
+                self._set(task, record, "ready")
+                return await self._tell(f"Okay, I left “{title}” as it is.")
+            step["done"] = True
+            self._shelf.save(task, record)
+        self._set(task, record, "undone")
+        await self._tell(f"Undid “{title}”.")
 
     def _hand_on(self, task: str, record: dict, rest: list[dict]) -> Helper:
         """What no copy covers goes to a helper, with the record of what the task did."""

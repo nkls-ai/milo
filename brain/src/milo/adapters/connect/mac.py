@@ -51,9 +51,19 @@ class AppCalendar:
         return self._app("calendar.events", {"start": _iso(start), "end": _iso(end), "query": query})
 
     def add_event(self, title: str, start: datetime, end: datetime, location: str = "", notes: str = "",
-                  calendar: str = "") -> dict:
+                  calendar: str = "", all_day: bool = False) -> dict:
         return self._app("calendar.add_event", {"title": title, "start": _iso(start), "end": _iso(end),
-                                                "location": location, "notes": notes, "calendar": calendar})
+                                                "location": location, "notes": notes, "calendar": calendar,
+                                                **({"all_day": True} if all_day else {})})
+
+    def event(self, id: str, at: datetime | None = None) -> dict:
+        return self._app("calendar.event", {"id": id, "at": _iso(at)})
+
+    def move_event(self, id: str, at: datetime | None, start: datetime, end: datetime) -> dict:
+        return self._app("calendar.update_event", {"id": id, "at": _iso(at), "start": _iso(start), "end": _iso(end)})
+
+    def delete_event(self, id: str, at: datetime | None = None) -> dict:
+        return self._app("calendar.delete_event", {"id": id, "at": _iso(at)})
 
 
 class AppReminders:
@@ -73,6 +83,9 @@ class AppReminders:
 
     def complete(self, id: str) -> dict:
         return self._app("reminders.complete", {"id": id})
+
+    def delete(self, id: str) -> dict:
+        return self._app("reminders.delete", {"id": id})
 
 
 # Both mailboxes are the unified ones across accounts. Messages are found again by their Message-ID header.
@@ -262,6 +275,19 @@ end run
 """
 
 
+# Deleting moves the note to Recently Deleted, where the user can get it back (ADR 0023).
+_NOTES_DELETE = """
+on run argv
+	tell application "Notes"
+		set nt to note id (item 1 of argv)
+		set t to name of nt
+		delete nt
+		return t
+	end tell
+end run
+"""
+
+
 def _note_html(text: str) -> str:
     return "".join(f"<div>{html.escape(line) or '<br>'}</div>" for line in text.splitlines())
 
@@ -288,6 +314,9 @@ class AppleNotes:
     def append(self, id: str, text: str) -> dict:
         title = _osascript.run(_NOTES_APPEND, id, _note_html(text), app="Notes")
         return {"id": id, "title": title, "appended": True}
+
+    def delete(self, id: str) -> dict:
+        return {"id": id, "title": _osascript.run(_NOTES_DELETE, id, app="Notes"), "deleted": True}
 
 
 class ShortcutsApp:
