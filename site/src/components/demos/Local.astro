@@ -1,0 +1,292 @@
+---
+import Replay from '../Replay.astro';
+
+// What happens to your voice, left to right. `on` is the step's light, `mac` whether it runs on the Mac.
+const steps = [
+  { id: 'you', title: 'You speak', line: 'Hold a key and talk', icon: '<path d="M12 3.5a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0v-5a3 3 0 0 0-3-3Z"/><path d="M6 11.5a6 6 0 0 0 12 0M12 17.5V21"/>' },
+  { id: 'ears', title: 'He hears you', line: 'Words show while you talk', icon: '<path d="M7 9.5a5 5 0 1 1 10 0c0 2.6-1.6 3.6-2.6 4.6-.9.9-.9 2-1.4 3.2A2.6 2.6 0 0 1 8 16.5"/><path d="M10 9.6a2 2 0 1 1 4 0"/>' },
+  { id: 'mind', title: 'He remembers', line: 'Your people, plans, reminders', icon: '<path d="M8 4.5h8a2 2 0 0 1 2 2v13l-6-3.5-6 3.5v-13a2 2 0 0 1 2-2Z"/>' },
+  { id: 'voice', title: 'He answers', line: 'Out loud, sentence by sentence', icon: '<path d="M4 9.5h3l4.5-4v13L7 14.5H4z"/><path d="M15 9a4 4 0 0 1 0 6M17.6 6.5a7.5 7.5 0 0 1 0 11"/>' },
+];
+const stats = [
+  { big: '½ s', text: 'from letting go of the key to your words in the app. A long dictation takes a second at most.' },
+  { big: '7×', text: 'faster than he speaks. His voice is made on your Mac, so it starts at once.' },
+  { big: '0', text: 'recordings uploaded. What you say is turned into words on your Mac.' },
+  { big: '2', text: 'languages he hears and speaks: English and German, and he answers in yours.' },
+];
+---
+<section class="section local-section" id="local" aria-labelledby="local-title">
+  <div class="wrap">
+    <div class="local-head">
+      <div class="section-head">
+        <h2 id="local-title">Quick, because it happens on your Mac.</h2>
+        <p>Milo's ears and his voice are small programs that run on your Mac's own chip. Nothing waits for a server: your words show up while you're still talking, and he starts answering as soon as he has his first sentence.</p>
+      </div>
+      <div class="section-head local-side">
+        <p>Your voice is never uploaded. When he has to think something through, only the words of your question go to an online model, with the bits of memory it needs.</p>
+        <p class="note">Dictation, his voice and the reminders he's already set keep working without the internet. Try it below.</p>
+      </div>
+    </div>
+
+    <div class="local" data-local>
+      <div class="flow-wrap">
+        <div class="cloud" data-cloud>
+          <span class="cloud-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7.5 18.5h9.8a4.2 4.2 0 0 0 .6-8.4 5.6 5.6 0 0 0-10.8 1.3A3.6 3.6 0 0 0 7.5 18.5Z"/></svg></span>
+          <span class="cloud-text"><b>Thinking, online</b><span data-cloud-line>Only the words of the question</span></span>
+          <span class="tether" aria-hidden="true"><i data-up></i><i data-down></i></span>
+        </div>
+
+        <div class="mac">
+          <p class="mac-label"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="11.5" rx="1.8"/><path d="M9 20h6M12 16v4"/></svg>Your Mac</p>
+          <ol class="flow">
+            {steps.map((s, i) => (
+              <li class="node" data-node={s.id} style={`--i:${i}`}>
+                <span class="node-icon" aria-hidden="true"><svg viewBox="0 0 24 24" set:html={s.icon} /></span>
+                <b>{s.title}</b>
+                <span>{s.line}</span>
+              </li>
+            ))}
+          </ol>
+          <span class="pulse" data-pulse aria-hidden="true"></span>
+          <p class="mac-words" aria-hidden="true"><span class="words is-live" data-heard><span class="wave"><i></i><i></i><i></i><i></i><i></i></span><span data-heard-text></span></span></p>
+        </div>
+      </div>
+
+      <div class="local-controls">
+        <label class="switch">
+          <input type="checkbox" data-offline />
+          <span class="switch-track" aria-hidden="true"><i></i></span>
+          <span>Turn off the internet</span>
+        </label>
+        <p class="note offline-note" data-offline-note aria-live="polite">Online: he hears and speaks on your Mac, and thinks online.</p>
+        <Replay />
+      </div>
+
+      <ul class="stats">
+        {stats.map((s) => (
+          <li><b>{s.big}</b><span>{s.text}</span></li>
+        ))}
+      </ul>
+    </div>
+  </div>
+</section>
+
+<style>
+  .local-section { background: var(--paper-2); overflow: clip; }
+  .local-head { display: grid; gap: 0 clamp(2rem, 4vw, 4.5rem); }
+  @media (min-width: 60rem) {
+    .local-head { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); align-items: end; }
+    .local-side { padding-bottom: 0.2rem; }
+  }
+  .local { margin-top: clamp(2rem, 4vw, 3.5rem); }
+
+  .flow-wrap { position: relative; padding-top: 7.5rem; }
+
+  /* ---- the internet, small and above the Mac ---- */
+  .cloud {
+    position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 0.7rem;
+    padding: 0.6rem 1.1rem 0.6rem 0.65rem; border-radius: 1rem;
+    background: var(--card); box-shadow: var(--shadow-pop);
+    transition: opacity 300ms, filter 300ms;
+    z-index: 2;
+  }
+  .cloud-icon { display: grid; place-items: center; width: 2.4rem; height: 2.4rem; border-radius: 0.7rem; background: var(--lavender-wash); color: var(--lavender-deep); }
+  .cloud-icon svg { width: 1.5rem; height: 1.5rem; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linejoin: round; }
+  .cloud-text { display: grid; line-height: 1.25; }
+  .cloud-text b { font-size: 0.98rem; }
+  .cloud-text span { font-size: 0.85rem; color: var(--ink-3); }
+  .cloud.is-on { box-shadow: 0 0 0 2px var(--lavender), var(--shadow-pop); }
+  .local.is-offline .cloud { opacity: 0.45; filter: grayscale(1); }
+  /* a dashed line from the internet down into the Mac, with a dot going up and one coming back */
+  .tether {
+    position: absolute; left: 50%; top: 100%; height: 3.8rem; width: 2px;
+    background: repeating-linear-gradient(to bottom, var(--lavender) 0 5px, transparent 5px 10px);
+    opacity: 0.6;
+  }
+  .local.is-offline .tether { opacity: 0.2; }
+  .tether i { position: absolute; left: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--lavender); opacity: 0; }
+  .tether i[data-up].is-on { animation: up 500ms var(--ease-out) forwards; }
+  .tether i[data-down] { background: var(--marigold); }
+  .tether i[data-down].is-on { animation: down 500ms var(--ease-out) forwards; }
+  @keyframes up { from { top: 100%; opacity: 1; } to { top: -5px; opacity: 1; } }
+  @keyframes down { from { top: -5px; opacity: 1; } to { top: 100%; opacity: 0.9; } }
+
+  /* ---- the Mac: a big rounded frame, everything inside it stays on it ---- */
+  .mac {
+    position: relative;
+    border-radius: 1.6rem;
+    padding: 2.6rem clamp(1rem, 3vw, 2.25rem) 4.6rem;
+    background:
+      radial-gradient(60% 80% at 100% 100%, light-dark(#ffe7bd, #3a2c45) 0%, transparent 70%),
+      radial-gradient(60% 90% at 0% 0%, light-dark(#ddd5f8, #2d2758) 0%, transparent 70%),
+      var(--card);
+    box-shadow: 0 0 0 1.5px var(--lavender-soft), var(--shadow-window);
+  }
+  .mac-label {
+    position: absolute; left: 1.1rem; top: 0.85rem;
+    display: inline-flex; align-items: center; gap: 0.45rem;
+    font-size: 0.85rem; font-weight: 700; color: var(--lavender-deep);
+  }
+  .mac-label svg { width: 1.15rem; height: 1.15rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+
+  .flow { list-style: none; margin: 0; padding: 0; display: grid; gap: 1rem; grid-template-columns: repeat(4, minmax(0, 1fr)); position: relative; }
+  /* the line the nodes sit on */
+  .flow::before { content: ''; position: absolute; left: 12.5%; right: 12.5%; top: 1.9rem; height: 2px; background: var(--rule-strong); }
+  .node { position: relative; display: grid; justify-items: center; text-align: center; gap: 0.25rem; }
+  .node-icon {
+    position: relative; z-index: 2;
+    display: grid; place-items: center; width: 3.8rem; height: 3.8rem; border-radius: 1.1rem;
+    background: var(--lavender-wash); color: var(--lavender-deep);
+    box-shadow: inset 0 0 0 1.5px var(--lavender-soft), 0 6px 16px -10px rgb(var(--shadow-color) / 0.5);
+    transition: background-color 250ms, color 250ms, transform 400ms var(--ease-spring), box-shadow 250ms;
+    margin-bottom: 0.45rem;
+  }
+  .node-icon svg { width: 1.7rem; height: 1.7rem; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .node b { font-size: 1.02rem; line-height: 1.25; }
+  .node > span:last-child { font-size: 0.86rem; color: var(--ink-3); line-height: 1.3; max-width: 11rem; }
+  .node.is-on .node-icon { background: var(--lavender); color: var(--on-lavender); transform: translateY(-3px) scale(1.06); box-shadow: 0 0 0 5px color-mix(in srgb, var(--lavender) 22%, transparent), 0 10px 20px -10px var(--lavender); }
+  .node[data-node='voice'].is-on .node-icon { background: var(--marigold); box-shadow: 0 0 0 5px color-mix(in srgb, var(--marigold) 25%, transparent), 0 10px 20px -10px var(--marigold); color: light-dark(#fff, #16132a); }
+
+  /* a dot that travels the line from node to node */
+  .pulse {
+    position: absolute; top: calc(2.6rem + 1.9rem - 6px); left: 0;
+    width: 12px; height: 12px; border-radius: 50%; background: var(--scarf);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--scarf) 30%, transparent);
+    opacity: 0; transition: transform 520ms var(--ease-out), opacity 200ms;
+    z-index: 1;
+  }
+  .pulse.is-on { opacity: 1; }
+
+  .mac-words { position: absolute; left: 0; right: 0; bottom: 1.1rem; display: flex; justify-content: center; padding-inline: 1rem; }
+  .mac-words .words { opacity: 0; transform: translateY(0.3rem); transition: opacity 200ms, transform 260ms var(--ease-out); max-width: 100%; }
+  .mac-words .words.is-on { opacity: 1; transform: none; }
+  .mac-words .words:not(.is-going) .wave i { animation-play-state: paused; }
+
+  .local-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1.4rem; margin-top: 1.3rem; }
+  .local-controls :global(.replay) { margin-top: 0; margin-left: auto; }
+  .switch { display: inline-flex; align-items: center; gap: 0.6rem; font-weight: 650; font-size: 1rem; cursor: pointer; }
+  .switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .switch-track { position: relative; width: 2.9rem; height: 1.7rem; border-radius: 99px; background: var(--rule-strong); transition: background-color 200ms; flex: none; }
+  .switch-track i { position: absolute; left: 0.2rem; top: 0.2rem; width: 1.3rem; height: 1.3rem; border-radius: 50%; background: var(--card); box-shadow: 0 1px 3px rgb(0 0 0 / 0.25); transition: transform 260ms var(--ease-spring); }
+  .switch input:checked + .switch-track { background: var(--lavender); }
+  .switch input:checked + .switch-track i { transform: translateX(1.2rem); }
+  .switch input:focus-visible + .switch-track { outline: 3px solid var(--lavender); outline-offset: 3px; }
+  .offline-note { flex: 1 1 18rem; }
+
+  .stats { list-style: none; margin: clamp(2.5rem, 5vw, 3.5rem) 0 0; padding: 0; display: grid; gap: 2rem clamp(1.5rem, 3vw, 3rem); grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr)); }
+  .stats li { border-top: 1.5px solid var(--rule-strong); padding-top: 1rem; }
+  .stats b {
+    display: block;
+    font-family: var(--font-display); font-variation-settings: 'SOFT' 100, 'WONK' 0;
+    font-size: var(--step-3); font-weight: 560; line-height: 1; letter-spacing: -0.03em;
+    color: var(--lavender-deep);
+  }
+  .stats span { display: block; margin-top: 0.6rem; color: var(--ink-2); font-size: 1rem; line-height: 1.5; }
+
+  @media (max-width: 44rem) {
+    .flow-wrap { padding-top: 0; }
+    .cloud { position: relative; left: auto; transform: none; margin: 0 auto 2.4rem; width: max-content; max-width: 100%; }
+    .tether { height: 2.4rem; }
+    .flow { grid-template-columns: 1fr; gap: 1.2rem; }
+    .flow::before { left: 1.9rem; right: auto; top: 1.9rem; bottom: 1.9rem; width: 2px; height: auto; }
+    .node { grid-template-columns: 3.8rem 1fr; justify-items: start; text-align: left; column-gap: 1rem; row-gap: 0; align-items: center; }
+    .node-icon { grid-row: span 2; margin: 0; }
+    .node b { align-self: end; }
+    .node > span:last-child { align-self: start; max-width: none; }
+    .pulse { display: none; }
+    .mac { padding-top: 3rem; }
+  }
+</style>
+
+<script>
+  import { demo, $, $$ } from '../../scripts/demo';
+
+  const root = $(document, '[data-local]');
+  const nodes = $$(root, '[data-node]');
+  const node = (id: string) => nodes.find((n) => n.dataset.node === id)!;
+  const pulse = $(root, '[data-pulse]');
+  const cloud = $(root, '[data-cloud]');
+  const cloudLine = $(root, '[data-cloud-line]');
+  const up = $(root, '[data-up]');
+  const down = $(root, '[data-down]');
+  const heard = $(root, '[data-heard]');
+  const heardText = $(root, '[data-heard-text]');
+  const offline = $<HTMLInputElement>(root, '[data-offline]');
+  const offlineNote = $(root, '[data-offline-note]');
+
+  const online = { say: 'What time is the dentist on Thursday?', answer: "Nine o'clock. I'll remind you at eight." };
+  const off = { say: 'Hi Anna, see you on Sunday at one.', answer: "It's eight. The dentist is at nine." };
+
+  // the dot sits under a node: the node's centre, measured against the Mac frame
+  function moveTo(id: string) {
+    const n = node(id).querySelector<HTMLElement>('.node-icon')!;
+    const frame = n.closest('.mac')!.getBoundingClientRect();
+    const r = n.getBoundingClientRect();
+    pulse.style.transform = `translateX(${r.left + r.width / 2 - frame.left - 6}px)`;
+  }
+  const light = (id: string | null) => nodes.forEach((n) => n.classList.toggle('is-on', n.dataset.node === id));
+  const fire = (el: HTMLElement) => { el.classList.remove('is-on'); void el.offsetWidth; el.classList.add('is-on'); };
+
+  const d = demo(root, async (ctx) => {
+    const isOff = offline.checked;
+    const t = isOff ? off : online;
+    pulse.style.transition = 'none';
+    moveTo('you');
+    void pulse.offsetWidth;
+    pulse.style.transition = '';
+    pulse.classList.add('is-on');
+    light('you');
+    heard.classList.add('is-on', 'is-going');
+    const ws = t.say.split(' ');
+    for (let i = 1; i <= ws.length; i++) {
+      heardText.textContent = ws.slice(0, i).join(' ');
+      if (i === 2) { moveTo('ears'); light('ears'); }
+      await ctx.wait(190);
+    }
+    heard.classList.remove('is-going');
+    await ctx.wait(250);
+    if (isOff) {
+      // dictation: straight from his ears into your app, no thinking needed
+      moveTo('mind'); light('mind');
+      await ctx.wait(420);
+    } else {
+      moveTo('mind'); light('mind');
+      await ctx.wait(380);
+      fire(up);
+      await ctx.wait(420);
+      cloud.classList.add('is-on');
+      await ctx.wait(520);
+      cloud.classList.remove('is-on');
+      fire(down);
+      await ctx.wait(480);
+    }
+    moveTo('voice'); light('voice');
+    heardText.textContent = t.answer;
+    heard.classList.add('is-going');
+    await ctx.wait(1800);
+    heard.classList.remove('is-going');
+    await ctx.wait(1400);
+    light(null);
+    pulse.classList.remove('is-on');
+  }, {
+    reset() {
+      light(null);
+      heardText.textContent = '';
+      heard.classList.remove('is-on', 'is-going');
+      cloud.classList.remove('is-on');
+      up.classList.remove('is-on');
+      down.classList.remove('is-on');
+      pulse.classList.remove('is-on');
+    },
+  });
+
+  offline.addEventListener('change', () => {
+    root.classList.toggle('is-offline', offline.checked);
+    cloudLine.textContent = offline.checked ? 'Not reachable right now' : 'Only the words of the question';
+    offlineNote.textContent = offline.checked
+      ? 'Offline: dictation and his voice keep going. Questions that need thinking wait for the internet.'
+      : 'Online: he hears and speaks on your Mac, and thinks online.';
+    d.play();
+  });
+</script>

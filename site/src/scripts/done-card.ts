@@ -2,7 +2,7 @@
 // picture of the thing on the left, its title and when, a check that draws itself in, and Undo.
 // One builder for both the page's server render and the demos' script, so the two can't drift apart.
 
-export type Kind = 'event' | 'todo' | 'timer' | 'note' | 'reminder' | 'draft' | 'music' | 'opened';
+export type Kind = 'event' | 'todo' | 'timer' | 'note' | 'reminder' | 'draft' | 'music' | 'opened' | 'written';
 
 export interface Done {
   kind: Kind;
@@ -23,6 +23,8 @@ const symbols: Partial<Record<Kind, string>> = {
   reminder: '<path d="M12 3.6a5 5 0 0 0-5 5v3.1l-1.6 3.1a.8.8 0 0 0 .7 1.2h11.8a.8.8 0 0 0 .7-1.2L17 11.7V8.6a5 5 0 0 0-5-5Z"/><path d="M9.8 18.3a2.2 2.2 0 0 0 4.4 0Z"/>',
   draft: '<rect x="3.2" y="5.6" width="17.6" height="12.8" rx="2.2"/><path d="m4 7.2 8 5.6 8-5.6" fill="none" stroke="var(--dc-tile)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>',
   music: '<path d="M9.2 17V6.6l9.6-2.1v10.3" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="7" cy="17.2" r="2.6"/><circle cx="16.6" cy="15" r="2.6"/>',
+  // the app's "text.cursor": an I-beam beside a line of text
+  written: '<g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M15.5 4.5h3M15.5 19.5h3M17 4.5v15"/><path d="M4 9h8M4 13h8M4 17h5"/></g>',
   opened: '<g fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4c2.4 2.3 3.5 5 3.5 8s-1.1 5.7-3.5 8c-2.4-2.3-3.5-5-3.5-8s1.1-5.7 3.5-8Z"/></g>',
 };
 
@@ -62,7 +64,7 @@ export function cardHTML(d: Done, { buttons = false } = {}): string {
 export function spoken(d: Done): string {
   const what: Record<Kind, string> = {
     event: 'Added to your calendar', todo: 'Added to your to-dos', timer: 'Timer set', note: 'Note written',
-    reminder: 'Reminder set', draft: 'Draft written', music: 'Playing', opened: 'Opened',
+    reminder: 'Reminder set', draft: 'Draft written', music: 'Playing', opened: 'Opened', written: 'Written',
   };
   return `${what[d.kind]}: ${d.title}, ${d.line}`;
 }

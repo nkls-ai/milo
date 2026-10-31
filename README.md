@@ -1,89 +1,228 @@
-<img src="assets/icon.png" width="64" height="64" alt="">
+<p align="center">
+  <img src="assets/icon.png" width="96" height="96" alt="Milo, a small lavender wren with a marigold scarf">
+</p>
 
-# Milo
+<h1 align="center">Milo</h1>
 
-A small assistant that lives in the bottom-right corner of your Mac. Hold a key and talk to him, or hold another key to dictate into any app. Speech recognition, speech synthesis and memory run on your Mac. Only the LLM turn goes out, through whichever agent CLI you configure (Codex by default, Claude Code as an alternative).
+<p align="center">
+  <b>A small coworker who lives in the corner of your Mac.</b><br>
+  Talk to him, dictate with him, hand him work, and watch him do it.
+</p>
 
-- **Dictation (Wispr Flow replacement).** Hold `fn`, speak, release. Whisper large-v3-turbo transcribes on the GPU while you speak, phrase by phrase, so the text is pasted into the focused app right after you let go, however long you talked. Filler words are dropped. Your clipboard is restored afterwards. For hands-free, double-tap `fn`: a lock shows next to Milo, tap `fn` once more to paste, `esc` to throw it away. A hands-free recording stops by itself after 5 minutes (`[ui] hands_free_max_s`).
-- **Learns your words.** When you fix a word Milo pasted (he wrote "Cloud Code", you make it "Claude Code"), he notices within 45 s and spells it your way next time: names after one fix, other words after two. The fixes and the names you add yourself are in `~/Milo/dictionary.md`, a plain list you can edit (menu bar › Dictation words…). Switch it off in Settings › Dictation (`[dictation] learn`). Password fields are never read, and only the fixed words reach the brain, never the rest of the field.
-- **Live words.** While you speak, for dictation and when talking to Milo, the words appear in a small pill next to Milo. `[dictation] stream` (or menu bar › Dictation style) picks how: `"preview"` (default) shows them and pastes on release, `"type"` also types each phrase into the app at the pause after it, `"off"` shows nothing and transcribes the whole recording on release.
-- **Talk to Milo.** Hold right `⌥`, speak, release. Double-tap it for hands-free, like dictation. Your words show while you speak, and Milo gets them the moment you let go. He thinks with Codex, answers in a speech bubble, and speaks with OmniVoice, sentence by sentence. Press the key while he talks and he goes quiet at once; let go without saying anything and he picks up where he stopped. If his first word is slow in coming he says a short "Hm." first (`[chat] backchannels`). To talk over him without the key, try `[chat] voice_barge_in = true` (experimental: it hasn't been tested with real speakers yet).
-- **Milo by message.** Write to Milo in Telegram from your phone and he works on your Mac: finds and sends you a file (after your yes), answers from your calendar, starts helpers and tells you when they're done. Risky steps ask you in the chat. Pairing takes a code shown on the Mac, no port is opened, and only your chat counts. Off by default; see [docs/setup/messages.md](docs/setup/messages.md). iMessage works too, experimentally.
-- **Pip, and friends.** Milo is a small lavender bird. He blinks, follows your cursor, leans in and nods while you talk, ruffles his tuft while thinking and sleeps tucked in at night. When he works on something on screen he flies there and points at it with a wing. In Settings he can also be a round dragon who puffs smoke while he thinks, Kit the paper fox, Glow the lantern firefly, or the purple robot (`[ui] character` = `pip`, `dragon`, `kit`, `glow`, `classic`). The bubble and the windows take on his colours.
-- **Settings.** "Settings…" in the menu bar item (or the gear in the Milo window) picks his look, how often he tells you what he's doing (`[chat] updates`), how dictation shows your words, his keys and whether he speaks his answers (`[ui] voice`). Changes are saved in `~/Milo/config.toml` with your comments kept, and apply at once. The menu bar's "Dictation style" changes the same setting as the window.
-- **The Milo window.** Click Milo (or "Open conversation" in the menu bar) to read the conversation, type to him, and watch what he does when he works on something for you: "Looking in your Downloads folder", "Editing notes.md". Click a step to see the exact command. The speaker button decides whether he reads typed answers aloud. The history is kept in `~/Milo/state/transcript.jsonl`.
-- **Helpers.** Ask for something that takes work and Milo hands it to a helper, then keeps talking with you. Several helpers work at once (`[harness] max_helpers`, 3 by default), and work on the screen goes one at a time. A small bird next to Milo stands for each helper, with what it is doing; click it to see its steps in the Milo window, where Stop ends it. Ask "how far are you?", change a task while it runs ("make it 2000 instead"), or say "stop that one" or "stop everything". Each helper gets only the tools its task needs, so a calendar question is answered in a few seconds, and simple reads run on a lighter model (`[harness.codex] light_model`). When you asked by voice and the work takes a while, Milo says one short line after about 8 s ("Opening Excel now…"), then waits for the result. `[chat] updates` decides how much Milo tells you along the way: `"quiet"`, `"bubble"` (short notes, the default) or `"chatty"` (he says it). It applies without a restart.
-- **Your apps.** Milo can look in your calendar and reminders, add to them, search and read your mail, write drafts (he never sends mail; you press Send), search, read and add to notes, run your shortcuts and find documents in your home folder, including PDFs, Word files and spreadsheets. Each one can be switched off under `[connections]` in `~/Milo/config.toml`.
-- **He asks first.** Reading and drafting just happen. Anything that goes to another person, deletes, buys or runs a shortcut waits for a yes: Milo asks in the bubble and the window with Yes and No buttons, and you can also hold the talk key and say "yes" or "no". The question stays open until you answer, and Milo asks once more if you didn't; a helper waiting for your answer goes on after a yes. Passwords, money transfers and security settings he never does. Change the levels under `[approvals.levels]`.
-- **Memory.** Milo remembers what happened and what he learned about you, for years, and brings the bits that fit into each conversation. It all stays in `~/Milo/memory/` as plain files. "What Milo knows…" in the menu bar lists it, with Edit and Forget; `profile.md` shows it too, and your edits there count. At night, while you're away and the Mac is plugged in, he tidies up the day in one model call.
-- **Milo looks when you ask.** "Look at my screen, what do you think?" Milo reads the window in front and takes a picture of it, then answers. An eye shows next to him while he looks. He never looks on his own.
-- **What's this?** Select something and press `⌃⌥M` (or pick "What's this?" in the menu bar item). Milo explains the selection, or the whole window if nothing is selected. Change the shortcut with `[ui] whats_this_key`.
-- **Milo uses the Mac for you.** "Put these numbers into the Excel sheet", "find the email from Anna and file it". The worker gets tools to read windows, press buttons, type and click. He works in the background wherever he can — pressing buttons, filling in fields and scrolling without touching your mouse or keyboard — so you can keep working on the side. His own pointer, in his colours, shows you where he's working, the window he's in gets a soft outline that says "Milo is working here", and Pip perches on its corner. Press `esc` or the Stop button to stop him. When something can only be done the old way (typing into an Excel cell, clicking a web page), he asks "Can I borrow your mouse for a moment?" first, uses it, and puts your pointer back — and while he's borrowing it, any touch stops him. A new table in Excel or Numbers, or a new text document in TextEdit or Pages, is one step that needs no question. Each action shows up as a step in the Milo window. Before he sends, deletes, buys, runs a script or replaces filled cells, he asks in the bubble, in one short sentence. A question stays open until you answer it; he asks once more after 20 seconds, and a helper waits for your answer ([ADR 31](docs/adr/0031-talk-as-naturally-as-dictation.md)). A question about work in an app (replacing cells, a script for that app, borrowing the mouse there) has three buttons: Allow covers the rest of that task in that app, Allow always stops asking about that app, No. Settings › "How often Milo asks before he acts" picks Every step, Once per task or Don't ask (auto, the default), where what you asked for needs no question; sending, deleting for good, buying and money still ask ([ADR 23](docs/adr/0023-stop-for-what-cant-be-undone.md)). The always-allowed apps are listed there with Remove ([ADR 22](docs/adr/0022-one-question-per-piece-of-work.md)). He never touches password fields or password apps.
-- **Opening things.** "Open Chrome and go to YouTube", "open my Downloads folder": Milo says "Opening YouTube in Chrome" and it opens while he says it, in front, with no helper and no question. A link that came from a mail or a web page asks first. Keys and clicks a helper sends always go to the app the task is about, never to whatever happens to be in front, and never to Milo himself ([ADR 28](docs/adr/0028-open-at-once-and-answer-in-the-users-language.md)). He answers in the language you just spoke or typed in, whatever language his memories are in.
-- **Routines.** After Milo did something, say "remember how to do this, call it the Monday report". A helper writes the steps down as a plain recipe, with the things that change each time (the month, a file name) as questions, and shows it in the Milo window: Save, or say what to change. Then "do the Monday report", "the Monday report for October", or "every Monday at 9". He follows the recipe, checks each step, and asks when something looks different. The recipes are Markdown files in `~/Milo/routines/` you can edit. The window's Routines section has Run now, pause and delete. `[routines]` caps scheduled runs a day and sets how late a missed run may still run.
-- **Meeting notes.** When Zoom, Teams, FaceTime, Webex, a Slack huddle, a Discord, WhatsApp, Signal, Telegram or Skype call, or Google Meet in a browser uses your microphone, Milo asks once in the bubble: "Looks like a meeting. Should I take notes?", with Take notes, Not this time, "Always for Zoom" and "Never for Zoom". The last two are remembered (Settings, Meeting notes, where you can undo them). While he records he holds a notepad and writes, and a capsule next to him says "Taking notes · 12:34" with Pause and Stop; the menu bar shows the time too. A click on the capsule opens the meeting in the Milo window: who spoke, the transcript as it comes in (about a minute behind), a button that copies a line for the call's chat to tell the others, and a field to ask about the meeting ("What did I miss?"). For anything he doesn't notice, ⌃⌥N (`[ui] meeting_key`) or "Take meeting notes" in the menu starts and stops it by hand. Tell him "that was Anna" and he remembers her voice for next time. After Stop he says what he's writing, then "Your notes are ready" with an Open button. The page shows the notes, the to-dos with "Add to Reminders" on each, and the transcript; the files are in `~/Milo/meetings/<date-title>/` (`notes.md`, `transcript.md`), one "Show in Finder" away. Everything is transcribed on your Mac, the audio is deleted once the notes are written (`[meetings] keep_audio`), and if the brain or the app crashes mid-call, nothing already recorded is lost. `[meetings] auto = "calendar"` takes notes without asking during meetings in your calendar; `"off"` never asks. Recording others needs their consent in many places, Germany among them: that is what the "Copy for the chat" button is for.
-- **Reminders and nudges cost no tokens.** Say "remind me at 9 to call the dentist" and Milo writes a line to `~/Milo/reminders.md` (a helper asks you first). The local heartbeat fires it later without calling the LLM. Morning greetings, break nudges and "welcome back" are local rules too. Cap: `llm_calls_per_day = 0`.
+<p align="center">
+  <img alt="macOS 14 or later" src="https://img.shields.io/badge/macOS-14%2B-6b5cbf">
+  <img alt="Apple silicon" src="https://img.shields.io/badge/Apple%20silicon-M1%20or%20newer-6b5cbf">
+  <img alt="Voice runs on your Mac" src="https://img.shields.io/badge/voice-on%20your%20Mac-e8912e">
+  <img alt="Swift and Python" src="https://img.shields.io/badge/Swift%20%2B%20Python-uv-2b2454">
+</p>
 
-## Run it
+<p align="center">
+  <a href="#what-he-does">What he does</a> ·
+  <a href="#set-it-up">Set it up</a> ·
+  <a href="#keys">Keys</a> ·
+  <a href="#how-its-built">How it's built</a> ·
+  <a href="#develop">Develop</a> ·
+  <a href="docs/FEATURES.md">Every feature, in detail</a>
+</p>
 
-Requirements: Apple Silicon Mac, macOS 14+, [uv](https://docs.astral.sh/uv/), Swift (Command Line Tools), and a logged-in Codex CLI. Milo finds the copy bundled with ChatGPT.app on his own.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/readme/hero-dark.webp">
+  <img src="assets/readme/hero.webp" alt="Milo's homepage: 'Just tell Milo.' beside a small Mac screen, where Milo has just put the dentist in the calendar and a card with Undo springs out of him.">
+</picture>
+
+Hold a key and talk. Milo hears you **on your Mac**, answers out loud in a voice **made on your Mac**, and does the thing: a calendar entry, an email answer in the field you're typing in, a table in Excel. He asks before anything that can't be undone, and everything else comes with Undo.
+
+Only the thinking goes out: the words of your question go to a chat model (Claude Haiku by default, or any OpenAI-style API, local ones included), and bigger jobs go to a helper agent (Codex or Claude Code). Your recordings never leave the Mac.
+
+## What he does
+
+### He writes where your cursor is
+
+Click into a reply, hold right <kbd>⌥</kbd> and say *"answer Anna, Sunday works, but make it one"*. Milo looks at the email, writes the answer and pastes it straight into the field. No copying, no chatbot tab, no switching back. Nothing is sent: you read it and press Send. *"Undo that"* takes it out again.
+
+<img src="assets/readme/write.webp" alt="Milo answering an email: the reply lands in Mail's reply field in one piece, while the six steps of the old copy-into-a-chatbot way are crossed out.">
+
+### Fast, because hearing and speaking happen on your Mac
+
+Whisper large-v3-turbo transcribes on the Apple GPU while you speak, so dictation is in your app **about half a second** after you let go (a second at most after a long one). His voice is Kyutai's **Pocket TTS** on the CPU, about **7x faster than real time**, sentence by sentence, in English and German. Dictation, his voice and reminders keep working offline.
+
+<img src="assets/readme/local.webp" alt="A diagram of Milo's voice path: you speak, he hears you, he remembers, he answers, all inside a frame labelled Your Mac; only 'thinking' sits outside, with just the words of the question.">
+
+### Small things take two seconds
+
+Calendar entries, to-dos, timers, notes, mail drafts, music and your shortcuts happen right away, without a helper. A card springs out of him with a check and Undo, and you can still take a timer or a to-do back later.
+
+<img src="assets/readme/quick.webp" alt="The quick-things demo: a list of things to say, and Milo with a card for a haircut on Friday at one.">
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <b>He works where you can see him</b><br>
+      Ask for something on the computer and he does it in front of you: his own pointer, an outline around the window, one plain line per step. <kbd>esc</kbd> stops him.<br><br>
+      <img src="assets/readme/work.webp" alt="Milo filling in an Excel sheet, the window outlined, his pointer and the current step shown.">
+    </td>
+    <td width="50%" valign="top">
+      <b>He asks before anything you can't undo</b><br>
+      Sending, buying, money and deleting for good wait for your yes. Money only counts a click. The question stays open until you answer.<br><br>
+      <img src="assets/readme/asks.webp" alt="Milo asking whether to send photos to Anna, with Yes and No.">
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <b>Several jobs at once</b><br>
+      Small helper birds carry one job each while he keeps talking with you. Ask how far they've got, change a job, or stop one.<br><br>
+      <img src="assets/readme/helpers.webp" alt="Small helper Milos beside the big one, each with what it's working on.">
+    </td>
+    <td width="50%" valign="top">
+      <b>A memory you can read</b><br>
+      He remembers your people, plans and how you like things, as plain files on your Mac. Fix what's wrong, or make him forget.<br><br>
+      <img src="assets/readme/memory.webp" alt="The list of what Milo knows, with Edit and Forget.">
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <b>Meeting notes without a bot</b><br>
+      When a call starts he asks once whether to take notes. Afterwards: a summary, decisions and to-dos ready for Reminders. Transcribed on your Mac.<br><br>
+      <img src="assets/readme/meetings.webp" alt="Meeting notes with a summary, decisions and to-dos.">
+    </td>
+    <td width="50%" valign="top">
+      <b>And the small things that add up</b><br>
+      Routines ("every Monday at nine"), <i>What's this?</i> on any selection, dictation that learns your names, hands-free talking, German and English.<br><br>
+      <img src="assets/readme/more.webp" alt="Tiles for routines, What's this, learning words, hands-free, language, undo later and looking at the screen.">
+    </td>
+  </tr>
+</table>
+
+Also: **message him from your phone** over Telegram ([setup](docs/setup/messages.md)), **look at my screen** when you ask (never on his own), and **opening things** ("YouTube in Chrome") while he's still saying so. Everything, with its settings: [docs/FEATURES.md](docs/FEATURES.md).
+
+## Set it up
+
+### One command
 
 ```sh
-cd brain && uv sync --extra omnivoice   # ~1.4 GB of Python deps
-cd .. && scripts/build-app.sh --open    # builds build/Milo.app and starts it
+curl -fsSL https://raw.githubusercontent.com/nkls-ai/milo/main/install.sh | sh
 ```
 
-The first start downloads the Whisper (1.6 GB plus 150 MB for live words) and OmniVoice models to `~/.cache/huggingface`. Then:
+Or `./install.sh` from a checkout. It takes a few minutes and asks one question:
 
-1. A setup window opens on the first start and walks through **Microphone**, **Accessibility** (hotkeys, pasting, reading windows, using apps) and **Screen Recording** (looking at the screen), plus Calendars, Reminders and Mail and Notes if you want them. Each button opens the right switch in System Settings with Milo already in the list; if he isn't, drag him in from the little window next to it. If Milo shows as on but doesn't get a tick (it happens after a rebuild), press Fix it. Screen Recording needs a restart, which the window offers. Open it again any time with "Check permissions…" in the menu bar item.
-   For meeting notes, macOS asks the first time Milo takes notes whether he may hear the others in the call (System Audio Recording).
-2. System Settings › Keyboard › "Press 🌐 key to" › **Do Nothing**, so `fn` belongs to Milo.
-3. Quit Wispr Flow if it's running. It wants `fn` too.
+1. **Checks the Mac** (Apple silicon, macOS 14+, 8 GB free) and installs Apple's Command Line Tools and [uv](https://docs.astral.sh/uv/) if they're missing, asking first.
+2. **Installs the brain** and **downloads his ears, voice and memory**: Whisper, Pocket TTS and e5, all running on your Mac.
+3. **Connects your subscription.** Claude (Pro or Max), ChatGPT (Plus or Pro), or both: it installs Claude Code or Codex if needed and opens the browser to log in. No API keys. Claude does the talking, so a ChatGPT-only setup can dictate and do jobs but can't talk yet.
+4. **Builds the app**, puts it in Applications (a checkout keeps it in `build/`), offers to free the <kbd>fn</kbd> key, and starts Milo, who then asks for his three permissions.
 
-The first time Milo uses your calendar or reminders, macOS asks whether Milo may; the first time he uses Mail or Notes, it asks whether Milo may control them. Say OK once each. You can change it later in System Settings › Privacy & Security.
+Run it again to update. `--yes` asks nothing and connects only what's already logged in; `--no-app` installs the brain and models without the app. Linux and Windows get their own branch in the same script once their local hearing and voice exist.
 
-Settings live in `~/Milo/config.toml`: harness, voice, keys, heartbeat rules. The Settings window changes the common ones for you; after editing the file by hand, restart the brain from the menu bar item. Milo never overwrites `~/Milo/AGENTS.md` or `~/Milo/config.toml`, so a workspace from before gets the advice for the user's apps and for using the Mac only if you copy the "The user's apps" and "Using the Mac" sections from `brain/src/milo/workspace_template/AGENTS.md`. The tools carry the most important rules themselves. The worker runs with Milo's tools only: Codex gets a home of its own in `~/Milo/.codex` (sharing only your login), and Claude Code skips your user settings, skills and MCP servers, so your own setup doesn't reach it. Helpers work in `~/Milo/work` and can't change Milo's own files: settings, persona, instructions, reminders, routines, memory and keys ([ADR 20](docs/adr/0020-helpers-never-write-milos-control-files.md)). `[hands] enabled = false` takes the Mac tools away from the worker, and `applescript = false` turns off scripts only. Jobs on the screen take a while, so give the harness more time: `[harness.codex] timeout_s = 600`. Questions before a risky step wait `[approvals] timeout_s`; an old `[hands] confirm_timeout_s` is ignored with a warning in the log.
+### Let an agent do it
 
-For brain development, run it in a terminal (the app connects to it instead of starting its own):
+Open a coding agent (Claude Code, Codex or similar) in this folder and say:
+
+> Set Milo up on this Mac.
+
+[AGENTS.md](AGENTS.md) walks the agent through it: it checks the Mac, runs the installer, and tells you which logins and switches in System Settings only you can do.
+
+### Or by hand
+
+What the installer does, step by step. You need an Apple silicon Mac with macOS 14 or later, a few GB free for the speech models, and:
+
+| What | Why | Get it |
+|---|---|---|
+| Xcode Command Line Tools | builds the Swift app | `xcode-select --install` |
+| [uv](https://docs.astral.sh/uv/) | runs the Python brain | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| [Claude Code](https://claude.com/claude-code), logged in | the chat model Milo talks with | `claude` once, then log in |
+| [Codex](https://github.com/openai/codex), logged in | the helpers that do real work | `codex login`, or just have ChatGPT.app installed |
+
+Prefer one provider? Set `[harness] use = "claude"` in `~/Milo/config.toml` and Claude Code does the helpers too. Or set `[chat] use = "openai_compat"` for OpenAI, OpenRouter, Ollama or LM Studio as the chat model.
 
 ```sh
-cd brain && uv run --extra omnivoice milo
+git clone git@github.com:nkls-ai/milo.git && cd milo
+cd brain && uv sync --extra omnivoice --extra pocket   # Python deps, about 1.5 GB
+cd .. && scripts/make-signing-identity.sh              # once: macOS keeps Milo's permissions across rebuilds
+scripts/build-app.sh --open                            # builds build/Milo.app and starts it
 ```
 
-## Tests
+The first start downloads Whisper (about 1.8 GB with the live-words model) and the voice models to `~/.cache/huggingface`, then a setup window opens:
+
+1. **Microphone**, **Accessibility** (keys, pasting, reading windows, using apps) and **Screen Recording** (looking when you ask). Each button opens the right switch with Milo already in the list. If he shows as on but gets no tick, press *Fix it*. Calendars, Reminders, Mail and Notes are optional. Open the window again any time with *Check permissions…* in the menu bar.
+2. System Settings › Keyboard › "Press 🌐 key to" › **Do Nothing**, so <kbd>fn</kbd> belongs to Milo.
+3. Quit Wispr Flow or any other dictation app that wants <kbd>fn</kbd>.
+
+Settings are in the menu bar item › *Settings…*, and in `~/Milo/config.toml` for everything else (restart the brain from the menu bar after editing it by hand).
+
+## Keys
+
+| Key | What it does |
+|---|---|
+| hold <kbd>fn</kbd> | Dictate into any app. Let go and it's in. |
+| double-tap <kbd>fn</kbd> | Dictate hands-free, up to 5 minutes. Tap once more to paste, <kbd>esc</kbd> to throw it away. |
+| hold right <kbd>⌥</kbd> | Talk to Milo. Press it while he talks to stop him. |
+| double-tap right <kbd>⌥</kbd> | Talk hands-free. |
+| <kbd>esc</kbd> | Stop what he's doing on screen. |
+| <kbd>⌃</kbd><kbd>⌥</kbd><kbd>M</kbd> | *What's this?* Explains the selection, or the whole window. |
+| <kbd>⌃</kbd><kbd>⌥</kbd><kbd>N</kbd> | Start or stop meeting notes by hand. |
+
+All of them can be changed in `[ui]` of `~/Milo/config.toml`.
+
+## How it's built
+
+Two processes on one Mac, talking JSON over a Unix socket ([ADR 1](docs/adr/0001-two-processes-over-a-unix-socket.md)):
+
+```mermaid
+flowchart LR
+  you(("You")) -- "keys, voice" --> app
+  subgraph mac["Your Mac"]
+    app["<b>Milo.app</b> (Swift)<br/>the wren, bubble, keys,<br/>pasting, windows, permissions"]
+    brain["<b>Brain</b> (Python, uv)<br/>Whisper · Pocket TTS · memory<br/>heartbeat · reminders · undo"]
+    apps["Your apps<br/>Calendar · Mail · Notes · Excel …"]
+    app <-- "~/Milo/run/brain.sock" --> brain
+    app -- "Accessibility, AppleScript" --> apps
+  end
+  brain -- "the words of a question" --> chat["Chat model<br/>Claude Haiku or any<br/>OpenAI-style API"]
+  brain -- "bigger jobs" --> helpers["Helpers<br/>Codex or Claude Code"]
+```
+
+- **`app/`** draws Milo and holds the macOS permissions. It knows nothing about models.
+- **`brain/`** does the microphone, speech, the chat model, helpers, memory and the heartbeat. Engines are adapters picked in `config.toml`, so the core stays platform-neutral ([ADR 27](docs/adr/0027-a-platform-boundary.md)).
+- **`~/Milo/`** is the workspace: settings, persona, memory, reminders, routines, logs. Plain files you can read.
+- **`site/`** is the homepage: Astro on Bun, no tracking ([site/README.md](site/README.md)).
+
+More in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and the [decisions](docs/adr/).
+
+## Develop
+
+Run the brain in a terminal and the app joins it instead of starting its own:
+
+```sh
+cd brain && uv run --extra omnivoice --extra pocket milo
+```
+
+Tests:
 
 ```sh
 cd brain && uv run pytest -q
 cd app && swift test
 ```
 
-The dictation test plays recorded speech into a real brain on a throwaway workspace, presses the key the way the app does, and checks every pasted word against the script and against `stream = "off"`, plus how fast the paste, the live words and the listening state came. Cases: English and German, 2 s to 60 s, pauses mid-sentence, soft trailing words, a quiet microphone, a release right after a pause, and pressing again 200 ms after letting go. It fails on lost words or slow pastes. `--fake` uses tones instead of voices and Whisper (half a minute, no models; `pytest` runs part of it on every gate):
+The dictation test plays recorded speech into a real brain on a throwaway workspace and fails on lost words or slow pastes (over 0.5 s after letting go, 1 s after more than 20 s of speech). `--fake` uses tones instead of voices and needs no models:
 
 ```sh
 scripts/e2e-dictation.sh            # Whisper on macOS `say` voices, rendered to files; nothing plays
 scripts/e2e-dictation.sh --fake
 ```
 
-The 30-task eval runs Milo on a made-up calendar, inbox, notes and files with a real chat model and worker, and prints a score. It never touches your own data. See [docs/eval/tasks.md](docs/eval/tasks.md):
+The 30-task eval runs Milo on a made-up calendar, inbox, notes and files and prints a score; it never touches your data ([tasks](docs/eval/tasks.md)). The on-screen eval runs real tasks on your real Mac with a second Milo.app, so run it only while you're away:
 
 ```sh
 cd brain && uv run python -m milo.eval
-```
-
-The on-screen eval runs real tasks on your real Mac with a second Milo.app: a budget table in Excel and in Numbers, filing the newest PDF from a test Downloads folder, and a Mail reply draft that it deletes again. It prints a score and the time of every step, and closes what it opened without saving. Run it only while you're not using the Mac:
-
-```sh
 cd brain && uv run python -m milo.eval.screen --only excel,numbers,file
 ```
 
-## Homepage
-
-`site/` is the homepage, a static page built with Astro on Bun: `cd site && bun install && bun run dev`, or `bun run build` for the files. Milo's drawing there comes from the wren rig behind one component, so a new design changes one place. See [site/README.md](site/README.md).
+`scripts/drive-milo.py "open YouTube in Chrome"` sends a typed turn to the running Milo and prints what he says and does, to check a change on the real Mac.
 
 ## Docs
 
+- [Every feature, in detail](docs/FEATURES.md)
 - [Architecture](docs/ARCHITECTURE.md): processes, ports and adapters, how to add an engine
-- [Decisions](docs/adr/)
-- [Message Milo from your phone](docs/setup/messages.md), and the [research](docs/research/messaging.md) behind it
+- [Decisions](docs/adr/), [Roadmap](docs/ROADMAP.md), [Character](docs/CHARACTER.md), [Brand](docs/BRAND.md)
+- [Message Milo from your phone](docs/setup/messages.md)
 - [The 30-task eval](docs/eval/tasks.md)
-- [TODO](TODO.md)
+- [Setup guide for agents](AGENTS.md)

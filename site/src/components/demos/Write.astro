@@ -1,0 +1,289 @@
+---
+import Character from '../Character.astro';
+import Replay from '../Replay.astro';
+import '../../styles/done-card.css';
+
+// The old way to get an answer written, crossed out one by one while Milo does it in one go.
+const oldWay = [
+  'Copy the email',
+  'Open a chatbot in your browser',
+  'Paste it and ask for an answer',
+  'Copy the answer',
+  'Go back to Mail',
+  'Click into the reply and paste',
+];
+const apps = ['Mail', 'Gmail', 'WhatsApp', 'Messages', 'Word', 'Pages', 'Notes', 'Slack', 'Outlook'];
+---
+<section class="section write-section" id="write" aria-labelledby="write-title">
+  <div class="wrap">
+    <div class="write-head">
+      <div class="section-head">
+        <h2 id="write-title">He writes it where your cursor is.</h2>
+        <p>Click into a reply, hold <kbd>⌥</kbd> and say what you want to say. Milo reads the email you're looking at, writes the answer in your words and puts it right into the field.</p>
+      </div>
+      <div class="section-head write-side">
+        <p>No copying, no pasting, no switching to a chatbot and back. It lands about a tenth of a second after he's done writing.</p>
+        <p class="note">Nothing is sent. You read it in your own field and press Send yourself. Don't like it? Say "undo that" and it comes out again. He never pastes into a password field or a terminal; then the text waits in his window with a Copy button.</p>
+      </div>
+    </div>
+
+    <div class="write" data-write data-has-milo>
+      <div class="write-old" aria-labelledby="write-old-title">
+        <p class="write-label" id="write-old-title">The old way</p>
+        <ol class="old-steps">
+          {oldWay.map((s) => <li data-old><span>{s}</span></li>)}
+        </ol>
+        <p class="write-label write-new-label">With Milo</p>
+        <p class="new-step" data-new><span class="quick-q" aria-hidden="true">“</span>Answer Anna, Sunday works, but make it one.</p>
+      </div>
+
+      <div class="write-stage">
+        <div class="window write-win">
+          <div class="window-bar"><span class="lights"><i></i><i></i><i></i></span><span class="window-title">Re: Lunch on Sunday?</span></div>
+          <div class="write-mail">
+            <div class="in-mail" data-read>
+              <p class="from"><span class="avatar" aria-hidden="true">A</span><span><b>Anna Weber</b><span class="note">Lunch on Sunday?</span></span></p>
+              <p class="in-text">Hi! Are you around on Sunday? I thought we could try the new Italian place by the river, maybe at twelve? Tom might come too. Anna</p>
+              <span class="scan" aria-hidden="true"></span>
+            </div>
+            <div class="reply" data-reply-field>
+              <p class="reply-to"><span>To:</span> Anna Weber</p>
+              <p class="reply-body"><span class="reply-text" data-text></span><span class="caret" aria-hidden="true"></span></p>
+            </div>
+          </div>
+        </div>
+
+        <span class="eye" data-eye aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M2.8 12s3.4-6 9.2-6 9.2 6 9.2 6-3.4 6-9.2 6-9.2-6-9.2-6Z"/><circle cx="12" cy="12" r="2.6"/></svg>Looking</span>
+        <p class="words write-words" data-words aria-hidden="true"><span class="key write-key" data-key>⌥</span><span class="wave"><i></i><i></i><i></i><i></i><i></i></span><span data-heard></span></p>
+        <div class="dc dc-fly write-card" data-card aria-hidden="true"></div>
+        <div class="write-milo">
+          <p class="bubble write-bubble" data-said aria-live="polite"></p>
+          <Character id="write" pose="idle" label="Milo, writing an answer into the mail" />
+        </div>
+      </div>
+      <p class="sr-only">
+        Someone has Anna's email open and the cursor in the reply. They hold the talk key and say "Answer Anna, Sunday
+        works, but make it one." Milo looks at the email, and a moment later the whole answer appears in the reply field:
+        "Hi Anna, Sunday sounds lovely, and the Italian place is a great idea. Could we make it one o'clock instead of
+        twelve? Tom is very welcome too. See you there!" A card says "Written, in Mail" and Milo says "It's in Mail, have
+        a look." The six steps of the old way, copying the email into a chatbot and pasting the answer back, are crossed
+        out.
+      </p>
+      <div class="write-foot"><Replay /></div>
+    </div>
+
+    <div class="apps">
+      <p class="note">Works anywhere you can type, for example</p>
+      <ul>{apps.map((a) => <li>{a}</li>)}</ul>
+    </div>
+  </div>
+</section>
+
+<style>
+  .write-head { display: grid; gap: 0 clamp(2rem, 4vw, 4.5rem); }
+  @media (min-width: 60rem) {
+    .write-head { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); align-items: end; }
+    .write-side { padding-bottom: 0.2rem; }
+  }
+
+  .write {
+    display: grid; gap: clamp(1.25rem, 3vw, 2.5rem);
+    margin-top: clamp(2rem, 4vw, 3rem);
+    background: var(--paper-2);
+    border-radius: 1.6rem;
+    padding: clamp(1.25rem, 3vw, 2.25rem);
+    box-shadow: inset 0 0 0 1px var(--rule);
+  }
+  @media (min-width: 56rem) { .write { grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); } }
+
+  .write-label { font-weight: 650; color: var(--ink-2); font-size: var(--step--1); }
+  .old-steps { list-style: none; counter-reset: s; margin: 0.7rem 0 0; padding: 0; display: grid; gap: 0.5rem; }
+  .old-steps li {
+    counter-increment: s;
+    position: relative; display: flex; gap: 0.7rem; align-items: baseline;
+    font-size: 1rem; line-height: 1.35; color: var(--ink);
+    transition: color 300ms, opacity 300ms;
+  }
+  .old-steps li::before {
+    content: counter(s);
+    flex: none; display: inline-grid; place-items: center;
+    width: 1.5rem; height: 1.5rem; border-radius: 50%;
+    font-size: 0.8rem; font-weight: 700;
+    background: var(--card); box-shadow: inset 0 0 0 1px var(--rule-strong); color: var(--ink-2);
+    transform: translateY(0.1rem);
+  }
+  /* a marigold stroke draws itself through the step */
+  .old-steps li > span { position: relative; }
+  .old-steps li > span::after {
+    content: ''; position: absolute; left: -0.15rem; right: -0.15rem; top: 0.68em; height: 2px; border-radius: 2px;
+    background: var(--marigold);
+    transform: scaleX(0); transform-origin: 0 50%;
+    transition: transform 380ms var(--ease-out);
+  }
+  .old-steps li.is-gone { color: var(--ink-3); }
+  .old-steps li.is-gone > span::after { transform: scaleX(1); }
+  .write-new-label { margin-top: 1.6rem; }
+  .new-step {
+    margin-top: 0.5rem; display: flex; gap: 0.35rem; align-items: baseline;
+    padding: 0.75rem 0.9rem 0.75rem 0.7rem; border-radius: 0.9rem;
+    background: var(--card); box-shadow: inset 0 0 0 1.5px var(--lavender-soft);
+    font-weight: 650; font-size: 1.05rem; line-height: 1.3;
+    transition: box-shadow 300ms, transform 400ms var(--ease-spring);
+  }
+  .new-step.is-on { box-shadow: inset 0 0 0 2px var(--lavender), 0 8px 22px -12px rgb(var(--shadow-color) / 0.45); transform: translateY(-2px); }
+  .quick-q { font-family: var(--font-display); font-size: 1.5em; line-height: 0; color: var(--lavender); transform: translateY(0.18em); }
+
+  .write-stage { position: relative; padding-bottom: 6.5rem; }
+  .write-win { width: min(100%, 36rem); }
+  .write-mail { padding: 0 1.2rem 1.2rem; }
+  .in-mail { position: relative; padding: 1rem 0.9rem 1.1rem; margin-inline: -0.9rem; border-bottom: 1px solid var(--rule); overflow: hidden; }
+  .from { display: flex; gap: 0.7rem; align-items: center; }
+  .from > span:last-child { display: grid; line-height: 1.25; }
+  .from b { font-size: 0.98rem; }
+  .avatar { display: grid; place-items: center; flex: none; width: 2.2rem; height: 2.2rem; border-radius: 50%; background: light-dark(#fdf0dc, #3d2f22); color: light-dark(#8a5512, #fac98a); font-weight: 750; }
+  .in-text { margin-top: 0.8rem; font-size: 0.98rem; line-height: 1.55; color: var(--ink-2); }
+  /* his look: a soft lavender band passes over what he reads */
+  .scan {
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--lavender) 16%, transparent) 45%, color-mix(in srgb, var(--lavender) 30%, transparent) 50%, transparent 55%);
+    background-size: 100% 260%; background-position: 0 120%; background-repeat: no-repeat;
+    opacity: 0; pointer-events: none;
+  }
+  .in-mail.is-read .scan { opacity: 1; animation: scan 900ms var(--ease-out) forwards; }
+  @keyframes scan { from { background-position: 0 120%; } 85% { opacity: 1; } to { background-position: 0 -20%; opacity: 0; } }
+  .in-mail.is-read { box-shadow: inset 3px 0 0 var(--lavender); transition: box-shadow 200ms; }
+
+  .reply { padding-top: 0.6rem; }
+  .reply-to { font-size: 0.95rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--rule); }
+  .reply-to span { color: var(--ink-3); }
+  .reply-body { padding-top: 0.8rem; min-height: 8.6rem; font-size: 1rem; line-height: 1.6; white-space: pre-line; }
+  .reply-text { border-radius: 0.25rem; transition: background-color 1.4s ease-out; }
+  .reply-text.is-new { background: color-mix(in srgb, var(--scarf) 38%, transparent); transition: none; }
+  .caret { display: inline-block; width: 2px; height: 1.15em; vertical-align: -0.2em; background: var(--lavender); margin-left: 1px; animation: caret 1s steps(1) infinite; }
+  @keyframes caret { 50% { opacity: 0; } }
+
+  .eye {
+    position: absolute; left: 1rem; top: 3.4rem;
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.3rem 0.75rem 0.3rem 0.5rem; border-radius: var(--radius-pill);
+    background: var(--lavender); color: var(--on-lavender);
+    font-size: 0.85rem; font-weight: 650;
+    box-shadow: var(--shadow-pop);
+    opacity: 0; transform: scale(0.8); transition: opacity 200ms, transform 320ms var(--ease-spring);
+  }
+  .eye svg { width: 1.1rem; height: 1.1rem; fill: none; stroke: currentColor; stroke-width: 1.8; }
+  .eye.is-on { opacity: 1; transform: none; }
+
+  .write-words {
+    position: absolute; left: 0; bottom: 0.4rem; max-width: calc(100% - 9rem);
+    opacity: 0; transform: translateY(0.3rem); transition: opacity 200ms, transform 260ms var(--ease-out);
+  }
+  .write-words.is-on { opacity: 1; transform: none; }
+  .write-key { font-size: 0.9rem; background: var(--lavender); color: var(--on-lavender); box-shadow: none; }
+
+  .write-milo { position: absolute; right: 0; bottom: 0; width: clamp(7rem, 13vw, 9rem); }
+  .write-bubble {
+    position: absolute; right: 30%; bottom: 92%;
+    width: max-content; max-width: min(16rem, 60vw);
+    opacity: 0; transform: translateY(0.3rem) scale(0.94); transform-origin: 90% 100%;
+    transition: opacity 180ms, transform 320ms var(--ease-spring);
+    z-index: 5;
+  }
+  .write-bubble.is-on { opacity: 1; transform: none; }
+  .write-card { --u: 0.08rem; position: absolute; right: clamp(7.5rem, 13.5vw, 9.5rem); bottom: 1.2rem; z-index: 4; }
+
+  .write-foot { grid-column: 1 / -1; margin-top: -2rem; }
+
+  .apps { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1rem; margin-top: 1.4rem; }
+  .apps ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.45rem; }
+  .apps li {
+    padding: 0.3rem 0.8rem; border-radius: var(--radius-pill);
+    background: var(--card); box-shadow: inset 0 0 0 1px var(--rule);
+    font-size: 0.92rem; font-weight: 600; color: var(--ink-2);
+  }
+
+  @media (min-width: 72rem) {
+    .write-win { width: min(100%, 38rem); }
+  }
+  @media (max-width: 40rem) {
+    .write-stage { padding-bottom: 9.5rem; }
+    .write-words { bottom: 7.4rem; max-width: 100%; }
+    .write-card { --u: 0.07rem; right: 6.6rem; bottom: 0.8rem; }
+    .write-milo { width: 6.2rem; }
+    .write-bubble { right: 20%; bottom: 96%; max-width: 13rem; }
+  }
+</style>
+
+<script>
+  import { demo, chatter, $, $$, type MiloEl } from '../../scripts/demo';
+  import { cardHTML } from '../../scripts/done-card';
+
+  const root = $(document, '[data-write]');
+  const m = $<MiloEl>(root, 'milo-character');
+  const olds = $$(root, '[data-old]');
+  const next = $(root, '[data-new]');
+  const read = $(root, '[data-read]');
+  const eye = $(root, '[data-eye]');
+  const words = $(root, '[data-words]');
+  const heard = $(root, '[data-heard]');
+  const text = $(root, '[data-text]');
+  const card = $(root, '[data-card]');
+  const said = $(root, '[data-said]');
+
+  const ask = 'Answer Anna, Sunday works, but make it one.';
+  const answer = 'Hi Anna,\nSunday sounds lovely, and the Italian place is a great idea. Could we make it one o\'clock instead of twelve? Tom is very welcome too.\nSee you there!';
+  card.innerHTML = cardHTML({ kind: 'written', title: 'Hi Anna, Sunday sounds lovely', line: 'In Mail' });
+
+  demo(root, async (ctx) => {
+    await ctx.wait(500);
+    // you hold the key and say it
+    next.classList.add('is-on');
+    words.classList.add('is-on', 'is-live');
+    m.pose = 'listening';
+    const ws = ask.split(' ');
+    for (let i = 1; i <= ws.length; i++) {
+      heard.textContent = ws.slice(0, i).join(' ');
+      if (i % 3 === 0) m.play('nod');
+      await ctx.wait(170 + Math.random() * 80);
+    }
+    words.classList.remove('is-live');
+    await ctx.wait(300);
+    // he looks at the email: an eye shows, a band passes over what he reads
+    m.pose = 'thinking';
+    eye.classList.add('is-on');
+    read.classList.add('is-read');
+    for (const [i, li] of olds.entries()) {
+      // the old way's steps go one by one while he reads and writes
+      li.classList.add('is-gone');
+      await ctx.wait(i < 2 ? 260 : 200);
+    }
+    eye.classList.remove('is-on');
+    words.classList.remove('is-on');
+    await ctx.wait(350);
+    // the answer lands in one piece, where the caret was
+    text.textContent = answer;
+    text.classList.add('is-new');
+    await ctx.wait(60);
+    text.classList.remove('is-new');
+    m.pose = 'happy';
+    card.classList.add('is-landed');
+    await ctx.wait(420);
+    m.pose = 'speaking';
+    said.textContent = "It's in Mail, have a look.";
+    said.classList.add('is-on');
+    chatter(m, 1200);
+    await ctx.wait(1500);
+    m.pose = 'proud';
+    await ctx.wait(2600);
+    said.classList.remove('is-on');
+    m.pose = 'idle';
+  }, {
+    reset() {
+      text.textContent = '';
+      heard.textContent = '';
+      for (const li of olds) li.classList.remove('is-gone');
+      for (const el of [next, read, eye, words, card, said]) el.classList.remove('is-on', 'is-read', 'is-landed', 'is-live');
+      m.pose = 'idle';
+    },
+  });
+</script>

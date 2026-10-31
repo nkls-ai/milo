@@ -64,6 +64,15 @@ Every section at 390, 1440 and 2560 px, light and dark, with reduced motion so d
 - `p4/`: the cuter wren from track 12. The best shots are listed in `site/README.md`.
 - `p5/`: brought up to date with ADRs 24 to 32 (2026-10-31): the done card in the hero and a quick-things demo, opening, undo, auto mode, the step under the outline, meeting notes by voice. 390 and 1440 only. `p5/moments/` has the hero card, the deck fanned out, an undo and the outline's caption mid-run.
 
+- `p6/`: writing where you are, the voice on the Mac and the smaller features (2026-10-31): `Write.astro`, `Local.astro`, `More.astro`, a new hero lede and pills. 390 and 1440. The README's pictures in `assets/readme/` come from the same pass.
+
+### Pass 6, what was added and checked
+
+- ADR 33 (`<write>`) got its own section after Talk: Anna's email as the context, the answer landing in the reply in one piece with a marigold flash, a `written` card ("In Mail", the app's text-cursor symbol) and the brain's own line "It's in Mail, have a look." Beside it, the six steps of copying into a chatbot get crossed out.
+- The voice moved to Pocket TTS on the CPU, so "His voice is made online too" went from the FAQ and Trust. The local section's numbers come from the code: ½ s is the dictation test's paste limit (1 s after more than 20 s of speech, which the stat says), 7x is Pocket on an M3 (`adapters/tts/pocket.py`).
+- First shots: the strike-through ran the full width of each step (now on the text only), Anna's email was clipped at the left edge, the small-things grid had holes at 4 columns, and the travelling dot drew over the icons. All fixed.
+- Also on the page now: undo later, learning dictation words, hands-free, What's this?, routines, the two languages.
+
 ### Pass 5, what the site said against what Milo does now
 
 - The hero's "Done. Dentist, Thursday at nine." became the brain's own line, "Dentist, Thursday at 9 am. It's in." (`quick_words.py`), and the calendar's today moved to Monday so "Thursday" is what the brain would say (it says "today" for the same day and the full date a week ahead).

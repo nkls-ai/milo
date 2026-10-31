@@ -5,6 +5,9 @@ import Hero from '../components/Hero.astro';
 import Talk from '../components/demos/Talk.astro';
 import Quick from '../components/demos/Quick.astro';
 import Dictation from '../components/demos/Dictation.astro';
+import Write from '../components/demos/Write.astro';
+import Local from '../components/demos/Local.astro';
+import More from '../components/More.astro';
 import Work from '../components/demos/Work.astro';
 import Asks from '../components/demos/Asks.astro';
 import Helpers from '../components/demos/Helpers.astro';
@@ -18,21 +21,24 @@ import Waitlist from '../components/Waitlist.astro';
 import Footer from '../components/Footer.astro';
 
 const title = 'Milo, your coworker on the Mac';
-const description = "Milo is a small coworker who lives in the corner of your Mac. Tell him what you need. He does it where you can see, asks before anything you can't undo, and remembers what matters.";
+const description = "Milo is a small coworker who lives in the corner of your Mac. Tell him what you need. He hears you and speaks on your Mac, writes straight into the app you're in, asks before anything you can't undo, and remembers what matters.";
 ---
 <Base title={title} description={description}>
   <Nav />
   <main id="main">
     <Hero />
     <Talk />
-    <Quick />
+    <Write />
     <Dictation />
+    <Local />
+    <Quick />
     <Work />
     <Asks />
     <Helpers />
     <Memory />
     <Phone />
     <Meetings />
+    <More />
     <Trust />
     <Pricing />
     <Faq />

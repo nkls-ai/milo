@@ -1,0 +1,75 @@
+---
+// The smaller things, each with what you'd press or say on top.
+type Tile = { title: string; text: string; keys?: string[]; say?: string; wide?: boolean };
+const tiles: Tile[] = [
+  {
+    title: 'Routines',
+    say: 'Remember how to do this. Call it the Monday report.',
+    text: 'He writes the steps down as a plain recipe. Then "do the Monday report", or "every Monday at nine", and he follows it, checking each step.',
+    wide: true,
+  },
+  { title: "What's this?", keys: ['⌃', '⌥', 'M'], text: "Select a word you don't know, or nothing for the whole window, and press the keys. He explains it in plain words." },
+  { title: 'He learns your words', say: 'Cloud Code → Claude Code', text: 'Fix a name he wrote once and he spells it your way from then on. The list is a file you can read.' },
+  { title: 'Hands free', keys: ['fn', 'fn'], text: 'Tap fn twice and talk as long as you like, up to five minutes. Tap it once more and it goes in.' },
+  { title: 'Your language', say: 'Erinnere mich morgen an den Arzt.', text: 'Speak German and he answers in German, English and he answers in English. He remembers which you used last.' },
+  { title: 'Take it back later', say: 'Cancel the pasta timer.', text: 'Timers, to-dos and reminders he set can be taken back later too, not only right after.' },
+  {
+    title: 'He looks when you ask',
+    say: 'Look at my screen. Is this email real?',
+    text: 'He reads the window in front of you and answers. A small eye shows while he looks. He never looks on his own.',
+  },
+];
+---
+<section class="section more" id="more" aria-labelledby="more-title">
+  <div class="wrap">
+    <div class="section-head">
+      <h2 id="more-title">And the small things that add up.</h2>
+      <p>None of these needs a setting. Say it or press it, the way you'd ask a person.</p>
+    </div>
+    <ul class="tiles">
+      {tiles.map((t) => (
+        <li class:list={['tile', { wide: t.wide }]}>
+          {t.keys && <p class="tile-keys" aria-hidden="true">{t.keys.map((k) => <kbd>{k}</kbd>)}</p>}
+          {t.say && <p class="tile-say"><span aria-hidden="true">“</span>{t.say}</p>}
+          <h3>{t.title}</h3>
+          <p class="tile-text">{t.text}</p>
+        </li>
+      ))}
+    </ul>
+  </div>
+</section>
+
+<style>
+  .tiles {
+    list-style: none; margin: clamp(2.5rem, 5vw, 3.5rem) 0 0; padding: 0;
+    display: grid; gap: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
+  }
+  @media (min-width: 60rem) {
+    .tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .tile.wide { grid-column: span 2; }
+  }
+  .tile {
+    display: flex; flex-direction: column;
+    padding: 1.4rem 1.4rem 1.5rem;
+    border-radius: 1.3rem;
+    background: var(--card);
+    box-shadow: inset 0 0 0 1px var(--rule), 0 10px 30px -22px rgb(var(--shadow-color) / 0.5);
+    transition: transform 300ms var(--ease-spring), box-shadow 300ms;
+  }
+  .tile:hover { transform: translateY(-3px); box-shadow: inset 0 0 0 1px var(--lavender-soft), 0 16px 34px -22px rgb(var(--shadow-color) / 0.6); }
+  .tile.wide { background: linear-gradient(135deg, var(--lavender-wash), var(--card) 70%); }
+  .tile-keys { display: flex; gap: 0.35rem; font-size: 1.25rem; min-height: 2.6rem; align-items: center; }
+  .tile-keys kbd { min-width: 2.2em; height: 2em; border-radius: 0.45em; }
+  .tile-say {
+    font-family: var(--font-display); font-variation-settings: 'SOFT' 100, 'WONK' 0;
+    font-size: 1.25rem; font-weight: 520; line-height: 1.25; letter-spacing: -0.01em;
+    color: var(--lavender-deep);
+    display: flex; gap: 0.3rem;
+    min-height: 2.6rem;
+  }
+  .tile.wide .tile-say { font-size: 1.5rem; }
+  .tile-say span { font-size: 1.6em; line-height: 0.9; color: var(--marigold); }
+  .tile h3 { margin-top: auto; padding-top: 1.1rem; font-size: 1.2rem; }
+  .tile-text { margin-top: 0.4rem; color: var(--ink-2); font-size: 0.98rem; line-height: 1.5; }
+</style>
