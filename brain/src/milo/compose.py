@@ -147,12 +147,15 @@ def build(home: Path) -> Runtime:
 def _workspace(p: Parts) -> None:
     """The workspace, its config, the clock and what every adapter gets."""
     from . import adapters
+    from .adapters import platform
     from .memory.workspace import Workspace
 
     # Lazy, so importing compose neither registers adapters nor touches the workspace.
     p.workspace = Workspace(p.home)
     p.workspace.ensure()
-    p.config = Config.load(p.workspace.config_path)
+    p.platform = platform.current()
+    p.config = Config.load(p.workspace.config_path, p.platform)
+    log.info("platform %s", p.platform.name)
     adapters.load_builtin()
     p.clock = SystemClock()
     # The worker CLI starts the MCP server with the brain's own interpreter, so it needs no install step.
@@ -530,7 +533,7 @@ def _brain(p: Parts) -> None:
             ("approvals", "ask"): use_ask, ("approvals", "allowed_apps"): use_allowed,
             ("meetings", "auto"): use_meetings, ("meetings", "always"): use_meetings,
             ("meetings", "never"): use_meetings}
-    settings = Settings(TomlConfigFile(p.workspace.config_path), p.config, p.ui, live)
+    settings = Settings(TomlConfigFile(p.workspace.config_path, p.config.platform), p.config, p.ui, live)
     p.permits.save = lambda apps: settings.keep("approvals", "allowed_apps", apps)
     if p.meetings is not None:
         meetings = p.meetings
@@ -598,7 +601,8 @@ def _available(config: Config) -> frozenset[str]:
     """The connections the worker's tools reach, as config.toml switches them (milo.connect reads the same)."""
     switches = config.connections
     names = ("calendar", "reminders", "mail", "notes", "shortcuts", "files")
-    return frozenset({*(n for n in names if switches.enabled and getattr(switches, n)),
+    on = switches.enabled and config.pluggable("connections")[0] != "none"
+    return frozenset({*(n for n in names if on and getattr(switches, n)),
                       *(("memory",) if config.memory.enabled else ()), *(("phone",) if config.messages.enabled else ())})
 
 

@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from milo import compose
+from milo.config import Config
 from milo.adapters.harness.claude import ClaudeHarness
 from milo.adapters.harness.claude_live import ClaudeLiveModel
 from milo.adapters.harness.codex import CodexHarness
@@ -25,10 +26,14 @@ TEMPLATE = (resources.files("milo") / "workspace_template" / "config.toml").read
 
 
 def set_key(text: str, table: str, key: str, value) -> str:
-    """Set `key` in `[table]` of a TOML text, replacing its line. JSON scalars are valid TOML."""
-    start = text.index(f"[{table}]\n")
-    line = re.compile(rf"^{key} = .*$", re.M).search(text, start)
-    assert line, f"{key} not in [{table}]"
+    """Set `key` in `[table]` of a TOML text, replacing its line (or the commented-out line the template has for a
+    key the platform fills in, or adding one). JSON scalars are valid TOML."""
+    start = text.index(f"[{table}]\n") + len(f"[{table}]\n")
+    end = text.find("\n[", start)
+    end = len(text) if end < 0 else end + 1
+    line = re.compile(rf"^(?:# )?{key} = .*$", re.M).search(text, start, end)
+    if line is None:
+        return f"{text[:start]}{key} = {json.dumps(value)}\n{text[start:]}"
     return f"{text[:line.start()]}{key} = {json.dumps(value)}{text[line.end():]}"
 
 
@@ -152,7 +157,7 @@ def test_heartbeat_disabled_builds_no_runner(build):
 @pytest.mark.parametrize("section, available", [
     ("chat", "claude_live, none"),
     ("harness", "claude, codex"),
-    ("stt", "mlx_whisper, none, tones"),
+    ("stt", "elevenlabs, mlx_whisper, none, tones"),
     ("tts", "elevenlabs, none, omnivoice, say"),
     ("audio", "none, sounddevice, wav"),
     ("dictation", "fillers, plain"),
@@ -182,6 +187,28 @@ def test_an_unknown_adapter_option_names_its_table(build):
         build(cheap().replace('[tts.say]\nvoice = ""', '[tts.say]\nvoice = ""\npitch = 3'))
 
 
+def test_off_the_mac_the_template_builds_with_engines_that_need_nothing_from_the_os(build, monkeypatch):
+    # ADR 0027: the same ~/Milo template on Linux or Windows names no Mac engine, so nothing Apple-only loads.
+    from milo.adapters import platform
+    from milo.adapters.embed.hashing import HashEmbedder
+    from milo.adapters.stt.elevenlabs_scribe import ScribeTranscriber
+    from milo.adapters.tts.elevenlabs import ElevenLabsVoice
+
+    monkeypatch.setattr(platform, "current", lambda: platform.LINUX)
+    text = TEMPLATE
+    for table, key, value in (("harness.codex", "binary", "/nonexistent/codex"),
+                              ("chat.claude_live", "binary", "/nonexistent/claude")):
+        text = set_key(text, table, key, value)
+    runtime, _ = build(text)
+    assert isinstance(runtime.transcriber, ScribeTranscriber)
+    assert isinstance(runtime.voice._primary, ElevenLabsVoice) and runtime.voice._fallback_factory is None
+    assert isinstance(runtime.memory.memory._embedder, HashEmbedder)
+    config = Config.parse(text, platform=platform.LINUX)
+    assert config.pluggable("connections")[0] == "none" and not {"calendar", "mail"} & compose._available(config), \
+        "no connections here, so the worker isn't told it has them"
+    runtime.memory.executor.shutdown(wait=False)
+
+
 def test_memory_is_wired_and_the_old_profile_moves_into_facts(build, tmp_path):
     from milo.adapters.embed.mlx_e5 import MlxE5
     from milo.memory.fact_profile import BACKUP
@@ -189,7 +216,7 @@ def test_memory_is_wired_and_the_old_profile_moves_into_facts(build, tmp_path):
     home = tmp_path / "Milo"
     (home / "memory").mkdir(parents=True)
     (home / "memory" / "profile.md").write_text("# About the user\n\n## People\n- Anna is the user's sister.\n")
-    runtime, home = build(cheap(**{"memory.recall_tokens": 500}))
+    runtime, home = build(cheap(**{"memory.recall_tokens": 500, "memory.embedder": "mlx_e5"}))
     memory = runtime.memory
     assert memory is not None and memory.memory.recall_tokens == 500
     assert isinstance(memory.memory._embedder, MlxE5) and memory.memory._embedder._net is None, "loads on warm"

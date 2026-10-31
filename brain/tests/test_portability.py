@@ -148,8 +148,7 @@ ALLOWED: dict[tuple[str, str], str] = {
     ("compose.py", "mac-framework"): "_mac_locale: AppleLocale is the macOS name of the region setting",
     ("compose.py", "mac-path"): "_mac_locale: /usr/bin/defaults",
     ("compose.py", "mac-word"): "a log line says dictation stays \"on this Mac\"",
-    # Config: defaults and key names chosen for a Mac.
-    ("config.py", "mac-framework"): "[memory] embedder defaults to mlx_e5; the default should come from the platform",
+    # Config: key names chosen for a Mac.
     ("config.py", "mac-keys"): "push-to-talk key names (fn, right_option) and the cmd/option combo grammar",
     ("settings.py", "mac-keys"): "Settings labels for the Mac's push-to-talk keys (Right Option, fn)",
     # The worker's tools: names, descriptions and the protocol to the app.

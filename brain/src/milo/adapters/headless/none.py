@@ -1,5 +1,6 @@
-"""`use = "none"` for [stt], [tts], [audio] and [chat]: no model loads, no device opens, nothing is ever heard
-and Milo never answers. For workspaces that test one part of him, like dictation."""
+"""`use = "none"` for [stt], [tts], [audio], [chat] and [connections]: no model loads, no device opens, nothing
+is ever heard and Milo never answers. For workspaces that test one part of him, like dictation, and for a
+computer whose platform has no connections yet (ADR 0027)."""
 
 from __future__ import annotations
 
@@ -9,9 +10,9 @@ from typing import Any
 
 import numpy as np
 
-from milo.core.ports import LevelCallback
-from milo.core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, LIVE_MODELS, TRANSCRIBERS, VOICES, AdapterContext,
-                                options_from)
+from milo.core.ports import Connections, LevelCallback
+from milo.core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, CONNECTIONS, LIVE_MODELS, TRANSCRIBERS, VOICES,
+                                AdapterContext, options_from)
 from milo.core.types import Audio, STT_SAMPLE_RATE, Usage
 
 
@@ -122,3 +123,10 @@ class NoChat:
 def _chat(options: Mapping[str, Any], ctx: AdapterContext) -> NoChat:
     options_from(NoOptions, options, "chat.none")
     return NoChat()
+
+
+@CONNECTIONS.register("none")
+def _connections(options: Mapping[str, Any], ctx: AdapterContext) -> Connections:
+    """No calendar, reminders, mail, notes, shortcuts, files or music: the worker gets none of their tools."""
+    options_from(NoOptions, options, "connections.none")
+    return Connections()

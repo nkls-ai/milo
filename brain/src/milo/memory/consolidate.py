@@ -307,6 +307,7 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s", stream=sys.stderr)
 
     from milo import adapters
+    from milo.adapters import platform
     from milo.config import Config
     from milo.core.clock import SystemClock
     from milo.core.registry import HARNESSES, AdapterContext
@@ -328,7 +329,7 @@ def main(argv: list[str] | None = None) -> int:
     if opts.prompt:
         print(NightlyConsolidator(None, episodes, facts, workspace.journal_dir, runs, clock).prompt(day)[0])
         return 0
-    config = Config.load(workspace.config_path)
+    config = Config.load(workspace.config_path, platform.current())
     adapters.load_builtin()
     name, options = config.pluggable("harness")
     harness = HARNESSES.create(name, options, AdapterContext(workspace.home, workspace.state_dir, clock))

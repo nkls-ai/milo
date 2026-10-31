@@ -37,7 +37,7 @@ class SynthesisCancelled(Exception):
 
 @dataclass(frozen=True)
 class OmniVoiceOptions:
-    device: str = "mps"
+    device: str = ""  # empty: the GPU torch finds (mps, cuda), else cpu
     instruct: str = "male, young adult, high pitch"  # used once, to design the voice
     voice_seed: int = 7
     ref_audio: str = ""  # a clip to clone instead of the designed voice
@@ -45,10 +45,17 @@ class OmniVoiceOptions:
     steps: int = 6  # 5 starts dropping words, 8 is no clearer and ~25% slower
 
 
+def pick_device(torch) -> str:
+    """The torch device for an empty `device`: Apple's GPU, then an NVIDIA one, then the CPU."""
+    if torch.backends.mps.is_available():
+        return "mps"
+    return "cuda" if torch.cuda.is_available() else "cpu"
+
+
 class OmniVoiceTTS:
     sample_rate = 24_000
 
-    def __init__(self, voice_dir: Path, *, device: str = "mps", instruct: str = "male, young adult, high pitch",
+    def __init__(self, voice_dir: Path, *, device: str = "", instruct: str = "male, young adult, high pitch",
                  voice_seed: int = 7, ref_audio: str = "", ref_text: str = "", steps: int = 6):
         self.voice_dir = voice_dir
         self.device = device
@@ -69,6 +76,7 @@ class OmniVoiceTTS:
         import torch
         from omnivoice import OmniVoice
 
+        self.device = self.device or pick_device(torch)
         log.info("loading OmniVoice on %s", self.device)
         dtype = torch.float16 if self.device == "mps" else torch.float32
         try:

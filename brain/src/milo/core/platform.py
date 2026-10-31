@@ -1,0 +1,41 @@
+"""Which engines a computer gets when config.toml doesn't name one (ADR 0027).
+
+A `Platform` is plain data: adapter names by config section. The values for each OS live in
+`milo.adapters.platform`, which is the one place that asks what OS this is; compose passes the result to Config.
+config.toml still overrides every name with `use = "..."`.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class Platform:
+    name: str
+    """"macos", "linux" or "windows": for logs and for what an app says it is."""
+    stt: str
+    """[stt] use: the transcriber for dictation and for talking to Milo."""
+    tts: str
+    """[tts] use: his voice."""
+    tts_fallback: str
+    """[tts] fallback: the voice that takes over when `tts` fails. "": none."""
+    embedder: str
+    """[memory] embedder: what turns text into numbers for recall."""
+    connections: str
+    """[connections] use: calendar, reminders, mail, notes and files. "none" where Milo has none yet."""
+    chat: str = "claude_live"
+    """[chat] use: the talker's model. The Claude CLI runs everywhere."""
+    messages: str = "telegram"
+    """[messages] use: the phone channel. Telegram's bot API runs everywhere."""
+
+    def use(self, section: str) -> str | None:
+        """The default `use` for a pluggable config section, None for sections that must name one."""
+        return {"chat": self.chat, "stt": self.stt, "tts": self.tts, "connections": self.connections,
+                "messages": self.messages}.get(section)
+
+
+ANYWHERE = Platform("other", stt="elevenlabs", tts="elevenlabs", tts_fallback="", embedder="hash",
+                    connections="none")
+"""Engines that need nothing from the OS: cloud hearing and voice (keys in ~/Milo/secrets), the hashing embedder,
+no connections. What Linux and Windows get until they have local engines of their own."""

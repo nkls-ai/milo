@@ -12,6 +12,7 @@ from pathlib import Path
 
 def main() -> None:
     from milo import adapters
+    from milo.adapters import platform
     from milo.config import Config
     from milo.core.clock import SystemClock
     from milo.core.logtext import log_content
@@ -26,7 +27,7 @@ def main() -> None:
 
     home = Path(os.environ.get("MILO_HOME", "~/Milo")).expanduser()
     workspace = Workspace(home)
-    config = Config.load(workspace.config_path)
+    config = Config.load(workspace.config_path, platform.current())
     workspace.log_dir.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s",
                         handlers=[logging.handlers.RotatingFileHandler(
