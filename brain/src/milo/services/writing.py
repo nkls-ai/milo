@@ -214,7 +214,7 @@ class Writer:
         if turn is not None and turn is not asyncio.current_task():
             await asyncio.wait({turn})  # the line and the window's copy come after the reply
         self._transcript.written(text)
-        self._ui.emit(ActionDone("written", title, "", "", app if pasted else "", undo))
+        self._ui.emit(ActionDone("written", title, "", "", app if pasted else "", undo, lang))
         await self._say(said)
 
     def _record(self, title: str, said: str, text: str, field: str, app: str) -> str:

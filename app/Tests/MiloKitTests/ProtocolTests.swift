@@ -97,7 +97,7 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .actionDone(ActionDone(kind: .event, title: "Dentist", when: ActionDone.time("2026-11-05T15:00"),
                                    app: "Calendar", undo: "q-3f9a2c7d1e04", lang: "en")),
             .actionDone(ActionDone(kind: .shortcut, title: "Lights off")),
-            .actionDone(ActionDone(kind: .written, title: "Hi Anna,", app: "Mail", undo: "w-8a7b6c5d4e3f")),
+            .actionDone(ActionDone(kind: .written, title: "Hi Anna,", app: "Mail", undo: "w-8a7b6c5d4e3f", lang: "en")),
             .handsBorrow(on: true, what: "mouse"),
             .access(AccessNote(need: .control, state: .ask,
                                text: "macOS will ask once whether I may use Microsoft Excel. Click Allow.", app: AccessApp(name: "Microsoft Excel", bundle: "com.microsoft.Excel"))),
