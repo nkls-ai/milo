@@ -206,8 +206,9 @@ class Approvals:
             careful or (kind in UNDOABLE_KINDS and self.asks_undoable())))
 
     def asks_undoable(self) -> bool:
-        """Whether what can be undone asks at all: only in "Every step" mode (ADR 0023)."""
-        return self.permits.ask == "step"
+        """Whether what can be undone asks at all: only in "Every step" mode (ADR 0023), unless config.toml makes
+        `trash` stricter than a change."""
+        return self.permits.ask == "step" or self.policy.level("trash") in (ActionLevel.ASK_FIRST, ActionLevel.NEVER)
 
     async def approve(self, kind: str, summary: str, *, careful: bool = False,
                       scope: Scope | None = None) -> Decision:
@@ -229,9 +230,17 @@ class Approvals:
         the Milo window, e.g. the whole task. speak=False only shows it, for a question asked while the user is in
         a call. `undo`: the action can be undone, so only "Every step" mode asks. `money`: it buys or pays, so it
         asks every time and only a click on Yes counts."""
-        if undo and not money and not self.asks_undoable():
-            log.info("can be undone, so not asking: %s", private(summary))
-            return True
+        if undo and not money:
+            # Screen actions follow the classifier, but a stricter `trash` level in config.toml still counts.
+            level = self.policy.level("trash")
+            if level is ActionLevel.NEVER:
+                log.info("refused moving something to the Trash ([approvals.levels] trash)")
+                return False
+            if level is ActionLevel.ASK_FIRST:
+                return await self._ask(summary, detail, speak) in ALLOWED
+            if not self.asks_undoable():
+                log.info("can be undone, so not asking: %s", private(summary))
+                return True
         return await self._ask(summary, detail, speak, scope=None if money else scope, money=money) in ALLOWED
 
     def answer(self, id: str, yes: bool, *, via: str = "button", always: bool = False) -> bool:

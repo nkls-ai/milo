@@ -23,15 +23,17 @@ Always asks, in every mode. A task Allow, Allow always and auto mode never cover
 
 Can be undone. These don't ask in `task` or `auto` mode, and still ask in "Every step":
 
-- moving files or mail to the Trash: ⌘⌫ and "Move to Trash" anywhere, and a plain "Delete" in Finder, Mail or Photos;
+- moving files or mail to the Trash: "Move to Trash" in an app (not on a web page, which writes its own labels), a plain "Delete" in Finder, Mail or Photos, and ⌘⌫ there while a file, a row or a message has the focus. ⌘⌫ with a button or nothing named in focus asks, because it may be the Delete of a "keep this new document?" sheet;
 - deleting a note (Notes keeps it in Recently Deleted);
 - closing a document whose changes are saved. ⌘W and ⌘Q don't ask; the Don't Save button behind them does.
 
-Deleting or replacing content inside an open document (cells, rows, text; "Delete", "Clear", "Replace All" in Excel, Numbers, Pages, Keynote, Word, PowerPoint, TextEdit) is ⌘Z work, which ADR 22's `Scope` already covers. It asks once per task in `task` mode and not at all in `auto`.
+Deleting or replacing content inside an open document (cells, rows, text; the "Delete" menu item, "Clear", "Replace All" in Excel, Numbers, Pages, Keynote, Word, PowerPoint, TextEdit) is ⌘Z work. A "Delete" *button* there asks every time: it may be the sheet that throws a new document away. This kind of work is what ADR 22's `Scope` already covers. It asks once per task in `task` mode and not at all in `auto`. ⌘⌫ in a cell or in text is undoable like the Trash, so it asks only in "Every step".
 
 When it isn't clear, Milo asks. Only exact labels in apps known to keep a trash count as undoable. "Delete Mailbox", "Delete Sheet" and "Delete…" with a dialog behind it ask, and so do unknown apps and web pages. A bare "Replace" button asks every time: it is what the save dialog says when a file already exists, and a word list can't tell it apart from Find and Replace. "Replace All" counts as document work.
 
 **Risk levels.** `risk.classify` returns `OK`, `UNDO` (asks only in "Every step" mode), `ASK`, `MONEY` (asks always, button only) or `NEVER`. Money words win over everything else in a label, so "Confirm purchase" is money.
+
+**Action kinds** (`[approvals.levels]`). Screen actions follow the classifier, but a `trash` level stricter than `change` counts for them too: `ask_first` asks every time, `never` refuses.
 
 **Action kinds** (`[approvals.levels]`): `delete` now means for good. New kinds: `trash` (`change` by default: it asks only in "Every step" mode, or once per app for a careful helper), `discard` and `overwrite_file` (`ask_first`). Old configs keep working: an unknown key still fails, and every old key still parses. `delete = "never"` without a `trash` line makes `trash` never too, so it still means Milo deletes nothing. `delete = "ask_first"`, which the old template wrote out, was the old default and leaves `trash` alone.
 

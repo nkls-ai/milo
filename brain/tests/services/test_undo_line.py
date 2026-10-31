@@ -254,8 +254,8 @@ def test_can_you_see_my_screen_never_asks_in_the_default_mode():
 
 
 @pytest.mark.parametrize("tool, args, target, risk, reason", [
-    ("key", {"combo": "cmd+delete"}, FINDER, Risk.UNDO, "move to the Trash"),
-    ("key", {"combo": "cmd+backspace"}, FINDER, Risk.UNDO, "move to the Trash"),
+    ("key", {"combo": "cmd+delete"}, {**FINDER, "role": "file"}, Risk.UNDO, "move to the Trash"),
+    ("key", {"combo": "cmd+backspace"}, {**FINDER, "role": "row"}, Risk.UNDO, "move to the Trash"),
     ("key", {"combo": "option+cmd+delete"}, FINDER, Risk.ASK, "delete it for good"),
     ("key", {"combo": "shift+cmd+delete"}, FINDER, Risk.ASK, "empty the Trash"),
     ("key", {"combo": "cmd+w"}, EXCEL, Risk.OK, ""),
@@ -267,6 +267,13 @@ def test_can_you_see_my_screen_never_asks_in_the_default_mode():
     ("key", {"combo": "delete"}, {"app": "Mail", "role": "row"}, Risk.UNDO, "delete"),
     ("key", {"combo": "delete"}, {**EXCEL, "role": "cell"}, Risk.OK, ""),
     ("ax_press", {}, {**SAFARI, "title": "Move to Trash"}, Risk.ASK, "delete"),
+    # The sheet "Do you want to keep this new document?" deletes it for good, by its button or by ⌘⌫.
+    ("ax_press", {}, {"app": "TextEdit", "title": "Delete", "role": "button"}, Risk.ASK, "delete"),
+    ("ax_press", {}, {"app": "TextEdit", "title": "Delete", "role": "menu item"}, Risk.ASK, "change the document"),
+    ("key", {"combo": "cmd+delete"}, {"app": "TextEdit", "title": "Delete", "role": "button"}, Risk.ASK, "delete"),
+    ("key", {"combo": "cmd+delete"}, {"app": "TextEdit"}, Risk.ASK, "delete"),
+    ("key", {"combo": "cmd+delete"}, {"app": "TextEdit", "role": "text area"}, Risk.UNDO, "move to the Trash"),
+    ("key", {"combo": "cmd+delete"}, FINDER, Risk.ASK, "delete"),
     ("ax_press", {}, {**FINDER, "title": "Move to Trash"}, Risk.UNDO, "move to the Trash"),
     ("ax_press", {}, {**FINDER, "title": "Delete Immediately…"}, Risk.ASK, "delete immediately"),
     ("ax_press", {}, {**FINDER, "title": "Empty Trash"}, Risk.ASK, "empty trash"),
@@ -278,7 +285,7 @@ def test_can_you_see_my_screen_never_asks_in_the_default_mode():
     ("ax_press", {}, {"app": "Contacts", "bundle": "com.apple.AddressBook", "title": "Delete Card"}, Risk.ASK, "delete"),
     ("ax_press", {}, {"app": "Some App", "title": "Delete"}, Risk.ASK, "delete"),
     ("ax_press", {}, {**SAFARI, "title": "Delete"}, Risk.ASK, "delete"),
-    ("ax_press", {}, {**EXCEL, "title": "Delete"}, Risk.ASK, "change the document"),
+    ("ax_press", {}, {**EXCEL, "title": "Delete", "role": "menu item"}, Risk.ASK, "change the document"),
     ("ax_press", {}, {**EXCEL, "title": "Delete Sheet"}, Risk.ASK, "delete"),
     ("ax_press", {}, {**EXCEL, "title": "Replace All"}, Risk.ASK, "change the document"),
     ("ax_press", {}, {**EXCEL, "title": "Replace"}, Risk.ASK, "replace"),
@@ -349,3 +356,13 @@ def test_nothing_acts_on_the_screen_while_a_money_question_waits():
 
     assert "question about money" in asyncio.run(run())
     assert "click" not in s.hands_port.actions
+
+
+@pytest.mark.parametrize("trash, ask, asked, done", [("change", "auto", 0, True), ("ask_first", "auto", 1, True),
+                                                     ("never", "auto", 0, False)])
+def test_a_stricter_trash_level_in_config_counts_on_the_screen_too(trash, ask, asked, done):
+    worker = Worker(TIDY[:1])
+    s = Stack(harness=worker, background=FakeHarness(), hands_port=Desk(), ask=ask)
+    s.approvals.policy = ActionPolicy({"trash": trash})
+    [questions] = work(s, worker, "yes", user_asked=True)
+    assert len(questions) == asked and (s.hands_port.actions.count("key") == 1) is done

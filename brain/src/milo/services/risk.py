@@ -90,6 +90,7 @@ _BROWSERS = ("safari", "google chrome", "chrome", "firefox", "arc", "microsoft e
              "com.microsoft.edgemac", "com.brave.browser", "com.operasoftware.opera")
 # Where the focus is when Delete only deletes text.
 _TEXT_ROLES = ("text field", "text area", "search field", "combo box", "password field", "text entry area")
+_BARE_DELETE = re.compile(r"^\s*(delete|löschen)\s*(…|\.\.\.)?\s*$", re.IGNORECASE)
 # Card numbers and security codes: never typed, like passwords.
 _CARD = re.compile(r"(card\s*number|kartennummer|credit\s*card|kreditkarte|\bcvv2?\b|\bcvc2?\b|security\s*code"
                    r"|sicherheitscode|prüfnummer|kartenprüf)", re.IGNORECASE)
@@ -198,16 +199,20 @@ def classify(tool: str, args: dict, target: dict) -> Verdict:
     if tool in ("click", "ax_press"):
         if target.get("unresolved"):
             return Verdict(Risk.ASK, "click something I can't name")
-        return _button(title, apps)
+        return _button(title, apps, str(target.get("role") or ""))
     if tool == "key":
         combo = normalize_combo(str(args.get("combo", "")))
         if combo in _RISKY_COMBOS:
             reason = _RISKY_COMBOS[combo]
             if reason not in UNDO_REASONS:
                 return Verdict(Risk.ASK, reason)
-            # ⌘⌫ moves to the Trash in the apps that keep one, and deletes text or cells in documents. Elsewhere
+            # ⌘⌫ moves to the Trash in the apps that keep one, and deletes text or cells in documents. With a
+            # button or nothing named in focus it may be a sheet's Delete ("keep this new document?"), and elsewhere
             # (Reminders, Calendar, Contacts, a web page, an app Milo doesn't know) it may delete for good.
-            if apps & set(_TRASH_APPS + _DOCUMENT_APPS):
+            role = str(target.get("role") or "")
+            if apps & set(_DOCUMENT_APPS) and role in _TEXT_ROLES + ("cell", "text"):
+                return Verdict(Risk.UNDO, reason)
+            if apps & set(_TRASH_APPS) and role not in ("", "button", "sheet", "dialog"):
                 return Verdict(Risk.UNDO, reason)
             return Verdict(Risk.ASK, "delete")
         if combo in ("delete", "forwarddelete") and apps and str(target.get("role") or "") not in _TEXT_ROLES:
@@ -218,7 +223,7 @@ def classify(tool: str, args: dict, target: dict) -> Verdict:
             if not apps & set(_DOCUMENT_APPS):
                 return Verdict(Risk.ASK, "delete")
         if combo in _PRESS_KEYS:
-            return _button(title, apps)  # return on a focused "Send" button sends
+            return _button(title, apps, str(target.get("role") or ""))  # return on a focused "Send" sends
         return OK
     if tool == "sheet_write":
         if target.get("new") or target.get("made") or int(target.get("filled") or 0) == 0:
@@ -239,14 +244,16 @@ def classify(tool: str, args: dict, target: dict) -> Verdict:
     return OK
 
 
-def _button(label: str, apps: set[str]) -> Verdict:
-    """A click on a button or menu item labelled `label` in one of `apps`."""
+def _button(label: str, apps: set[str], role: str = "") -> Verdict:
+    """A click on a button or menu item labelled `label` in one of `apps`. In a document a bare "Delete" is document
+    work only as a menu item: a "Delete" button there may be the sheet that throws away a new document."""
     if apps & set(_BROWSERS):
         verdict = _words(label)
         return Verdict(Risk.ASK, "delete") if verdict.risk is Risk.UNDO else verdict
     if apps & set(_TRASH_APPS) and _TRASH_LABEL.match(label):
         return Verdict(Risk.UNDO, "delete a note" if apps & {"notes", "notizen", "com.apple.notes"} else "delete")
-    if apps & set(_DOCUMENT_APPS) and _DOCUMENT_EDIT.match(label):
+    if apps & set(_DOCUMENT_APPS) and _DOCUMENT_EDIT.match(label) and (
+            role == "menu item" or not _BARE_DELETE.match(label)):
         return Verdict(Risk.ASK, "change the document")
     return _words(label)
 
