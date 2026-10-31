@@ -204,6 +204,30 @@ def check_stop_helper(s: Stack, msg: dict) -> None:
     assert helper.status is HelperStatus.STOPPED and s.harness.played[0].cancelled
 
 
+def check_stop_all(s: Stack, msg: dict) -> None:
+    gate = asyncio.Event()
+    s.harness = ScriptedHarness(WorkerScript(gate, "never"))
+    s.runner._harness = s.harness
+    s.output.block = True  # he is still saying the question when Stop comes
+
+    async def go():
+        helper = s.tasks.submit("count to a million")
+        asking = asyncio.create_task(s.approvals.confirm("Make the whole sheet red?"))
+        s.hands.begin("t1")
+        s.hands._start_session({})
+        await settle()
+        assert s.approvals.pending
+        await s.brain.handle(parse_command(msg))
+        await s.tasks.idle()
+        return helper, await asking
+
+    helper, allowed = asyncio.run(go())
+    assert helper.status is HelperStatus.STOPPED and s.harness.played[0].cancelled
+    assert allowed is False and not s.approvals.pending, "the question waiting is answered no"
+    assert HandsSession(False) in s.sink.events and s.hands_port.cancels == 1
+    assert s.output.interrupts >= 1, "and he goes quiet"
+
+
 def memory_stack() -> Stack:
     s = Stack(with_memory=True)
     for text, topic in (("The user's name is Niklas.", "basics"),
@@ -443,6 +467,7 @@ CHECKS = {
     "meeting_recording": check_meeting,
     "meeting_toggle": check_meeting,
     "stop_helper": check_stop_helper,
+    "stop_all": check_stop_all,
     "get_facts": check_get_facts,
     "forget_fact": check_forget_fact,
     "edit_fact": check_edit_fact,

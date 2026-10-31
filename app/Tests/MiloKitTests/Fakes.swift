@@ -179,10 +179,14 @@ final class FakeCursor: CursorDisplay {
 final class FakeWindowWatcher: WindowWatcher {
     private(set) var watched: [(pid: Int32, frame: CGRect)] = []
     private(set) var stops = 0
+    var windowNumber: Int?
     private var changed: ((CGRect?) -> Void)?
 
+    /// The number the next watched window has.
+    var nextNumber: Int?
     func watch(pid: Int32, frame: CGRect, changed: @escaping (CGRect?) -> Void) {
         watched.append((pid, frame))
+        windowNumber = nextNumber
         self.changed = changed
     }
     func stop() { stops += 1; changed = nil }

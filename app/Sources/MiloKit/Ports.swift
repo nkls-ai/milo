@@ -135,9 +135,12 @@ public protocol CursorDisplay: AnyObject {
 
 /// Follows a window of another app while Milo works in it. Frames are global points, origin top-left.
 public protocol WindowWatcher: AnyObject {
-    /// Watch the window of `pid` with this frame; `changed` gets its new frame on every move or resize, and nil
-    /// once it closes. Replaces the window watched before.
+    /// Watch the window of `pid` with this frame; `changed` gets its new frame on every move or resize, nil while
+    /// it is minimized, its app hidden or it is on another space, and its frame again when it is back. After it
+    /// closes `changed` gets nil and the watch ends. Replaces the window watched before.
     func watch(pid: Int32, frame: CGRect, changed: @escaping (CGRect?) -> Void)
+    /// The watched window's number on screen (CGWindowID), when it could be found.
+    var windowNumber: Int? { get }
     func stop()
     /// Bring that window of `pid` to the front, so the user sees Milo work in it.
     func bringForward(pid: Int32, frame: CGRect)
@@ -155,6 +158,7 @@ public final class NoCursor: CursorDisplay {
 public final class NoWindowWatcher: WindowWatcher {
     public init() {}
     public func watch(pid: Int32, frame: CGRect, changed: @escaping (CGRect?) -> Void) {}
+    public var windowNumber: Int? { nil }
     public func stop() {}
     public func bringForward(pid: Int32, frame: CGRect) {}
 }

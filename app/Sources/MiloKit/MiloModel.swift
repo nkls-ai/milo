@@ -48,8 +48,11 @@ public final class MiloModel: ObservableObject {
     @Published public var recording = false
     /// The user lent Milo the real mouse and keyboard: the frame around the screen shows, and any touch stops him.
     @Published public var handsBorrowed = false
-    /// The window Milo works in, in AppKit global coordinates: outlined, and Pip perches on its corner.
+    /// The window Milo works in, in AppKit global coordinates: outlined, and Pip perches on its corner. nil while
+    /// it is minimized, hidden or on another space.
     @Published public var workingWindow: CGRect?
+    /// That window's number on screen, when known, so the outline sits just above it and under anything in front.
+    @Published public var workingWindowNumber: Int?
     /// How Milo looks, from the brain's `ui_config`.
     @Published public var character: CharacterStyle = .milo
     /// Milo by message, for the menu. nil while messages are off.
@@ -67,6 +70,8 @@ public final class MiloModel: ObservableObject {
     @Published public private(set) var helpers: [HelperInfo] = []
     /// Called when the user clicks Stop on a helper. Set by the controller.
     public var onStopHelper: ((String) -> Void)?
+    /// Called when the user presses the Stop button by Milo. Set by the controller.
+    public var onStopAll: (() -> Void)?
     /// Called when the user clicks a helper's bird: show it in the Milo window. Set by main.swift.
     public var onOpenHelper: ((String) -> Void)?
     /// The user's routines by name, from the brain's `routines` event.
@@ -188,6 +193,17 @@ public final class MiloModel: ObservableObject {
     /// The user clicked Stop on the helper `id`.
     public func stopHelper(_ id: String) {
         onStopHelper?(id)
+    }
+
+    /// Milo is doing something the Stop button by him can stop: talking, thinking, working on screen, or a helper
+    /// at work.
+    public var canStop: Bool {
+        state == .speaking || state == .thinking || handsActive || helpers.contains { $0.status.active }
+    }
+
+    /// The user pressed the Stop button by Milo.
+    public func stopAll() {
+        onStopAll?()
     }
 
     /// The user clicked a button on the routine `id`.

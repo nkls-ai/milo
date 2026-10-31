@@ -101,6 +101,7 @@
     {"type": "app_response", "id": "a41f", "ok": true, "result": {"id": "E1F2-77", "title": "Doctor", "start": "2026-11-05T15:00:00", "end": "2026-11-05T16:00:00", "calendar": "Home"}},
     {"type": "app_response", "id": "a42f", "ok": false, "error": "Milo isn't allowed to use your calendar. Turn it on in System Settings › Privacy & Security › Calendars."},
     {"type": "stop_helper", "id": "c0ffee12ab34"},
+    {"type": "stop_all"},
     {"type": "hands_result", "id": "hands-7", "ok": false, "result": {"borrow": "mouse"}, "error": "Excel doesn't take clicks in the background."},
     {"type": "get_facts"},
     {"type": "forget_fact", "id": "01JBF7A1B2C3D4E5F6G7H8J9KM"},

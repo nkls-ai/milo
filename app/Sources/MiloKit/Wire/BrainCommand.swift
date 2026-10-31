@@ -38,6 +38,8 @@ public enum BrainCommand: Equatable, Sendable {
     case appResponse(id: String, outcome: AppOutcome)
     /// The user clicked Stop on the helper `id`.
     case stopHelper(id: String)
+    /// The user pressed the Stop button by Milo: stop talking, thinking, asking, every helper and the screen work.
+    case stopAll
     /// The "What Milo knows" window opened: send the facts.
     case getFacts
     /// The user clicked Forget on fact `id`.
@@ -185,6 +187,8 @@ extension BrainCommand: Encodable {
         case let .stopHelper(id):
             try c.encode("stop_helper", forKey: .type)
             try c.encode(id, forKey: .id)
+        case .stopAll:
+            try c.encode("stop_all", forKey: .type)
         case .getFacts:
             try c.encode("get_facts", forKey: .type)
         case let .forgetFact(id):

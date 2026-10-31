@@ -24,7 +24,7 @@ public struct ScreenPorts {
 ///
 /// The worker acts in the background: his own cursor glides to each spot before the action runs, the window he
 /// works in gets an outline (`MiloModel.workingWindow`) that follows it, and Pip perches on its corner. The
-/// user keeps their mouse and keyboard, and only esc (or the Stop button on the outline) stops him. With
+/// user keeps their mouse and keyboard, and only esc (or the Stop button by Milo) stops him. With
 /// `showWindow` on (the default) that window comes to the front once when he starts in it, so the user sees it.
 ///
 /// When an action needs the real mouse or keyboard, the brain asks the user to lend them (`hands_borrow`).
@@ -98,7 +98,7 @@ public final class ScreenController {
         }
     }
 
-    /// The user pressed Stop on the outline of the window Milo works in.
+    /// The user pressed the Stop button by Milo: the screen work stops here at once.
     public func stopPressed() {
         guard model.handsActive else { return }
         stop(.escape)
@@ -174,7 +174,6 @@ public final class ScreenController {
     private func aim(at target: HandsTarget, tool: String) {
         guard Self.pointed.contains(tool) else { return }
         if let window = target.window {
-            show(window: window)
             if let pid = target.pid, pid != forwardPid, model.handsActive, showWindow() {
                 forwardPid = pid
                 ports.windows.bringForward(pid: pid, frame: window)
@@ -183,9 +182,12 @@ public final class ScreenController {
                 watchedPid = pid
                 ports.windows.watch(pid: pid, frame: window) { [weak self] frame in
                     guard let self, model.handsActive else { return }
-                    if let frame { show(window: frame) } else { model.workingWindow = nil; watchedPid = nil }
+                    // nil: away (minimized, hidden, another space) or closed. The watch goes on while it is away.
+                    if let frame { show(window: frame) } else { model.workingWindow = nil }
                 }
             }
+            // After the watch, which knows the window's number.
+            show(window: window)
         }
         guard let point = target.point else { return }
         let spot = toAppKit(ScreenPoint(x: point.x, y: point.y))
@@ -215,6 +217,8 @@ public final class ScreenController {
 
     private func show(window frame: CGRect) {
         let rect = appKit(frame)
+        let number = ports.windows.windowNumber
+        if model.workingWindowNumber != number { model.workingWindowNumber = number }
         if model.workingWindow != rect { model.workingWindow = rect }
         if model.flyTarget != nil { model.flyTarget = nil }
     }
@@ -291,6 +295,7 @@ public final class ScreenController {
         apply(lent: lent)
         model.flyTarget = nil
         model.workingWindow = nil
+        model.workingWindowNumber = nil
         watchedPid = nil
         forwardPid = nil
         ports.windows.stop()

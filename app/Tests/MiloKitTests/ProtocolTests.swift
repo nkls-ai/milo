@@ -213,6 +213,7 @@ private func entries(_ key: String) throws -> [[String: Any]] {
             .appResponse(id: "a42f", outcome: .failure(
                 "Milo isn't allowed to use your calendar. Turn it on in System Settings › Privacy & Security › Calendars.")),
             .stopHelper(id: "c0ffee12ab34"),
+            .stopAll,
             .handsResult(id: "hands-7", ok: false, result: ["borrow": "mouse"],
                          error: "Excel doesn't take clicks in the background."),
             .getFacts, .forgetFact(id: "01JBF7A1B2C3D4E5F6G7H8J9KM"),

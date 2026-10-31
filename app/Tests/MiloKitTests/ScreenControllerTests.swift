@@ -268,6 +268,22 @@ private final class Rig {
         #expect(r.model.workingWindow == nil)
     }
 
+    @Test func theOutlineHidesWhileTheWindowIsMinimizedAndComesBackWithIt() {
+        let r = Rig()
+        r.startSession()
+        r.describesAButton()
+        r.windows.windowNumber = 99  // the window watched before
+        r.windows.nextNumber = 4711
+        r.brain.emit(.handsRequest(id: "h1", tool: "describe", args: ["tool": "click", "x": 1, "y": 2]))
+        #expect(r.model.workingWindowNumber == 4711, "so the outline can sit just above that window")
+        r.windows.move(to: nil)
+        #expect(r.model.workingWindow == nil && r.windows.stops == 0, "still watched while it is away")
+        r.windows.move(to: CGRect(x: 100, y: 50, width: 800, height: 600))
+        #expect(r.model.workingWindow == CGRect(x: 100, y: 350, width: 800, height: 600))
+        r.brain.emit(.handsSession(false))
+        #expect(r.model.workingWindowNumber == nil)
+    }
+
     @Test func pipStaysOnTheWindowWhileTheBrainPointsAtSpotsInIt() {
         let r = Rig()
         r.startSession()
@@ -319,6 +335,21 @@ private final class Rig {
         r.startSession()
         r.screen.stopPressed()
         #expect(r.sent == [.handsStop(reason: "escape")] && !r.model.handsActive)
+    }
+
+    @Test func theStopByMiloStopsTheScreenWorkAndTellsTheBrainToStopEverything() {
+        let r = Rig()
+        r.startSession()
+        r.model.stopAll()
+        #expect(r.sent == [.handsStop(reason: "escape"), .stopAll] && !r.model.handsActive)
+        r.brain.emit(.handsRequest(id: "h1", tool: "click", args: ["x": 1, "y": 2]))
+        #expect(r.hands.performed.isEmpty, "nothing more runs on screen")
+    }
+
+    @Test func theStopByMiloOutsideScreenWorkOnlyTellsTheBrain() {
+        let r = Rig()
+        r.model.stopAll()
+        #expect(r.sent == [.stopAll])
     }
 
     @Test func aBorrowOutsideASessionIsIgnored() {

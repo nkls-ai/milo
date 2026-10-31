@@ -115,6 +115,11 @@ public final class MiloController {
             self?.brain.send(.confirmAnswer(id: question.id, yes: answer != .no, always: answer == .always))
         }
         model.onStopHelper = { [weak self] id in self?.brain.send(.stopHelper(id: id)) }
+        // The screen work stops here at once; the brain stops the rest.
+        model.onStopAll = { [weak self] in
+            self?.screen?.stopPressed()
+            self?.brain.send(.stopAll)
+        }
         model.onRoutine = { [weak self] id, action in self?.brain.send(.routine(id: id, action: action)) }
         model.onDraftAnswer = { [weak self] id, save in self?.brain.send(.routineDraftAnswer(id: id, save: save)) }
         settingsModel.send = { [weak self] in self?.brain.send($0) }

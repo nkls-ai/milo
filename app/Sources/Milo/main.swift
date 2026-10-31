@@ -58,7 +58,7 @@ let lifecycle = AppLifecycle(
         overlay.placeBottomRight()
         overlay.orderFrontRegardless()
         workingFrame = WorkingFrame(model: model)
-        workingOutline = WorkingOutline(model: model) { screen.stopPressed() }
+        workingOutline = WorkingOutline(model: model)
         let window = ConversationWindow(controller: controller)
         let settingsWindow = SettingsWindow(controller: controller, dictionary: paths.dictionary)
         window.onSettings = { settingsWindow.open() }
