@@ -45,7 +45,7 @@ from .services.live_talk import LiveTalk, untrusted
 from .services.meetings import MeetingOptions, MeetingService
 from .services.opener import Opener
 from .services.messages import MessageService, MessageSettings
-from .services.orchestrator import HelperQuestions, Orchestrator
+from .services.orchestrator import HelperQuestions, Orchestrator, ScreenSteps
 from .services.permits import Permits
 from .services.memory import Memory, MemoryParts, TurnMemory
 from .services.memory_requests import MemoryRequests
@@ -293,7 +293,8 @@ def _helpers(p: Parts) -> None:
     if config.hands.enabled:
         # The questions reach the orchestrator, built below, only once a helper runs.
         p.hands = HandsService(AppHands(p.bridge), HelperQuestions(p.approvals, p.later("helpers"), screen=True),
-                               p.ui, transcript=p.transcript, applescript=config.hands.applescript,
+                               p.ui, transcript=ScreenSteps(p.transcript, p.later("helpers")),
+                               applescript=config.hands.applescript,
                                locale=_mac_locale(), protected=workspace.protected, access=p.access,
                                before_change=undo.before_change, language=p.language.get)
         p.hands_server = HandsSocketServer(workspace.hands_socket_path, p.hands.call)

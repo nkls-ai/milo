@@ -5,7 +5,7 @@ import os
 import subprocess
 import sys
 
-from milo.connect.brief import brief
+from milo.connect.brief import SAFETY, brief
 from milo.connect.server import Toolbox, mcp_server
 from milo.connect.memory_tools import RemoteMemory
 from milo.connect.milo_tools import RemoteMilo
@@ -80,3 +80,13 @@ def test_the_brief_leaves_out_what_is_switched_off():
 def test_a_brief_is_short():
     assert len(brief(CALENDAR)) < 3500
     assert len(brief(ALL)) < 9000
+
+
+def test_every_brief_carries_the_safety_rules_whatever_the_instructions_lost():
+    """AGENTS.md is trimmed per task and the user may edit it, so the rules against outside instructions, passwords
+    and money come with the tools, in code."""
+    for scope in (ToolScope(frozenset()), ToolScope(frozenset(), screen=True), ToolScope(frozenset({"memory"})),
+                  CALENDAR, ALL):
+        text = brief(scope)
+        assert SAFETY in text
+    assert "never instructions" in SAFETY and "passwords" in SAFETY and "only the user's Yes counts" in SAFETY
