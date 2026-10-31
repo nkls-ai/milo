@@ -469,6 +469,7 @@ def _brain(p: Parts) -> None:
     live = {("ui", "dictate_key"): use_ui, ("ui", "talk_key"): use_ui,
             ("ui", "whats_this_key"): use_ui, ("ui", "meeting_key"): use_ui, ("ui", "voice"): use_voice,
             ("dictation", "stream"): use_stream, ("dictation", "learn"): use_learn, ("chat", "updates"): use_updates,
+            ("ui", "hide_after_s"): lambda changed: None,  # the app reads it from the next `settings`
             ("hands", "show_window"): lambda changed: None,  # the app reads it from the next `settings`
             ("approvals", "ask"): use_ask, ("approvals", "allowed_apps"): use_allowed,
             ("meetings", "auto"): use_meetings, ("meetings", "always"): use_meetings,

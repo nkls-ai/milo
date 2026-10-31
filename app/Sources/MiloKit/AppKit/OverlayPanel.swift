@@ -1,14 +1,22 @@
 import AppKit
+import Combine
 import SwiftUI
 
 /// The transparent floating window that holds Milo. Never steals focus.
-/// Dragging Milo moves it; a click on him without moving calls `onClick`.
+/// Dragging Milo moves it; a click on him without moving calls `onClick`. It follows `MiloModel.presence`: out of
+/// the window list while he is away, so it takes no clicks, and in again the moment he sets off back.
 public final class OverlayPanel: NSPanel {
     public static let size = NSSize(width: 340, height: 380)
 
+    /// Called on a click on Milo. The click also starts his wait before leaving over, and brings him back if he
+    /// was on his way off.
     public var onClick: (() -> Void)? {
-        get { host.onClick }
-        set { host.onClick = newValue }
+        didSet {
+            host.onClick = { [weak self] in
+                self?.presence.summon()
+                self?.onClick?()
+            }
+        }
     }
 
     /// Milo's centre in the panel, from its bottom-left corner: OverlayView pins his 132 pt frame 20 pt from
@@ -17,9 +25,12 @@ public final class OverlayPanel: NSPanel {
 
     private let host: DraggableHostingView<OverlayView>
     private var flight: FlightDriver?
+    private var comings: AnyCancellable?
+    private let presence: Presence
 
     public init(model: MiloModel) {
         host = DraggableHostingView(rootView: OverlayView(model: model))
+        presence = model.presence
         super.init(contentRect: NSRect(origin: .zero, size: Self.size),
                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isOpaque = false
@@ -34,6 +45,20 @@ public final class OverlayPanel: NSPanel {
         host.sizingOptions = []
         contentView = host
         flight = FlightDriver(panel: self, model: model, center: Self.characterCenter)
+        presence.reduceMotion = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+        host.onDrag = { [weak presence] in presence?.held = $0 }
+        host.onClick = { [weak presence] in presence?.summon() }
+        presence.pointing = { [weak host] in host?.pointerOnCharacter ?? false }
+        // `phase` is published before it changes: the new value comes in, so he is in the window list before the
+        // first frame of his way back is drawn.
+        comings = model.presence.$phase.dropFirst().sink { [weak self] phase in
+            guard let self else { return }
+            if phase == .away {
+                orderOut(nil)
+            } else if !isVisible {
+                orderFrontRegardless()
+            }
+        }
     }
 
     public override var canBecomeKey: Bool { true }
@@ -42,10 +67,6 @@ public final class OverlayPanel: NSPanel {
         guard let screen = NSScreen.main else { return }
         let f = screen.visibleFrame
         setFrameOrigin(NSPoint(x: f.maxX - frame.width - 8, y: f.minY + 8))
-    }
-
-    public func toggleVisible() {
-        if isVisible { orderOut(nil) } else { orderFrontRegardless() }
     }
 
     /// A top-left-origin point (Accessibility, CGEvent, screenshots) in AppKit's bottom-left-origin space,
@@ -64,6 +85,8 @@ final class DraggableHostingView<Content: View>: NSHostingView<Content> {
     static var clickSlop: CGFloat { 3 }
 
     var onClick: (() -> Void)?
+    /// True while Milo is dragged, false when he is let go: he doesn't leave in between.
+    var onDrag: ((Bool) -> Void)?
 
     override var mouseDownCanMoveWindow: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -74,15 +97,23 @@ final class DraggableHostingView<Content: View>: NSHostingView<Content> {
         }
         let startMouse = NSEvent.mouseLocation
         let startOrigin = window.frame.origin
-        var dragging = false
+        var moved = false
+        onDrag?(true)
+        defer { onDrag?(false) }
         while let next = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]), next.type != .leftMouseUp {
             let now = NSEvent.mouseLocation
             let dx = now.x - startMouse.x, dy = now.y - startMouse.y
-            if !dragging && hypot(dx, dy) < Self.clickSlop { continue }
-            dragging = true
+            if !moved && hypot(dx, dy) < Self.clickSlop { continue }
+            moved = true
             window.setFrameOrigin(NSPoint(x: startOrigin.x + dx, y: startOrigin.y + dy))
         }
-        if !dragging { onClick?() }
+        if !moved { onClick?() }
+    }
+
+    /// The pointer is on Milo now.
+    var pointerOnCharacter: Bool {
+        guard let window, window.isVisible else { return false }
+        return isOnCharacter(convert(window.mouseLocationOutsideOfEventStream, from: nil))
     }
 
     private func isOnCharacter(_ p: NSPoint) -> Bool {

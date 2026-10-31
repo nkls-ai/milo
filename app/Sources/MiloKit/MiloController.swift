@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 /// Wires the brain, the keyboard, the context and the text inserter to the model.
@@ -86,6 +87,7 @@ public final class MiloController {
     private var pushToTalk: PushToTalk
     private var pushToTalkTimer: ScheduledTask?
     private var contextTimer: ScheduledTask?
+    private var hideWatch: AnyCancellable?
 
     public init(model: MiloModel, brain: BrainClient, launcher: BrainLauncher, inserter: TextInserter,
                 keys: KeyEventSource, context: ContextProvider, accessibility: AccessibilityPermission,
@@ -125,6 +127,10 @@ public final class MiloController {
         model.onRoutine = { [weak self] id, action in self?.brain.send(.routine(id: id, action: action)) }
         model.onDraftAnswer = { [weak self] id, save in self?.brain.send(.routineDraftAnswer(id: id, save: save)) }
         settingsModel.send = { [weak self] in self?.brain.send($0) }
+        // `[ui] hide_after_s` applies the moment the brain reports it, after a change in Settings too.
+        hideWatch = settingsModel.$report.map { Self.hideAfter($0?["ui", "hide_after_s"]?.value) }
+            .removeDuplicates()
+            .sink { [weak self] in self?.model.presence.hideAfter = $0 }
         usage.send = { [weak self] in self?.brain.send($0) }
         pasteWatcher?.onFixes = { [weak self] in self?.brain.send(.dictationFixed($0)) }
         brain.onEvent = { [weak self] in self?.received($0) }
@@ -176,6 +182,13 @@ public final class MiloController {
     /// `settings`, which puts the old style back if it couldn't save the new one.
     public func setDictationStyle(_ style: DictationStyle) {
         settingsModel.change("dictation", "stream", to: .string(style.rawValue))
+    }
+
+    /// Seconds before Milo leaves the screen, from `[ui] hide_after_s`: nil (0) keeps him on it. A brain that
+    /// doesn't report it yet leaves the default.
+    static func hideAfter(_ value: JSONValue?) -> TimeInterval? {
+        guard let seconds = value?.number else { return Presence.defaultHideAfter }
+        return seconds > 0 ? seconds : nil
     }
 
     static let noConnections = "This version of Milo can't reach your calendar or reminders."

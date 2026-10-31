@@ -137,6 +137,8 @@ def test_an_unknown_section_names_it():
     ("[hands]\nconfirm = 3\n", "confirm"),
     ("[ui]\ncharacter = \"robot\"\n", "character"),
     ("[ui]\nvoice = \"loud\"\n", "voice"),
+    ("[ui]\nhide_after_s = -5\n", "hide_after_s"),
+    ("[ui]\nhide_after_s = \"soon\"\n", "hide_after_s"),
     ("[chat]\nupdates = \"often\"\n", "updates"),
 ])
 def test_bad_values_are_errors(extra, key):

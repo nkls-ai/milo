@@ -10,7 +10,7 @@ import Testing
 @MainActor
 struct SettingsRenderTests {
     // Tall enough for the approvals card with its allowed apps (ADR 22) and the Meeting notes card.
-    static let size = CGSize(width: 520, height: 1540)
+    static let size = CGSize(width: 520, height: 1760)
     let dir = URL(fileURLWithPath: ProcessInfo.processInfo.environment["MILO_RENDER_DIR"] ?? "/tmp")
 
     /// What the brain reports, as in brain/src/milo/settings.py.
@@ -30,6 +30,8 @@ struct SettingsRenderTests {
                 options: ["ctrl+option+m", "ctrl+option+w", "ctrl+shift+m", ""],
                 labels: ["Control-Option-M", "Control-Option-W", "Control-Shift-M", "Off"]),
         Setting(section: "ui", key: "voice", value: true),
+        Setting(section: "ui", key: "hide_after_s", value: 60, options: [30, 60, 300, 0],
+                labels: ["After 30 seconds", "After a minute", "After 5 minutes", "Never"]),
         Setting(section: "hands", key: "show_window", value: true),
         Setting(section: "approvals", key: "ask", value: "task", options: ["step", "task", "auto"],
                 labels: ["Every step", "Once per task", "Only when it matters (auto)"], live: true),

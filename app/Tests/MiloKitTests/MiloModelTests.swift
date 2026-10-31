@@ -69,7 +69,8 @@ import Testing
         model.show("Hi")
         model.show("")
         #expect(model.bubble == nil)
-        #expect(scheduler.pendingCount == 0)
+        scheduler.advance(by: 0)
+        #expect(scheduler.pendingCount == 1, "no bubble timer, only Milo's wait before he leaves the screen")
     }
 
     @Test func emotionStaysWhenTheBubbleHidesOutsideIdle() {

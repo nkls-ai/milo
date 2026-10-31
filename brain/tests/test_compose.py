@@ -322,3 +322,13 @@ def test_always_and_never_for_an_app_go_into_config_toml_through_settings(build)
     assert 'always = "Zoom, Microsoft Teams"' in text and 'never = ""' in text
     assert meetings.options.always == ("Zoom", "Microsoft Teams") and meetings.options.never == ()
     assert meetings.options.says("ZOOM") == "always"
+
+
+def test_how_long_milo_stays_on_screen_changes_without_a_restart(build):
+    runtime, home = build(cheap())
+    settings = runtime.brain._settings
+    settings.change("ui", "hide_after_s", 300)
+    assert "hide_after_s = 300" in (home / "config.toml").read_text()
+    report = settings.report()
+    [row] = [r for r in report.settings if (r["section"], r["key"]) == ("ui", "hide_after_s")]
+    assert row["value"] == 300 and row["live"] and not report.restart
