@@ -15,6 +15,7 @@ from milo.core.logtext import private
 from milo.core.opening import OpenRequest, named_by
 from milo.core.ports import Clock, LiveModel, ProfileMemory, ReminderBook, ScreenEyes, UsageLedger
 from milo.core.types import Emotion, HarnessError, MiloState, ScreenCapture
+from milo.core.words import dates, say
 
 from .approvals import Approvals
 from .backchannel import Backchannel
@@ -186,35 +187,23 @@ def task_question(description: str, *, title: str = "", language: str = "") -> s
     for pattern, plain in _PLAIN:
         first = pattern.sub(plain, first)
     if len(first) > QUESTION_CHARS - 1 and title.strip():
-        if language == "de":
-            return f"„{' '.join(title.split())}“ starten?"
-        return f"Start “{' '.join(title.split())}”?"
+        return say("talk.start_titled", language, title=" ".join(title.split()))
     if len(first) > QUESTION_CHARS - 1:
         first = first[:QUESTION_CHARS - 2].rsplit(" ", 1)[0].rstrip(",;: ") + "…"
-    return (first[:1].upper() + first[1:] or ("Loslegen" if language == "de" else "Go ahead")) + "?"
+    return (first[:1].upper() + first[1:] or say("talk.go_ahead", language)) + "?"
 
 
 def open_question(request: OpenRequest, language: str = "") -> str:
     """Asked before opening an address or a file the user didn't name, after Milo read outside text."""
-    if language == "de":
-        return f"{request.what} öffnen?"
-    return f"Open {request.what}?"
+    return say("talk.open", language, what=request.what)
 
 
 def remember_question(fact: str, language: str = "") -> str:
-    if language == "de":
-        return f"Soll ich mir das merken: {fact}?"
-    return f"Should I remember this: {fact}?"
+    return say("talk.remember", language, fact=fact)
 
 
 def remind_question(due: datetime, what: str, language: str = "") -> str:
-    if language == "de":
-        days = ("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag")
-        months = ("Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober",
-                  "November", "Dezember")
-        return (f"Soll ich dich am {days[due.weekday()]}, {due.day}. {months[due.month - 1]} um {due:%H:%M} "
-                f"erinnern: {what}?")
-    return f"Should I remind you on {due:%A} {due.day} {due:%B at %H:%M}: {what}?"
+    return say("talk.remind", language, when=dates.date_time(due, language), what=what)
 
 
 class LiveTalk:
@@ -834,7 +823,7 @@ class LiveTalk:
                 task.description, title=task.title, screen=task.screen, careful=careful, user_asked=user_asked,
                 language=lang), ask_tasks))
         for ref, change in parser.steers:  # a change to a task is a task: same rule
-            question = task_question(f"Aufgabe ändern: {change}" if lang == "de" else f"Change the task to {change}")
+            question = task_question(say("talk.steer", lang, change=change))
             detail = change if question.endswith("…?") else ""
             effects.append((question, detail, lambda ref=ref, change=change: self._tasks.steer(
                 ref, change, careful=careful, user_asked=user_asked), ask_tasks))

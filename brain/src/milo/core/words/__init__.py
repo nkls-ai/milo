@@ -13,14 +13,14 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from . import acts
+from . import acts, talk
 
 LANGS = ("en", "de")
 """The languages Milo has all his lines in. Another one falls back to English."""
 
 Table = Mapping[str, Mapping[str, str]]
 
-AREAS: dict[str, Table] = {"acts": acts.LINES, "acts.ask": acts.QUESTIONS}
+AREAS: dict[str, Table] = {"acts": acts.LINES, "acts.ask": acts.QUESTIONS, "talk": talk.WORDS}
 
 CATALOGUE: dict[str, Mapping[str, str]] = {f"{area}.{key}": templates
                                            for area, table in AREAS.items() for key, templates in table.items()}
