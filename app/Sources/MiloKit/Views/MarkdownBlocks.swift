@@ -100,10 +100,21 @@ public enum MarkdownBlock: Equatable, Sendable {
         }
     }
 
-    /// Inline Markdown as styled text; the plain text when it doesn't parse.
-    public static func inline(_ text: String) -> AttributedString {
-        (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-            ?? AttributedString(text)
+    /// Inline Markdown as styled text; the plain text when it doesn't parse. Notes are written from other people's
+    /// words, so a link stays a link only when `keep` says so (a page's own relative links); the rest is plain text.
+    public static func inline(_ text: String, keep: (URL) -> Bool = MarkdownBlock.ownLink) -> AttributedString {
+        guard var styled = try? AttributedString(markdown: text,
+                                                 options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))
+        else { return AttributedString(text) }
+        for run in styled.runs {
+            if let link = run.link, !keep(link) { styled[run.range].link = nil }
+        }
+        return styled
+    }
+
+    /// The one link notes have of their own: "[The whole transcript](transcript.md)".
+    public static func ownLink(_ url: URL) -> Bool {
+        url.scheme == nil && url.host == nil && url.path == "transcript.md"
     }
 }
 

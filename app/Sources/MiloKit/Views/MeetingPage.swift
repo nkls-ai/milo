@@ -128,11 +128,10 @@ struct MeetingPage: View {
             .frame(maxHeight: .infinity)
             .environment(\.openURL, OpenURLAction { url in
                 // "[The whole transcript](transcript.md)" at the end of the notes: the tab, not the file.
-                if url.scheme == nil, url.path.hasSuffix("transcript.md") {
-                    tab = .transcript
-                    return .handled
-                }
-                return .systemAction
+                // Nothing else opens: the notes are written from other people's words.
+                guard MarkdownBlock.ownLink(url) else { return .discarded }
+                tab = .transcript
+                return .handled
             })
             AskAboutMeeting(entries: questions, suggestions: ["What do I need to do?", "Write a short recap"],
                             prefill: $prefill)
