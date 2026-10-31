@@ -51,26 +51,28 @@ class TagPolicy:
     """At the Mac in auto mode, the user's own words this turn asked for work (`asks_for_work`)."""
 
     @property
-    def open_outside(self) -> bool:
-        """An address or a file the user's words didn't name waits for a yes."""
+    def outside(self) -> bool:
+        """The conversation has read outside text: every tag that takes effect at once waits for a yes. An <open> of
+        an address or a file the user's words didn't name, an act tag (as a careful action), <remember> and
+        <reminder>. <write> goes in only when the user's own words asked for writing (Writer decides)."""
         return self.tainted or self.now or self.saw_screen
 
     @property
-    def act_outside(self) -> bool:
-        """The act tags ask first, as careful actions."""
-        return self.tainted or self.now
+    def careful(self) -> bool:
+        """A task, a steer or a routine run from this reply runs careful: its helper asks before it changes
+        anything, not only before what can't be undone. Unless the user's own words asked for the work."""
+        return self.outside and not self.own_work
 
     @property
-    def write_outside(self) -> bool:
-        """<write> isn't pasted unless the user's own words asked for it (Writer decides)."""
-        return self.tainted or self.now or self.saw_screen
+    def user_asked(self) -> bool:
+        """The user asked for the work: in auto mode its helper goes on without a question. Never for a careful
+        helper, so its questions are asked."""
+        return not self.careful
 
     @property
-    def ask_remember(self) -> bool:
-        return self.tainted or self.now
-
-    @property
-    def ask_remind(self) -> bool:
+    def _steered(self) -> bool:
+        """Outside text the talker was told, not only shown: task results, meeting words, untrusted memories, or the
+        message being answered. A look in an earlier turn alone lets a helper start, careful (ADR 0014)."""
         return self.tainted or self.now
 
     @property
@@ -82,22 +84,13 @@ class TagPolicy:
         screen or other outside text. Otherwise ("what's this?", "thanks" after a task result) the task still
         starts, since reading never asks, but runs careful: before it changes anything it asks, so text Milo read
         can't turn into changes nobody asked for. Messages from the phone keep the plain rule."""
-        return (self.tainted or self.now) and not self.at_mac
+        return self._steered and not self.at_mac
 
     @property
     def ask_routines(self) -> bool:
-        """A routine is a recipe that may do a lot unattended: outside text can't start one without a yes."""
-        return (self.tainted or self.now) and not self.own_work
-
-    @property
-    def careful(self) -> bool:
-        """Its helpers ask before they change anything, not only before what can't be undone."""
-        return (self.saw_screen or self.tainted or self.now) and not self.own_work
-
-    @property
-    def user_asked(self) -> bool:
-        """The user asked for the work (auto mode lets its helper go further without a question)."""
-        return self.own_work or not (self.tainted or self.now)
+        """A routine is a recipe that may do a lot unattended: outside text can't start one without a yes, unless
+        the user's own words asked for work."""
+        return self._steered and not self.own_work
 
 
 def policy(*, tainted: bool, saw_screen: bool, now: bool, auto: bool, via: str, request: str) -> TagPolicy:

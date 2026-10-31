@@ -73,6 +73,18 @@ def test_a_reminder_from_a_reply_to_screen_data_waits_for_the_users_yes():
     assert s.reminders.items == []
 
 
+def test_after_a_look_a_later_reminder_or_fact_waits_for_a_yes_too():
+    # Changed with tag_policy (2026-10-31): before, only the reply to the screen data itself asked; a later turn of
+    # the same conversation set them at once, though the model still has the screen text.
+    s = Stack(eyes=FakeEyes(EXCEL), model=FakeLiveModel(
+        ["[thinking] <look/>"], ["[neutral] It's your budget."],
+        ["[happy] Sure. <reminder>2026-11-01 09:00 Pay the rent</reminder><remember>The user pays 900 rent</remember>"]))
+    asked = answering(s, False, "look at this", "remind me to pay the rent tomorrow")
+    assert asked == ["Should I remember this: The user pays 900 rent?",
+                     "Should I remind you on Sunday 1 November at 09:00: Pay the rent?"]
+    assert s.reminders.items == [] and s.profile.facts == []
+
+
 def test_a_failed_look_tells_the_model_why():
     blocked = ScreenCapture(error="Turn on Screen Recording for Milo in System Settings.")
     s = Stack(eyes=FakeEyes(blocked), model=FakeLiveModel(["[thinking] <look/>"], ["[sad] I can't see it yet."]))
@@ -199,6 +211,17 @@ def test_in_once_per_task_mode_that_task_runs_careful():
     assert answering(s, False, "look at this", "open Excel and make a table for the week") == []
     assert careful == [True], "it runs careful: changes ask, opening apps and new documents don't"
     assert s.tasks.helpers[0].careful and not s.tasks.careful(screen=False), "only while the helper works"
+
+
+def test_in_auto_mode_a_careful_helper_is_never_the_users_own():
+    # Changed with tag_policy (2026-10-31): after a look, a task the user's words didn't ask for ran careful but
+    # also counted as user_asked, and in auto mode that let its careful questions go unasked (ADR 0023).
+    s = Stack(eyes=FakeEyes(EXCEL), model=FakeLiveModel(
+        ["[thinking] <look/>"], ["[neutral] It's a budget."],
+        ["[happy] I'll tidy it. <task>Sort the budget rows by amount.</task>"]))
+    answering(s, True, "look at this", "thanks")
+    helper = s.tasks.helpers[0]
+    assert helper.careful and not helper.user_asked
 
 
 def _recording(reply, note):

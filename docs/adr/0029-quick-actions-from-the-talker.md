@@ -66,3 +66,5 @@ The target: words to done in under 2 s, with one short spoken line ("Dentist, Th
 - **Late lines reach the phone.** See "Milo says what happened" above.
 - **The day at once.** See "The day at hand" above. The three waits before a turn (the meeting block, the `<today>` block and recall) also run together now.
 - **The cards.** An event's card carries only its place in `detail`: the card shows the day and the time from `when` (ADR 30), and the spoken "Thursday 5 November at 3 pm" read twice. The music card's title is Milo's line ("Paused", "Nächster") and names no app unless the player does. Milo's own reminder card has no app, so a click shows Today.
+
+**Update (2026-10-31).** The rule above now holds as written. The act tags asked after a task result but not in a later turn of a conversation that had looked at the screen, though `<open>` and `<write>` already held there. One `TagPolicy` per reply (`services/tag_policy.py`, ADR 34) gives every tag that takes effect at once the same rule: an act, `<remember>` and `<reminder>` now ask after an earlier look too.

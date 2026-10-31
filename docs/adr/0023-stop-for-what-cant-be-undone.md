@@ -73,3 +73,5 @@ The morning after, auto mode still asked three times in one conversation: "Start
 
 What this gives up: a task the model starts after reading outside text, in a turn where the user didn't ask for work, no longer waits for a yes before it reads. A page could talk Milo into reading something and then into a step that sends it; that step asks. A web search or fetch by the worker doesn't ask, so a read could leak through one. The user chose fewer questions ("like the auto mode from Claude").
 
+
+**Update, later the same day.** After a look alone (no task result, no untrusted memory), such a task ran careful but still counted as `user_asked`, and in auto mode `Permits.covers` let that skip the careful helper's questions. Now a careful helper is never `user_asked` (`TagPolicy.user_asked` is `not careful`, ADR 34), so "before it changes anything in an app it asks" holds after a look too.

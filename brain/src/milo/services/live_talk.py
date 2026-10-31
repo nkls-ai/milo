@@ -608,7 +608,7 @@ class LiveTalk:
             return []
         held = []
         for request in requests:
-            if (request.url or request.path) and rule.open_outside and not named_by(request, self._request):
+            if (request.url or request.path) and rule.outside and not named_by(request, self._request):
                 held.append(request)
                 continue
             self._start_open(request)
@@ -620,7 +620,7 @@ class LiveTalk:
         if self._quick is None:
             log.info("ignoring %d act tag(s): quick actions are off", len(acts))
             return
-        self._quick.start(acts, outside=rule.act_outside, via=self._via)
+        self._quick.start(acts, outside=rule.outside, via=self._via)
 
     def _write_now(self, texts: Sequence[str], rule: TagPolicy) -> None:
         """Paste what <write> wrote the moment its tag closes (ADR 0033). After outside text it goes in only when the
@@ -628,7 +628,7 @@ class LiveTalk:
         if self._writer is None:
             log.info("ignoring %d <write> tag(s): nothing to paste them with", len(texts))
             return
-        self._writer.start(texts, outside=rule.write_outside, request=self._request,
+        self._writer.start(texts, outside=rule.outside, request=self._request,
                            via=self._via)
 
     def _start_open(self, request: OpenRequest) -> None:
@@ -640,13 +640,10 @@ class LiveTalk:
                remember: bool = True) -> None:
         """Save facts and reminders, start tasks the reply asked for, and start a look.
 
-        Some tags wait for the user's yes, because text from outside could have talked the model into them:
-        every tag once task results are in the conversation (until a fresh conversation starts), and a task or
-        a reminder in the reply to screen data. A task the user asks for in a later turn of a conversation that has seen
-        the screen starts without a question but runs careful: its tools ask before changes too, not only
-        before anything that sends, deletes, buys or overwrites. Opening an app or making a new document
-        never asks. Without a way to ask, tags that need a yes are dropped. A reply to screen data never
-        remembers facts: those come from the user, never from the screen.
+        Some tags wait for the user's yes, because text from outside could have talked the model into them; `rule`
+        says which (tag_policy). Opening an app or making a new document never asks. Without a way to ask, tags that
+        need a yes are dropped. A reply to screen data never remembers facts: those come from the user, never from
+        the screen.
 
         `rule`: what this reply's tags may do without a yes (tag_policy). `remember=False`: it was screen data,
         which never becomes a fact and doesn't look again.
@@ -666,11 +663,11 @@ class LiveTalk:
                             lambda request=request: self._start_open(request), True))
         for fact in parser.remembers if remember else ():
             effects.append((remember_question(fact, lang), "", lambda fact=fact: self._remember(fact),
-                            rule.ask_remember))
+                            rule.outside))
         for due, what in parser.reminders:  # open reminders go into later system prompts: screen text asks too
             effects.append((remind_question(due, what, lang), "",
                             lambda due=due, what=what: self._remind(due, what, parser.spoken),
-                            rule.ask_remind))
+                            rule.outside))
         for task in parser.tasks:
             question = task_question(task.description, title=task.title, language=lang)
             # The whole task shows under the short question in the window: the user approves all of it.
