@@ -419,7 +419,7 @@ class LiveTalk:
                     self._write_now(parser.writes[wrote:], rule)
                     wrote = len(parser.writes)
                 if tags and len(parser.copies) > copied:
-                    self._copy_now(parser.copies[copied:])
+                    self._copy_now(parser.copies[copied:], rule)
                     copied = len(parser.copies)
                 if speak and utterance is None and parser.emotion is not None:
                     utterance = (self._backchannel.utterance(parser.emotion) if self._backchannel is not None
@@ -464,7 +464,7 @@ class LiveTalk:
         if tags and len(parser.writes) > wrote:
             self._write_now(parser.writes[wrote:], rule)
         if tags and len(parser.copies) > copied:
-            self._copy_now(parser.copies[copied:])
+            self._copy_now(parser.copies[copied:], rule)
         if rest:
             shown = self._show(shown, parser, rest)
         self._end_reply(shown, parser)
@@ -633,14 +633,14 @@ class LiveTalk:
         self._writer.start(texts, outside=rule.outside, request=self._request,
                            via=self._via)
 
-    def _copy_now(self, texts: Sequence[str]) -> None:
-        """Put what <copy> holds on the clipboard the moment its tag closes. The clipboard changes nothing by itself:
-        the user pastes it where they choose, after the card and the window showed it, so outside text in the
-        conversation doesn't hold it back. Hidden characters never go along (writing.clean)."""
+    def _copy_now(self, texts: Sequence[str], rule: TagPolicy) -> None:
+        """Put what <copy> holds on the clipboard the moment its tag closes. After outside text only a plain value (a
+        link, an address, a number) goes there; a command or a longer text waits in the window, so a web page can't
+        put "paste this in Terminal" on it. Hidden characters never go along (writing.clean)."""
         if self._writer is None:
             log.info("ignoring %d <copy> tag(s): no app to copy with", len(texts))
             return
-        self._writer.copy(texts, via=self._via)
+        self._writer.copy(texts, outside=rule.outside, via=self._via)
 
     def _start_open(self, request: OpenRequest) -> None:
         task = asyncio.create_task(self._opener.open(request, since=self._heard_at, language=self._language.code))

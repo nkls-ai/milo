@@ -102,6 +102,23 @@ def clean(text: str) -> str:
     return text[:MAX_CHARS]
 
 
+_URL = re.compile(r"https?://\S+")
+# Shell characters, a flag ("-e", "--force", "/c") or a first word that runs something.
+_SHELLISH = re.compile(r"[|;&$`<>\\]|\s(?:--?|/)[a-z]|^\s*(?:sudo|curl|wget|sh|bash|zsh|fish|powershell|pwsh|iex|"
+                       r"python3?|perl|ruby|node|npx|eval|exec|rm|chmod|chown|xattr|open|defaults|launchctl)\b",
+                       re.IGNORECASE)
+
+
+def plain_value(text: str) -> bool:
+    """Whether a text is a value to paste, not something to run: one line with a link, an email address, a number, an
+    address, a code. After outside text only those go on the clipboard by themselves: a command a web page slipped
+    in ("paste this in Terminal") waits in the window, where the user sees all of it before copying it."""
+    text = text.strip()
+    if "\n" in text or len(text) > 300:
+        return False
+    return bool(_URL.fullmatch(text)) or not _SHELLISH.search(text)
+
+
 def first_words(text: str) -> str:
     """The card's title: the start of the first line with words."""
     line = next((line for line in text.splitlines() if line.strip()), "")
@@ -176,9 +193,11 @@ class Writer:
         if turn is not None:
             turn.add_done_callback(lambda t: self._pasted.pop(t, None))
 
-    def copy(self, texts: Sequence[str], *, via: str = "voice", in_turn: bool = True) -> None:
+    def copy(self, texts: Sequence[str], *, outside: bool, via: str = "voice", in_turn: bool = True) -> None:
         """Put each <copy> text on the clipboard now (`text.copy`), while the reply still streams; the window keeps it
         to copy again and a card shows it. The reply says it's there. From the phone the text goes in the answer.
+        `outside`: the conversation or the helper read outside text, so only a plain value goes on the clipboard by
+        itself (plain_value); anything else waits in the window to copy.
         `in_turn`: called from a reply, whose card the copy's card follows; a helper's result has none to wait for."""
         if via == "message":
             return
@@ -187,24 +206,28 @@ class Writer:
         for text in texts:
             text = clean(text)
             if text.strip():
-                task = asyncio.create_task(self._copy(text, turn=turn, lang=lang))
+                hold = outside and not plain_value(text)
+                task = asyncio.create_task(self._copy(text, turn=turn, lang=lang, hold=hold))
                 self._running.add(task)
                 task.add_done_callback(self._running.discard)
 
-    async def _copy(self, text: str, *, turn: asyncio.Task | None, lang: str) -> None:
-        try:
-            await self._app("text.copy", {"text": text})
-            copied = True
-        except Exception as e:  # no app connected, or it couldn't: the text still waits in the window
-            log.info("couldn't put a text on the clipboard: %s", e)
-            copied = False
-        log.info("copied %d characters%s", len(text), "" if copied else ": failed, kept in the window")
+    async def _copy(self, text: str, *, turn: asyncio.Task | None, lang: str, hold: bool) -> None:
+        copied = False
+        if hold:
+            log.info("kept %d characters in the window to copy: not a plain value, after outside text", len(text))
+        else:
+            try:
+                await self._app("text.copy", {"text": text})
+                copied = True
+            except Exception as e:  # no app connected, or it couldn't: the text still waits in the window
+                log.info("couldn't put a text on the clipboard: %s", e)
+            log.info("copied %d characters%s", len(text), "" if copied else ": failed, kept in the window")
         if turn is not None and turn is not asyncio.current_task():
             await asyncio.wait({turn})
         self._transcript.written(text)
         self._ui.emit(ActionDone("copied" if copied else "written", first_words(text), "", "", "", "", lang))
         if not copied:
-            await self._say(line("copy_failed", lang))
+            await self._say(line("here" if hold else "copy_failed", lang))
 
     async def idle(self) -> None:
         """Wait until every write is done and said. For tests."""

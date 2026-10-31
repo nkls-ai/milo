@@ -556,7 +556,7 @@ def test_a_found_link_goes_on_the_clipboard_but_a_routine_never_takes_it_over():
     s = Stack(harness=ScriptedHarness(WorkerScript(found), WorkerScript(
         Reply(Emotion.HAPPY, "Report done.", Usage(), "s2", copy="https://example.com/report"))))
     copied = []
-    s.tasks.on_copy = copied.append
+    s.tasks.on_copy = lambda text, outside: copied.append((text, outside))
 
     async def run():
         s.tasks.submit("find the link to the Milo repo")
@@ -566,7 +566,7 @@ def test_a_found_link_goes_on_the_clipboard_but_a_routine_never_takes_it_over():
         await settle()
 
     asyncio.run(run())
-    assert copied == [link]
+    assert copied == [(link, True)], "asked in a test stack without user_asked: it may have read outside text"
     assert s.voice.spoken == ["The link's on your clipboard.", "Report done."], "the link itself is never read out"
 
 
