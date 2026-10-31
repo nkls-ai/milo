@@ -34,6 +34,17 @@ binary = ""                       # empty: PATH, then ~/.local/bin
 model = "claude-haiku-5-5"
 effort = "low"
 
+# Or any OpenAI-style chat API: use = "openai_compat" in [chat] and this table without the #s.
+# OpenAI, OpenRouter (base_url = "https://openrouter.ai/api/v1"), Ollama ("http://localhost:11434/v1")
+# or LM Studio ("http://localhost:1234/v1"). The key goes alone in ~/Milo/secrets/<key_ref>; local
+# servers need none.
+# [chat.openai_compat]
+# base_url = "https://api.openai.com/v1"
+# model = "gpt-5-mini"
+# key_ref = "openai.key"
+# cache_control = false           # true for Claude or Gemini models through OpenRouter, so the prompt is cached
+# images = true                   # false for a model that can't see screenshots
+
 [harness]
 # The agent that does real work (files, research, multi-step tasks) when the chat model hands one off.
 use = "codex"                     # codex | claude

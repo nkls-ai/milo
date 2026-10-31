@@ -17,6 +17,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from milo.config import Config
 from milo.core.registry import ConfigError
@@ -64,6 +65,8 @@ class CliAccounts:
                 found.append(self._claude(options, uses))
             elif name == "codex":
                 found.append(self._codex(options, uses))
+            elif name == "openai_compat":
+                found.append(_chat_api(options, uses))
         found += self._voice_and_hearing()
         return merge(found)
 
@@ -173,3 +176,13 @@ def _fetch(url: str, headers: dict[str, str]) -> tuple[int, str]:
     except (OSError, ValueError) as e:
         log.info("ElevenLabs account check failed: %s", type(e).__name__)
         return 0, ""
+
+
+def _chat_api(options: dict, uses: str) -> Account:
+    """[chat] openai_compat: the provider by its host, with a key or local. Asking who the key belongs to differs
+    from provider to provider, so it isn't asked."""
+    url = urlsplit(str(options.get("base_url") or "https://api.openai.com/v1"))
+    host = url.hostname or "?"
+    local = host in ("localhost", "127.0.0.1", "::1")
+    return Account(host, (uses,), "local" if local else "ok", plan="" if local else "API key" if options.get("key_ref")
+                   else "", detail=str(options.get("model") or ""))

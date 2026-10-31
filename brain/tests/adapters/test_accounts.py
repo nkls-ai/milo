@@ -88,3 +88,12 @@ def test_local_voice_needs_no_account(home):
     rows = CliAccounts(Config(raw), home, run=fakes.run, fetch=fakes.fetch).accounts()
     assert rows[-1] == Account("This Mac", ("Milo's voice", "Hearing you", "Dictation"), "local", detail="macOS voice")
     assert fakes.fetches == []
+
+
+def test_a_chat_api_shows_as_its_host_with_a_key_or_as_local(tmp_path):
+    from milo.adapters.accounts import _chat_api
+
+    cloud = _chat_api({"base_url": "https://openrouter.ai/api/v1", "model": "x/y", "key_ref": "openrouter.key"}, "Talking")
+    assert (cloud.service, cloud.state, cloud.plan, cloud.detail) == ("openrouter.ai", "ok", "API key", "x/y")
+    local = _chat_api({"base_url": "http://localhost:11434/v1", "model": "llama3.2"}, "Talking")
+    assert (local.service, local.state, local.plan) == ("localhost", "local", "")
