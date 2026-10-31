@@ -150,6 +150,11 @@ class MlxWhisper:
                       for w in segment.get("words") or [] if str(w.get("word", "")).strip()]
         return words
 
+    @property
+    def heard_language(self) -> str:
+        """The language Whisper detected on its last full pass ("de"), "" before one."""
+        return self._last_language or ""
+
     def spoken_language(self, audio: Audio) -> str:
         if self.language:
             return self.language

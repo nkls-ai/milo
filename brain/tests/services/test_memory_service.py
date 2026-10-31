@@ -54,7 +54,7 @@ def test_a_turn_carries_what_it_needs_and_the_system_prompt_stays_put():
 def test_a_turn_with_nothing_to_remember_goes_in_plain():
     s = stack()
     talk(s, "hi there")
-    assert s.model.turns == ["[Thursday 2026-10-29 09:00]\nhi there"]
+    assert s.model.turns == ["[Thursday 2026-10-29 09:00, language: English]\nhi there"]
 
 
 def test_recalled_outside_text_makes_later_tags_ask_first():

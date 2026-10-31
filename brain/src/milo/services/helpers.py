@@ -80,6 +80,8 @@ class Helper:
     """The user asked for it themselves, in a conversation without outside text (a look at the screen they asked
     for doesn't count as outside). In auto mode its work in apps needs no question (ADR 0022). Routines, meeting
     follow-ups and anything a mail or web page could have suggested are False."""
+    language: str = ""
+    """The language the user asked in ("de"), so its answer is spoken in that one. "" when unknown."""
     instructions: str = ""
     """What the worker gets instead of the description, when that is long: a routine's recipe. The
     description stays short, for the Milo window."""

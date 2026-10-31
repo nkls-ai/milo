@@ -6,20 +6,21 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from milo.core.logtext import private
+from milo.core.opening import OpenRequest, resolve_url
 from milo.core.types import Emotion
 
 log = logging.getLogger("milo.reply")
 
-TAGS = ("remember", "reminder", "task", "look", "steer", "stop", "undo", "routine", "title")
+TAGS = ("remember", "reminder", "task", "look", "steer", "stop", "undo", "routine", "title", "open")
 _SELF_CLOSING = ("<look/>", "<look />")
 _MARKERS = tuple(f"<{name}>" for name in TAGS) + tuple(f"</{name}>" for name in TAGS) + _SELF_CLOSING
 # Tags that may carry attributes: <task title="..." screen="yes">, <steer helper="2">, <stop helper="all"/>, <undo/>,
-# <routine do="run" name="...">.
-_OPENER = re.compile(r"<(task|steer|stop|undo|routine)((?:\s+[a-z_]+\s*=\s*(?:\"[^\"<>]*\"|'[^'<>]*'|[^\s<>/\"']+))*)\s*(/?)>",
+# <routine do="run" name="...">, <open app="..." url="..."/>.
+_OPENER = re.compile(r"<(task|steer|stop|undo|routine|open)((?:\s+[a-z_]+\s*=\s*(?:\"[^\"<>]*\"|'[^'<>]*'|[^\s<>/\"']+))*)\s*(/?)>",
                      re.IGNORECASE)
-_OPENING = re.compile(r"<(task|steer|stop|undo|routine)\s[^<>]*$", re.IGNORECASE)
+_OPENING = re.compile(r"<(task|steer|stop|undo|routine|open)\s[^<>]*$", re.IGNORECASE)
 _ATTR = re.compile(r"([a-z_]+)\s*=\s*(?:\"([^\"]*)\"|'([^']*)'|([^\s>/]+))", re.IGNORECASE)
-_MAX_OPENER = 300
+_MAX_OPENER = 1000  # an <open> may carry a long address
 _LONGEST_MARKER = max(map(len, _MARKERS))
 # "[happy]" is short; a longer bracket is real text, not an emotion tag.
 _MAX_BRACKET = 16
@@ -76,6 +77,9 @@ class ReplyParser:
         """Which helper's work each <undo> tag takes back: a number, or "" for the newest that can be (ADR 0026)."""
         self.routines: list[RoutineRequest] = []
         """Each <routine> tag: save, run, schedule or manage a routine (services/routines.py)."""
+        self.opens: list[OpenRequest] = []
+        """Each <open> tag: an app, a web page (its address resolved, see core/opening.py) or a file to open now.
+        LiveTalk opens them while the reply still streams, so it reads this list after every feed()."""
         self.title = ""
         """A <title> tag: Milo's name for the conversation, when he was asked for one."""
         self.look: str | None = None
@@ -222,6 +226,9 @@ class ReplyParser:
         if tag == "undo":
             self.undos.append(attrs.get("helper") or content)
             return
+        if tag == "open":
+            self._open(attrs, content)
+            return
         if tag == "routine":
             do = attrs.get("do", "").strip().lower()
             if do:
@@ -246,6 +253,18 @@ class ReplyParser:
                 log.warning("ignoring malformed reminder tag: %s", private(content))
             else:
                 self.reminders.append(reminder)
+
+
+    def _open(self, attrs: dict[str, str], content: str) -> None:
+        app = " ".join(attrs.get("app", "").split())
+        path = attrs.get("path", "").strip()
+        raw = attrs.get("url", "").strip() or ("" if path else content)
+        url = resolve_url(raw) if raw else ""
+        if url is None:
+            log.warning("ignoring an <open> that isn't a web page: %s", private(raw))
+            return
+        if app or url or path:
+            self.opens.append(OpenRequest(app, url, "" if url else path))
 
 
 def _attributes(text: str) -> dict[str, str]:

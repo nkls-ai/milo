@@ -8,7 +8,7 @@ import sys
 from milo.core.hands import BY_NAME, TOOLS
 from milo.mcp_server import handle, serve, tool_result
 
-ORDER = ["list_apps", "open_app", "sheet_write", "sheet_read", "write_document", "window_text", "ax_tree", "ax_find", "ax_press",
+ORDER = ["list_apps", "open_url", "open_app", "sheet_write", "sheet_read", "write_document", "window_text", "ax_tree", "ax_find", "ax_press",
          "ax_set_value", "run_applescript", "screenshot", "click", "type", "key", "scroll"]
 
 
