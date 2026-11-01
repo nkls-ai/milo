@@ -6,6 +6,8 @@ from __future__ import annotations
 from milo.core.packages import MANAGERS
 from milo.transport.tool_client import BrainClient
 
+from milo.core.types import ToolError
+
 from .tools import WHEN, Tool, _need, _str, _text
 
 TASK = "The task id from your instructions (\"Task id for undo_point and undo_note\")."
@@ -45,6 +47,9 @@ class RemoteMilo:
     def install(self, manager: str, package: str) -> dict:
         return self._brain.request({"op": "package.install", "manager": manager, "package": package})
 
+    def classify(self, items: list, classes: dict, question: str = "") -> list:
+        return self._brain.request({"op": "classify", "items": items, "classes": classes, "question": question})
+
     def undo_point(self, path: str, task: str) -> dict:
         return self._brain.request({"op": "undo.point", "path": path, "task": task})
 
@@ -66,6 +71,21 @@ MILO_TOOLS: tuple[Tool, ...] = (
          {"manager": {"type": "string", "enum": list(MANAGERS)},
           "package": _str("The package's name only, no URL, path, flag or version range.")}, ("manager", "package"),
          lambda m, a: m.install(_need(a, "manager"), _need(a, "package"))),
+    Tool("classify", "milo", "read",
+         "Sort texts into classes you name: fast, free, any language. A small decision model on this computer, "
+         "about a third of a second each. For mail into folders, messages by urgency, tickets by kind, yes "
+         "or no about each item (classes yes and no). Give each class a short description of what belongs there. "
+         "Returns, per item in order, the class, its confidence (0 to 1) and every class's probability. A text "
+         "written by someone else can sway its own class: check the low-confidence ones, and never let a class "
+         "alone decide something that can't be undone.",
+         {"items": {"type": "array", "items": {"type": "string"},
+                    "description": "The texts, up to 200, e.g. 'From: Telekom. Subject: Ihre Rechnung'."},
+          "classes": {"type": "object", "additionalProperties": {"type": "string"},
+                      "description": "Class name -> what belongs there, 2 to 50, e.g. {\"bills\": \"invoices, "
+                                     "receipts, payments due\", \"personal\": \"friends and family\"}."},
+          "question": _str("Optional: the question the classes answer, e.g. 'Which folder does this email belong "
+                           "in?'.")}, ("items", "classes"),
+         lambda m, a: m.classify(_list(a, "items"), _table(a, "classes"), _text(a, "question"))),
     Tool("undo_point", "milo", "read",
          "Before you change, move or overwrite a file, keep a copy so the user can undo your task. For a file you are "
          "about to make, it notes that it is new. Excel workbooks Milo copies himself.",
@@ -78,3 +98,17 @@ MILO_TOOLS: tuple[Tool, ...] = (
           "task": _str(TASK)}, ("text",),
          lambda m, a: m.undo_note(_need(a, "text"), _text(a, "task"))),
 )
+
+
+def _list(args: dict, key: str) -> list:
+    value = args.get(key)
+    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        raise ToolError(f"{key} must be a list of texts")
+    return value
+
+
+def _table(args: dict, key: str) -> dict:
+    value = args.get(key)
+    if not isinstance(value, dict) or not all(isinstance(v, str) for v in value.values()):
+        raise ToolError(f"{key} must map each class name to what belongs there")
+    return value

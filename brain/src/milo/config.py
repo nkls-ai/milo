@@ -19,7 +19,8 @@ from .core.types import LiveMode
 log = logging.getLogger("milo.config")
 
 KEY_NAMES = ("fn", "right_option", "right_command", "right_control")
-PLUGGABLE = ("chat", "harness", "stt", "tts", "audio", "dictation", "connections", "messages", "weather", "home")
+PLUGGABLE = ("chat", "harness", "stt", "tts", "audio", "dictation", "connections", "messages", "weather", "home",
+             "decide")
 SECTIONS = (*PLUGGABLE, "ui", "heartbeat", "hands", "approvals", "logging", "memory", "routines", "meetings")
 _COMBO = re.compile(r"^((ctrl|control|option|alt|shift|cmd|command)\+)+[a-z0-9]+$|^f([1-9]|1[0-9])$")
 
@@ -373,12 +374,26 @@ class WeatherSettings:
             raise ConfigError('[weather] units must be "metric" or "imperial"')
 
 
+@dataclass(frozen=True)
+class DecideSettings:
+    """The decision model (ADR 0040)."""
+
+    wait_s: float = 8.0
+    """How long the end of a reply waits for the model's reading of the user's words; later, nothing counts as asked.
+    The reply's words never wait. A reading takes 2 s alone and over 3 s in a turn, next to speech and the screen."""
+
+    def __post_init__(self):
+        if self.wait_s <= 0:
+            raise ConfigError("[decide] wait_s must be more than 0")
+
+
 _PLUGGABLE_SETTINGS: dict[str, type] = {
     "chat": ChatSettings, "harness": HarnessSettings, "stt": SttSettings, "tts": TtsSettings,
     "audio": AudioSettings, "dictation": DictationSettings, "connections": ConnectionSettings,
     "messages": MessagesSettings,
     "weather": WeatherSettings,
     "home": HomeSettings,
+    "decide": DecideSettings,
 }
 
 
@@ -406,6 +421,7 @@ class Config:
         self.connections: ConnectionSettings = settings["connections"]
         self.messages: MessagesSettings = settings["messages"]
         self.weather: WeatherSettings = settings["weather"]
+        self.decide: DecideSettings = settings["decide"]
         approvals = raw.get("approvals", {})
         allowed = _allowed_apps(approvals.get("allowed_apps", []))
         self.approvals = dataclasses.replace(_pluggable_settings(

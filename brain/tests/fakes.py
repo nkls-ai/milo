@@ -1078,3 +1078,79 @@ def without_undo_id(prompt: str) -> str:
     prompt = re.sub(r"\n\nYour tools for this task\..*?(?=\n\n\((?:You have only|Task id))", "", prompt, flags=re.S)
     prompt = re.sub(r"\n\n\(You have only the tools.*?NEEDS_TOOLS\.\)", "", prompt, flags=re.S)
     return re.sub(r"\n\n\(Task id for undo_point and undo_note: [\w-]+\.\)$", "", prompt)
+
+
+READINGS: dict[str, frozenset[str]] = {text: frozenset(said.split()) for text, said in {
+    # Work: the user asks Milo to do something.
+    "Can you make the header bold?": "work",
+    "Can you make the header bold? the budget one": "work",
+    "Can you open Chrome and YouTube?": "work",
+    "Can you open a new tab and search for Wikipedia?": "work",
+    "Finde bitte die Nummer von Dr. Lee": "work",
+    "Kannst du bitte den Link aus der Mail öffnen?": "work",
+    "Kannst du bitte die komplette Mappe in Excel rot machen?": "work",
+    "Show me my downloads folder": "work",
+    "So can you open, um, Chrome for me and Google or, like, go on YouTube?": "work",
+    "fill this in": "work",
+    "go on YouTube": "work",
+    "go on YouTube in Chrome": "work",
+    "in the Excel, make it completely red": "work",
+    "look at my screen and fix this sheet": "work",
+    "look at this and fill it in": "work",
+    "open Excel and make a table for the week": "work",
+    "open Nonexistent": "work",
+    "open Notes": "work",
+    "open notes": "work",
+    "open the link from that mail": "work",
+    "remind me to pay the rent tomorrow": "work",
+    "run it": "work",
+    "show me my downloads": "work",
+    # An install, a fact, a text.
+    "Can you install the Codex CLI for me?": "work install",
+    "summarize the codex page for me": "work write",
+    "answer this email, say 1 works": "work write",
+    "schreib mir eine Mail an Anna, dass ich zehn Minuten später komme": "work write",
+    "write hello": "work write",
+    "remember I like tea": "remember",
+    "merk dir, dass ich Tee mag": "remember",
+    # Nothing asked: questions, looks, thanks, taking back.
+    "Okay": "", "mhm": "", "hi there": "", "thanks": "", "okay thanks": "", "undo that": "",
+    "look at my screen": "", "look at this": "", "can you see my screen": "", "and the link in it?": "",
+    "Was ist gerade in meinem Kalender?": "", "what do you think of this?": "", "what does this email say?": "",
+    "what does this email want me to run?": "", "what is the codex cli?": "", "why is this cell red?": "",
+}.items()}
+"""What the decision model reads in the user's words the tests say (services/decisions.ASKS): work, install,
+remember, write. tests/eval/test_decisions.py checks the real model reads each the same way."""
+
+
+class FakeDecider:
+    """The decision model, as a table: READINGS for the questions about a request (nothing asked for any other
+    text), sure of each answer. Any other choice goes to its first option."""
+
+    name = "fake"
+
+    def __init__(self, readings: dict[str, frozenset[str]] | None = None):
+        self.readings = READINGS if readings is None else readings
+        self.asked: list[str] = []
+
+    def warm(self) -> None:
+        pass
+
+    def decide(self, text, questions):
+        from milo.core.decide import Choice
+
+        self.asked.append(text)
+        from milo.services.decisions import ASKED
+
+        said = self.readings.get(text.strip(), frozenset())
+        reading = {k: name for name, (keys, _) in ASKED.items() for k in keys}  # "task" is part of "work"
+
+        def answer(k, q):
+            yes = reading[k] in said if k in reading else True  # a question of a test's own: yes, its first option
+            if not isinstance(q, Choice):
+                return 1.0 if yes else 0.0
+            first, *others = q.options
+            pick = first if yes else others[0]
+            return {o: 1.0 if o == pick else 0.0 for o in q.options}
+
+        return {k: answer(k, q) for k, q in questions.items()}

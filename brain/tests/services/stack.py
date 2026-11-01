@@ -25,6 +25,7 @@ from milo.services.app_bridge import AppBridge
 from milo.services.approvals import Approvals
 from milo.services.context import UserContext
 from milo.services.conversation import Conversation
+from milo.services.decisions import Decisions
 from milo.services.dictation import DictationService
 from milo.services.hands import HandsService
 from milo.services.heartbeat_runner import HeartbeatRunner
@@ -45,7 +46,7 @@ from milo.memory.undo_shelf import FileUndoShelf
 from milo.core.control import Protected
 from milo.services.ui_state import UiState
 from milo.settings import Settings
-from tests.fakes import (FakeAudioInput, FakeAudioOutput, FakeChannel, FakeClock, FakeEyes, FakeHands, FakeHarness,
+from tests.fakes import (FakeDecider, FakeAudioInput, FakeAudioOutput, FakeChannel, FakeClock, FakeEyes, FakeHands, FakeHarness,
                          FakeLiveModel, FakeTranscriber, FakeVoice, ListReminders, MemoryConfigFile, MemoryHistory,
                          MemoryLedger, MemoryProfile, MemoryRemoteState, MemoryRoutineBook, MemoryState,
                          RecordingSink, ScriptedEngine, UpperCleaner, FakeMemoryIndex, MemoryEpisodeLog,
@@ -70,6 +71,7 @@ class InlineExecutor(Executor):
 class Stack:
     model: FakeLiveModel = field(default_factory=FakeLiveModel)
     harness: FakeHarness = field(default_factory=FakeHarness)
+    decider: object = field(default_factory=lambda: FakeDecider())
     background: object | None = None
     """The worker without the Mac tools. None: every helper runs on `harness`, none on the screen."""
     max_helpers: int = 3
@@ -199,12 +201,13 @@ class Stack:
             self.writer = Writer(self.paste, self.ui, self.speaker, undo=self.undo, quiet=lambda: self.mic.active,
                                  transcript=Transcript(self.sink, MemoryConversations(), self.clock),
                                  language=self.language.get, wait_s=self.wait_s, poll_s=0.005)
+        self.decisions = Decisions(self.decider)
         self.live_talk = LiveTalk(self.model, self.speaker, self.ui, self.context, self.clock, self.profile,
                                   self.reminders, self.ledger, lambda: self.persona, self.idle_reset_s, self.tasks,
                                   eyes=self.eyes, approvals=self.approvals, memory=self.turn_memory,
                                   routines=self.routines, undo=self.undo, opener=self.opener,
                                   language=self.language, quick=self.quick, meetings=self.meetings,
-                                  writer=self.writer, computer="Mac")
+                                  writer=self.writer, computer="Mac", decisions=self.decisions)
         self.tasks.on_result = self.live_talk.note
         self.dictation = DictationService(UpperCleaner(), self.history, self.ui)
         self.listening = Listening(self.mic, self.transcriber, executor, self.ui, self.dictation, self.live_talk,
@@ -237,7 +240,7 @@ class Stack:
                            approvals=self.approvals, bridge=self.bridge, hands=self.hands, screens=self.screens,
                            helpers=self.tasks, memory=self.memory, routines=self.routines,
                            settings=self.settings, messages=self.messages, undo=self.undo, alarms=self.alarms)
-        self.tool_requests = ToolRequests(self.approvals, self.bridge, undo=self.undo)
+        self.tool_requests = ToolRequests(self.approvals, self.bridge, undo=self.undo, decisions=self.decisions)
 
     def close(self) -> None:
         for executor in self.executors.values():

@@ -112,6 +112,13 @@ use = "auto"                      # auto: Home Assistant when it has a url below
 [home.apple_home]
 folder = "Milo Home"              # the Shortcuts folder with your Home scenes and devices
 
+[decide]
+# A small model on this computer reads what you asked for, in any language: work, an install, a fact to keep, a
+# text to write. After he read a page or a mail that is what lets him go on without a question. Helpers sort with
+# it too (mail into folders and the like). About 1.7 GB, downloaded on first start.
+# use = "d3"                      # left out: d3 on a Mac; "none": nothing counts as asked, so he asks first
+wait_s = 8                        # how long the end of a reply waits for it; his words never wait
+
 [approvals]
 # A question stays open until you answer it, and is said once more after reask_s. A task waiting for it
 # pauses as "waiting for your answer" and goes on after a yes. timeout_s > 0: no answer in that time means no.

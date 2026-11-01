@@ -37,6 +37,7 @@ BUILTIN = (
     "diarize.sherpa",
     "diarize.pyannote",
     "weather.open_meteo",
+    "decide.d3",
 )
 
 

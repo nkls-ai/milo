@@ -19,6 +19,7 @@ from .approvals import Approvals
 from .backchannel import Backchannel
 from .context import UserContext
 from .conversation import stamp
+from .decisions import Decisions, Intent
 from .memory import Recalled, TurnMemory
 from .reply_effects import ReplyEffects
 from .reply_stream import ActRequest, ReplyParser
@@ -73,8 +74,12 @@ class LiveTalk:
                  backchannel: Backchannel | None = None, routines: Routines | None = None,
                  meetings: MeetingService | None = None, undo: Undo | None = None, opener: Opener | None = None,
                  language: SpokenLanguage | None = None, quick: QuickActions | None = None,
-                 writer: Writer | None = None, computer: str = "computer"):
+                 writer: Writer | None = None, computer: str = "computer", decisions: Decisions | None = None):
         self._model = model
+        self._decisions = decisions
+        """Reads what the user's own words ask for (ADR 0040). None: nothing counts as asked."""
+        self._reading: asyncio.Future[Intent] | None = None
+        """That reading for the turn being answered, started when its words arrive."""
         self._computer = computer
         """What the platform calls the machine Milo lives on, for the prompt (Platform.computer)."""
         self._writer = writer
@@ -203,6 +208,11 @@ class LiveTalk:
             self._hold_timer.cancel()
         self._hold_timer = asyncio.get_running_loop().call_later(HOLD_MAX_S, self._hold_expired)
         return True
+
+    def wake(self) -> None:
+        """The talk key went down: the decision model pages in while the user speaks (Decisions.wake)."""
+        if self._decisions is not None:
+            self._decisions.wake()
 
     def resume(self) -> bool:
         """Go on after hold(), when the user said nothing. False if nothing was held: the caller shows the next
@@ -401,7 +411,7 @@ class LiveTalk:
             # Another person's line in <today> stays in the conversation, so later turns count as outside too.
             self._tainted = self._tainted or bool(notes) or bool(meeting) or outside or not recalled.trusted
             self._saw_screen = self._saw_screen or screen
-            rule = self._policy(now=screen or outside)
+            now = screen or outside
             self._streaming = True
             blocks = [*earlier, *notes, recalled.block, *([meeting] if meeting else []), today]
             async for delta in self._model.turn(self._prompt(text, blocks, name=tags and not screen), images):
@@ -411,16 +421,16 @@ class LiveTalk:
                         self._looking(False)  # he has seen it and starts to answer
                 speech = parser.feed(delta)
                 if tags and len(parser.opens) > opened:
-                    held += self._open_now(parser.opens[opened:], rule)
+                    held += self._open_now(parser.opens[opened:], self._rule_now(now))
                     opened = len(parser.opens)
                 if tags and len(parser.acts) > acted:
-                    self._act_now(parser.acts[acted:], rule)
+                    self._act_now(parser.acts[acted:], self._rule_now(now))
                     acted = len(parser.acts)
                 if tags and len(parser.writes) > wrote:
-                    self._write_now(parser.writes[wrote:], rule)
+                    self._write_now(parser.writes[wrote:], self._rule_now(now))
                     wrote = len(parser.writes)
                 if tags and len(parser.copies) > copied:
-                    self._copy_now(parser.copies[copied:], rule)
+                    self._copy_now(parser.copies[copied:], self._rule_now(now))
                     copied = len(parser.copies)
                 if speak and utterance is None and parser.emotion is not None:
                     utterance = (self._backchannel.utterance(parser.emotion) if self._backchannel is not None
@@ -458,6 +468,7 @@ class LiveTalk:
 
         self._last_turn_at = self._clock.monotonic()
         rest = parser.finish()
+        rule = self._rule_now(now)
         if tags and len(parser.opens) > opened:  # an unclosed tag at the very end
             held += self._open_now(parser.opens[opened:], rule)
         if tags and len(parser.acts) > acted:
@@ -474,6 +485,9 @@ class LiveTalk:
         if tags:
             if parser.title:
                 self._transcript.titled(parser.title)
+            # Tasks, installs and facts start now and need the reading; an <open> held before it came may go now.
+            rule = await self._rule(now=now)
+            held = self._release(held, rule)
             self._apply(parser, rule, held=held, remember=not screen)
             self._asked_about = self._request if parser.spoken.rstrip().endswith("?") else ""
         if not speak:
@@ -558,6 +572,7 @@ class LiveTalk:
                 self._tainted = False
                 self._recent = self._recent[-1:]  # the turn that started it
                 self._request = self._recent[-1] if self._recent else ""  # the model forgot its question
+                self._read_request()
                 if self._memory is not None:
                     self._memory.new_conversation()
                 if self._today is not None:
@@ -578,6 +593,36 @@ class LiveTalk:
         self._request = f"{self._asked_about} {text}" if self._asked_about else text
         self._asked_about = ""
         self._recent = [*self._recent[-2:], text]
+        self._read_request()
+
+    def _read_request(self) -> None:
+        """Start reading what the request asks for (Decisions.intent), alongside recall and the model's first words."""
+        self._reading = (asyncio.ensure_future(self._decisions.intent(self._request))
+                         if self._decisions is not None else None)
+
+    async def _asked(self) -> Intent:
+        """The reading of the user's words, once it is there (never later than `[decide] wait_s`)."""
+        return await asyncio.shield(self._reading) if self._reading is not None else Intent()
+
+    async def _rule(self, *, now: bool) -> TagPolicy:
+        return self._policy(now=now, intent=await self._asked())
+
+    def _rule_now(self, now: bool) -> TagPolicy:
+        """The policy for a tag that acts while the reply streams: with the reading if it is there, else as if
+        nothing was asked. A reply never waits for it; what that holds may go at the end (`_release`)."""
+        reading = self._reading
+        known = reading is not None and reading.done() and not reading.cancelled()
+        return self._policy(now=now, intent=reading.result() if known else Intent())
+
+    def _release(self, held: Sequence[OpenRequest], rule: TagPolicy) -> list[OpenRequest]:
+        """Open what was held only because the reading wasn't there yet; the rest still waits for a yes."""
+        waiting = []
+        for request in held:
+            if self._asks_first(request, rule):
+                waiting.append(request)
+            else:
+                self._start_open(request)
+        return waiting
 
     def _prompt(self, text: str, notes: list[str], *, name: bool = False) -> str:
         helpers = self._tasks.board()
@@ -597,11 +642,12 @@ class LiveTalk:
         return await self._memory.before_turn(text, self._context.app, outside=outside,
                                               at_mac=self._via in ("voice", "typed"))
 
-    def _policy(self, *, now: bool) -> TagPolicy:
-        """The rules for this reply's tags (tag_policy). `now`: the message being answered carries outside text."""
+    def _policy(self, *, now: bool, intent: Intent = Intent()) -> TagPolicy:
+        """The rules for this reply's tags (tag_policy). `now`: the message being answered carries outside text.
+        `intent`: what the user's words asked for; nothing until it is read."""
         auto = self._approvals is not None and self._approvals.permits.ask == "auto"
         return policy(tainted=self._tainted, saw_screen=self._saw_screen, now=now, auto=auto, via=self._via,
-                      request=self._request)
+                      request=self._request, intent=intent)
 
     def _open_now(self, requests: Sequence[OpenRequest], rule: TagPolicy) -> list[OpenRequest]:
         """Open what the reply's <open> tags name, while the reply still streams, so the page is up by the time
@@ -619,12 +665,15 @@ class LiveTalk:
             folder = _plain_folder(request.path) if request.path else ""
             if folder:
                 request = dataclasses.replace(request, path=folder)
-            ask = rule.outside if request.path and not folder else rule.ask_open
-            if (request.url or request.path) and ask and not named_by(request, " ".join(self._recent)):
+            if self._asks_first(request, rule):
                 held.append(request)
                 continue
             self._start_open(request)
         return held
+
+    def _asks_first(self, request: OpenRequest, rule: TagPolicy) -> bool:
+        ask = rule.outside if request.path and not _plain_folder(request.path) else rule.ask_open
+        return bool(request.url or request.path) and ask and not named_by(request, " ".join(self._recent))
 
     def _act_now(self, acts: Sequence[ActRequest], rule: TagPolicy) -> None:
         """Start the reply's act tags while it still streams, like <open> (ADR 0029). An act follows the <reminder>
@@ -636,11 +685,14 @@ class LiveTalk:
 
     def _write_now(self, texts: Sequence[str], rule: TagPolicy) -> None:
         """Paste what <write> wrote the moment its tag closes (ADR 0033). After outside text it goes in only when the
-        user's own words asked for the writing; Writer decides that from them."""
+        user's own words asked for the writing (TagPolicy.own_write); Writer waits for that reading."""
         if self._writer is None:
             log.info("ignoring %d <write> tag(s): nothing to paste them with", len(texts))
             return
-        self._writer.start(texts, outside=rule.outside, request=self._request,
+        async def own() -> bool:
+            return (await self._asked()).write
+
+        self._writer.start(texts, outside=rule.outside, own=own,
                            via=self._via)
 
     def _copy_now(self, texts: Sequence[str], rule: TagPolicy) -> None:

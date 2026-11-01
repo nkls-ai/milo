@@ -14,6 +14,7 @@ from milo.core.words import say
 from .access import AccessGate
 from .app_bridge import AppBridge, AppError
 from .approvals import INSTALL, PARKED, Approvals, Parked
+from .decisions import Decisions
 from .installs import Installer
 from .memory_requests import MemoryRequests
 from .sharing import NotShareable
@@ -88,7 +89,7 @@ class ToolRequests:
     def __init__(self, approvals: Approvals, bridge: AppBridge, enabled: Collection[str] = ("calendar", "reminders"),
                  memory: MemoryRequests | None = None, phone: Phone | None = None,
                  reminders: ReminderBook | None = None, access: AccessGate | None = None,
-                 undo: Undo | None = None, installer: Installer | None = None):
+                 undo: Undo | None = None, installer: Installer | None = None, decisions: Decisions | None = None):
         self._approvals = approvals
         self._bridge = bridge
         self._enabled = frozenset(enabled)
@@ -99,6 +100,7 @@ class ToolRequests:
         self._access = access
         self._undo = undo
         self._installer = installer
+        self._decisions = decisions
 
     async def handle(self, request: dict) -> dict:
         """{"ok": true, "result": ...} or {"ok": false, "error": "plain words"}. Never raises."""
@@ -149,6 +151,8 @@ class ToolRequests:
                     return await self._remind(request)
                 case "package.install" if self._installer is not None:
                     return await self._install(request)
+                case "classify" if self._decisions is not None:
+                    return await self._classify(request)
                 case str() if op.startswith("memory.") and self._memory is not None:
                     return await self._memory.handle(op, request)
         except Parked as e:
@@ -184,6 +188,17 @@ class ToolRequests:
             return _error(REFUSED.get(decision.answer, REFUSED["refused"]))
         try:
             return _ok(await self._installer.run(wanted))
+        except ValueError as e:
+            return _error(str(e))
+
+    async def _classify(self, request: dict) -> dict:
+        """The helpers' `classify` tool: reads only, so it asks nobody (ADR 0040)."""
+        items, classes = request.get("items"), request.get("classes")
+        if not isinstance(items, list) or not isinstance(classes, dict):
+            return _error("classify needs items (a list of texts) and classes (name -> what belongs there).")
+        try:
+            return _ok(await self._decisions.classify([str(i) for i in items], classes,
+                                                      str(request.get("question") or "")))
         except ValueError as e:
             return _error(str(e))
 

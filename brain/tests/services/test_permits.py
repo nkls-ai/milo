@@ -590,29 +590,6 @@ def test_scripts_that_reach_outside_the_open_sheet_ask_even_in_auto_mode(script)
     assert len(asked) == 1 and not asked[0].always
 
 
-@pytest.mark.parametrize("text, work", [
-    ("look at my screen and fix this sheet", True), ("can you fill this in", True), ("füll das bitte aus", True),
-    ("make this a table", True), ("can you see my screen", False), ("what do you think of this?", False),
-    ("why is this cell red", False), ("was ist das", False), ("look at my screen", False),
-    # Real requests that used to count as no work (audit of 2026-10-31 transcripts).
-    ("Yes, open Chrome and YouTube.", True), ("Remind me to call Anna tomorrow at 9", True),
-    ("Take notes of this meeting", True), ("Can you summarize the PDF", True), ("show me my calendar", True),
-    ("play some music", True), ("send it to Anna", True), ("find the invoice", True), ("set a timer", True),
-    ("Kannst du Chrome öffnen?", True), ("Zeig mir den Kalender", True), ("Erinnere mich morgen an Anna", True),
-    ("schick das an Anna", True), ("stell den Wecker", True), ("spiel Musik", True),
-    ("what can you open?", False), ("can you see what's on my screen?", False), ("is it set up?", False),
-    ("thanks", False), ("wie geht's?", False),
-    ("tick off the milk", True), ("cross it off my list", True), ("mark the milk as done", True),
-    ("hak die Milch ab", True), ("streich Hafermilch von der Liste", True), ("stopp den Timer", True),
-    ("thanks Mark", False), ("ein Haken dran", False), ("ich brauche Streichhölzer", False),
-    ("I crossed the street", False),
-])
-def test_only_words_that_ask_for_work_let_a_task_from_a_look_start_unasked(text, work):
-    from milo.services.tag_policy import asks_for_work
-
-    assert asks_for_work(text) is work
-
-
 @pytest.mark.parametrize("kind, title, outside", [
     ("web", "Reading example.com", True), ("tool", "Mail search", True), ("tool", "Notes read", True),
     ("read", "Reading invoice.pdf", True), ("read", "Looking in Downloads", False),

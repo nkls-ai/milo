@@ -69,29 +69,7 @@ Only what the user asked for, never anything else, and only text you are sure of
 - "Undo that" right after one is <undo/>.
 """
 
-# The user's own words ask for something written: then outside text read before can't be what started it. The writing
-# verb has to lead the request ("answer this email", "okay, write Anna back", "can you reply to Tom"), so a question or
-# a sentence that only mentions a reply ("can you tell me what the reply says?") never counts.
-_EN = r"writ(?:e|es)|answer|repl(?:y|ies)|respond|draft|compose|summari[sz]e|rephrase|reword|rewrite|translate|formulate"
-_DE = r"schreib\w*|antworte\w*|beantworte\w*|formulier\w*|übersetz\w*|entwirf|verfass\w*|zusammenfass\w*"
-_LEAD = (r"^\s*(?:(?:yes|yeah|ok|okay|alright|please|so|and|now|then|ja|bitte|also|und|jetzt|dann|okay)\b[\s,.!]*)*"
-         r"(?:please\s+|bitte\s+)?")
-_START = re.compile(_LEAD + rf"(?:{_EN}|{_DE}|fass\w*\b.{{0,40}}\bzusammen|(?:make|mach)\w*\b.{{0,20}}\b(?:shorter|"
-                    r"longer|more polite|nicer|friendlier|kürzer|länger|höflicher|netter|freundlicher))\b", re.IGNORECASE)
-_ASK = re.compile(_LEAD + rf"(?:(?:can|could|would|will) you\s+(?:please\s+)?(?:{_EN})\b|"
-                  rf"(?:kannst|könntest|würdest) du\b.{{0,60}}\b(?:{_DE})\W*$)", re.IGNORECASE)
-_NOUN = re.compile(r"^\s*(?:a|an|eine?n?)\s+(?:\w+\s+){0,2}(?:summary|reply|answer|e-?mail|mail|message|post|"
-                   r"zusammenfassung|antwort|nachricht)\s+(?:for|to|saying|für|an)\b(?![^?]*\?\s*$)", re.IGNORECASE)
-
 _HIDDEN = re.compile("[​-‏‪-‮⁠-⁤⁦-⁩﻿\U000e0000-\U000e007f]")
-
-
-def asks_to_write(text: str) -> bool:
-    """Whether the user's own words ask for text to be written: "write Anna", "answer this email", "make it shorter",
-    "can you reply to Tom", "a short summary for Slack", "schreib ihr", "fass das zusammen". A question about the text
-    or a sentence that only names one ("what does the reply say?", "can you tell me what the reply says?", "an email
-    from my bank, is it legit?", "was hat er geantwortet?") never is, so outside text can't ride on it."""
-    return any(pattern.search(text) for pattern in (_START, _ASK, _NOUN))
 
 
 def clean(text: str) -> str:
@@ -176,15 +154,16 @@ class Writer:
     def rules(self) -> str:
         return RULES
 
-    def start(self, texts: Sequence[str], *, outside: bool, request: str, via: str = "voice") -> None:
+    def start(self, texts: Sequence[str], *, outside: bool, own: Callable[[], Awaitable[bool]],
+              via: str = "voice") -> None:
         """Hand the reply's <write> texts to the app now, while the reply still streams. `outside`: the conversation
-        read outside text, or the message being answered carried it. `request`: the user's own words this turn.
+        read outside text, or the message being answered carried it. `own`: whether the user's own words this turn
+        asked for writing (TagPolicy.own_write), awaited only after outside text.
         A reply by message carries the text itself (LiveTalk), so nothing is pasted from the phone."""
         if via == "message":
             return
         turn = asyncio.current_task()
         lang = language(self._language())
-        own = asks_to_write(request)
         for text in texts:
             text = clean(text)
             if not text.strip():
@@ -192,8 +171,8 @@ class Writer:
             first = self._pasted.get(turn, 0) == 0
             self._pasted[turn] = self._pasted.get(turn, 0) + 1
             # One text per reply goes in; after outside text only when the user asked for writing in this turn.
-            held = "outside" if outside and not own else "" if first else "here"
-            task = asyncio.create_task(self._write(text, held=held, turn=turn, lang=lang))
+            task = asyncio.create_task(self._write(text, held="" if first else "here", turn=turn, lang=lang,
+                                                   own=own if outside else None))
             self._running.add(task)
             task.add_done_callback(self._running.discard)
         if turn is not None:
@@ -240,7 +219,10 @@ class Writer:
         while self._running:
             await asyncio.wait(set(self._running))
 
-    async def _write(self, text: str, *, held: str, turn: asyncio.Task | None, lang: str) -> None:
+    async def _write(self, text: str, *, held: str, turn: asyncio.Task | None, lang: str,
+                     own: Callable[[], Awaitable[bool]] | None = None) -> None:
+        if own is not None and not await own():
+            held = "outside"
         try:
             result = await self._app("text.write", {"text": text, "paste": not held})
             result = result if isinstance(result, dict) else {}

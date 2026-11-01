@@ -298,3 +298,32 @@ def test_remember_and_remind_questions_follow_the_language():
     assert remind_question(datetime(2026, 11, 2, 9, 0), "Anna anrufen", "de") == \
         "Soll ich dich am Montag, 2. November um 09:00 erinnern: Anna anrufen?"
     assert task_question("x " * 60, title="Budget in Excel", language="de") == "„Budget in Excel“ starten?"
+
+
+def test_a_link_held_before_the_reading_came_opens_at_the_end_of_the_reply_without_a_question():
+    """ADR 0040: the reply never waits for the decision model. A link it would hold opens once the reading says the
+    user asked for it; one it reads as not asked still asks."""
+    import time
+
+    from tests.fakes import FakeDecider
+
+    class Slow(FakeDecider):
+        def decide(self, text, questions):
+            time.sleep(0.1)
+            return super().decide(text, questions)
+
+    s = Stack(decider=Slow(), model=FakeLiveModel(['[neutral] <open url="https://example.org/page"/> Opening it.'],
+                                                  ['[neutral] <open url="https://example.org/other"/> Here.']))
+    s.live_talk.note("read the mail", "see example.org/page and example.org/other")
+    talk(s, "open the link from that mail")
+    assert opened(s) == [("open_url", {"url": "https://example.org/page"})] and s.sink.of(Confirm) == []
+
+    async def run():
+        await s.live_talk.start("thanks")
+        await settle()
+        assert len(s.sink.of(Confirm)) == 1, "a reply to thanks after a mail still asks"
+        s.approvals.answer(s.sink.of(Confirm)[0].id, False)
+        await settle()
+
+    asyncio.run(run())
+    assert len(opened(s)) == 1

@@ -15,9 +15,9 @@ from .core.clock import SystemClock
 from .core.conversations import SplitRules
 from .core.language import SpokenLanguage
 from .core.ports import Harness, LiveModel, PlaybackTap, TimedTranscriber, Transcriber, Vocabulary, Voice
-from .core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, CALL_DIARIZERS, CHANNELS, DIARIZERS, EMBEDDERS, HARNESSES,
-                            LIVE_MODELS, STREAMING_TRANSCRIBERS, TEXT_CLEANERS, TRANSCRIBERS, VOICES, AdapterContext,
-                            ConfigError, Registry)
+from .core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, CALL_DIARIZERS, CHANNELS, DECIDERS, DIARIZERS, EMBEDDERS,
+                            HARNESSES, LIVE_MODELS, STREAMING_TRANSCRIBERS, TEXT_CLEANERS, TRANSCRIBERS, VOICES,
+                            AdapterContext, ConfigError, Registry)
 from .core.task_scope import CONNECT_SERVER
 from .core.types import Emotion, LiveMode, ToolServer
 from .memory.state import JsonState
@@ -33,6 +33,7 @@ from .services.context import UserContext
 from .services.conversations import ConversationBrowser
 from .services.conversation import Conversation
 from .services.corrections import Corrections, DictationFixes
+from .services.decisions import Decisions
 from .services.dictation import DictationService
 from .services.fallback_voice import NOTICE as VOICE_NOTICE
 from .services.fallback_voice import FallbackVoice, VoiceNotice
@@ -103,6 +104,7 @@ class Runtime:
     background_stt: BackgroundStt | None = None
     alarms: Alarms | None = None
     weather: WeatherReport | None = None
+    decisions: Decisions | None = None
 
 
 @dataclass
@@ -148,7 +150,8 @@ def build(home: Path) -> Runtime:
     return Runtime(p.brain, p.server, p.heartbeat, p.transcriber, p.voice, p.stt_executor, p.tts_executor, p.harness,
                    p.live_model, p.live_talk, p.tool_server, p.hands_server, p.helpers, p.mem, p.barge_in,
                    p.backchannel, p.messages, p.notices, meetings=p.meetings, diarize_executor=p.diarize_executor,
-                   attention=p.attention, background_stt=p.background_stt, alarms=p.alarms, weather=p.weather)
+                   attention=p.attention, background_stt=p.background_stt, alarms=p.alarms, weather=p.weather,
+                   decisions=p.decisions)
 
 
 def _workspace(p: Parts) -> None:
@@ -193,6 +196,8 @@ def _engines(p: Parts) -> None:
     p.mic = _create(p, AUDIO_INPUTS, "audio")
     p.output = _create(p, AUDIO_OUTPUTS, "audio")
     p.cleaner = _create(p, TEXT_CLEANERS, "dictation")
+    # The small model that reads what the user asked for, and sorts for helpers (ADR 0040).
+    p.decisions = Decisions(_create(p, DECIDERS, "decide"), wait_s=config.decide.wait_s)
     p.stt_executor = ThreadPoolExecutor(1, thread_name_prefix="stt")
     p.tts_executor = ThreadPoolExecutor(1, thread_name_prefix="tts")
 
@@ -487,7 +492,7 @@ def _talk(p: Parts) -> None:
         eyes=p.eyes, approvals=p.approvals, memory=mem.turns if mem is not None else None,
         backchannel=p.backchannel, routines=p.routines, meetings=p.meetings, undo=p.undo,
         opener=Opener(AppHands(p.bridge), p.ui, p.clock), language=p.language, quick=p.quick, writer=writer,
-        computer=p.platform.computer)
+        computer=p.platform.computer, decisions=p.decisions)
     p.attention.attach(turn=lambda: live_talk.busy)
     p.helpers.on_result = live_talk.note
     p.helpers.on_copy = lambda text: writer.copy([text], outside=True, in_turn=False)
@@ -553,7 +558,8 @@ def _tool_socket(p: Parts) -> None:
                                      ToolRequests(questions, p.bridge, p.enabled, p.memory_requests,
                                                   phone=p.messages, reminders=p.reminders,
                                                   access=p.access, undo=p.undo,
-                                                  installer=Installer(search_dirs=p.platform.tool_dirs)).handle)
+                                                  installer=Installer(search_dirs=p.platform.tool_dirs),
+                                                  decisions=p.decisions).handle)
 
 
 def _heartbeat(p: Parts) -> None:

@@ -13,7 +13,7 @@ from pathlib import Path
 from milo.core.events import ActionDone, EntryChanged, UndoPoints
 from milo.core.types import ScreenCapture
 from milo.services.app_bridge import AppError
-from milo.services.writing import RULES, asks_to_write, clean, first_words, plain_value
+from milo.services.writing import RULES, clean, first_words, plain_value
 from tests.fakes import FakeEyes, FakeLiveModel
 from tests.services.stack import Stack, settle
 
@@ -201,23 +201,6 @@ def test_a_helpers_update_never_writes(tmp_path):
 
     asyncio.run(run())
     assert s.paste.calls == []
-
-
-def test_what_counts_as_asking_for_writing():
-    for text in ("write Anna that I'm late", "answer this email politely", "reply to Tom", "make it shorter",
-                 "write a short summary of what we discussed for Slack", "a short summary for Slack", "schreib Anna", "beantworte die Mail", "fass das kurz zusammen",
-                 "übersetz das ins Englische"):
-        assert asks_to_write(text), text
-    for text in ("can you answer this email?", "could you write Tom back", "kannst du ihm antworten?",
-                 "make it a bit more polite", "mach es kürzer", "okay, now reply that 1 works", "bitte antworte Tom",
-                 "an email to Anna saying I'm late", "please draft a reply"):
-        assert asks_to_write(text), text
-    for text in ("what does this email say?", "okay thanks", "who is Tom?", "was steht da?",
-                 "what does the reply say?", "what type of email is this?", "is this a good answer?",
-                 "was hat er geantwortet?", "a longer one would be nice", "how polite is it?",
-                 "did he write back?", "can you tell me what the reply says?", "an email from my bank, is it legit?",
-                 "show me Tom's reply", "kannst du mir sagen, was er geantwortet hat?", "a reply to Tom, is it rude?"):
-        assert not asks_to_write(text), text
 
 
 def test_the_card_shows_the_first_words():

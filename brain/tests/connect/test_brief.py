@@ -32,7 +32,8 @@ def full_toolbox(home, kinds=None) -> Toolbox:
 
 def test_the_server_serves_only_the_kinds_it_is_told_and_always_milos_own(home):
     server = mcp_server(full_toolbox(home, frozenset({"calendar"})))
-    assert names(server) == {"calendar_events", "calendar_add_event", "milo_remind", "undo_point", "undo_note"}
+    assert names(server) == {"calendar_events", "calendar_add_event", "milo_remind", "classify", "undo_point",
+                            "undo_note"}
     everything = names(mcp_server(full_toolbox(home)))
     assert {"mail_search", "files_read", "memory_search", "calendar_events"} <= everything
 
@@ -79,7 +80,7 @@ def test_the_brief_leaves_out_what_is_switched_off():
 
 
 def test_a_brief_is_short():
-    assert len(brief(CALENDAR)) < 3500
+    assert len(brief(CALENDAR)) < 3600  # 3500 until classify, every helper's sorting tool (ADR 0040)
     assert len(brief(ALL)) < 9000
 
 

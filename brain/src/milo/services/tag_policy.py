@@ -16,41 +16,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from milo.core.packages import POINTS_OUTSIDE
-
-_WORK = re.compile(r"\b((fix|fill|put|add|make|change|update|correct|write|enter|insert|sort|format|create|build|"
-                   r"finish|complete|edit|move|rename|copy|paste|replace|open|go|show|play|send|remind|check|find|"
-                   r"summari[sz]e|start|stop|set|take|search|google|look up|delete|remove|cancel|schedule|save|archive|"
-                   r"install|reinstall|upgrade)"
-                   r"(es|s|ed|d|ing)?|"
-                   # Only in their action form: "Mark", "Haken" and "Streichholz" ask for nothing.
-                   r"(tick|cross)(es|s|ed|ing)?\s+(\w+\s+){0,4}?(off|out)|mark(s|ed|ing)?\s+(\w+\s+){0,4}?"
-                   r"(as\s+)?(done|complete)|abhak\w*|hak(e|t|en)?\s+(\w+\s+){0,4}?ab|streich(e|t|en)?|stopp(e|t|en)?|"
-                   r"(mach|füll|änder|korrigier|trag|schreib|erstell|sortier|formatier|bearbeit|füg|erledig|"
-                   r"kopier|ersetz|verschieb|benenn|öffne|zeig|spiel|schick|erinner|stell|such|lösch|entfern|absag|"
-                   r"speicher|notier|plan|installier)\w*)\b", re.IGNORECASE)
-_QUESTION = re.compile(r"^\s*(what|why|how|who|whom|whose|where|when|which|is|are|was|were|does|did|do|has|have|"
-                       r"was|warum|wieso|weshalb|wie|wer|wo|wann|welche\w*|ist|sind|hat|haben)\b", re.IGNORECASE)
-
-
-# The user's own words ask for this very tag: only then may it skip outside text's question.
-_INSTALL = re.compile(r"\b((re)?install(s|ed|ing)?|upgrade[sd]?|upgrading|installier\w*)\b",
-                      re.IGNORECASE)
-_REMEMBER = re.compile(r"\b(remember|keep in mind|merk(e|en|st)? (dir|euch|Ihnen))\b", re.IGNORECASE)
-
-
-_NOT = re.compile(r"\b(don'?t|do not|never|nicht|nie|kein\w*)\b", re.IGNORECASE)
-
-
-_PLEASE = re.compile(r"^\s*(?:(?:yes|yeah|ok|okay|please|so|and|ja|bitte|also|und)\b[\s,.!]*)*"
-                     r"(?:(?:can|could|would|will) you|(?:kannst|könntest|würdest) du)\b", re.IGNORECASE)
-
-
-def _asks(verb: re.Pattern, text: str) -> bool:
-    """The words ask for it: the verb, in a request ("remind me", "can you remind me"), not in a question ("did you
-    remind me?") or a no ("don't remind me", "erinner mich nicht")."""
-    return verb.search(text) is not None and not _NOT.search(text) \
-        and (bool(_PLEASE.search(text)) or not _QUESTION.search(text))
+from .decisions import Intent
 
 
 def _from_request(item: str, request: str) -> bool:
@@ -60,16 +26,6 @@ def _from_request(item: str, request: str) -> bool:
         return {w[:5] for w in re.findall(r"[^\W_]{3,}", text.lower())}
 
     return bool(stems(item) & stems(request))
-
-
-def asks_for_work(text: str) -> bool:
-    """Whether the user's own words ask Milo to do something, not only to look or explain: "fix this sheet",
-    "yes, open Chrome", "can you summarize the PDF", "füll das aus". "Can you …" and "kannst du …" with such a
-    verb are requests. A question ("what is this?", "why is it red?", "can you see my screen?") never is. In auto
-    mode only then may a task from the reply to what he saw start without a question."""
-    if not _WORK.search(text):
-        return False
-    return bool(_PLEASE.search(text)) or not _QUESTION.search(text)
 
 
 @dataclass(frozen=True)
@@ -86,12 +42,17 @@ class TagPolicy:
     at_mac: bool = False
     """Auto mode (ADR 0022) and the turn came from the Mac, by voice or typed."""
     own_work: bool = False
-    """At the Mac in auto mode, the user's own words this turn asked for work (`asks_for_work`)."""
+    """At the Mac in auto mode, the user's own words this turn asked Milo to do something, not only to look or
+    explain ("fix this sheet", "kannst du die in die Excel reinkopieren?"; not "what is this?" or "thanks"), as the
+    decision model read them (services/decisions.py)."""
     own_install: bool = False
     """At the Mac in auto mode, the user's own words asked Milo to install something ("install the codex cli",
     "installier mir tree")."""
     own_fact: bool = False
     """At the Mac in auto mode, the user's own words asked Milo to remember something ("remember", "merk dir")."""
+    own_write: bool = False
+    """The user's own words asked for a text to be written ("answer this email", "schreib Anna"): then outside text
+    read before can't be what started a <write> (Writer). Not "what does the reply say?"."""
     request: str = ""
     """The user's own words this turn, after the request they answer when Milo's last reply asked them something
     ("put lunch with Anna in tomorrow", "What time?", "at one")."""
@@ -173,11 +134,12 @@ class TagPolicy:
         return self._steered and not self.own_work
 
 
-def policy(*, tainted: bool, saw_screen: bool, now: bool, auto: bool, via: str, request: str) -> TagPolicy:
+def policy(*, tainted: bool, saw_screen: bool, now: bool, auto: bool, via: str, request: str,
+           intent: Intent = Intent()) -> TagPolicy:
     """The policy for a reply. `auto`: `[approvals] ask` is "auto". `via`: "voice", "typed" or "message".
-    `request`: the user's own words this turn."""
+    `request`: the user's own words this turn. `intent`: what the decision model read in them; nothing asked when it
+    hasn't answered (yet)."""
     at_mac = auto and via in ("voice", "typed")
     return TagPolicy(tainted=tainted, saw_screen=saw_screen, now=now, at_mac=at_mac,
-                     own_work=at_mac and asks_for_work(request),
-                     own_install=at_mac and _asks(_INSTALL, request) and not POINTS_OUTSIDE.search(request),
-                     own_fact=at_mac and _asks(_REMEMBER, request), request=request)
+                     own_work=at_mac and intent.work, own_install=at_mac and intent.install,
+                     own_fact=at_mac and intent.remember, own_write=intent.write, request=request)

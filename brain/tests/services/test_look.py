@@ -242,3 +242,25 @@ def test_a_task_question_shows_the_whole_task_under_it_in_the_window():
     s.approvals.confirm = recording
     assert answering(s, True, "fill this in") == ["Fill column C?"]
     assert details == ["Fill column C. Use the totals from row 9."]
+
+
+def test_a_task_after_a_look_runs_careful_when_the_decision_model_is_too_slow_to_say_it_was_asked_for():
+    """ADR 0040: no reading in time, nothing counts as asked. The model reads only the user's words."""
+    import time
+
+    from milo.services.decisions import Decisions
+    from tests.fakes import FakeDecider
+
+    class Slow(FakeDecider):
+        def decide(self, text, questions):
+            answers = super().decide(text, questions)
+            time.sleep(0.3)
+            return answers
+
+    s = Stack(eyes=FakeEyes(EXCEL), decider=Slow(), model=FakeLiveModel(
+        ["[thinking] <look/>"], ["[neutral] It's a budget."],
+        ["[happy] On it. <task>Open Excel and make a budget table. One row per weekday.</task>"]))
+    s.live_talk._decisions = Decisions(s.decider, wait_s=0.05)
+    assert answering(s, False, "look at this", "open Excel and make a table for the week") == []
+    assert s.tasks.helpers[0].careful
+    assert s.decider.asked[0] == "look at this", "only the user's words, never the screen"

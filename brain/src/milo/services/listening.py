@@ -144,6 +144,8 @@ class Listening:
             log.exception("could not prepare the recording")
         if not self._goes_to_cloud(mode):
             self._wake()
+        if mode is ListenMode.TALK:
+            self._live_talk.wake()
         if not tentative:
             self._show()
 

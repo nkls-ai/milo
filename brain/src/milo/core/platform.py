@@ -34,13 +34,17 @@ class Platform:
     """What Milo calls the machine he runs on in what he says ("while the computer was asleep")."""
     home: str = "auto"
     """[home] use: the home system. "auto" finds Home Assistant when it is configured, else this computer's own."""
+    decide: str = "none"
+    """[decide] use: the small model that reads what the user asked for (ADR 0040). "none": nothing counts as asked,
+    so after outside text Milo asks first."""
     tool_dirs: tuple[str, ...] = ()
     """Where package managers live besides PATH, which is bare when the app starts the brain (install_package)."""
 
     def use(self, section: str) -> str | None:
         """The default `use` for a pluggable config section, None for sections that must name one."""
         return {"chat": self.chat, "stt": self.stt, "tts": self.tts, "connections": self.connections,
-                "messages": self.messages, "weather": self.weather, "home": self.home}.get(section)
+                "messages": self.messages, "weather": self.weather, "home": self.home,
+                "decide": self.decide}.get(section)
 
 
 ANYWHERE = Platform("other", stt="elevenlabs", tts="elevenlabs", tts_fallback="", embedder="hash",

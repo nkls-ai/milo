@@ -164,6 +164,8 @@ async def _serve(runtime: Runtime) -> None:
         # Starts the chat model's process with the system prompt now, saving 1-2 s on the first turn.
         "chat": runtime.live_talk.warm,
     }
+    if runtime.decisions is not None and runtime.decisions.available:
+        engines["decide"] = runtime.decisions.warm  # on its own thread; loads d3 (ADR 0040)
     memory = runtime.memory
     if memory is not None:
         engines["memory"] = memory.memory.warm  # the embedder on its own thread, then the index catches up
