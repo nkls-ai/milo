@@ -27,9 +27,12 @@ def mac_server(command: Sequence[str]) -> tuple[ToolServer, ...]:
 
 
 INSTRUCTIONS = """\
-Tools that act on the user's Mac. Every action shows in Milo's window. Use the fastest route:
+Tools that act on the user's Mac. Every action shows in Milo's window. The user waits for each step, so take \
+the fastest route: straight to the result in as few calls as you can, never browsing or scrolling for what an \
+address, a search or one call gets you. Read with window_text; look with screenshot only when text can't tell.
 1. open_url for a web page (in the browser the user named), open_app for an app. Never open things with keys, \
-clicks or a script.
+clicks or a script. Go to the page itself: a site's search page with the words in its address, a link's own \
+address.
 2. sheet_write and sheet_read for tables in Excel and Numbers, write_document for a new text document.
 3. run_applescript for other scriptable apps; each script waits for the user's yes.
 4. ax_find, then ax_press and ax_set_value: they work in the background.
@@ -84,7 +87,9 @@ _FOR_APP = {"app": _s("The app this is for, e.g. \"Google Chrome\". Milo brings 
 TOOLS: tuple[Tool, ...] = (
     Tool("list_apps", "List the open apps and which one is in front. Instant; start here."),
     Tool("open_url", "Open a web page and bring its window to the front: the first route for anything on the "
-         "web. Never type an address or press keys to get there. Instant, no question.",
+         "web. Never type an address or press keys to get there. Instant, no question. To find something on a "
+         "site, open its search page with the words in the address (https://www.youtube.com/results?search_query="
+         "funny+cats, https://www.google.com/search?q=...) instead of browsing its home page.",
          {"url": _s("The address, e.g. \"https://www.youtube.com\". Only http and https."),
           "app": _s("The browser to open it in, e.g. \"Google Chrome\", if the user named one. Default: their "
                     "default browser.")}, ("url",), acts=True),
@@ -114,7 +119,8 @@ TOOLS: tuple[Tool, ...] = (
           "text": _s("The whole text. Line breaks are kept.")}, ("app", "text"), acts=True),
     Tool("window_text", "Read the visible text of an app's front window through Accessibility. Fast, no "
          "screenshot. Prefer it over screenshot to find out what a window shows. In a browser (Chrome, Safari, "
-         "Edge, Arc) it reads the web page too; the addresses of its links are in ax_tree." + _UNTRUSTED, _APP),
+         "Edge, Arc) it reads the web page too, also below what is in view, so don't scroll or screenshot to read "
+         "one; the addresses of its links are in ax_tree." + _UNTRUSTED, _APP),
     Tool("ax_tree", "List the buttons, fields and other controls of an app's front window, each with an "
          "element id such as e12, for ax_press and ax_set_value. Fast and exact; prefer it over clicking by "
          "coordinates. In a browser it lists the page's links too, each with its address after →: read a page's "
