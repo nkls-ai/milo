@@ -113,10 +113,13 @@ TOOLS: tuple[Tool, ...] = (
          {"app": {"type": "string", "enum": ["TextEdit", "Pages"], "description": "The app."},
           "text": _s("The whole text. Line breaks are kept.")}, ("app", "text"), acts=True),
     Tool("window_text", "Read the visible text of an app's front window through Accessibility. Fast, no "
-         "screenshot. Prefer it over screenshot to find out what a window shows." + _UNTRUSTED, _APP),
+         "screenshot. Prefer it over screenshot to find out what a window shows. In a browser (Chrome, Safari, "
+         "Edge, Arc) it reads the web page too; the addresses of its links are in ax_tree." + _UNTRUSTED, _APP),
     Tool("ax_tree", "List the buttons, fields and other controls of an app's front window, each with an "
          "element id such as e12, for ax_press and ax_set_value. Fast and exact; prefer it over clicking by "
-         "coordinates. Ids are valid until the next ax_tree call." + _UNTRUSTED, _APP),
+         "coordinates. In a browser it lists the page's links too, each with its address after →: read a page's "
+         "links and titles this way, not with a script. Ids are valid until the next ax_tree call." + _UNTRUSTED,
+         _APP),
     Tool("ax_find", "Find controls in an app's front window by kind and words, like a button with \"Save\" or "
          "a text field \"Name\", with element ids for ax_press and ax_set_value. Shorter than ax_tree; ids are "
          "valid until the next ax_tree or ax_find." + _UNTRUSTED,
@@ -129,7 +132,7 @@ TOOLS: tuple[Tool, ...] = (
          {"element": _s("Element id from ax_tree."), "text": _s("The new value.")}, ("element", "text"),
          acts=True),
     Tool("run_applescript", "Run AppleScript in Milo, for scriptable apps the other tools don't cover (Keynote, "
-         "Safari, Finder). For tables use sheet_write, for a new text document write_document; for mail, notes, "
+         "Safari, Finder). To read a web page use window_text or ax_tree, never a script. For tables use sheet_write, for a new text document write_document; for mail, notes, "
          "calendar, reminders and files use Milo's own tools if you have them. Each script waits for the "
          "user's yes, so do the whole job in one script rather than many small ones. Scripts about passwords "
          "never run. Up to 30 s. Milo keeps a copy of an Excel workbook before your first change, so the user can "

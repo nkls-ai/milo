@@ -131,7 +131,7 @@ public final class ScreenController {
             return false
         case let .confirmDone(id, _):
             // A click already took the question away; another question still waiting keeps the check off.
-            if model.handsActive && (model.question == nil || model.question?.id == id) { detector.arm() }
+            if model.handsActive && (model.question == nil || model.question?.id == id) { detector.answered(at: now()) }
             return false
         default:
             return false
@@ -291,6 +291,7 @@ public final class ScreenController {
         ports.hands.borrowed = devices
         model.handsBorrowed = !devices.isEmpty
         detector.mode = devices.isEmpty ? .background : .borrowed
+        detector.pointerCounts = devices.contains(Delivery.Need.mouse.rawValue)
     }
 
     private func handle(_ input: UserInput) {

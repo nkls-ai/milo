@@ -92,10 +92,12 @@ files_scope = "~"                 # files outside this folder are never searched
 
 [weather]
 # The forecast Milo answers "do I need an umbrella tomorrow?" from, read about every 45 minutes.
-# The place's name goes to Open-Meteo (free, no account); nothing else about you does.
+# The place goes to Open-Meteo (free, no account). Without a place, ipinfo.io tells roughly where your internet
+# address is (often a nearby city); nothing else about you goes anywhere.
 enabled = true
 # use = "open_meteo"              # left out: Open-Meteo
-place = ""                        # a city ("Berlin", "Portland, Oregon") or "52.52,13.41"; empty: your time zone's city
+place = ""                        # a city ("Berlin", "Portland, Oregon") or "52.52,13.41"; empty: found as below
+by_ip = true                      # empty place: where your internet address is; false: your time zone's city
 units = "metric"                  # "metric" (°C, km/h) or "imperial" (°F, mph)
 
 [home]

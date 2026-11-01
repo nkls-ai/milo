@@ -30,6 +30,7 @@ public final class SystemScreenReader: ScreenReader {
                 errors.append(AX.notTrusted)
             } else if let front {
                 let app = AX.application(front.processIdentifier)
+                if AX.askForWebContent(front, app) { AX.waitForWebContent(app) }
                 let window = AX.window(of: app)
                 frame = window.flatMap(AX.frame)
                 capture.window = window.flatMap { AX.string($0, kAXTitleAttribute) } ?? ""
@@ -70,6 +71,11 @@ public final class SystemScreenReader: ScreenReader {
         if !AX.isSecure(element), let value: String = AX.attribute(element, kAXValueAttribute),
            !value.isEmpty, value != label {
             text += " = \(AX.clip(value, 200))"
+        }
+        // A link says where it goes, so a page's links can be listed without a script.
+        if AX.role(element) == "AXLink", let url: NSURL = AX.attribute(element, kAXURLAttribute),
+           let address = url.absoluteString, !address.isEmpty {
+            text += " → \(AX.clip(address, 200))"
         }
         return text
     }

@@ -51,6 +51,50 @@ enum AX {
         return app
     }
 
+    /// Chrome, Edge, Brave, Arc and apps built on Electron fill in their web pages for the Accessibility API only
+    /// once an assistive app asks. Without it Milo saw a browser's tabs and buttons and none of the page, and a helper
+    /// fell back to scripts that Chrome blocks and that each wait for a yes. Electron takes AXManualAccessibility;
+    /// Chromium browsers only AXEnhancedUserInterface, VoiceOver's switch, and answer it with an error while they
+    /// still build the page (checked on Chrome 2026-11-01: 68 elements before, 1238 with 124 links a few seconds
+    /// after). Asked once per process; true the first time, when the page needs a moment to appear.
+    static func askForWebContent(_ running: NSRunningApplication, _ app: AXUIElement) -> Bool {
+        let pid = running.processIdentifier
+        webLock.lock()
+        defer { webLock.unlock() }
+        guard pid != getpid(), webAsked.insert(pid).inserted else { return false }
+        if AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue) == .success {
+            return true
+        }
+        guard let bundle = running.bundleIdentifier, chromiumBrowsers.contains(where: bundle.hasPrefix) else {
+            return false
+        }
+        AXUIElementSetAttributeValue(app, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
+        return true
+    }
+
+    static let chromiumBrowsers = ["com.google.Chrome", "com.microsoft.edgemac", "com.brave.Browser",
+                                   "company.thebrowser.Browser", "com.vivaldi.Vivaldi", "com.operasoftware.Opera",
+                                   "org.chromium.Chromium"]
+
+    /// After `askForWebContent`: wait until the window holds a web page with something in it, at most `webContentWait`.
+    static func waitForWebContent(_ app: AXUIElement) {
+        let deadline = Date().addingTimeInterval(webContentWait)
+        while Date() < deadline {
+            if let window = window(of: app), hasWebContent(window) { return }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+    }
+
+    private static func hasWebContent(_ element: AXUIElement, depth: Int = 0) -> Bool {
+        if role(element) == "AXWebArea" { return !(attribute(element, kAXChildrenAttribute) as [AXUIElement]? ?? []).isEmpty }
+        guard depth < 12 else { return false }
+        return (attribute(element, kAXChildrenAttribute) as [AXUIElement]? ?? []).contains { hasWebContent($0, depth: depth + 1) }
+    }
+
+    static let webContentWait: TimeInterval = 3
+    private static let webLock = NSLock()
+    private static var webAsked = Set<pid_t>()
+
     static func window(of app: AXUIElement) -> AXUIElement? {
         attribute(app, kAXFocusedWindowAttribute) ?? attribute(app, kAXMainWindowAttribute)
     }

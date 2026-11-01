@@ -361,7 +361,10 @@ class WeatherSettings:
 
     enabled: bool = True
     place: str = ""
-    """A city ("Berlin", "Portland, Oregon") or "52.52,13.41". Empty: the city of the system's time zone."""
+    """A city ("Berlin", "Portland, Oregon") or "52.52,13.41". Empty: roughly where the internet address is (`by_ip`),
+    else the city of the system's time zone."""
+    by_ip: bool = True
+    """Without a place, ask ipinfo.io where the computer's internet address is (often a nearby city)."""
     units: str = "metric"
     """"metric" (°C, km/h) or "imperial" (°F, mph)."""
 

@@ -87,4 +87,22 @@ import Testing
         d.mode = .background
         #expect(d.handle(UserInput(.key, at: 4)) == nil)
     }
+
+    @Test func withOnlyTheKeyboardLentMovingTheMouseIsNoTakeover() {
+        var d = TakeoverDetector(grace: 0.3, slop: 6)
+        d.arm()
+        d.pointerCounts = false
+        #expect(d.handle(UserInput(.mouseMoved(x: 0, y: 0), at: 1)) == nil)
+        #expect(d.handle(UserInput(.mouseMoved(x: 600, y: 300), at: 1.2)) == nil)
+        #expect(d.handle(UserInput(.key, at: 1.3)) == .user, "typing still takes the Mac back")
+    }
+
+    @Test func theWayBackFromTheYesButtonIsNoTakeover() {
+        // The user, 2026-11-01: clicking OK on Milo's question "registered as me taking over".
+        var d = TakeoverDetector(grace: 0.3, slop: 6)
+        d.answered(at: 10)
+        #expect(d.handle(UserInput(.mouseMoved(x: 900, y: 80), at: 10.1)) == nil)
+        #expect(d.handle(UserInput(.mouseMoved(x: 500, y: 400), at: 11.2)) == nil)
+        #expect(d.handle(UserInput(.mouseMoved(x: 300, y: 400), at: 12)) == .user, "later, with the mouse lent, it counts")
+    }
 }

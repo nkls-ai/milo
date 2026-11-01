@@ -348,7 +348,9 @@ public final class MacHands: HandsExecutor {
         } ?? front
         guard let app else { throw HandsFailure("No app is in front.") }
         guard !AX.isSecret(app) else { throw HandsFailure(AX.secretRefused) }
-        guard let window = AX.window(of: AX.application(app.processIdentifier)) else {
+        let element = AX.application(app.processIdentifier)
+        if AX.askForWebContent(app, element) { AX.waitForWebContent(element) }
+        guard let window = AX.window(of: element) else {
             throw HandsFailure("\(app.localizedName ?? "That app") has no window open.")
         }
         return (app, window)

@@ -87,7 +87,8 @@ def test_the_place_comes_from_the_time_zone_when_none_is_set():
 
 def test_the_weather_section_of_config_toml():
     config = Config({})
-    assert (config.weather.enabled, config.weather.place, config.weather.units) == (True, "", "metric")
+    assert (config.weather.enabled, config.weather.place, config.weather.units, config.weather.by_ip) == \
+        (True, "", "metric", True)
     assert config.pluggable("weather") == ("open_meteo", {})
     assert Config({"weather": {"place": "Portland, Oregon", "units": "imperial"}}).weather.place == "Portland, Oregon"
     with pytest.raises(ConfigError, match="units"):
@@ -219,3 +220,44 @@ def test_the_talker_answers_the_umbrella_question_from_the_block(tmp_path):
     assert "- Tomorrow, Fri 30 Oct: 6–9°C, rain, rain chance 80%, mostly 14–18h" in turn
     assert "Answer weather questions from it" in s.model.system_prompts[-1]
     assert not s.tasks.helpers, "no helper for the weather"
+
+
+# ---- where the weather is for, without a place in config.toml
+
+
+def test_without_a_place_the_internet_address_tells_where_and_the_time_zone_is_the_last_resort():
+    """The user, 2026-11-01: "it didn't use my correct location?" The time zone said Berlin; they were near
+    Osnabrück. The address says Münster, 50 km off: close enough for rain."""
+    clock = FakeClock()
+    service = FakeWeather(forecast(), forecast(), forecast())
+    found = iter([("Münster", "51.9624,7.6257"), ("", "")])
+    report = WeatherReport(service, clock, place="", locate=lambda: next(found), fallback="Berlin")
+    configured = WeatherReport(FakeWeather(forecast()), clock, place="Osnabrück", locate=lambda: 1 / 0)
+
+    async def run():
+        report.soon()
+        await report.pending
+        assert service.calls[-1][0] == "51.9624,7.6257", "the position, not a name: there are several Münsters"
+        assert report.lines()[0].startswith("Weather in Münster")
+        clock.advance(minutes=46)
+        report.soon()
+        await report.pending
+        assert service.calls[-1][0] == "Berlin" and report.lines()[0].startswith("Weather in Berlin")
+        configured.soon()
+        await configured.pending
+        assert configured.lines()[0].startswith("Weather in Osnabrück"), "a place in config.toml wins, unasked"
+
+    asyncio.run(run())
+
+
+def test_the_address_lookup_reads_ipinfo_and_never_raises():
+    from milo.adapters.weather.ip_location import ip_place
+    asked = []
+
+    def fetch(url, timeout_s):
+        asked.append(url)
+        return {"city": "Münster", "region": "North Rhine-Westphalia", "loc": "51.9624,7.6257"}
+
+    assert ip_place(fetch=fetch) == ("Münster", "51.9624,7.6257") and asked == ["https://ipinfo.io/json"]
+    assert ip_place(fetch=lambda u, t: {"city": "X", "loc": "<b>"}) == ("", "")
+    assert ip_place(fetch=lambda u, t: (_ for _ in ()).throw(OSError("offline"))) == ("", "")

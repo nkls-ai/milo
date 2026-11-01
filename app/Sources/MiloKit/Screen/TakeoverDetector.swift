@@ -32,7 +32,10 @@ public struct UserInput: Equatable, Sendable {
 /// the mouse or keyboard (`.borrowed`), Milo's own events carry a marker and never count, and pressing a
 /// key, clicking or scrolling stops the session at once. The pointer counts only once it moved more than
 /// `slop` points from where it rested, and not within `grace` seconds of an action of Milo's: moving the
-/// pointer for a click can show up as an unmarked move.
+/// pointer for a click can show up as an unmarked move. It counts only while Milo has the mouse (`pointerCounts`):
+/// with just the keyboard lent, moving the mouse is no takeover, and the way back from the Yes button after
+/// answering one of his questions never is (`answered`). The user, 2026-11-01: "when I clicked okay it registered
+/// as me taking over".
 public struct TakeoverDetector: Sendable {
     public enum Reason: String, Sendable {
         case escape, user
@@ -48,6 +51,10 @@ public struct TakeoverDetector: Sendable {
     public var mode: Mode {
         didSet { if mode != oldValue { anchor = nil } }
     }
+    /// Whether pointer moves count: Milo borrowed the mouse, not only the keyboard.
+    public var pointerCounts = true
+    /// Seconds after a question is answered in which pointer moves only set where it rests.
+    public var answerGrace: TimeInterval = 1.5
     public private(set) var armed = false
     private var actingUntil: TimeInterval = -.infinity
     private var anchor: (x: Double, y: Double)?
@@ -62,6 +69,13 @@ public struct TakeoverDetector: Sendable {
     public mutating func arm() {
         armed = true
         anchor = nil
+    }
+
+    /// The user answered a question at `time` (by clicking in Milo's window): watch again, but the pointer's way
+    /// back from his button isn't a takeover.
+    public mutating func answered(at time: TimeInterval) {
+        arm()
+        actingUntil = max(actingUntil, time + answerGrace)
     }
 
     public mutating func disarm() {
@@ -85,6 +99,7 @@ public struct TakeoverDetector: Sendable {
         case .key, .mouseDown, .scroll:
             return .user
         case let .mouseMoved(x, y):
+            guard pointerCounts else { return nil }
             if input.timestamp <= actingUntil {
                 anchor = (x, y)
                 return nil

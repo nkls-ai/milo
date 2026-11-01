@@ -450,9 +450,11 @@ def _quick(p: Parts):
 
 
 def _weather(p: Parts) -> WeatherReport | None:
-    """The forecast for <today> (ADR 0038): `[weather] place`, else the city of the system's time zone, so no
-    location permission is needed. None when it is off or no place can be told."""
+    """The forecast for <today> (ADR 0038): `[weather] place`, else roughly where the internet address is, else the
+    city of the system's time zone, so no location permission is needed. None when it is off or no place can be
+    told."""
     from .adapters.timezone import zone_name
+    from .adapters.weather.ip_location import ip_place
     from .core.registry import WEATHER
     from .core.weather import city_of_zone
     from .services.weather import WeatherReport
@@ -460,12 +462,14 @@ def _weather(p: Parts) -> WeatherReport | None:
     settings = p.config.weather
     if not settings.enabled:
         return None
-    place = settings.place.strip() or city_of_zone(zone_name())
-    if not place:
+    place, zone_city = settings.place.strip(), city_of_zone(zone_name())
+    by_ip = settings.by_ip and not place
+    if not (place or by_ip or zone_city):
         log.info("no weather in <today>: the time zone names no city; set [weather] place")
         return None
     name, options = p.config.pluggable("weather")
-    return WeatherReport(WEATHER.create(name, options, p.ctx), p.clock, place=place, units=settings.units)
+    return WeatherReport(WEATHER.create(name, options, p.ctx), p.clock, place=place, units=settings.units,
+                         locate=ip_place if by_ip else None, fallback=zone_city)
 
 
 def _talk(p: Parts) -> None:
