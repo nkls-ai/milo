@@ -69,11 +69,11 @@ def test_a_night_summarizes_learns_from_the_user_only_and_writes_the_journal(tmp
     summary = episodes.between(datetime(2026, 10, 29), datetime(2026, 10, 30))[0]
     assert summary.summary == "Anna told the user she moved to Berlin." and summary.people == ("Anna",)
     assert all(c.get("by", "").startswith("sleep-2026-10-29") for c in facts.changes()[-2:])
-    journal = (tmp_path / "journal" / "2026-10-29.md").read_text()
+    journal = (tmp_path / "journal" / "2026-10-29.md").read_text(encoding="utf-8")
     assert journal.startswith("# Thursday 29 October 2026") and "Anna moved to Berlin." in journal
     assert ledger.entries[0][0] == "memory"
     asyncio.run(sleeper.consolidate(DAY))  # again: the journal keeps one night section
-    assert (tmp_path / "journal" / "2026-10-29.md").read_text().count("Summed up at night") == 1
+    assert (tmp_path / "journal" / "2026-10-29.md").read_text(encoding="utf-8").count("Summed up at night") == 1
 
     assert undo(report.run, tmp_path / "runs", episodes, facts) == 3
     assert {f.text for f in facts.current()} >= {"Anna lives in Hamburg.", "The user works at Acme."}
@@ -173,7 +173,7 @@ def test_sleep_waits_for_an_idle_plugged_in_mac_and_does_each_day_once(tmp_path)
     assert asyncio.run(r.check()) and asyncio.run(r.check())  # an empty day costs no call
     assert not asyncio.run(r.check()), "the cap"
     assert sleeper.days == [date(2026, 10, 27), date(2026, 10, 28)]
-    saved = json.loads((tmp_path / "sleep.json").read_text())
+    saved = json.loads((tmp_path / "sleep.json").read_text(encoding="utf-8"))
     assert saved == {"calls": {"2026-10-30": 1}, "done": ["2026-10-27", "2026-10-28"]}
     r.calls_per_day = 2
     assert asyncio.run(r.check()) and sleeper.days[-1] == date(2026, 10, 29)

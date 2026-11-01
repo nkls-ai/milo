@@ -107,7 +107,7 @@ def test_chatty_falls_back_to_a_note_when_the_talker_is_not_free():
     assert sink.events == [Bubble("Budget table: Opening Excel")]
 
 
-def test_chatty_end_to_end_the_talker_phrases_the_milestone_without_tags():
+def test_chatty_end_to_end_the_talker_phrases_the_milestone_without_tags(fake_installed_apps):
     gate = asyncio.Event()
     s = Stack(model=FakeLiveModel(["[happy] Excel is open, filling in the days now. <task>sneaky</task>"]),
               harness=ScriptedHarness(WorkerScript(("sleep", 0.001), step("1", "Opening Safari", "app"), gate,
@@ -145,7 +145,7 @@ def test_updates_and_max_helpers_are_checked():
 
 def test_live_settings_follow_config_toml_without_a_restart(tmp_path):
     path = tmp_path / "config.toml"
-    path.write_text('[chat]\nupdates = "bubble"\n')
+    path.write_text('[chat]\nupdates = "bubble"\n', encoding="utf-8")
     now = [0.0]
 
     def parse(text: str):
@@ -153,12 +153,12 @@ def test_live_settings_follow_config_toml_without_a_restart(tmp_path):
         return c.chat.updates, c.harness.max_helpers
 
     live = LiveSettings(path, parse, "bubble", 3, check_s=2, monotonic=lambda: now[0])
-    path.write_text('[chat]\nupdates = "quiet"\n[harness]\nmax_helpers = 1\n')
+    path.write_text('[chat]\nupdates = "quiet"\n[harness]\nmax_helpers = 1\n', encoding="utf-8")
     os.utime(path, (1, 1))
     assert live.updates() is UpdateMode.BUBBLE, "not checked again yet"
     now[0] = 3
     assert (live.updates(), live.max_helpers()) == (UpdateMode.QUIET, 1)
-    path.write_text('[chat]\nupdates = "very loud"\n')
+    path.write_text('[chat]\nupdates = "very loud"\n', encoding="utf-8")
     os.utime(path, (2, 2))
     now[0] = 6
     assert live.updates() is UpdateMode.QUIET, "a broken file keeps the last good value"
@@ -166,9 +166,9 @@ def test_live_settings_follow_config_toml_without_a_restart(tmp_path):
 
 def test_a_change_from_the_settings_window_applies_at_once(tmp_path):
     path = tmp_path / "config.toml"
-    path.write_text('[chat]\nupdates = "bubble"\n')
+    path.write_text('[chat]\nupdates = "bubble"\n', encoding="utf-8")
     live = LiveSettings(path, lambda text: ("bubble", 3), "bubble", 3, check_s=2, monotonic=lambda: 0.0)
-    path.write_text('[chat]\nupdates = "chatty"\n')
+    path.write_text('[chat]\nupdates = "chatty"\n', encoding="utf-8")
     os.utime(path, (5, 5))
     live.use("chatty", 2)
     assert (live.updates(), live.max_helpers()) == (UpdateMode.CHATTY, 2)

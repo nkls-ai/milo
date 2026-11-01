@@ -5,8 +5,9 @@ Dates are relative to the day the eval runs, so "tomorrow" and "on Thursday" alw
 
 from __future__ import annotations
 
-import subprocess
-import tempfile
+import io
+import zipfile
+from xml.sax.saxutils import escape
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -118,11 +119,7 @@ def seed(root: Path, today: date) -> World:
         if path.suffix == ".pdf":
             path.write_bytes(tiny_pdf(text))
         elif path.suffix == ".docx":
-            with tempfile.TemporaryDirectory() as tmp:
-                source = Path(tmp) / "letter.txt"
-                source.write_text(text, encoding="utf-8")
-                subprocess.run(["textutil", "-convert", "docx", str(source), "-output", str(path)], check=True,
-                               capture_output=True)
+            path.write_bytes(tiny_docx(text))
         else:
             path.write_text(text, encoding="utf-8")
     return world
@@ -146,3 +143,25 @@ def tiny_pdf(text: str) -> bytes:
     out += b"".join(b"%010d 00000 n \n" % o for o in offsets)
     out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objects) + 1, xref)
     return bytes(out)
+
+
+def tiny_docx(text: str) -> bytes:
+    """Minimal real DOCX fixture, created without an installed office suite."""
+    data = io.BytesIO()
+    with zipfile.ZipFile(data, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("[Content_Types].xml", '<?xml version="1.0" encoding="UTF-8"?>'
+                         '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+                         '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+                         '<Default Extension="xml" ContentType="application/xml"/>'
+                         '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+                         '</Types>')
+        archive.writestr("_rels/.rels", '<?xml version="1.0" encoding="UTF-8"?>'
+                         '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                         '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
+                         '</Relationships>')
+        paragraphs = "".join('<w:p><w:r><w:t xml:space="preserve">' + escape(line) + '</w:t></w:r></w:p>'
+                             for line in text.splitlines())
+        archive.writestr("word/document.xml", '<?xml version="1.0" encoding="UTF-8"?>'
+                         '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>'
+                         + paragraphs + '<w:sectPr/></w:body></w:document>')
+    return data.getvalue()

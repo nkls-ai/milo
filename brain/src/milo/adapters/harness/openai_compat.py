@@ -75,10 +75,12 @@ class OpenAICompatModel:
 
     name = "openai_compat"
 
-    def __init__(self, base_url: str, model: str, *, key_file: Path | None = None, max_tokens: int = 600,
-                 temperature: float = 0.7, timeout_s: float = 30.0, cache_key: bool = True,
+    def __init__(self, base_url: str, model: str, *, key_file: Path | None = None, key: str = "",
+                 max_tokens: int = 600, temperature: float = 0.7, timeout_s: float = 30.0, cache_key: bool = True,
                  cache_control: bool = False, images: bool = True):
+        """`key` is for a key not saved yet (Setup's Test button); Milo itself reads `key_file`."""
         self.url = base_url.rstrip("/") + "/chat/completions"
+        self.host = urlsplit(self.url).netloc
         self.model = model
         self.key_file = key_file
         self.max_tokens = max_tokens
@@ -90,7 +92,9 @@ class OpenAICompatModel:
         self.last_usage = Usage()
         self.messages: list[dict] = []
         self._conversation = ""
-        self._key: str | None = None
+        self._key: str | None = key or None
+        # Only what every server takes: set after one refused the extras (stream_options, prompt_cache_key).
+        self.lean = False
         self._lock = asyncio.Lock()
         self._writer: asyncio.StreamWriter | None = None
         self._running = False
@@ -121,9 +125,19 @@ class OpenAICompatModel:
             messages.append({"role": "user", "content": content(text, images if self.images else ())})
             said: list[str] = []
             try:
-                async for delta in self._stream():
-                    said.append(delta)
-                    yield delta
+                try:
+                    async for delta in self._stream():
+                        said.append(delta)
+                        yield delta
+                except _Refused as e:
+                    # A server that takes no OpenAI extras (some llama.cpp and vLLM builds): once more without them.
+                    if said or self.lean or not e.extras:
+                        raise
+                    log.info("%s: %s refused the extra fields; asking without them from now on", self.name, self.host)
+                    self.lean = True
+                    async for delta in self._stream():
+                        said.append(delta)
+                        yield delta
             except (OSError, asyncio.IncompleteReadError, TimeoutError) as e:
                 if not self._interrupted:
                     raise HarnessError(f"{self.name}: lost the connection to {self.url}: {e}",
@@ -149,8 +163,10 @@ class OpenAICompatModel:
 
     def request_body(self) -> dict:
         body: dict[str, Any] = {"model": self.model, "messages": self.messages, "stream": True,
-                                "stream_options": {"include_usage": True}, "max_tokens": self.max_tokens,
-                                "temperature": self.temperature}
+                                "max_tokens": self.max_tokens, "temperature": self.temperature}
+        if self.lean:
+            return body
+        body["stream_options"] = {"include_usage": True}
         if self.cache_key:
             body["prompt_cache_key"] = f"milo-{self._conversation}"
         return body
@@ -170,7 +186,8 @@ class OpenAICompatModel:
                     url.hostname, port, ssl=ssl.create_default_context() if url.scheme == "https" else None,
                     limit=MAX_LINE)
         except (OSError, TimeoutError) as e:
-            raise HarnessError(f"{self.name}: can't reach {url.netloc}: {e}", transient=True) from None
+            raise HarnessError(f"{self.name}: can't reach {url.netloc}: {e}", transient=True,
+                               said=unreachable(url.netloc)) from None
         self._writer = writer
         if self._interrupted:  # stopped while connecting
             writer.close()
@@ -184,7 +201,7 @@ class OpenAICompatModel:
                 status, response = await _head(reader)
             lines = _lines(reader, response, self.timeout_s)
             if status >= 400:
-                raise _http_error(self.name, status, await _text(lines))
+                raise _http_error(self.name, status, await _text(lines), self.host, self.model)
             async for line in lines:
                 if self._interrupted:
                     break
@@ -201,7 +218,7 @@ class OpenAICompatModel:
                 if not isinstance(chunk, dict):
                     continue
                 if chunk.get("error"):
-                    raise _http_error(self.name, 200, json.dumps(chunk))
+                    raise _http_error(self.name, 200, json.dumps(chunk), self.host, self.model)
                 if isinstance(chunk.get("usage"), dict):
                     self.last_usage = usage(chunk["usage"])
                 delta = _delta(chunk)
@@ -214,12 +231,13 @@ class OpenAICompatModel:
 
     def _read_key(self) -> str:
         if self.key_file is None:
-            return ""
+            return self._key or ""
         if self._key is None:
             try:
-                self._key = read_secret(self.key_file, f"The key for {self.url}")
+                self._key = read_secret(self.key_file, f"The API key for {self.host}")
             except SecretError as e:
-                raise HarnessError(str(e), transient=False) from None
+                raise HarnessError(str(e), transient=False,
+                                   said=f"{e} Paste it in Connections & models, or choose another model there.") from None
         return self._key
 
 
@@ -307,16 +325,46 @@ async def _text(lines: AsyncIterator[str]) -> str:
     return "\n".join(out)
 
 
-def _http_error(name: str, status: int, body: str) -> HarnessError:
+class _Refused(HarnessError):
+    """The server turned the request down as malformed (400, 422). `extras`: it named a field only OpenAI has."""
+
+    def __init__(self, message: str, said: str, extras: bool):
+        super().__init__(message, transient=False, said=said)
+        self.extras = extras
+
+
+EXTRAS = ("stream_options", "prompt_cache_key", "include_usage", "unrecognized", "unknown field", "extra field",
+          "additional properties", "extra_forbidden")
+
+
+def unreachable(host: str) -> str:
+    return (f"I can't reach {host}. If it's a model server on this computer, like Ollama or LM Studio, start it; "
+            "otherwise check the address in Connections & models.")
+
+
+def _http_error(name: str, status: int, body: str, host: str = "", model: str = "") -> HarnessError:
     """The provider's own message where it gives one. Rate limits, overload and server errors are worth a retry;
-    a bad key, model or request isn't."""
+    a bad key, model or request isn't. `said` tells the user what to change."""
     message = body.strip()[:300]
     with contextlib.suppress(ValueError, AttributeError, TypeError):
         error = json.loads(body).get("error")
         message = str(error.get("message") if isinstance(error, dict) else error) or message
         if isinstance(error, dict) and isinstance(error.get("code"), int):
             status = error["code"]
-    return HarnessError(f"{name}: HTTP {status}: {message}", transient=status in (408, 409, 429) or status >= 500)
+    text = f"{name}: HTTP {status}: {message}"
+    host = host or "The model server"
+    if status in (401, 403):
+        said = f"{host} turned down the API key: {message} Check the key in Connections & models."
+    elif status == 404:
+        said = f"{host} doesn't know the model “{model}”: {message} Pick one of its models in Connections & models."
+    elif status in (400, 422):
+        lowered = message.lower()
+        return _Refused(text, f"{host} turned down the request: {message}", any(w in lowered for w in EXTRAS))
+    elif status in (408, 409, 429) or status >= 500:
+        said = f"{host} is busy or having trouble right now ({status}). Try again in a moment."
+    else:
+        said = f"{host} said: {message}"
+    return HarnessError(text, transient=status in (408, 409, 429) or status >= 500, said=said)
 
 
 @LIVE_MODELS.register("openai_compat")

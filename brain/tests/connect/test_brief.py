@@ -46,11 +46,11 @@ def test_no_tool_description_carries_the_servers_rules(home):
 
 
 def test_the_server_reads_its_kinds_from_the_environment(home, tmp_path):
-    (home / "config.toml").write_text('[connections]\nuse = "fake"\n[memory]\nenabled = false\n')
+    (home / "config.toml").write_text('[connections]\nuse = "fake"\n[memory]\nenabled = false\n', encoding="utf-8")
     env = {**os.environ, "MILO_HOME": str(home), TOOLS_ENV: "mail"}
     lines = [json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})]
     out = subprocess.run([sys.executable, "-m", "milo.connect"], input="\n".join(lines) + "\n", env=env,
-                         capture_output=True, text=True, timeout=30).stdout
+                         capture_output=True, text=True, encoding="utf-8", timeout=30).stdout
     tools = {t["name"] for t in json.loads(out.splitlines()[0])["result"]["tools"]}
     assert {"mail_search", "mail_read", "mail_draft", "mail_forward"} <= tools
     assert not any(t.startswith(("calendar_", "files_", "notes_")) for t in tools)

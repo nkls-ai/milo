@@ -7,8 +7,8 @@
 #
 # What it does on a Mac: checks the Mac, installs Apple's Command Line Tools and uv if they're missing (asking
 # first), gets Milo's source, installs the brain, downloads the speech models (hearing, voice, memory), asks which
-# subscription to connect (Claude, ChatGPT or both) and logs in, builds the app and starts it. Linux and Windows
-# get their own branch once their local hearing and voice exist (brain/src/milo/adapters/platform.py).
+# subscription to connect (Claude, ChatGPT or both) and logs in, builds the app and starts it.
+# For Windows/Linux, use the shared desktop distribution or scripts/start-desktop.* from a checkout.
 #
 # Options:
 #   --yes       ask nothing: install what's missing, connect only what's already logged in
@@ -243,7 +243,7 @@ connect_codex() {
 connect_accounts() {
   step "Connecting your subscription"
   say "Hearing and voice run on this Mac. For thinking, Milo uses a subscription you already have:"
-  say "no API keys and no extra bill. Claude does the talking; Claude or ChatGPT does the bigger jobs."
+  say "Claude or ChatGPT can do both the talking and bigger jobs, through the CLI you sign in to."
   find_claude || true
   find_codex || true
   has_claude=0; has_codex=0
@@ -258,7 +258,7 @@ connect_accounts() {
       printf '\n'
       say "${BOLD}Which do you have?${RESET}"
       say "  1) Claude (Pro or Max)     he talks and works with it"
-      say "  2) ChatGPT (Plus or Pro)   he works with it; talking needs Claude for now"
+      say "  2) ChatGPT (Plus or Pro)   he talks and works with Codex CLI"
       say "  3) Both                    Claude talks, ChatGPT works (recommended if you have both)"
       say "  4) Neither, or later       dictation and his voice work without one"
       ask "1, 2, 3 or 4?" "$default"
@@ -275,16 +275,20 @@ connect_accounts() {
     esac
   fi
 
-  # Claude talks (claude_live). Helpers: Codex when there's ChatGPT, else Claude Code.
-  if [ "$has_codex" = 1 ]; then harness=codex; else harness=claude; fi
-  milo_py configure --chat claude_live --harness "$harness" >/dev/null || warn "couldn't write ~/Milo/config.toml"
+  # Prefer Claude talking when both are connected; either CLI works alone.
+  chat=none; harness=none
+  if [ "$has_codex" = 1 ]; then chat=codex_live; harness=codex; fi
+  if [ "$has_claude" = 1 ]; then
+    chat=claude_live
+    [ "$has_codex" = 1 ] || harness=claude
+  fi
+  milo_py configure --chat "$chat" --harness "$harness" >/dev/null || warn "couldn't write ~/Milo/config.toml"
   if [ "$has_claude" = 1 ] && [ "$has_codex" = 1 ]; then
     ok "Milo talks with Claude and does bigger jobs with ChatGPT"
   elif [ "$has_claude" = 1 ]; then
     ok "Milo talks and works with Claude"
   elif [ "$has_codex" = 1 ]; then
-    warn "Milo does bigger jobs with ChatGPT, but talking to him needs Claude for now."
-    say "Dictation works. To talk: run this again and pick Claude, or use an API key ([chat.openai_compat] in ~/Milo/config.toml)."
+    ok "Milo talks and works with ChatGPT through Codex CLI"
   else
     warn "No subscription connected yet. Dictation and his voice work; run this again to connect one."
   fi

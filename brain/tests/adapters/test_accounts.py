@@ -31,7 +31,7 @@ class Fakes:
 def home(tmp_path):
     secrets = tmp_path / "secrets"
     secrets.mkdir(mode=0o700)
-    (secrets / "elevenlabs.key").write_text("sk_test\n")
+    (secrets / "elevenlabs.key").write_text("sk_test\n", encoding="utf-8")
     (secrets / "elevenlabs.key").chmod(0o600)
     return tmp_path
 

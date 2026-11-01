@@ -1,0 +1,14 @@
+{
+  "page": "TaskCard",
+  "size": [520, 76],
+  "states": {
+    "done": {"entry": {"id": "c07b3e9d1a26", "kind": "task", "text": "Rename the photos", "status": "done", "result": "I renamed all 40 photos.\nThe list is in renamed.txt.", "steps": [{"id": "1"}], "title": "Rename Friday's photos", "conversation": "c-5f2a9c1e04b7"},
+             "undoPoint": {"id": "c07b3e9d1a26", "title": "Rename Friday's photos", "state": "ready"}},
+    "running": {"entry": {"id": "c0ffee12ab34", "kind": "task", "text": "Budget table", "status": "running", "result": "", "steps": [], "title": "Budget table in Excel"},
+                "helper": {"id": "c0ffee12ab34", "title": "Budget table in Excel", "status": "needs_you", "step": "Waiting for your answer", "progress": 0.6}}
+  },
+  "interactions": [
+    {"state": "done", "steps": [{"click": "open"}, {"click": "undo/undo"}], "expect": [{"type": "undo_task", "id": "c07b3e9d1a26"}],
+     "actions": [["openTask", {"id": "c07b3e9d1a26", "conversation": "c-5f2a9c1e04b7"}]]}
+  ]
+}

@@ -4,7 +4,6 @@ changed under `files/`, and the copies apps saved into folders of their own (Exc
 from __future__ import annotations
 
 import contextlib
-import ctypes
 import hashlib
 import json
 import logging
@@ -16,6 +15,7 @@ import stat
 from copy import deepcopy
 from pathlib import Path
 
+from milo import system
 from milo.core.control import Protected
 
 log = logging.getLogger("milo.undo")
@@ -25,6 +25,7 @@ APP_FOLDERS = {"Microsoft Excel": "Library/Containers/com.microsoft.Excel/Data/t
 makes Excel show "Grant File Access" and wait."""
 COPY_PREFIX = "milo-undo-"
 _TASK = re.compile(r"^[\w-]{1,64}$")
+_ORDER = "_shelf_order"
 
 
 class FileUndoShelf:
@@ -42,8 +43,10 @@ class FileUndoShelf:
         self._records: dict[str, dict] | None = None
         """Every record, as on disk, by task: read once at the first use, then written through. Only this brain
         writes state/undo (one brain at a time), so nothing changes under it."""
-        self._born: dict[str, float] = {}
-        """Each task folder's birth time, which orders tasks made in the same second."""
+        self._order: dict[str, int] = {}
+        self._last_order = 0
+        """Persisted creation order breaks ties in second-resolution `made` times.
+        Folder mtimes change whenever record.json is replaced and cannot order tasks."""
 
     def load(self, task: str) -> dict | None:
         self._folder(task)
@@ -52,18 +55,26 @@ class FileUndoShelf:
 
     def save(self, task: str, record: dict) -> None:
         folder = self._folder(task)
-        folder.mkdir(parents=True, exist_ok=True)
-        tmp = folder / "record.json.tmp"
-        tmp.write_text(json.dumps(record, ensure_ascii=False, indent=1))
-        os.replace(tmp, folder / "record.json")
         records = self._all()
-        if task not in records:
-            self._born[task] = _born(folder)
-        records[task] = deepcopy(record)
+        order = self._order.get(task)
+        if order is None:
+            self._last_order += 1
+            order = self._last_order
+        saved = {**deepcopy(record), _ORDER: order}
+        folder.mkdir(parents=True, exist_ok=True)
+        self._write(folder, saved)
+        self._order[task] = order
+        records[task] = saved
+
+    @staticmethod
+    def _write(folder: Path, record: dict) -> None:
+        tmp = folder / "record.json.tmp"
+        tmp.write_text(json.dumps(record, ensure_ascii=False, indent=1), encoding="utf-8")
+        system.replace_file(tmp, folder / "record.json")
 
     def tasks(self) -> list[str]:
         records = self._all()
-        return sorted(records, key=lambda t: (str(records[t].get("made", "")), self._born.get(t, 0.0), t))
+        return sorted(records, key=lambda t: (str(records[t].get("made", "")), self._order[t], t))
 
     def drop(self, task: str) -> None:
         record = self.load(task) or {}
@@ -73,7 +84,7 @@ class FileUndoShelf:
                 copy.unlink(missing_ok=True)
         shutil.rmtree(self._folder(task), ignore_errors=True)
         self._all().pop(task, None)
-        self._born.pop(task, None)
+        self._order.pop(task, None)
 
     def _all(self) -> dict[str, dict]:
         if self._records is not None:
@@ -83,15 +94,28 @@ class FileUndoShelf:
             record = _read(folder / "record.json") if _TASK.match(folder.name) else None
             if record is not None:
                 self._records[folder.name] = record
-                self._born[folder.name] = _born(folder)
+                order = record.get(_ORDER)
+                if type(order) is int and order > 0:
+                    self._order[folder.name] = order
+                    self._last_order = max(self._last_order, order)
             elif folder.is_dir():
                 shutil.rmtree(folder, ignore_errors=True)  # half written, or from an older Milo
+        # Older records have no reliable tie-breaker. Migrate once in a stable
+        # order, then persist it so subsequent saves/restarts cannot reshuffle it.
+        legacy = sorted((t for t in self._records if t not in self._order),
+                        key=lambda t: (str(self._records[t].get("made", "")), t))
+        for task in legacy:
+            self._last_order += 1
+            self._order[task] = self._last_order
+            self._records[task][_ORDER] = self._last_order
+        for task in legacy:
+            self._write(self._folder(task), self._records[task])
         return self._records
 
     def app_folder(self, app: str) -> str | None:
         rel = APP_FOLDERS.get(app)
         folder = self._home / rel if rel else None
-        return str(folder) if folder is not None and folder.is_dir() else None
+        return folder.as_posix() if folder is not None and folder.is_dir() else None
 
     def keep_file(self, task: str, path: str) -> dict:
         target = Path(path).expanduser()
@@ -103,7 +127,7 @@ class FileUndoShelf:
         if target.is_dir():
             raise ValueError(f"{target} is a folder. Keep an undo point for each file you change in it.")
         try:  # no link is followed after the check, and a pipe can't make the open wait
-            fd = os.open(target, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            fd = system.open_no_follow(target)
         except FileNotFoundError:
             return {"path": str(target), "copy": "", "existed": False, "digest": ""}
         except OSError as e:
@@ -118,14 +142,18 @@ class FileUndoShelf:
                 raise ValueError(f"{target.name} moved while Milo looked at it. Try again.")
             if info.st_size > self._max_file:
                 raise ValueError(f"{target.name} is {info.st_size // (1024 * 1024)} MB, too big to keep a copy of.")
+            # Establish the shelf before creating a not-yet-recorded task folder;
+            # startup cleanup must not mistake these new snapshots for crash debris.
+            self._all()
             files = self._folder(task) / "files"
             files.mkdir(parents=True, exist_ok=True)
             if shutil.disk_usage(files).free - info.st_size < self._min_free:
                 raise ValueError("The disk is too full to keep a copy.")
             copy = files / f"{len(list(files.iterdir())) + 1}-{target.name}"
             digest = hashlib.sha256()
-            out = os.open(copy, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            out = os.open(copy, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             with os.fdopen(out, "wb") as copied:
+                system.make_private(copied.fileno(), 0o600)
                 while chunk := source.read(1 << 20):
                     digest.update(chunk)
                     copied.write(chunk)
@@ -140,27 +168,7 @@ class FileUndoShelf:
         if kept.get("existed"):
             source = self._folder(task) / str(kept["copy"])
             target.parent.mkdir(parents=True, exist_ok=True)
-            # Everything happens in the folder Milo opened and checked: a new file of its own there, then a rename
-            # that replaces a link put at the target meanwhile instead of writing through it.
-            folder = os.open(target.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-            try:
-                if _same(target.parent) != _ids(os.fstat(folder)) or self._protected.covers(target.parent):
-                    raise OSError(f"{target.parent} changed into a link: not writing there.")
-                tmp = f"{COPY_PREFIX}{secrets.token_hex(8)}-{target.name}"
-                out = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=folder)
-                try:
-                    with os.fdopen(out, "wb") as written, open(source, "rb") as copy:
-                        shutil.copyfileobj(copy, written)
-                        info = os.stat(source)
-                        os.utime(written.fileno(), ns=(info.st_atime_ns, info.st_mtime_ns))
-                        os.chmod(written.fileno(), int(kept.get("mode", stat.S_IMODE(info.st_mode))))
-                    _rename_in(folder, tmp, target.name)
-                except BaseException:
-                    with contextlib.suppress(OSError):
-                        os.unlink(tmp, dir_fd=folder)
-                    raise
-            finally:
-                os.close(folder)
+            system.restore_file(source, target, int(kept.get("mode", stat.S_IMODE(source.stat().st_mode))))
         elif target.exists():
             trash = self._home / ".Trash"
             trash.mkdir(exist_ok=True)
@@ -195,15 +203,10 @@ class FileUndoShelf:
 
 def _read(path: Path) -> dict | None:
     try:
-        record = json.loads(path.read_text())
+        record = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
     return record if isinstance(record, dict) else None
-
-
-def _born(folder: Path) -> float:
-    st = folder.stat()
-    return getattr(st, "st_birthtime", st.st_mtime)
 
 
 def _ids(info: os.stat_result) -> tuple[int, int]:
@@ -216,14 +219,3 @@ def _same(path: Path) -> tuple[int, int] | None:
         return _ids(os.lstat(path))
     except OSError:
         return None
-
-
-_libc = ctypes.CDLL(None, use_errno=True)
-
-
-def _rename_in(folder: int, old: str, new: str) -> None:
-    """rename(2) inside the open `folder`, so no link put in its path since can move the write elsewhere. Python's
-    os.replace takes no folder on macOS, so this calls renameat(2) itself."""
-    if _libc.renameat(folder, old.encode(), folder, new.encode()) != 0:
-        err = ctypes.get_errno()
-        raise OSError(err, os.strerror(err), new)

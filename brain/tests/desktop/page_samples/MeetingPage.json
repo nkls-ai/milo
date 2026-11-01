@@ -1,0 +1,880 @@
+{
+ "page": "MeetingPage",
+ "size": [
+  760,
+  640
+ ],
+ "states": {
+  "recording": {
+   "meetingId": "2026-10-30-1400-weekly-sync",
+   "conversation": "c-7d6e5f4a3b2c",
+   "status": {
+    "type": "meeting_status",
+    "id": "2026-10-30-1400-weekly-sync",
+    "phase": "recording",
+    "title": "Weekly sync",
+    "app": "Zoom",
+    "started": "2026-10-30T14:00:12",
+    "elapsed": 754.2,
+    "conversation": "c-7d6e5f4a3b2c",
+    "speakers": [
+     "You",
+     "Anna",
+     "Speaker 2"
+    ],
+    "step": "",
+    "error": "",
+    "fix": "",
+    "consent": "Milo is taking notes for me. They stay on my computer."
+   },
+   "lines": [
+    {
+     "at": 1.2,
+     "end": 4.8,
+     "who": "Anna",
+     "me": false,
+     "text": "Shall we move the launch to Friday?"
+    },
+    {
+     "at": 5.4,
+     "end": 7.1,
+     "who": "You",
+     "me": true,
+     "text": "Friday works for me."
+    },
+    {
+     "at": 7.9,
+     "end": 12.0,
+     "who": "You",
+     "me": true,
+     "text": "I'll write to the customer so they know before the weekend."
+    },
+    {
+     "at": 13.5,
+     "end": 19.2,
+     "who": "Speaker 2",
+     "me": false,
+     "text": "Then I'd keep the slides as they are and only change the date on the last one."
+    },
+    {
+     "at": 20.0,
+     "end": 23.4,
+     "who": "Anna",
+     "me": false,
+     "text": "Good. I'll send the slides around tonight."
+    }
+   ],
+   "entries": [
+    {
+     "id": "q1",
+     "ts": "2026-10-30T14:10:00",
+     "kind": "user",
+     "text": "What did I miss?",
+     "conversation": "c-7d6e5f4a3b2c"
+    },
+    {
+     "id": "a1",
+     "ts": "2026-10-30T14:10:04",
+     "kind": "milo",
+     "text": "Anna asked to move the launch to Friday, and you agreed.",
+     "done": true,
+     "conversation": "c-7d6e5f4a3b2c"
+    }
+   ]
+  },
+  "recording-empty": {
+   "meetingId": "2026-10-30-1400-weekly-sync",
+   "conversation": "c-7d6e5f4a3b2c",
+   "status": {
+    "type": "meeting_status",
+    "id": "2026-10-30-1400-weekly-sync",
+    "phase": "recording",
+    "title": "Weekly sync",
+    "app": "Zoom",
+    "started": "2026-10-30T14:00:12",
+    "elapsed": 754.2,
+    "conversation": "c-7d6e5f4a3b2c",
+    "speakers": [
+     "You",
+     "Anna",
+     "Speaker 2"
+    ],
+    "step": "",
+    "error": "",
+    "fix": "",
+    "consent": "Milo is taking notes for me. They stay on my computer."
+   },
+   "lines": []
+  },
+  "paused": {
+   "meetingId": "2026-10-30-1400-weekly-sync",
+   "conversation": "c-7d6e5f4a3b2c",
+   "status": {
+    "type": "meeting_status",
+    "id": "2026-10-30-1400-weekly-sync",
+    "phase": "paused",
+    "title": "Weekly sync",
+    "app": "Zoom",
+    "started": "2026-10-30T14:00:12",
+    "elapsed": 754.2,
+    "conversation": "c-7d6e5f4a3b2c",
+    "speakers": [
+     "You",
+     "Anna",
+     "Speaker 2"
+    ],
+    "step": "",
+    "error": "",
+    "fix": "",
+    "consent": "Milo is taking notes for me. They stay on my computer."
+   },
+   "lines": [
+    {
+     "at": 1.2,
+     "end": 4.8,
+     "who": "Anna",
+     "me": false,
+     "text": "Shall we move the launch to Friday?"
+    },
+    {
+     "at": 5.4,
+     "end": 7.1,
+     "who": "You",
+     "me": true,
+     "text": "Friday works for me."
+    },
+    {
+     "at": 7.9,
+     "end": 12.0,
+     "who": "You",
+     "me": true,
+     "text": "I'll write to the customer so they know before the weekend."
+    },
+    {
+     "at": 13.5,
+     "end": 19.2,
+     "who": "Speaker 2",
+     "me": false,
+     "text": "Then I'd keep the slides as they are and only change the date on the last one."
+    },
+    {
+     "at": 20.0,
+     "end": 23.4,
+     "who": "Anna",
+     "me": false,
+     "text": "Good. I'll send the slides around tonight."
+    }
+   ],
+   "copied": true
+  },
+  "writing": {
+   "meetingId": "2026-10-30-1400-weekly-sync",
+   "conversation": "c-7d6e5f4a3b2c",
+   "status": {
+    "type": "meeting_status",
+    "id": "2026-10-30-1400-weekly-sync",
+    "phase": "writing",
+    "title": "Weekly sync",
+    "app": "Zoom",
+    "started": "2026-10-30T14:00:12",
+    "elapsed": 1810.0,
+    "conversation": "c-7d6e5f4a3b2c",
+    "speakers": [
+     "You",
+     "Anna"
+    ],
+    "step": "Writing the summary",
+    "error": "",
+    "fix": "",
+    "consent": "Milo is taking notes for me. They stay on my computer."
+   },
+   "lines": [
+    {
+     "at": 1.2,
+     "end": 4.8,
+     "who": "Anna",
+     "me": false,
+     "text": "Shall we move the launch to Friday?"
+    },
+    {
+     "at": 5.4,
+     "end": 7.1,
+     "who": "You",
+     "me": true,
+     "text": "Friday works for me."
+    },
+    {
+     "at": 7.9,
+     "end": 12.0,
+     "who": "You",
+     "me": true,
+     "text": "I'll write to the customer so they know before the weekend."
+    },
+    {
+     "at": 13.5,
+     "end": 19.2,
+     "who": "Speaker 2",
+     "me": false,
+     "text": "Then I'd keep the slides as they are and only change the date on the last one."
+    },
+    {
+     "at": 20.0,
+     "end": 23.4,
+     "who": "Anna",
+     "me": false,
+     "text": "Good. I'll send the slides around tonight."
+    }
+   ]
+  },
+  "notes": {
+   "meetingId": "2026-10-30-1400-weekly-sync",
+   "conversation": "c-7d6e5f4a3b2c",
+   "status": {
+    "type": "meeting_status",
+    "id": "",
+    "phase": "",
+    "title": "",
+    "app": "",
+    "started": "",
+    "elapsed": 0.0,
+    "conversation": "",
+    "speakers": [],
+    "step": "",
+    "error": "",
+    "fix": "",
+    "consent": ""
+   },
+   "lines": [
+    {
+     "at": 1.2,
+     "end": 4.8,
+     "who": "Anna",
+     "me": false,
+     "text": "Shall we move the launch to Friday?"
+    },
+    {
+     "at": 5.4,
+     "end": 7.1,
+     "who": "You",
+     "me": true,
+     "text": "Friday works for me."
+    },
+    {
+     "at": 7.9,
+     "end": 12.0,
+     "who": "You",
+     "me": true,
+     "text": "I'll write to the customer so they know before the weekend."
+    },
+    {
+     "at": 13.5,
+     "end": 19.2,
+     "who": "Speaker 2",
+     "me": false,
+     "text": "Then I'd keep the slides as they are and only change the date on the last one."
+    },
+    {
+     "at": 20.0,
+     "end": 23.4,
+     "who": "Anna",
+     "me": false,
+     "text": "Good. I'll send the slides around tonight."
+    }
+   ],
+   "notes": {
+    "type": "meeting_notes",
+    "id": "2026-10-30-1400-weekly-sync",
+    "title": "Weekly sync",
+    "started": "2026-10-30T14:00:12",
+    "duration": 1810.0,
+    "markdown": "# Weekly sync\n\nThursday 30 October 2026, 14:00–14:30 · Zoom · with Anna\n\n## Summary\n\nThe launch moves to Friday. Anna sends the slides tonight, and you let the customer know before the weekend.\n\n## Decisions\n\n- Launch on Friday\n- Keep the slides, change only the date\n\n## To-dos\n\n- [ ] You: Write to the customer (Friday)\n- [ ] Anna: Send the slides\n\n[The whole transcript](transcript.md)\n",
+    "summary": "The launch moves to Friday.",
+    "decisions": [
+     "Launch on Friday"
+    ],
+    "todos": [
+     {
+      "text": "Send the slides",
+      "owner": "Anna",
+      "due": "",
+      "mine": false,
+      "added": false
+     },
+     {
+      "text": "Write to the customer",
+      "owner": "",
+      "due": "Friday",
+      "mine": true,
+      "added": false
+     },
+     {
+      "text": "Book the launch room",
+      "owner": "",
+      "due": "",
+      "mine": true,
+      "added": true
+     },
+     {
+      "text": "Check the price list",
+      "owner": "",
+      "due": "",
+      "mine": true,
+      "added": false
+     }
+    ],
+    "followup": "Hi Anna, thanks for today.",
+    "people": [
+     "Anna"
+    ],
+    "app": "Zoom",
+    "conversation": "c-7d6e5f4a3b2c",
+    "folder": "C:/Users/you/Milo/meetings/2026-10-30-1400-weekly-sync",
+    "reminders": true,
+    "mail": true,
+    "mail_drafted": false
+   },
+   "entries": [
+    {
+     "id": "q1",
+     "ts": "2026-10-30T14:10:00",
+     "kind": "user",
+     "text": "What did I miss?",
+     "conversation": "c-7d6e5f4a3b2c"
+    },
+    {
+     "id": "a1",
+     "ts": "2026-10-30T14:10:04",
+     "kind": "milo",
+     "text": "Anna asked to move the launch to Friday, and you agreed.",
+     "done": true,
+     "conversation": "c-7d6e5f4a3b2c"
+    }
+   ]
+  },
+  "todos": {
+   "meetingId": "2026-10-30-1400-weekly-sync",
+   "conversation": "c-7d6e5f4a3b2c",
+   "status": {
+    "type": "meeting_status",
+    "id": "",
+    "phase": "",
+    "title": "",
+    "app": "",
+    "started": "",
+    "elapsed": 0.0,
+    "conversation": "",
+    "speakers": [],
+    "step": "",
+    "error": "",
+    "fix": "",
+    "consent": ""
+   },
+   "lines": [
+    {
+     "at": 1.2,
+     "end": 4.8,
+     "who": "Anna",
+     "me": false,
+     "text": "Shall we move the launch to Friday?"
+    },
+    {
+     "at": 5.4,
+     "end": 7.1,
+     "who": "You",
+     "me": true,
+     "text": "Friday works for me."
+    },
+    {
+     "at": 7.9,
+     "end": 12.0,
+     "who": "You",
+     "me": true,
+     "text": "I'll write to the customer so they know before the weekend."
+    },
+    {
+     "at": 13.5,
+     "end": 19.2,
+     "who": "Speaker 2",
+     "me": false,
+     "text": "Then I'd keep the slides as they are and only change the date on the last one."
+    },
+    {
+     "at": 20.0,
+     "end": 23.4,
+     "who": "Anna",
+     "me": false,
+     "text": "Good. I'll send the slides around tonight."
+    }
+   ],
+   "notes": {
+    "type": "meeting_notes",
+    "id": "2026-10-30-1400-weekly-sync",
+    "title": "Weekly sync",
+    "started": "2026-10-30T14:00:12",
+    "duration": 1810.0,
+    "markdown": "# Weekly sync\n\nThursday 30 October 2026, 14:00–14:30 · Zoom · with Anna\n\n## Summary\n\nThe launch moves to Friday. Anna sends the slides tonight, and you let the customer know before the weekend.\n\n## Decisions\n\n- Launch on Friday\n- Keep the slides, change only the date\n\n## To-dos\n\n- [ ] You: Write to the customer (Friday)\n- [ ] Anna: Send the slides\n\n[The whole transcript](transcript.md)\n",
+    "summary": "The launch moves to Friday.",
+    "decisions": [
+     "Launch on Friday"
+    ],
+    "todos": [
+     {
+      "text": "Send the slides",
+      "owner": "Anna",
+      "due": "",
+      "mine": false,
+      "added": false
+     },
+     {
+      "text": "Write to the customer",
+      "owner": "",
+      "due": "Friday",
+      "mine": true,
+      "added": false
+     },
+     {
+      "text": "Book the launch room",
+      "owner": "",
+      "due": "",
+      "mine": true,
+      "added": true
+     },
+     {
+      "text": "Check the price list",
+      "owner": "",
+      "due": "",
+      "mine": true,
+      "added": false
+     }
+    ],
+    "followup": "Hi Anna, thanks for today.",
+    "people": [
+     "Anna"
+    ],
+    "app": "Zoom",
+    "conversation": "c-7d6e5f4a3b2c",
+    "folder": "C:/Users/you/Milo/meetings/2026-10-30-1400-weekly-sync",
+    "reminders": true,
+    "mail": true,
+    "mail_drafted": false
+   },
+   "tab": "todos"
+  },
+  "transcript": {
+   "meetingId": "2026-10-30-1400-weekly-sync",
+   "conversation": "c-7d6e5f4a3b2c",
+   "status": {
+    "type": "meeting_status",
+    "id": "",
+    "phase": "",
+    "title": "",
+    "app": "",
+    "started": "",
+    "elapsed": 0.0,
+    "conversation": "",
+    "speakers": [],
+    "step": "",
+    "error": "",
+    "fix": "",
+    "consent": ""
+   },
+   "lines": [
+    {
+     "at": 1.2,
+     "end": 4.8,
+     "who": "Anna",
+     "me": false,
+     "text": "Shall we move the launch to Friday?"
+    },
+    {
+     "at": 5.4,
+     "end": 7.1,
+     "who": "You",
+     "me": true,
+     "text": "Friday works for me."
+    },
+    {
+     "at": 7.9,
+     "end": 12.0,
+     "who": "You",
+     "me": true,
+     "text": "I'll write to the customer so they know before the weekend."
+    },
+    {
+     "at": 13.5,
+     "end": 19.2,
+     "who": "Speaker 2",
+     "me": false,
+     "text": "Then I'd keep the slides as they are and only change the date on the last one."
+    },
+    {
+     "at": 20.0,
+     "end": 23.4,
+     "who": "Anna",
+     "me": false,
+     "text": "Good. I'll send the slides around tonight."
+    }
+   ],
+   "notes": {
+    "type": "meeting_notes",
+    "id": "2026-10-30-1400-weekly-sync",
+    "title": "Weekly sync",
+    "started": "2026-10-30T14:00:12",
+    "duration": 1810.0,
+    "markdown": "# Weekly sync\n\nThursday 30 October 2026, 14:00–14:30 · Zoom · with Anna\n\n## Summary\n\nThe launch moves to Friday. Anna sends the slides tonight, and you let the customer know before the weekend.\n\n## Decisions\n\n- Launch on Friday\n- Keep the slides, change only the date\n\n## To-dos\n\n- [ ] You: Write to the customer (Friday)\n- [ ] Anna: Send the slides\n\n[The whole transcript](transcript.md)\n",
+    "summary": "The launch moves to Friday.",
+    "decisions": [
+     "Launch on Friday"
+    ],
+    "todos": [
+     {
+      "text": "Send the slides",
+      "owner": "Anna",
+      "due": "",
+      "mine": false,
+      "added": false
+     },
+     {
+      "text": "Write to the customer",
+      "owner": "",
+      "due": "Friday",
+      "mine": true,
+      "added": false
+     },
+     {
+      "text": "Book the launch room",
+      "owner": "",
+      "due": "",
+      "mine": true,
+      "added": true
+     },
+     {
+      "text": "Check the price list",
+      "owner": "",
+      "due": "",
+      "mine": true,
+      "added": false
+     }
+    ],
+    "followup": "Hi Anna, thanks for today.",
+    "people": [
+     "Anna"
+    ],
+    "app": "Zoom",
+    "conversation": "c-7d6e5f4a3b2c",
+    "folder": "C:/Users/you/Milo/meetings/2026-10-30-1400-weekly-sync",
+    "reminders": true,
+    "mail": true,
+    "mail_drafted": false
+   },
+   "tab": "transcript"
+  },
+  "drafted": {
+   "meetingId": "2026-10-30-1400-weekly-sync",
+   "conversation": "c-7d6e5f4a3b2c",
+   "status": {
+    "type": "meeting_status",
+    "id": "",
+    "phase": "",
+    "title": "",
+    "app": "",
+    "started": "",
+    "elapsed": 0.0,
+    "conversation": "",
+    "speakers": [],
+    "step": "",
+    "error": "",
+    "fix": "",
+    "consent": ""
+   },
+   "lines": [
+    {
+     "at": 1.2,
+     "end": 4.8,
+     "who": "Anna",
+     "me": false,
+     "text": "Shall we move the launch to Friday?"
+    },
+    {
+     "at": 5.4,
+     "end": 7.1,
+     "who": "You",
+     "me": true,
+     "text": "Friday works for me."
+    },
+    {
+     "at": 7.9,
+     "end": 12.0,
+     "who": "You",
+     "me": true,
+     "text": "I'll write to the customer so they know before the weekend."
+    },
+    {
+     "at": 13.5,
+     "end": 19.2,
+     "who": "Speaker 2",
+     "me": false,
+     "text": "Then I'd keep the slides as they are and only change the date on the last one."
+    },
+    {
+     "at": 20.0,
+     "end": 23.4,
+     "who": "Anna",
+     "me": false,
+     "text": "Good. I'll send the slides around tonight."
+    }
+   ],
+   "notes": {
+    "type": "meeting_notes",
+    "id": "2026-10-30-1400-weekly-sync",
+    "title": "Weekly sync",
+    "started": "2026-10-30T14:00:12",
+    "duration": 1810.0,
+    "markdown": "# Weekly sync\n\nThursday 30 October 2026, 14:00–14:30 · Zoom · with Anna\n\n## Summary\n\nThe launch moves to Friday. Anna sends the slides tonight, and you let the customer know before the weekend.\n\n## Decisions\n\n- Launch on Friday\n- Keep the slides, change only the date\n\n## To-dos\n\n- [ ] You: Write to the customer (Friday)\n- [ ] Anna: Send the slides\n\n[The whole transcript](transcript.md)\n",
+    "summary": "The launch moves to Friday.",
+    "decisions": [
+     "Launch on Friday"
+    ],
+    "todos": [
+     {
+      "text": "Send the slides",
+      "owner": "Anna",
+      "due": "",
+      "mine": false,
+      "added": false
+     },
+     {
+      "text": "Write to the customer",
+      "owner": "",
+      "due": "Friday",
+      "mine": true,
+      "added": false
+     },
+     {
+      "text": "Book the launch room",
+      "owner": "",
+      "due": "",
+      "mine": true,
+      "added": true
+     },
+     {
+      "text": "Check the price list",
+      "owner": "",
+      "due": "",
+      "mine": true,
+      "added": false
+     }
+    ],
+    "followup": "Hi Anna, thanks for today.",
+    "people": [
+     "Anna"
+    ],
+    "app": "Zoom",
+    "conversation": "c-7d6e5f4a3b2c",
+    "folder": "C:/Users/you/Milo/meetings/2026-10-30-1400-weekly-sync",
+    "reminders": true,
+    "mail": true,
+    "mail_drafted": true
+   },
+   "copiedNotes": true
+  },
+  "opening": {
+   "meetingId": "2026-10-30-1400-weekly-sync",
+   "conversation": "c-7d6e5f4a3b2c",
+   "status": {
+    "type": "meeting_status",
+    "id": "",
+    "phase": "",
+    "title": "",
+    "app": "",
+    "started": "",
+    "elapsed": 0.0,
+    "conversation": "",
+    "speakers": [],
+    "step": "",
+    "error": "",
+    "fix": "",
+    "consent": ""
+   }
+  }
+ },
+ "interactions": [
+  {
+   "state": "recording",
+   "steps": [
+    {
+     "click": "pause"
+    }
+   ],
+   "expect": [
+    {
+     "type": "open_meeting",
+     "id": "2026-10-30-1400-weekly-sync"
+    },
+    {
+     "type": "meeting_pause",
+     "on": true
+    }
+   ]
+  },
+  {
+   "state": "paused",
+   "steps": [
+    {
+     "click": "pause"
+    }
+   ],
+   "expect": [
+    {
+     "type": "open_meeting",
+     "id": "2026-10-30-1400-weekly-sync"
+    },
+    {
+     "type": "meeting_pause",
+     "on": false
+    }
+   ]
+  },
+  {
+   "state": "recording",
+   "steps": [
+    {
+     "click": "stop"
+    }
+   ],
+   "expect": [
+    {
+     "type": "open_meeting",
+     "id": "2026-10-30-1400-weekly-sync"
+    },
+    {
+     "type": "meeting_toggle",
+     "on": false
+    }
+   ]
+  },
+  {
+   "state": "recording",
+   "steps": [
+    {
+     "click": "copyConsent"
+    }
+   ],
+   "expect": [
+    {
+     "type": "open_meeting",
+     "id": "2026-10-30-1400-weekly-sync"
+    }
+   ],
+   "actions": [
+    [
+     "copyConsent",
+     "Milo is taking notes for me. They stay on my computer."
+    ]
+   ]
+  },
+  {
+   "state": "recording",
+   "steps": [
+    {
+     "click": "suggestion-0"
+    },
+    {
+     "click": "send"
+    }
+   ],
+   "expect": [
+    {
+     "type": "open_meeting",
+     "id": "2026-10-30-1400-weekly-sync"
+    },
+    {
+     "type": "text",
+     "text": "What did I miss?",
+     "speak": false,
+     "conversation": "c-7d6e5f4a3b2c"
+    }
+   ]
+  },
+  {
+   "state": "notes",
+   "steps": [
+    {
+     "click": "mail"
+    }
+   ],
+   "expect": [
+    {
+     "type": "open_meeting",
+     "id": "2026-10-30-1400-weekly-sync"
+    },
+    {
+     "type": "meeting_mail",
+     "id": "2026-10-30-1400-weekly-sync"
+    }
+   ]
+  },
+  {
+   "state": "notes",
+   "steps": [
+    {
+     "click": "reveal"
+    }
+   ],
+   "expect": [
+    {
+     "type": "open_meeting",
+     "id": "2026-10-30-1400-weekly-sync"
+    }
+   ],
+   "actions": [
+    [
+     "reveal",
+     "C:/Users/you/Milo/meetings/2026-10-30-1400-weekly-sync/notes.md"
+    ]
+   ]
+  },
+  {
+   "state": "notes",
+   "steps": [
+    {
+     "click": "tab-todos"
+    },
+    {
+     "click": "todo-1/add"
+    }
+   ],
+   "expect": [
+    {
+     "type": "open_meeting",
+     "id": "2026-10-30-1400-weekly-sync"
+    },
+    {
+     "type": "meeting_todo",
+     "id": "2026-10-30-1400-weekly-sync",
+     "index": 1
+    }
+   ],
+   "shot": "todos-clicked"
+  },
+  {
+   "state": "todos",
+   "steps": [
+    {
+     "click": "addAll"
+    }
+   ],
+   "expect": [
+    {
+     "type": "open_meeting",
+     "id": "2026-10-30-1400-weekly-sync"
+    },
+    {
+     "type": "meeting_todo",
+     "id": "2026-10-30-1400-weekly-sync",
+     "index": -1
+    }
+   ]
+  }
+ ]
+}

@@ -52,6 +52,15 @@ public struct SettingsView: View {
                 Callout(icon: "arrow.clockwise", text: "Some changes start working after Milo restarts.",
                         button: "Restart Milo", action: restart)
             }
+            if let provider = report["chat", "use"] {
+                ThemedCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        CardHeading(icon: "bubble.left.and.bubble.right", title: "Who Milo talks with",
+                                    detail: "Sign in to Claude or Codex in your terminal first. Changes need a restart. API endpoints are configured in config.toml.")
+                        choices(provider)
+                    }
+                }
+            }
             if let updates = report["chat", "updates"] {
                 ThemedCard {
                     VStack(alignment: .leading, spacing: 10) {

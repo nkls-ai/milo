@@ -197,7 +197,7 @@ class WavMicrophone:
         if marker is None or not marker.exists():
             return 0.0
         try:
-            late = time.time() - float(json.loads(marker.read_text())["pressed_at"])
+            late = time.time() - float(json.loads(marker.read_text(encoding="utf-8"))["pressed_at"])
         except (ValueError, KeyError, TypeError):
             return 0.0
         return late if 0 < late < 60 else 0.0

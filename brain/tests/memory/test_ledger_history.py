@@ -14,7 +14,7 @@ def test_ledger_appends_one_line_per_call(tmp_path):
     ledger.record("chat", "codex", Usage(19000, 15000, 40))
     clock.advance(minutes=1)
     ledger.record("heartbeat", "codex", Usage(100, 0, 5))
-    lines = [json.loads(line) for line in (tmp_path / "state" / "usage.jsonl").read_text().splitlines()]
+    lines = [json.loads(line) for line in (tmp_path / "state" / "usage.jsonl").read_text(encoding="utf-8").splitlines()]
     assert lines[0] == {"ts": "2026-10-29T09:00:00", "source": "chat", "harness": "codex",
                         "input_tokens": 19000, "cached_input_tokens": 15000, "output_tokens": 40}
     assert lines[1]["source"] == "heartbeat"

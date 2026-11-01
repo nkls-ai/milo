@@ -1,0 +1,2 @@
+module Milo.Window
+MainWindow 1.0 MainWindow.qml

@@ -36,7 +36,7 @@ def test_an_ordinary_file_is_shareable_and_read_whole(home):
 def test_private_places_are_refused_whatever_the_case(home, where):
     f = home / where
     f.parent.mkdir(parents=True, exist_ok=True)
-    f.write_text("secret")
+    f.write_text("secret", encoding="utf-8")
     with pytest.raises(NotShareable):
         share(home, f)
 
@@ -54,48 +54,49 @@ def test_folders_missing_files_and_big_files_are_refused(home):
 
 def test_a_file_swapped_while_the_question_waited_is_not_sent(home):
     f = home / "Documents" / "notes.txt"
-    f.write_text("harmless")
+    f.write_text("harmless", encoding="utf-8")
     out = share(home, f)
     secret = home / ".ssh" / "id_rsa"
     secret.parent.mkdir()
-    secret.write_text("KEY")
+    secret.write_text("KEY", encoding="utf-8")
     f.unlink()
     f.symlink_to(secret)  # swapped for a link to a key after the yes
     with pytest.raises(NotShareable):
         read(out, home=home, milo=home / "Milo")
     f.unlink()
-    f.write_text("other text")  # or for another file
+    f.write_text("other text", encoding="utf-8")  # or for another file
     with pytest.raises(NotShareable, match="changed while I asked"):
         read(out, home=home, milo=home / "Milo")
 
 
 def test_the_guard_puts_settings_back_only_while_away(tmp_path):
     config, state, secrets = tmp_path / "config.toml", tmp_path / "messages.json", tmp_path / "secrets"
-    config.write_text("[approvals.levels]\nsend = \"ask_first\"\n")
-    state.write_text('{"owner": {"chat": "42"}}')
+    config.write_text("[approvals.levels]\nsend = \"ask_first\"\n", encoding="utf-8")
+    state.write_text('{"owner": {"chat": "42"}}', encoding="utf-8")
     secrets.mkdir()
     token = secrets / "telegram-token"
-    token.write_text("1:abc")
-    os.chmod(token, 0o600)
+    token.write_text("1:abc", encoding="utf-8")
+    from milo import system
+    system.make_private(token, 0o600)
     told = []
     guard = SettingsGuard([config, state], [secrets], told.append)
 
-    config.write_text("[approvals.levels]\nsend = \"change\"\n")
+    config.write_text("[approvals.levels]\nsend = \"change\"\n", encoding="utf-8")
     assert guard.check(False) is False and not guard.on, "at the Mac nothing is guarded"
     assert guard.check(True) is False and guard.on, "the guard keeps what is there when it comes on"
-    config.write_text("[approvals.levels]\nsend = \"read\"\n")
-    state.write_text('{"owner": {"chat": "666"}}')
-    token.write_text("2:evil")
-    (secrets / "extra").write_text("new")
+    config.write_text("[approvals.levels]\nsend = \"read\"\n", encoding="utf-8")
+    state.write_text('{"owner": {"chat": "666"}}', encoding="utf-8")
+    token.write_text("2:evil", encoding="utf-8")
+    (secrets / "extra").write_text("new", encoding="utf-8")
     assert guard.check(True) is True
-    assert config.read_text() == "[approvals.levels]\nsend = \"change\"\n"
-    assert state.read_text() == '{"owner": {"chat": "42"}}'
-    assert token.read_text() == "1:abc" and token.stat().st_mode & 0o777 == 0o600
+    assert config.read_text(encoding="utf-8") == "[approvals.levels]\nsend = \"change\"\n"
+    assert state.read_text(encoding="utf-8") == '{"owner": {"chat": "42"}}'
+    assert token.read_text(encoding="utf-8") == "1:abc" and not system.open_to_others(token)
     assert not (secrets / "extra").exists() and told == [PUT_BACK]
 
-    state.write_text('{"owner": {"chat": "42"}, "paused": true}')  # Milo's own save
+    state.write_text('{"owner": {"chat": "42"}, "paused": true}', encoding="utf-8")  # Milo's own save
     guard.refresh(state)
-    assert guard.check(True) is False and "paused" in state.read_text()
+    assert guard.check(True) is False and "paused" in state.read_text(encoding="utf-8")
     guard.check(False)
-    config.write_text("changed at the Mac")
-    assert guard.check(True) is False and config.read_text() == "changed at the Mac"
+    config.write_text("changed at the Mac", encoding="utf-8")
+    assert guard.check(True) is False and config.read_text(encoding="utf-8") == "changed at the Mac"

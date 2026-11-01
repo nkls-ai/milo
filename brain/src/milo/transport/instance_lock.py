@@ -26,12 +26,14 @@ def acquire(path: Path) -> int:
         os.close(fd)
         raise AlreadyRunning(path, pid)
     os.ftruncate(fd, 0)
-    os.pwrite(fd, f"{os.getpid()}\n".encode(), 0)
+    os.lseek(fd, 0, os.SEEK_SET)
+    os.write(fd, f"{os.getpid()}\n".encode())
     return fd
 
 
 def _read_pid(fd: int) -> int | None:
     try:
-        return int(os.pread(fd, 32, 0).decode().strip())
+        os.lseek(fd, 0, os.SEEK_SET)
+        return int(os.read(fd, 32).decode().strip())
     except (OSError, ValueError):
         return None

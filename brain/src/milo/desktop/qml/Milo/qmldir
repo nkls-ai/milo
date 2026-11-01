@@ -1,0 +1,10 @@
+module Milo
+singleton Theme 1.0 Theme.qml
+Spring 1.0 Motion/Spring.qml
+ColorSpring 1.0 Motion/ColorSpring.qml
+Appear 1.0 Motion/Appear.qml
+Wren 1.0 Wren/Wren.qml
+WrenRig 1.0 Wren/WrenRig.qml
+PresenceWindow 1.0 Presence/PresenceWindow.qml
+WorkingWindow 1.0 Presence/WorkingWindow.qml
+PreviewPresence 1.0 Presence/PreviewPresence.qml

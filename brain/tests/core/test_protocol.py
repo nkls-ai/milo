@@ -10,7 +10,7 @@ from milo.core.types import Emotion, ListenMode, MiloState
 from tests import fakes
 from milo.core import ports
 
-FIXTURE = json.loads((Path(__file__).parents[3] / "protocol" / "messages.json").read_text())
+FIXTURE = json.loads((Path(__file__).parents[3] / "protocol" / "messages.json").read_text(encoding="utf-8"))
 
 OUTBOUND = {
     "state": lambda m: ev.StateChanged(MiloState(m["state"])),

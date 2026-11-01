@@ -5,6 +5,7 @@ from milo.core.events import SettingsReport
 from milo.services.ui_state import UiState
 from milo.settings import SETTINGS, Settings
 from tests.fakes import MemoryConfigFile, RecordingSink
+import pytest
 
 
 def make(raw: dict | None = None):
@@ -76,3 +77,48 @@ def test_a_broken_file_is_reported_without_rows():
     Settings(file, Config({}), UiState(sink), {}).send()
     [report] = sink.of(SettingsReport)
     assert report.settings == [] and "settings file" in report.error
+
+
+@pytest.mark.parametrize("provider", ["claude_live", "codex_live", "openai_compat", "none"])
+def test_talking_provider_is_saved_explicitly_and_requires_restart(provider):
+    settings, file, sink, applied = make({"chat": {"use": "claude_live"}})
+    settings.send()
+    assert file.writes == []
+    row = rows(sink.of(SettingsReport)[-1])["chat", "use"]
+    assert row["options"] == ["claude_live", "codex_live", "openai_compat", "none"]
+    assert row["labels"] == ["Claude CLI", "Codex CLI", "OpenAI-compatible", "Dictation only"]
+    assert not row["live"]
+    settings.change("chat", "use", provider)
+    report = sink.of(SettingsReport)[-1]
+    assert file.raw["chat"]["use"] == provider
+    assert rows(report)["chat", "use"]["value"] == provider
+    assert report.restart is (provider != "claude_live")
+    assert applied == []
+    settings.change("chat", "use", "claude_live")
+    assert not sink.of(SettingsReport)[-1].restart
+
+
+@pytest.mark.parametrize("provider", ["missing_provider", "", False, ["codex_live"]])
+def test_unknown_talking_provider_is_refused_before_writing(provider):
+    settings, file, sink, _ = make({"chat": {"use": "claude_live"}})
+    settings.change("chat", "use", provider)
+    assert file.writes == []
+    assert sink.of(SettingsReport)[-1].error
+
+
+def test_talking_provider_preserves_real_config_comments_and_other_settings(tmp_path):
+    from milo.config_file import TomlConfigFile
+    path = tmp_path / "config.toml"
+    path.write_text('# My settings\n[chat]\nuse = "claude_live" # talking model\nupdates = "chatty"\n'
+                    '[chat.openai_compat]\nmodel = "my-model"\n', encoding="utf-8")
+    file, sink = TomlConfigFile(path), RecordingSink()
+    settings = Settings(file, file.read(), UiState(sink), {})
+    original = path.read_text(encoding="utf-8")
+    settings.report()
+    assert path.read_text(encoding="utf-8") == original
+    settings.change("chat", "use", "codex_live")
+    text = path.read_text(encoding="utf-8")
+    assert '# My settings' in text and '# talking model' in text
+    assert 'use = "codex_live"' in text and 'updates = "chatty"' in text
+    assert '[chat.openai_compat]' in text and 'model = "my-model"' in text
+    assert sink.of(SettingsReport)[-1].restart

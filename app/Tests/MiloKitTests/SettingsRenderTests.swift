@@ -10,11 +10,14 @@ import Testing
 @MainActor
 struct SettingsRenderTests {
     // Tall enough for the approvals card with its allowed apps (ADR 22) and the Meeting notes card.
-    static let size = CGSize(width: 520, height: 1760)
+    static let size = CGSize(width: 520, height: 2030)
     let dir = URL(fileURLWithPath: ProcessInfo.processInfo.environment["MILO_RENDER_DIR"] ?? "/tmp")
 
     /// What the brain reports, as in brain/src/milo/settings.py.
     static let report = SettingsReport(settings: [
+        Setting(section: "chat", key: "use", value: "codex_live",
+                options: ["claude_live", "codex_live", "openai_compat", "none"],
+                labels: ["Claude CLI", "Codex CLI", "OpenAI-compatible", "Dictation only"], live: false),
         Setting(section: "chat", key: "updates", value: "bubble", options: ["quiet", "bubble", "chatty"],
                 labels: ["Only the answer", "Short notes in his bubble", "Tells you each step"], live: false),
         Setting(section: "dictation", key: "stream", value: "preview", options: ["off", "preview", "type"],

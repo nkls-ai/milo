@@ -21,7 +21,7 @@ from milo.services.helpers import HelperStatus
 from tests.fakes import ScriptedHarness, WorkerScript
 from tests.services.stack import Stack, settle
 
-FIXTURE = json.loads((Path(__file__).parents[2] / "protocol" / "messages.json").read_text())
+FIXTURE = json.loads((Path(__file__).parents[2] / "protocol" / "messages.json").read_text(encoding="utf-8"))
 
 STRETCH = Nudge("focus_break", Emotion.HAPPY, "Time to stretch.", speak=True)
 REMINDER = Nudge("reminders", Emotion.EXCITED, "Call the dentist.", speak=True)

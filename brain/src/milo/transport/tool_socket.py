@@ -37,7 +37,7 @@ class ToolSocketServer:
         self._running: set[asyncio.Task] = set()
 
     async def start(self) -> None:
-        claim_socket(self.path)
+        await asyncio.to_thread(claim_socket, self.path)
         self._server = await system.start_local_server(self._client, self.path, limit=MAX_LINE)
         log.info("tool socket on %s", self.path)
 

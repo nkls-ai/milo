@@ -17,9 +17,9 @@ from typing import Any
 
 from milo.core.control import Protected
 from milo.core.home import Device, NotSetUp
-from milo.core.ports import Connections
+from milo.core.ports import Connections, ConnectionIdentity
 from milo.core.registry import CONNECTIONS, AdapterContext, options_from
-from milo.core.types import ToolError
+from milo.core.types import ToolError, AppRef
 
 from . import _files
 
@@ -68,6 +68,7 @@ def _iso(dt: datetime | None) -> str:
 
 
 class FakeCalendar:
+    identity = ConnectionIdentity("Calendar", AppRef("Calendar", "com.apple.iCal"))
     def __init__(self, world: World):
         self._world = world
 
@@ -112,6 +113,7 @@ class FakeCalendar:
 
 
 class FakeReminders:
+    identity = ConnectionIdentity("Reminders", AppRef("Reminders", "com.apple.reminders"))
     def __init__(self, world: World):
         self._world = world
 
@@ -150,6 +152,7 @@ class FakeReminders:
 
 
 class FakeMail:
+    identity = ConnectionIdentity("Mail", AppRef("Mail"))
     def __init__(self, world: World):
         self._world = world
 
@@ -193,6 +196,7 @@ class FakeMail:
 
 
 class FakeNotes:
+    identity = ConnectionIdentity("Notes", AppRef("Notes", "com.apple.Notes"))
     def __init__(self, world: World):
         self._world = world
 
@@ -491,6 +495,7 @@ class FakeFocus:
 
 
 class FakeFiles:
+    identity = ConnectionIdentity("Finder", AppRef("Finder", "com.apple.finder"))
     """Files under the fake home, found by name and by content like Spotlight would."""
 
     def __init__(self, world: World, protected: Protected | None = None):

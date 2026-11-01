@@ -19,7 +19,7 @@ import logging
 import weakref
 from collections.abc import Awaitable, Callable
 from datetime import timedelta
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from milo.core.events import UndoPoints
 from milo.core.hands import only_opens
@@ -381,7 +381,7 @@ class Undo:
                 "document", "")
         if any(d["document"] == book and d.get("copy") for d in record["docs"]):
             return True
-        path = str(Path(folder) / f"milo-undo-{record['task']}-{len(record['docs']) + 1}.xlsx")
+        path = str(PurePosixPath(folder) / f"milo-undo-{record['task']}-{len(record['docs']) + 1}.xlsx")
         try:
             found = sheets.parse((await self._hands.act(
                 "run_applescript", {"script": snapshots.excel_snapshot(book, path, folder=folder)}))["text"])

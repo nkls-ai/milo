@@ -72,7 +72,8 @@ def read(outgoing: Outgoing, *, home: Path, milo: Path, max_mb: float = MAX_FILE
     if again.path != outgoing.path or again.identity != outgoing.identity:
         raise NotShareable(f"{outgoing.name} changed while I asked you, so I didn't send it. Ask me again.")
     try:
-        fd = os.open(outgoing.path, os.O_RDONLY | os.O_NOFOLLOW)
+        from milo import system
+        fd = system.open_no_follow(outgoing.path)
     except OSError:
         raise NotShareable(f"{outgoing.name} can't be opened any more.") from None
     with os.fdopen(fd, "rb") as f:

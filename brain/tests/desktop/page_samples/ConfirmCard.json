@@ -1,0 +1,16 @@
+{
+  "page": "ConfirmCard",
+  "size": [460, 200],
+  "states": {
+    "plain": {"question": {"type": "confirm", "id": "3b9e7a01c4d2", "question": "I'm about to run your shortcut “Text Anna I'm late”. Go ahead?", "always": false, "money": false}},
+    "always": {"question": {"type": "confirm", "id": "5c1d2e3f4a5b", "question": "Replace 8 filled cells in “Budget”?", "always": true, "money": false}},
+    "choices": {"question": {"type": "confirm", "id": "7c1d2e3f4a5b", "question": "Looks like a meeting. Should I take notes?", "always": false, "money": false, "choices": [{"id": "yes", "label": "Take notes"}, {"id": "no", "label": "Not this time"}, {"id": "always", "label": "Always for Zoom"}, {"id": "never", "label": "Never for Zoom"}]}},
+    "money": {"question": {"type": "confirm", "id": "7d8e9f0a1b2c", "question": "I'm about to click “Buy Now” in Safari. Go ahead?", "always": false, "money": true}}
+  },
+  "interactions": [
+    {"state": "plain", "steps": [{"click": "answer-yes"}], "expect": [{"type": "confirm_answer", "id": "3b9e7a01c4d2", "yes": true, "always": false, "choice": "yes"}]},
+    {"state": "always", "steps": [{"click": "answer-always"}], "expect": [{"type": "confirm_answer", "id": "5c1d2e3f4a5b", "yes": true, "always": true, "choice": "always"}]},
+    {"state": "choices", "steps": [{"click": "answer-never"}], "expect": [{"type": "confirm_answer", "id": "7c1d2e3f4a5b", "yes": false, "always": false, "choice": "never"}]},
+    {"state": "money", "steps": [{"click": "answer-yes"}], "expect": [{"type": "confirm_answer", "id": "7d8e9f0a1b2c", "yes": true, "always": false, "choice": "yes"}]}
+  ]
+}

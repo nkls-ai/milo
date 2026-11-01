@@ -1,0 +1,37 @@
+{
+  "page": "TaskPage",
+  "size": [700, 860],
+  "states": {
+    "done": {
+      "now": "2026-10-30T16:20:00",
+      "entry": {"id": "c07b3e9d1a26", "ts": "2026-10-30T09:12:06", "kind": "task", "text": "Rename the photos from Friday in ~/Pictures by date taken", "status": "done", "result": "I renamed all 40 photos. The list is in ~/Pictures/Friday/renamed.txt.", "steps": [
+        {"id": "item_1", "kind": "read", "title": "Looking in your Pictures folder", "detail": "ls ~/Pictures", "status": "done"},
+        {"id": "item_2", "kind": "command", "title": "Reading when each photo was taken", "detail": "exiftool -DateTimeOriginal ~/Pictures/Friday", "status": "done"},
+        {"id": "item_3", "kind": "edit", "title": "Renaming 40 photos by date", "detail": "", "status": "done"},
+        {"id": "item_4", "kind": "edit", "title": "Writing the list to renamed.txt", "detail": "", "status": "done"}
+      ], "title": "Rename Friday's photos", "files": ["~/Pictures/Friday/renamed.txt", "~/notes.md"], "conversation": "c-5f2a9c1e04b7"},
+      "conversation": {"id": "c-5f2a9c1e04b7", "kind": "chat", "title": "Photos from Friday"},
+      "undoPoint": {"id": "c07b3e9d1a26", "title": "Rename Friday's photos", "state": "ready", "said": ""}
+    },
+    "running": {
+      "now": "2026-10-30T16:20:00",
+      "entry": {"id": "c0ffee12ab34", "ts": "2026-10-30T16:02:00", "kind": "task", "text": "Make a budget table in Excel with a row for each weekday", "status": "running", "result": "", "steps": [
+        {"id": "s1", "kind": "app", "title": "Opening Excel", "detail": "", "status": "done"},
+        {"id": "s2", "kind": "edit", "title": "Editing notes.md", "detail": "update /Users/you/Milo/notes.md", "status": "failed"},
+        {"id": "s3", "kind": "app", "title": "Typing “Monday” in Excel", "detail": "", "status": "running"}
+      ], "title": "Budget table in Excel", "files": []},
+      "helper": {"id": "c0ffee12ab34", "title": "Budget table in Excel", "status": "working", "step": "Typing “Monday” in Excel", "progress": 0.4}
+    },
+    "failed": {
+      "now": "2026-10-31T10:00:00",
+      "entry": {"id": "a9b8c7d6e5f4", "ts": "2026-10-30T07:40:30", "kind": "task", "text": "Check the 8:12 to Hamburg", "status": "failed", "result": "The Deutsche Bahn site didn't load, so I couldn't check the train.", "steps": [], "title": "", "files": []}
+    }
+  },
+  "interactions": [
+    {"state": "done", "steps": [{"click": "undo/undo"}, {"click": "conversation"}, {"click": "file-renamed.txt/reveal"}],
+     "expect": [{"type": "undo_task", "id": "c07b3e9d1a26"}],
+     "actions": [["openConversation", "c-5f2a9c1e04b7"], ["reveal", "~/Pictures/Friday/renamed.txt"]]},
+    {"state": "running", "steps": [{"click": "stop"}], "expect": [{"type": "stop_helper", "id": "c0ffee12ab34"}]},
+    {"state": "done", "steps": [{"click": "step-item_1/words"}], "expect": [], "shot": "detail"}
+  ]
+}

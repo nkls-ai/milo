@@ -358,7 +358,13 @@ def session(home: Path) -> list[dict]:
 
 
 def normalized(events: list[dict]) -> list[str]:
-    """Ids are random: number them in order of appearance."""
+    """Ids are random; the timing of coalesced conversation headers is platform-specific.
+
+    Keep every transcript event in order and the final conversation listing. Intermediate
+    listings may be coalesced differently by event loops with different timer resolution.
+    """
+    listings = [event for event in events if event.get("type") == "conversations"]
+    events = [event for event in events if event.get("type") != "conversations"] + listings[-1:]
     names: dict[str, str] = {}
 
     def name(m: re.Match) -> str:
@@ -382,7 +388,7 @@ def test_a_whole_session_on_a_test_home_gives_the_window_its_structure(tmp_path)
     # On disk: two conversation files and an index under the test home's state folder.
     assert len(list((tmp_path / "state" / "conversations").glob("*/*.jsonl"))) == 2
     if os.environ.get("MILO_UPDATE_GOLDEN"):
-        GOLDEN.write_text("\n".join(lines) + "\n")
-    assert GOLDEN.read_text().splitlines() == lines, \
+        GOLDEN.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    assert normalized([json.loads(line) for line in GOLDEN.read_text(encoding="utf-8").splitlines()]) == lines, \
         "the session changed: MILO_UPDATE_GOLDEN=1 uv run pytest tests/services/test_conversations.py"
 

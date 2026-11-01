@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 from importlib import resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
+
+from milo import system
 
 from milo.core.control import WORK_FOLDER, Protected
 
@@ -20,11 +23,15 @@ class Workspace:
 
     def ensure(self) -> None:
         """Copy the template in, never overwriting files the user or the agent edited, and create dirs."""
+        self.home.mkdir(mode=0o700, parents=True, exist_ok=True)
+        system.make_private(self.home, 0o700)
         _copy_missing(resources.files("milo") / "workspace_template", self.home)
+        _refresh_untouched(resources.files("milo") / "workspace_template", self.home)
         for sub in _DIRS:
             (self.home / sub).mkdir(parents=True, exist_ok=True)
         for sub in _PRIVATE_DIRS:
             (self.home / sub).mkdir(mode=0o700, parents=True, exist_ok=True)
+            system.make_private(self.home / sub, 0o700)
 
     @property
     def config_path(self) -> Path:
@@ -192,6 +199,22 @@ class Workspace:
     def remote_state_path(self) -> Path:
         """Whose phone may reach Milo by message, and whether that is paused (0600)."""
         return self.state_dir / "messages.json"
+
+
+# Earlier templates' text (sha256, line endings ignored). A workspace file still exactly like one was never edited, so
+# it takes the current template: persona.md once said "Mac" where it now says {computer}.
+_SHIPPED = {"persona.md": frozenset({"cb71260a29749e30f9d55d95d627fc976067d6644d1f01c0ce49b4f5fa954c0a"})}
+
+
+def _refresh_untouched(src: Traversable, dst: Path) -> None:
+    for name, old in _SHIPPED.items():
+        target = dst / name
+        try:
+            text = target.read_bytes().replace(b"\r\n", b"\n")
+        except OSError:
+            continue
+        if hashlib.sha256(text).hexdigest() in old:
+            target.write_bytes((src / name).read_bytes())
 
 
 def _copy_missing(src: Traversable, dst: Path) -> None:

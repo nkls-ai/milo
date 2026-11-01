@@ -237,6 +237,8 @@ def _outbox_copy(outbox: Path, name: str, data: bytes) -> Path:
     copy = folder / (Path(name).name or "file")
     fd = os.open(copy, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "wb") as f:
+        from milo import system
+        system.make_private(f.fileno(), 0o600)
         f.write(data)
     return copy
 

@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 from .config import Config, LoggingSettings
 from .core.logtext import log_content
 from .core.registry import ConfigError
+from . import system
 from .transport import instance_lock
 
 if TYPE_CHECKING:
@@ -45,6 +46,7 @@ def main() -> None:
     except (ConfigError, OSError):
         settings = LoggingSettings()  # compose.build reports the error once logging is up
     _setup_logging(workspace.log_dir / "brain.log", settings)
+    system.precise_timers()  # the 80 ms hold confirm and live-speech polls on time (Windows rounds to 15.6 ms)
     # Before anything heavy loads. Held until the process is gone, models and all.
     try:
         instance_lock.acquire(workspace.lock_path)
@@ -60,7 +62,7 @@ def main() -> None:
         log.error("config error: %s", e)
         raise SystemExit(f"config error: {e}") from None
     try:
-        asyncio.run(_serve(runtime))
+        asyncio.run(_serve(runtime), loop_factory=system.event_loop)
     except (KeyboardInterrupt, asyncio.CancelledError):
         pass
     log.info("brain stopped")
@@ -136,7 +138,12 @@ def _watch_loop(loop: asyncio.AbstractEventLoop, after_s: float = LOOP_STUCK_S) 
 
 async def _serve(runtime: Runtime) -> None:
     # The app stops its brain with SIGTERM (uv passes that on, not SIGINT). Shut down as for Ctrl-C.
-    asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, asyncio.current_task().cancel)
+    loop = asyncio.get_running_loop()
+    task = asyncio.current_task()
+    try:
+        loop.add_signal_handler(signal.SIGTERM, task.cancel)
+    except NotImplementedError:
+        signal.signal(signal.SIGTERM, lambda *_: loop.call_soon_threadsafe(task.cancel))
     # `kill -USR1 <brain>` logs what every task is waiting on: a stuck turn can be read without a debugger,
     # which needs root on macOS. Only where the signal exists.
     if (dump := getattr(signal, "SIGUSR1", None)) is not None:  # Windows has none
@@ -169,6 +176,9 @@ async def _serve(runtime: Runtime) -> None:
     memory = runtime.memory
     if memory is not None:
         engines["memory"] = memory.memory.warm  # the embedder on its own thread, then the index catches up
+    mic_warm = getattr(runtime.mic, "warm", None)
+    if mic_warm is not None:  # the audio system's start-up, not the mic: no recording, no mic indicator
+        engines["mic"] = (None, mic_warm)
     warming = asyncio.create_task(_warm_all(engines))
     if runtime.weather is not None:
         runtime.weather.soon()  # so the first "do I need an umbrella?" finds the forecast in <today> (ADR 0038)

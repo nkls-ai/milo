@@ -13,7 +13,8 @@ from milo.core.control import Protected
 from milo.core.events import FlyTo, HandsBorrow, HandsSession, Status
 from milo.core.hands import validate
 from milo.core.opening import resolve_url
-from milo.core.ports import AppHands, Confirmer, EventSink
+from milo.core.ports import AppHands, Confirmer, EventSink, OfficeTools
+from milo.core.risk_policy import DEFAULT_RISK_POLICY, RiskPolicy
 from milo.core.types import AppRef, BorrowNeeded, HandsError, Scope, Step, StepStatus
 from milo.core.words import has, say
 from milo.core.words.hands import REASONS_DE
@@ -69,6 +70,19 @@ class ToolOutput:
     """Path of a PNG to show the worker, "" for none."""
 
 
+class AppOffice:
+    """Office port carried by the existing app bridge, using data-only tool arguments."""
+
+    def __init__(self, hands: AppHands, locale: str = ""):
+        self._hands, self._locale = hands, locale
+
+    async def describe(self, tool: str, args: dict) -> dict:
+        return await self._hands.act("describe", {"tool": tool, **args})
+
+    async def perform(self, tool: str, args: dict) -> dict:
+        return await self._hands.act(tool, {**args, "locale": self._locale})
+
+
 class HandsService:
     """Computer use for the worker agent, one action at a time.
 
@@ -85,11 +99,14 @@ class HandsService:
     def __init__(self, hands: AppHands, confirm: Confirmer, sink: EventSink, *,
                  transcript: Transcript | None = None, applescript: bool = True, locale: str = "",
                  protected: Protected | None = None, access: AccessGate | None = None,
-                 before_change: BeforeChange | None = None, language: Callable[[], str] = lambda: ""):
+                 before_change: BeforeChange | None = None, language: Callable[[], str] = lambda: "",
+                 risk_policy: RiskPolicy = DEFAULT_RISK_POLICY, office: OfficeTools | None = None):
         """`locale` is the Mac's region (AppleLocale, like "en_US@rg=dezzzz"): money in spreadsheets uses its
         currency. A script that names one of Milo's control files (`protected`) never runs (ADR 0020); one
         that builds the path some other way still waits for the user's yes, like every script."""
         self._protected = protected
+        self._risk_policy = risk_policy
+        self._office = office
         self._language = language
         """The code of the language the user last spoke in: questions are asked in it ("de" or English)."""
         self._target = ""
@@ -178,7 +195,7 @@ class HandsService:
                 self._check_aim(tool, aimed, target)
             if target.get("milo"):
                 raise HandsError(OWN_WINDOW)
-            step = Step(f"hands_{next(self._ids)}", "app" if spec.acts else "read", title(tool, args, target),
+            step = Step(f"hands_{next(self._ids)}", "app" if spec.acts else "read", title(tool, args, target, self._risk_policy),
                         _detail(tool, args), StepStatus.RUNNING)
             verdict, app = self._judge(tool, spec.acts, args, target)
             for _ in range(MAX_ASKS):
@@ -189,7 +206,7 @@ class HandsService:
                 if verdict.risk is Risk.OK:
                     break
                 self._transcript.task_step(task_id, step)  # the user can read the whole thing before answering
-                question = confirm_question(tool, args, target, verdict.reason, self._language())
+                question = confirm_question(tool, args, target, verdict.reason, self._language(), self._risk_policy)
                 if not await self._confirm.confirm(question, scope=self._scope(tool, args, target, verdict, app),
                                                    undo=verdict.risk is Risk.UNDO,
                                                    money=verdict.risk is Risk.MONEY):
@@ -206,7 +223,7 @@ class HandsService:
                     break
                 log.info("%s: what it would touch changed while the user answered; asking again", tool)
                 target = fresh
-                step = Step(step.id, step.kind, title(tool, args, target), step.detail, step.status)
+                step = Step(step.id, step.kind, title(tool, args, target, self._risk_policy), step.detail, step.status)
                 verdict, app = self._judge(tool, spec.acts, args, target)
             else:
                 self._step(task_id, step, StepStatus.FAILED)
@@ -275,7 +292,7 @@ class HandsService:
 
     def _judge(self, tool: str, acts: bool, args: dict, target: dict) -> tuple[Verdict, str]:
         """How risky the action is on `target`, and the app it acts in."""
-        verdict = classify(tool, args, target)
+        verdict = classify(tool, args, target, self._risk_policy)
         if tool == "open_url" and self._careful and verdict.risk is Risk.OK:
             verdict = Verdict(Risk.ASK, "open a web page")  # a careful helper may have read the address somewhere
         if tool == "run_applescript" and self._protected is not None and \
@@ -315,7 +332,7 @@ class HandsService:
             apps = apps if apps is not None and len(apps) == 1 else None  # one app, the one it was allowed in
         else:
             apps = [AppRef(app, str(target.get("bundle") or "") if app == str(target.get("app") or "") else "")]
-        if not apps or not all(plain_app(a.name, a.bundle) for a in apps):
+        if not apps or not all(plain_app(a.name, a.bundle, self._risk_policy) for a in apps):
             return None
         return Scope(tuple(apps), self._task_id or "")
 
@@ -351,6 +368,11 @@ class HandsService:
 
     async def _describe(self, tool: str, args: dict) -> dict:
         """What an action would touch: the app describes clicks and typing; sheet_write reads its target."""
+        if self._office is not None and tool in ("sheet_write", "sheet_read", "write_document"):
+            target = await self._office.describe(tool, args)
+            if tool == "sheet_write":
+                target["made"] = (args["app"], str(target.get("document") or "")) in self._made
+            return target
         if tool == "write_document":
             return {"app": args["app"], "new": True}
         if tool == "open_url":
@@ -367,6 +389,11 @@ class HandsService:
                 "filled": int(found.get("filled") or 0)}
 
     async def _perform(self, tool: str, args: dict) -> dict:
+        if self._office is not None and tool in ("sheet_write", "sheet_read", "write_document"):
+            result = await self._office.perform(tool, args)
+            if tool == "sheet_write" and args.get("new_document"):
+                self._made.add((args["app"], str(result.get("document") or "")))
+            return result
         if tool not in _COMPOSED:
             return await self._act(tool, args)
         if tool == "ax_find":
@@ -440,7 +467,7 @@ def same_target(before: dict, after: dict) -> bool:
     return all(before.get(k) == after.get(k) for k in keys)
 
 
-def title(tool: str, args: dict, target: dict) -> str:
+def title(tool: str, args: dict, target: dict, policy: RiskPolicy = DEFAULT_RISK_POLICY) -> str:
     """The step in plain words: "Clicking Save in Excel"."""
     app = str(target.get("app") or args.get("app") or "")
     what = _clip(str(target.get("title") or ""), 30)
@@ -482,7 +509,7 @@ def title(tool: str, args: dict, target: dict) -> str:
         case "type":
             return f"Typing “{_clip(str(args['text']), 30)}”{in_app}"
         case "key":
-            return f"Pressing {_pretty_combo(str(args['combo']))}{in_app}"
+            return f"Pressing {_pretty_combo(str(args['combo']), policy)}{in_app}"
         case "scroll":
             return f"Scrolling{in_app}"
         case "run_applescript":
@@ -491,7 +518,8 @@ def title(tool: str, args: dict, target: dict) -> str:
     return tool
 
 
-def confirm_question(tool: str, args: dict, target: dict, reason: str, language: str = "") -> str:
+def confirm_question(tool: str, args: dict, target: dict, reason: str, language: str = "",
+                     policy: RiskPolicy = DEFAULT_RISK_POLICY) -> str:
     """A yes-or-no question naming the thing, like "I'm about to click “Send” in Mail. Go ahead?". In the user's
     language: German or English."""
     lang = language
@@ -507,7 +535,7 @@ def confirm_question(tool: str, args: dict, target: dict, reason: str, language:
     if tool == "type":
         return say("hands.type", lang, text=args["text"], in_app=in_app, reason=_reason(reason, lang))
     if tool == "key":
-        return say("hands.key", lang, combo=_pretty_combo(str(args["combo"])), in_app=in_app,
+        return say("hands.key", lang, combo=_pretty_combo(str(args["combo"]), policy), in_app=in_app,
                    reason=_reason(reason, lang))
     if tool == "run_applescript":
         # Short enough to answer at a glance, in words for someone who never wrote a script. The step above the
@@ -607,11 +635,12 @@ def _detail(tool: str, args: dict) -> str:
     return f"{tool} {' '.join(f'{k}={v}' for k, v in args.items())}".strip()
 
 
-def _pretty_combo(combo: str) -> str:
+def _pretty_combo(combo: str, policy: RiskPolicy = DEFAULT_RISK_POLICY) -> str:
     names = {"cmd": "⌘", "shift": "⇧", "option": "⌥", "ctrl": "⌃"}
-    parts = normalize_combo(combo).split("+")
+    names.update(dict(policy.key_labels))
+    parts = normalize_combo(combo, policy).split("+")
     keys = [names.get(p, p.capitalize() if len(p) > 1 else p.upper()) for p in parts]
-    return "".join(keys) if len(keys) > 1 else keys[0]
+    return policy.key_separator.join(keys) if len(keys) > 1 else keys[0]
 
 
 def _clip(text: str, n: int) -> str:

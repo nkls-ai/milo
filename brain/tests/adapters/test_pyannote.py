@@ -63,7 +63,7 @@ def pipeline(monkeypatch, tmp_path):
     monkeypatch.setitem(sys.modules, "pyannote", types.SimpleNamespace())
     monkeypatch.setitem(sys.modules, "pyannote.audio", types.SimpleNamespace(Pipeline=Pipeline))
     monkeypatch.delenv("PYANNOTE_METRICS_ENABLED", raising=False)
-    (tmp_path / "config.yaml").write_text("pipeline: {}")
+    (tmp_path / "config.yaml").write_text("pipeline: {}", encoding="utf-8")
     return made, tmp_path
 
 

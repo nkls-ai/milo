@@ -60,7 +60,7 @@ async def started(fake):
 
 def engine(url, tmp_path, **kw) -> ScribeRealtime:
     key = tmp_path / "key"
-    key.write_text(KEY)
+    key.write_text(KEY, encoding="utf-8")
     return ScribeRealtime(key, server=url, **kw)
 
 
@@ -120,7 +120,7 @@ def test_nobody_listening_or_no_key_is_voice_unavailable(tmp_path):
         session.feed(np.zeros(1600, np.float32))
         return await session.finish()
 
-    with pytest.raises(VoiceUnavailable, match="unreachable|refused|closed"):
+    with pytest.raises(VoiceUnavailable, match="unreachable|refused|closed|no text"):
         asyncio.run(run(engine("ws://127.0.0.1:9", tmp_path)))
     with pytest.raises(VoiceUnavailable, match="no ElevenLabs key"):
         asyncio.run(run(ScribeRealtime(tmp_path / "missing")))

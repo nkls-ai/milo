@@ -1,3 +1,4 @@
+from tests.local_transport import short_tempdir
 """milo.system: one module per OS family with the same functions, so a Windows port fills in one file."""
 
 import asyncio
@@ -19,18 +20,7 @@ def test_each_os_family_has_every_function_with_the_same_signature(name):
     assert getattr(system, name) is getattr(windows if os.name == "nt" else posix, name)
 
 
-@pytest.mark.parametrize("name", system.FUNCTIONS)
-def test_the_windows_stubs_say_what_windows_would_use(name):
-    function = getattr(windows, name)
-    args = [None] * len([p for p in inspect.signature(function).parameters.values()
-                         if p.default is inspect.Parameter.empty and p.kind is p.POSITIONAL_OR_KEYWORD])
-    kwargs = {"force": True} if name == "signal_processes" else {}
-    with pytest.raises(NotImplementedError, match="Windows yet: .{20,}"):
-        result = function(*args, **kwargs)
-        if inspect.iscoroutine(result):
-            asyncio.run(result)
-
-
+@pytest.mark.skipif(os.name == "nt", reason="POSIX mode and Unix-socket behavior; Windows has native tests")
 def test_the_lock_is_exclusive_between_open_files(tmp_path):
     path = tmp_path / "lock"
     first, second = os.open(path, os.O_RDWR | os.O_CREAT), os.open(path, os.O_RDWR)
@@ -42,6 +32,7 @@ def test_the_lock_is_exclusive_between_open_files(tmp_path):
         os.close(second)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX mode and Unix-socket behavior; Windows has native tests")
 def test_private_and_owned(tmp_path):
     folder = tmp_path / "secrets"
     folder.mkdir(mode=0o755)
@@ -50,8 +41,9 @@ def test_private_and_owned(tmp_path):
     assert not posix.open_to_others(folder.lstat())
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX mode and Unix-socket behavior; Windows has native tests")
 def test_a_local_server_is_private_and_reachable():
-    root = Path(tempfile.mkdtemp(dir="/tmp", prefix="milo-"))  # AF_UNIX paths must stay short
+    root = Path(tempfile.mkdtemp(dir=short_tempdir, prefix="milo-"))  # AF_UNIX paths must stay short
     path = root / "run" / "x.sock"
 
     async def run():

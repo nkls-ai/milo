@@ -17,12 +17,32 @@ dependencies = [
     "tokenizers>=0.23.3",
     "tomlkit>=0.14.0",
     "websockets>=15",
+    "pywin32>=311; sys_platform == 'win32'",
+    "comtypes>=1.4; sys_platform == 'win32'",
+    "psutil>=7.0",
+    "pypdf>=5",
+    "onnxruntime>=1.20; sys_platform != 'darwin'",
+    "huggingface-hub>=0.30",
 ]
 
 [project.scripts]
 milo = "milo.server:main"
+milo-desktop = "milo.desktop.main:main"
 
 [project.optional-dependencies]
+desktop = [
+    "PySide6>=6.8,<6.9",
+    "pynput>=1.8",
+    "faster-whisper>=1.2",
+    "pocket-tts>=4.0.1",
+    "PyAudioWPatch>=0.2.12.7; sys_platform == 'win32'",
+    "scipy>=1.14",
+    "caldav>=3.7,<4",
+    "openpyxl>=3.1",
+    "python-docx>=1.1",
+    "torch>=2.5; sys_platform == 'linux'",
+]
+build = ["pyinstaller>=6.16", "Pillow>=11"]
 omnivoice = [
     "omnivoice>=0.2.1",
     "soundfile>=0.14.0",
@@ -33,6 +53,12 @@ pocket = [
 pyannote = [
     "pyannote-audio>=4.0",
 ]
+# NVIDIA runtime for faster-whisper on the GPU ([stt.faster_whisper] device = "auto" finds it). Opt-in, ~1 GB:
+# uv sync --extra desktop --extra cuda
+cuda = [
+    "nvidia-cublas-cu12>=12.4,<12.9.3; (sys_platform == 'win32' and platform_machine == 'AMD64') or (sys_platform == 'linux' and platform_machine == 'x86_64')",
+    "nvidia-cudnn-cu12>=9.1,<10; (sys_platform == 'win32' and platform_machine == 'AMD64') or (sys_platform == 'linux' and platform_machine == 'x86_64')",
+]
 
 [build-system]
 requires = ["uv_build>=0.8.18,<0.9.0"]
@@ -41,4 +67,15 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "pytest>=9.2.0",
+    "radicale>=3.5",
 ]
+
+# Pocket runs on the CPU. Avoid downloading several GB of CUDA libraries on Linux.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+torchaudio = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

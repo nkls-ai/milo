@@ -110,16 +110,10 @@ struct MeetingCapsule: View {
 
 /// The colours meeting notes wear: the red of a recording light, and its grey when paused.
 enum MeetingColors {
-    static let live = Color(red: 0.89, green: 0.27, blue: 0.27)
+    static let live = DesignTokens.live
     /// Speakers in a transcript, in turn: Milo's lavender family and warm colours that read on his paper.
     static func speaker(_ index: Int, _ theme: Theme) -> Color {
-        let palette: [Color] = [
-            Color(red: 0.80, green: 0.42, blue: 0.20),
-            Color(red: 0.16, green: 0.55, blue: 0.52),
-            Color(red: 0.76, green: 0.29, blue: 0.47),
-            Color(red: 0.33, green: 0.47, blue: 0.80),
-            Color(red: 0.50, green: 0.55, blue: 0.20),
-        ]
+        let palette = DesignTokens.speakers
         return palette[index % palette.count]
     }
 }

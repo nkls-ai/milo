@@ -31,7 +31,7 @@ def test_the_file_is_what_a_sound_card_would_have_played_gaps_included(tmp_path)
     audio, rate = read_wav(tmp_path / "001.wav")
     assert rate == 1000 and len(audio) == 2000
     assert np.all(audio[1000:1500] == 0) and abs(audio[1600] - 0.25) < 1e-3
-    meta = json.loads((tmp_path / "001.json").read_text())
+    meta = json.loads((tmp_path / "001.json").read_text(encoding="utf-8"))
     assert [p["start_s"] for p in meta["pieces"]] == [0.0, 1.5] and meta["interrupted"] is False
 
 
@@ -48,7 +48,7 @@ def test_interrupt_cuts_the_file_where_playback_was(tmp_path):
 
     assert asyncio.run(run()) is True, "the stream was already closed: nothing left to drain"
     assert len(read_wav(tmp_path / "001.wav")[0]) == 1200
-    assert json.loads((tmp_path / "001.json").read_text())["interrupted"] is True
+    assert json.loads((tmp_path / "001.json").read_text(encoding="utf-8"))["interrupted"] is True
 
 
 def test_the_microphone_hears_the_file_in_real_time(tmp_path):
@@ -81,7 +81,7 @@ def test_a_mic_that_opens_after_the_key_went_down_misses_what_was_said_before(tm
     write_wav(path, np.arange(STT_SAMPLE_RATE * 2, dtype=np.float32) / (STT_SAMPLE_RATE * 4), STT_SAMPLE_RATE)
     import time
 
-    path.with_suffix(".json").write_text(json.dumps({"pressed_at": time.time() - 0.5}))
+    path.with_suffix(".json").write_text(json.dumps({"pressed_at": time.time() - 0.5}), encoding="utf-8")
     clock = Clock()
     mic = WavMicrophone(path, clock=clock)
     mic.start(lambda level: None)

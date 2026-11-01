@@ -9,6 +9,7 @@ from typing import Protocol
 
 from .config import ASK, KEY_NAMES, MEETING_AUTO, UPDATES, Config
 from .core.events import SettingsReport
+from .core.key_names import KeyNames
 from .core.ports import EventSink
 from .core.registry import ConfigError
 from .core.types import LiveMode
@@ -32,6 +33,8 @@ KEY_LABELS = {"fn": "fn", "right_option": "Right Option", "right_command": "Righ
               "right_control": "Right Control"}
 
 SETTINGS = (
+    Setting("chat", "use", ("claude_live", "codex_live", "openai_compat", "none"),
+            ("Claude CLI", "Codex CLI", "OpenAI-compatible", "Dictation only")),
     Setting("chat", "updates", UPDATES, ("Only the answer", "Short notes in his bubble", "Tells you each step")),
     Setting("dictation", "stream", tuple(m.value for m in LiveMode),
             ("When you let go", "Show the words as you speak", "Type as you speak")),
@@ -96,6 +99,14 @@ class Settings:
             log.warning("settings: refused to change [%s] %s", section, key)
             self.send("That one can't be changed here.")
             return
+        if (section, key) == ("chat", "use"):
+            # Config leaves adapter names to the registry at composition time.
+            # The settings selector can validate its closed set without starting
+            # a CLI, checking credentials, or loading a model to save a choice.
+            choices = next(s.options for s in SETTINGS if (s.section, s.key) == (section, key))
+            if not isinstance(value, str) or value not in choices:
+                self.send("Milo couldn't use that. Try one of the choices.")
+                return
         if (section, key) == ALLOWED_APPS and not self._only_removes(value):
             log.warning("settings: refused to add to the always-allowed apps from the window")
             self.send("Apps are added with Allow always, when Milo asks.")
@@ -129,17 +140,29 @@ class Settings:
         return isinstance(value, list) and all(isinstance(v, dict) and v in now for v in value)
 
     def _report(self, config: Config, error: str = "") -> SettingsReport:
+        names = self._running.platform.key_names
         rows = [{"section": s.section, "key": s.key, "value": _value(config, s), "options": list(s.options),
-                 "labels": list(s.labels), "live": (s.section, s.key) in self._live} for s in SETTINGS]
+                 "labels": _labels(s, names), "live": (s.section, s.key) in self._live} for s in SETTINGS]
         waiting = any(_value(config, s) != _value(self._running, s) for s in SETTINGS
                       if (s.section, s.key) not in self._live)
         return SettingsReport(rows, waiting, error)
+
+
+def _labels(setting: Setting, names: KeyNames) -> list[str]:
+    """Key choices in the words of this computer's keyboard ("Right Alt", "Ctrl+Alt+M" on a PC)."""
+    if (setting.section, setting.key) in (("ui", "dictate_key"), ("ui", "talk_key")):
+        return [names.key(str(o)) for o in setting.options]
+    if (setting.section, setting.key) in (("ui", "whats_this_key"), ("ui", "meeting_key")):
+        return [names.combo(str(o)) for o in setting.options]
+    return list(setting.labels)
 
 
 BROKEN = "Milo couldn't open his settings file. If you edited it by hand, it may have a typo."
 
 
 def _value(config: Config, setting: Setting) -> Value:
+    if setting.key == "use":
+        return config.pluggable(setting.section)[0]
     value = getattr(getattr(config, setting.section), setting.key)
     return [dict(v) for v in value] if isinstance(value, tuple) else value
 

@@ -104,7 +104,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("models", help="download and load the speech and memory models")
     conf = sub.add_parser("configure", help="pick the chat model and the helpers' agent")
-    conf.add_argument("--chat", default="", help="[chat] use: claude_live, openai_compat or none")
+    conf.add_argument("--chat", default="", help="[chat] use: claude_live, codex_live, openai_compat or none")
     conf.add_argument("--harness", default="", help="[harness] use: codex or claude")
     args = parser.parse_args(argv)
     # The models' own progress bars say enough; the engines' info lines would bury them.

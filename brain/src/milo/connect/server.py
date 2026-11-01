@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from milo.core.ports import Connections
+from milo.core.ports import Connections, connection_identity
 from milo.core.types import ToolError
 from milo.transport.tool_client import BrainClient, refusal
 
@@ -18,8 +18,6 @@ log = logging.getLogger("milo.connect")
 VERSION = "0.1.0"
 
 
-# The app each connection changes things in, so an Allow for one change there covers the next (ADR 0022).
-APPS = {"notes": "Notes", "files": "Finder"}
 # Kinds that can't be undone (ADR 0023), for the MCP destructiveHint.
 DESTRUCTIVE = ("delete", "discard", "overwrite_file")
 
@@ -51,7 +49,9 @@ class Toolbox:
             raise ToolError(f"{name} doesn't take {', '.join(unknown)}")
         if not getattr(backend, "approves_itself", False):
             facts = tool.about(backend, args) if tool.about and tool.kind != "read" else {}
-            decision = self._brain.approve(tool.kind, tool.question({**args, **facts}), app=APPS.get(tool.connection, ""))
+            identity = connection_identity(backend, tool.connection.capitalize())
+            decision = self._brain.approve(tool.kind, tool.question({**args, **facts}),
+                                           app=identity.app.name if identity.app else "")
             if not decision.allowed:
                 raise ToolError(refusal(decision))
         self._may_control(getattr(backend, "controls", ""))

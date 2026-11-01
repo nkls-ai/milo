@@ -24,7 +24,6 @@ import asyncio
 import json
 import re
 import logging
-import re
 import unicodedata
 import uuid
 import weakref
@@ -39,7 +38,7 @@ from milo.core.events import ActionDone
 from milo.core.home import SECURE, Device, NotSetUp
 from milo.core.home import find as home_find, many as home_many
 from milo.core.logtext import private
-from milo.core.ports import Clock, Connections, EventSink, ReminderBook
+from milo.core.ports import Clock, Connections, EventSink, ReminderBook, connection_identity
 from milo.core.times import local, parse_local
 from milo.core.types import ActionLevel, AppRef, Emotion, HandsError, Reminder, ToolError
 from milo.core.wording import first_name
@@ -53,7 +52,7 @@ from .permits import Scope
 from .reply_stream import ActRequest
 from .speaker import Speaker
 from .today import Today, inert
-from .tool_requests import ACCESS_APPS, APPROVE_APPS, APPS
+from .tool_requests import ACCESS_APPS
 from .transcript import Transcript, unrecorded
 
 if TYPE_CHECKING:
@@ -479,6 +478,9 @@ class QuickActions:
             raise Problem(f"The {connection} connection is switched off in Milo's settings")
         return found
 
+    def _identity(self, connection: str):
+        return connection_identity(getattr(self._connections, connection), connection.capitalize())
+
     def _add_event(self, act: ActRequest, lang: str) -> _Plan:
         calendar = self._need("calendar")
         title = (act.get("title") or act.text)[:200]
@@ -502,13 +504,13 @@ class QuickActions:
             spoken = dates.when(start, self._clock.now().date(), lang, all_day=all_day)
             # The card shows the day and the time from `when` (ADR 0030): its detail is only the place.
             return _Done("event", title, say("acts.event", lang, title=title, when=spoken),
-                         detail=act.get("location"), when=_iso(start), app="Calendar",
+                         detail=act.get("location"), when=_iso(start), app=self._identity("calendar").label,
                          reverse=[{"op": "event.delete", "id": str(made.get("id", "")), "at": _iso(start),
                                    "title": title, "start": _iso(start), "end": _iso(end),
                                    **({"all_day": True} if all_day else {})}])
 
         when = dates.when(start, self._clock.now().date(), lang, all_day=all_day)
-        return _Plan("change", say("acts.ask.event", lang, title=inert(title, 50), when=when), APPS["calendar"], run)
+        return _Plan("change", say("acts.ask.event", lang, title=inert(title, 50), when=when), self._identity("calendar").app, run)
 
     async def _event(self, act: ActRequest, lang: str) -> tuple[dict, bool]:
         """The event a move or cancel means: its handle from <today>, else its title on a day. False with it when
@@ -554,14 +556,14 @@ class QuickActions:
             spoken = dates.when(start, self._clock.now().date(), lang)
             return _Done("event", title, say("acts.moved", lang, title=title, when=spoken),
                          detail=", ".join(p for p in (say("acts.card_moved", lang), str(e.get("location") or "")) if p),
-                         when=_iso(start), app="Calendar",
+                         when=_iso(start), app=self._identity("calendar").label,
                          reverse=[{"op": "event.move", "id": e["id"], "at": _iso(start), "start": _iso(old_start),
                                    "end": _iso(old_end or old_start), "title": title}])
 
         # Moving an invite changes what other people see: that asks, like sharing.
         when = dates.when(start, self._clock.now().date(), lang)
         return _Plan("share" if others else "change", say("acts.ask.move", lang, title=inert(title, 50), when=when)
-                     + (say("acts.ask.invite", lang) if others else ""), APPS["calendar"], run, sure)
+                     + (say("acts.ask.invite", lang) if others else ""), self._identity("calendar").app, run, sure)
 
     async def _cancel(self, act: ActRequest, lang: str) -> _Plan:
         calendar = self._need("calendar")
@@ -577,7 +579,7 @@ class QuickActions:
             self.today.changed()
             return _Done("event", title, say("acts.cancelled", lang, title=title),
                          detail=say("acts.card_deleted", lang),
-                         when=_iso(start) if start else "", app="Calendar",
+                         when=_iso(start) if start else "", app=self._identity("calendar").label,
                          reverse=[{"op": "event.add", **{k: gone.get(k, e.get(k, "")) for k in
                                                          ("title", "start", "end", "location", "notes", "calendar")},
                                    "all_day": bool(gone.get("all_day", e.get("all_day")))}] if restorable else [])
@@ -585,7 +587,7 @@ class QuickActions:
         why = (say("acts.ask.invite", lang) if others else say("acts.ask.series", lang) if e.get("recurring") else "")
         when = dates.when(start, self._clock.now().date(), lang, all_day=bool(e.get("all_day"))) if start else ""
         return _Plan("trash" if restorable else "delete",
-                     say("acts.ask.cancel", lang, title=inert(title, 50), when=when) + why, APPS["calendar"], run, sure,
+                     say("acts.ask.cancel", lang, title=inert(title, 50), when=when) + why, self._identity("calendar").app, run, sure,
                      light=restorable and self._is_made(e))
 
     def _todo(self, act: ActRequest, lang: str) -> _Plan:
@@ -602,9 +604,9 @@ class QuickActions:
             spoken = dates.when(due, self._clock.now().date(), lang) if due else ""
             return _Done("todo", title, say("acts.todo_due" if due else "acts.todo", lang, title=title, when=spoken),
                          detail=str(made.get("list") or act.get("list") or ""), when=_iso(due) if due else "",
-                         app="Reminders", reverse=[{"op": "todo.delete", "id": str(made.get("id", ""))}])
+                         app=self._identity("reminders").label, reverse=[{"op": "todo.delete", "id": str(made.get("id", ""))}])
 
-        return _Plan("change", say("acts.ask.todo", lang, title=inert(title, 50)), APPS["reminders"], run)
+        return _Plan("change", say("acts.ask.todo", lang, title=inert(title, 50)), self._identity("reminders").app, run)
 
     async def _find_todo(self, act: ActRequest, lang: str) -> tuple[dict, bool]:
         """The open to-do a tick or a delete means: its handle from <today>, else its title, looked for on every
@@ -635,11 +637,11 @@ class QuickActions:
             await reach(reminders.complete, t["id"])
             self.today.changed()
             return _Done("todo", title, say("acts.todo_done", lang, title=title), detail=say("acts.card_done", lang),
-                         when=_iso(due), app="Reminders", reverse=[{"op": "todo.reopen", "id": t["id"]}])
+                         when=_iso(due), app=self._identity("reminders").label, reverse=[{"op": "todo.reopen", "id": t["id"]}])
 
         # Ticked off can be unticked: a to-do found by part of its title goes ahead, and the line names the one it was.
         return _Plan("change", say("acts.ask.todo_done", lang, title=inert(title, 50))
-                     + (say("acts.ask.shared_list", lang) if t.get("shared") else ""), APPS["reminders"], run,
+                     + (say("acts.ask.shared_list", lang) if t.get("shared") else ""), self._identity("reminders").app, run,
                      light=not t.get("shared"), others=bool(t.get("shared")))
 
     async def _delete_todo(self, act: ActRequest, lang: str) -> _Plan:
@@ -657,13 +659,13 @@ class QuickActions:
             gone = await reach(reminders.delete, t["id"]) or t
             self.today.changed()
             return _Done("todo", title, say("acts.todo_deleted", lang, title=title),
-                         detail=say("acts.card_deleted", lang), when=_iso(due), app="Reminders",
+                         detail=say("acts.card_deleted", lang), when=_iso(due), app=self._identity("reminders").label,
                          reverse=[{"op": "todo.add", **{k: str(gone.get(k, t.get(k)) or "")
                                                         for k in ("title", "due", "notes", "list")}}]
                          if restorable else [])
 
         return _Plan("trash" if own else "delete", say("acts.ask.todo_delete", lang, title=inert(title, 50))
-                     + ("" if restorable else say("acts.ask.shared_list", lang)), APPS["reminders"], run, sure,
+                     + ("" if restorable else say("acts.ask.shared_list", lang)), self._identity("reminders").app, run, sure,
                      light=own)
 
     def _is_made(self, item: dict) -> bool:
@@ -714,11 +716,11 @@ class QuickActions:
             await self._may_control(notes)
             made = await asyncio.to_thread(notes.create, title, body, act.get("folder"))
             first = next((line for line in body.splitlines() if line.strip()), "")
-            return _Done("note", title, say("acts.note", lang, title=title), detail=first[:80], app="Notes",
+            return _Done("note", title, say("acts.note", lang, title=title), detail=first[:80], app=self._identity("notes").label,
                          reverse=[{"op": "note.delete", "id": str(made.get("id", "")),
                                    "text": " ".join(f"{title} {body}".split())}])
 
-        return _Plan("change", say("acts.ask.note", lang, title=inert(title, 50)), APPROVE_APPS["Notes"], run)
+        return _Plan("change", say("acts.ask.note", lang, title=inert(title, 50)), self._identity("notes").app, run)
 
     def _timer(self, act: ActRequest, lang: str) -> _Plan:
         seconds = 0.0
@@ -880,8 +882,8 @@ class QuickActions:
             who = " and ".join(first_name(t) or t for t in to[:2])
             # Mail keeps no id for a draft that Milo could find again: a helper takes it out of Drafts on Undo.
             return _Done("draft", str(made.get("subject") or subject or who), say("acts.draft_to", lang, who=who),
-                         detail=", ".join(to), app="Mail",
-                         changes=[{"title": f"Wrote a mail draft to {', '.join(to)}", "app": "Mail",
+                         detail=", ".join(to), app=self._identity("mail").label,
+                         changes=[{"title": f"Wrote a mail draft to {', '.join(to)}", "app": self._identity("mail").label,
                                    "detail": "mail_draft " + json.dumps({"to": to, "subject": subject},
                                                                         ensure_ascii=False)[:400],
                                    "covered": False}])

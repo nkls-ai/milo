@@ -84,7 +84,7 @@ class ClaudeHarness:
         self.disallowed_tools = disallowed_tools
         # And what in its own folder would steer the next task (instructions, settings, MCP servers). They are
         # removed before each run too, which also covers Codex.
-        own = [f"/{workdir.resolve()}/{deep}{name}" + ("/**" if name in STEERING_FOLDERS else "")
+        own = [f"/{workdir.resolve().as_posix()}/{deep}{name}" + ("/**" if name in STEERING_FOLDERS else "")
                for name in STEERING for deep in ("", "**/")]
         self.deny = [*(protected.deny_rules() if protected is not None else []),
                      *(f"{tool}({path})" for path in own for tool in ("Edit", "Write"))]
@@ -101,10 +101,10 @@ class ClaudeHarness:
         key = server_env(scope)[0][1].replace(",", "-") if scope is not None and server_env(scope) else ""
         path = self.mcp_config.with_name(f"{self.mcp_config.stem}-{key}.json") if key else self.mcp_config
         text = json.dumps(mcp_servers(servers))
-        if not path.is_file() or path.read_text() != text:
+        if not path.is_file() or path.read_text(encoding="utf-8") != text:
             path.parent.mkdir(parents=True, exist_ok=True)
             staged = path.with_name(path.name + ".milo")
-            staged.write_text(text)
+            staged.write_text(text, encoding="utf-8")
             staged.replace(path)
         return str(path)
 

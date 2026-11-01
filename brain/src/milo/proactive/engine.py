@@ -6,6 +6,8 @@ carry an `llm_prompt`, but only the runner may act on it, and only if `budget.al
 
 from __future__ import annotations
 
+from milo import system
+
 import json
 import logging
 import os
@@ -108,7 +110,7 @@ class HeartbeatEngine:
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.state_path.with_name(self.state_path.name + ".tmp")
         tmp.write_text(json.dumps(data, indent=1, sort_keys=True), encoding="utf-8")
-        os.replace(tmp, self.state_path)
+        system.replace_file(tmp, self.state_path)
 
     @staticmethod
     def _check(rule: ProactiveRule, signals: Signals, reminders) -> list[Nudge]:

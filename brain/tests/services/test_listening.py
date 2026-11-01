@@ -4,7 +4,7 @@ from milo.core.events import Bubble, Dictation, EmotionChanged, Heard, Level, St
 from milo.core.types import Emotion, HarnessError, ListenMode, MiloState
 from milo.services.live_talk import HICCUP
 from tests.fakes import FakeAudioInput, FakeAudioOutput, FakeLiveModel, FakeTranscriber
-from tests.services.stack import Stack, settle
+from tests.services.stack import Stack, settle, until
 
 
 class BrokenTranscriber(FakeTranscriber):
@@ -19,7 +19,8 @@ def test_talk_turn_end_to_end():
     async def run():
         s.listening.start(ListenMode.TALK)
         await s.listening.stop()
-        await settle()
+        await until(lambda: Bubble("Sure thing, it is nine. Bye now.") in s.sink.events
+                    and not s.live_talk.busy and not s.speaker.active)
 
     asyncio.run(run())
     flow = [e for e in s.sink.events if not isinstance(e, Level)]

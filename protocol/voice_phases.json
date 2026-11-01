@@ -1,0 +1,26 @@
+{
+  "$comment": "The voice capsule's rules as cases, run by both apps: VoicePhase.of (app/Sources/MiloKit/VoicePhase.swift, tested in VoicePhaseTableTests.swift) and phase_of (brain/src/milo/desktop/presentation/voice_phase.py, tested in tests/desktop/test_voice_phase.py). Missing inputs take `defaults`. `ear` is the key as the app saw it (armed, open, caught); `handsFree` the mode a double tap locked on; `phase` null means no capsule.",
+  "defaults": {"state": "idle", "ear": null, "handsFree": null, "pasted": false, "connected": true, "lastMode": "talk", "answering": false},
+  "cases": [
+    {"name": "idle shows nothing", "phase": null},
+    {"name": "listening", "state": "listening", "phase": {"kind": "listening", "mode": "talk", "handsFree": false}},
+    {"name": "hands-free dictation", "state": "dictating", "handsFree": "dictate", "phase": {"kind": "listening", "mode": "dictate", "handsFree": true}},
+    {"name": "transcribing takes the last mode", "state": "transcribing", "lastMode": "dictate", "phase": {"kind": "transcribing", "mode": "dictate"}},
+    {"name": "thinking", "state": "thinking", "phase": {"kind": "thinking"}},
+    {"name": "speaking shows nothing", "state": "speaking", "phase": null},
+    {"name": "offline beats everything", "state": "listening", "ear": {"kind": "armed", "mode": "talk"}, "connected": false, "phase": {"kind": "offline"}},
+    {"name": "the key down arms", "ear": {"kind": "armed", "mode": "talk"}, "phase": {"kind": "armed", "mode": "talk"}},
+    {"name": "a real hold listens before the brain says so", "ear": {"kind": "open", "mode": "dictate"}, "phase": {"kind": "listening", "mode": "dictate", "handsFree": false}},
+    {"name": "the release lands before the brain's transcribing", "state": "listening", "ear": {"kind": "caught", "mode": "talk"}, "phase": {"kind": "caught", "mode": "talk"}},
+    {"name": "the key beats speaking", "state": "speaking", "ear": {"kind": "armed", "mode": "talk"}, "phase": {"kind": "armed", "mode": "talk"}},
+    {"name": "thinking steps aside for an answer", "state": "thinking", "answering": true, "phase": null},
+    {"name": "pasted after dictation", "ear": {"kind": "caught", "mode": "dictate"}, "pasted": true, "phase": {"kind": "pasted"}},
+    {"name": "pasted never follows talking", "ear": {"kind": "caught", "mode": "talk"}, "pasted": true, "phase": {"kind": "caught", "mode": "talk"}},
+    {"name": "pasted alone", "pasted": true, "phase": {"kind": "pasted"}},
+    {"name": "typing as you speak stays listening", "state": "dictating", "pasted": true, "phase": {"kind": "listening", "mode": "dictate", "handsFree": false}},
+    {"name": "the brain's listening beats an armed key", "state": "listening", "ear": {"kind": "armed", "mode": "dictate"}, "phase": {"kind": "listening", "mode": "talk", "handsFree": false}},
+    {"name": "hands-free talk", "state": "listening", "handsFree": "talk", "phase": {"kind": "listening", "mode": "talk", "handsFree": true}},
+    {"name": "pasted beats transcribing", "state": "transcribing", "pasted": true, "phase": {"kind": "pasted"}},
+    {"name": "an open key while thinking listens", "state": "thinking", "ear": {"kind": "open", "mode": "talk"}, "phase": {"kind": "listening", "mode": "talk", "handsFree": false}}
+  ]
+}

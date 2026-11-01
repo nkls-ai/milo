@@ -12,8 +12,8 @@ import numpy as np
 
 from milo.core.ports import Connections, LevelCallback
 from milo.core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, CONNECTIONS, LIVE_MODELS, TRANSCRIBERS, VOICES,
-                                AdapterContext, options_from)
-from milo.core.types import Audio, STT_SAMPLE_RATE, Usage
+                                HARNESSES, AdapterContext, options_from)
+from milo.core.types import Audio, STT_SAMPLE_RATE, Usage, HarnessError
 
 
 class NoTranscriber:
@@ -23,8 +23,23 @@ class NoTranscriber:
     def wake(self) -> None:
         pass
 
-    def transcribe(self, audio: Audio) -> str:
+    def transcribe(self, audio: Audio, before: str = "", *, quick: bool = False) -> str:
         return ""
+
+    def preview(self, audio: Audio) -> str:
+        return ""
+
+    def interrupt(self) -> None:
+        pass
+
+
+class NoHarness:
+    name = "none"
+    timeout_s = 0.0
+
+    async def reply(self, prompt, session_id, **options):
+        raise HarnessError("Helpers are turned off. Choose a helper in Connections & models to give Milo work.",
+                           transient=False)
 
 
 class SilentVoice:
@@ -78,6 +93,12 @@ class NoOptions:
 def _stt(options: Mapping[str, Any], ctx: AdapterContext) -> NoTranscriber:
     options_from(NoOptions, options, "stt.none")
     return NoTranscriber()
+
+
+@HARNESSES.register("none")
+def _harness(options: Mapping[str, Any], ctx: AdapterContext) -> NoHarness:
+    options_from(NoOptions, options, "harness.none")
+    return NoHarness()
 
 
 @VOICES.register("none")

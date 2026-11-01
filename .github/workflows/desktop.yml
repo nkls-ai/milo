@@ -1,0 +1,81 @@
+name: desktop
+on:
+  workflow_dispatch:
+  push:
+    paths: ["brain/**", "protocol/**", "scripts/*desktop*", ".github/workflows/desktop.yml"]
+  pull_request:
+    paths: ["brain/**", "protocol/**", "scripts/*desktop*", ".github/workflows/desktop.yml"]
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      PYTHONUTF8: "1"
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: brain/uv.lock
+      - name: Linux desktop libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libportaudio2 libpulse0 libegl1 libopengl0 libxkbcommon0 libatspi2.0-0 at-spi2-core libxcb-cursor0 gcc linux-libc-dev
+      - run: uv sync --project brain --locked --extra desktop
+      - run: uv run --project brain --no-sync pytest brain/tests -q
+      - run: uv run --project brain --no-sync milo-desktop --smoke-test --screenshot build/desktop-smoke.png
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-smoke-${{ runner.os }}
+          path: build/desktop-smoke.png
+
+  package:
+    if: github.event_name == 'workflow_dispatch'
+    needs: test
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      PYTHONUTF8: "1"
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libportaudio2 libpulse0 libegl1 libopengl0 libxkbcommon0 libatspi2.0-0 at-spi2-core libxcb-cursor0 gcc linux-libc-dev
+      - run: uv sync --project brain --locked --extra desktop --extra build
+      - run: uv run --project brain --no-sync python scripts/build-desktop.py
+      - name: Smoke test frozen runtime on Windows
+        if: runner.os == 'Windows'
+        run: |
+          ./dist/Milo/Milo-runtime.exe --smoke-test --screenshot build/frozen-smoke.png
+          ./dist/Milo/Milo-runtime.exe --diagnose
+          $env:MILO_E2E_EXECUTABLE = (Resolve-Path ./dist/Milo/Milo-runtime.exe).Path
+          uv run --project brain --no-sync pytest brain/tests/eval/test_portable_brain_e2e.py -q
+      - name: Smoke test frozen runtime on Linux
+        if: runner.os == 'Linux'
+        run: |
+          ./dist/Milo/Milo-runtime --smoke-test --screenshot build/frozen-smoke.png
+          dbus-run-session -- ./dist/Milo/Milo-runtime --diagnose
+          MILO_E2E_EXECUTABLE="$PWD/dist/Milo/Milo-runtime" uv run --project brain --no-sync pytest brain/tests/eval/test_portable_brain_e2e.py -q
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
+        with:
+          name: Milo-${{ runner.os }}
+          path: dist/Milo/
+      - name: Archive Linux executable modes and shared-library links
+        if: runner.os == 'Linux'
+        run: tar -czf dist/Milo-Linux.tar.gz -C dist Milo
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Linux'
+        with:
+          name: Milo-Linux
+          path: dist/Milo-Linux.tar.gz

@@ -1,0 +1,26 @@
+{
+  "page": "SetupPage",
+  "size": [600, 1300],
+  "states": {
+    "first": {"dictateKey": "Right Ctrl", "tried": false, "providers": {
+      "selection": {"chat": "claude_live", "helper": "codex", "endpoint": "", "model": "", "keyRef": ""},
+      "clis": {"chat_claude": {"available": true, "detail": "Installed; account sign-in is checked when you use it"},
+               "chat_codex": {"available": false, "detail": "Not installed or the configured path is missing"},
+               "helper_codex": {"available": false, "detail": "Not installed or the configured path is missing"},
+               "helper_claude": {"available": true, "detail": "Installed; account sign-in is checked when you use it"}},
+      "configError": "", "needsSetup": true}},
+    "api": {"dictateKey": "Right Ctrl", "tried": true, "providers": {
+      "selection": {"chat": "openai_compat", "helper": "none", "endpoint": "http://localhost:11434/v1", "model": "llama3.2", "keyRef": ""},
+      "clis": {}, "configError": "", "needsSetup": false}},
+    "permissions": {"dictateKey": "fn", "tried": false, "rows": [
+      {"permission": "microphone", "title": "Microphone", "reason": "So I can hear you while you hold the key.", "state": "granted", "optional": false},
+      {"permission": "accessibility", "title": "Accessibility", "reason": "So I can type your words where your cursor is.", "state": "notAsked", "optional": false, "button": "Allow"},
+      {"permission": "calendars", "title": "Calendars", "reason": "So I can tell you what's next and add events.", "state": "denied", "optional": true}
+    ], "providers": {"selection": {"chat": "codex_live", "helper": "codex"}, "clis": {"chat_codex": {"available": true}, "helper_codex": {"available": true}}, "configError": "", "needsSetup": false}}
+  },
+  "interactions": [
+    {"state": "first", "steps": [{"click": "done"}], "expect": [], "actions": [["done", null]]},
+    {"state": "permissions", "steps": [{"click": "permission-accessibility/fix"}], "expect": [], "actions": [["fix", "accessibility"]]},
+    {"state": "first", "steps": [{"click": "talking/OpenAI-compatible API or local server"}], "expect": [], "shot": "api-chosen"}
+  ]
+}

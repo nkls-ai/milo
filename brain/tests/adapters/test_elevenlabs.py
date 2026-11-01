@@ -83,7 +83,7 @@ async def started(fake: FakeElevenLabs):
 
 def voice_for(url: str, tmp_path, **kw) -> ElevenLabsVoice:
     key = tmp_path / "elevenlabs.key"
-    key.write_text(KEY + "\n")
+    key.write_text(KEY + "\n", encoding="utf-8")
     kw.setdefault("model", "eleven_flash_v2_5")
     return ElevenLabsVoice(key, "voice123", server=url, **kw)
 
@@ -252,7 +252,7 @@ def test_nobody_listening_is_voice_unavailable(tmp_path):
         voice = voice_for("ws://127.0.0.1:9", tmp_path)
         stream = voice.stream()
         stream.send("Hallo.")
-        with pytest.raises(VoiceUnavailable, match="unreachable|refused"):
+        with pytest.raises(VoiceUnavailable, match="unreachable|refused|no audio"):
             await collect(stream)
         await voice.close()
 

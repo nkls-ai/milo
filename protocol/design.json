@@ -1,0 +1,65 @@
+{
+  "$comment": "Milo's look and motion, once for every platform. The Mac (Theme.swift, Palette.swift) and the Windows/Linux QML shell (Milo/Theme.qml) both read these values. Colours are sRGB hex, #AARRGGBB when they carry alpha (the QML form); pairs are [light, dark].",
+  "colors": {
+    "primary":   ["#5E4FA3", "#B5A8F0"],
+    "tint":      ["#F5F2FE", "#1E1B33"],
+    "accent":    ["#C98526", "#F0B54A"],
+    "ink":       ["#2B2454", "#F0EDFF"],
+    "glow":      ["#C7BDEF", "#8070D1"],
+    "onPrimary": ["#FFFFFF", "#1E1B33"],
+    "card":      ["#EBFFFFFF", "#302D43"],
+    "rule":      ["#245E4FA3", "#1AFFFFFF"],
+    "muted":     ["#706580", "#B2A8CE"],
+    "danger":    ["#9C3E4D", "#F0A0B4"]
+  },
+  "wren": {
+    "bodyTop":    "#B578FF",
+    "bodyBottom": "#7338ED",
+    "face":       "#1F1A4A",
+    "blush":      "#FF85AD",
+    "idle":       "#EDE0FF"
+  },
+  "rig": {
+    "$comment": "The wren as drawn by the rig (WrenRig.swift, Wren/WrenRig.qml), from the design page.",
+    "bodyHi": "#CBC2F4", "bodyMid": "#9D90DD", "bodyLo": "#6A5BB4", "lidLine": "#3F3373",
+    "bellyHi": "#FEF5EA", "bellyLo": "#F1D6BC",
+    "brow": "#6F5FBE", "crestHi": "#B4A8EC", "crestLo": "#7E6ECB", "fluff": "#F4F0FF",
+    "wingHi": "#8A7CCB", "wingLo": "#54468F", "wingBar": "#B9AEEA",
+    "tail": "#6C5DB2", "tailLo": "#4C3F8A", "tailBar": "#43377D",
+    "eye": "#1E1730", "eyeHi": "#4F4276", "sheen": "#8C7CC8",
+    "beakHi": "#E6B274", "beakLo": "#B27744", "mouth": "#6E2F3C", "tongue": "#C25466",
+    "scarfHi": "#F4C262", "scarfLo": "#D69A3C", "scarfRib": "#FBDB98", "scarfEdge": "#FFE6B0",
+    "feet": "#B17C50", "blush": "#EE9AA6",
+    "paperHi": "#FFFCF4", "paperLo": "#F2E7D4", "paperLine": "#B9AEEA", "writing": "#4C3F8A",
+    "pencil": "#F29AAE", "pencilLo": "#D26A84", "wood": "#F3D9B0", "lead": "#3A3150",
+    "eraser": "#CBC2F4", "ferrule": "#D9D4E8",
+    "shade": "#2E2463", "ground": "#2A2050", "rim": "#F1ECFF", "ink": "#1B1430"
+  },
+  "modes": {
+    "talk":    "#FF736B",
+    "dictate": "#4DE09E",
+    "think":   "#FFC24A",
+    "speak":   "#5CDBFF",
+    "live":    "#E34545"
+  },
+  "speakers": ["#CC6B33", "#298C85", "#C24A78", "#5578CC", "#808C33"],
+  "surface": {
+    "$comment": "The floating surfaces next to Milo (Surface.swift): bubble, voice capsule, badges.",
+    "bubbleRadius": 16, "capsuleRadius": 13, "controlRadius": 9, "textWidth": 246, "trailingInset": 40,
+    "badgeSize": 24, "bubbleTail": 8, "figure": 132
+  },
+  "radius": { "small": 10, "medium": 12, "card": 18, "window": 22, "capsule": 999 },
+  "space":  { "xs": 4, "s": 8, "m": 12, "l": 16, "xl": 24, "xxl": 32 },
+  "type": {
+    "caption": 12, "body": 13, "callout": 14, "headline": 17, "title": 25, "hero": 28,
+    "weights": { "regular": 400, "medium": 500, "semibold": 600, "bold": 700 }
+  },
+  "motion": {
+    "$comment": "Springs only, never linear tweens. response in seconds (lower is quicker), damping fraction (lower bounces more). gentle = response*1.6, damping+0.15. Reduced motion: a 0.18 s ease-out fade.",
+    "spring":  { "response": 0.45, "damping": 0.74 },
+    "gentle":  { "response": 0.72, "damping": 0.89 },
+    "snappy":  { "response": 0.28, "damping": 0.82 },
+    "reducedFade": 0.18,
+    "bob": 1
+  }
+}

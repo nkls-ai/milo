@@ -89,7 +89,8 @@ class ToolRequests:
     def __init__(self, approvals: Approvals, bridge: AppBridge, enabled: Collection[str] = ("calendar", "reminders"),
                  memory: MemoryRequests | None = None, phone: Phone | None = None,
                  reminders: ReminderBook | None = None, access: AccessGate | None = None,
-                 undo: Undo | None = None, installer: Installer | None = None, decisions: Decisions | None = None):
+                 undo: Undo | None = None, installer: Installer | None = None, decisions: Decisions | None = None,
+                 connection_apps: Collection[AppRef] | None = None):
         self._approvals = approvals
         self._bridge = bridge
         self._enabled = frozenset(enabled)
@@ -101,6 +102,10 @@ class ToolRequests:
         self._undo = undo
         self._installer = installer
         self._decisions = decisions
+        # Only composition's real backend apps may acquire a scope or be launched
+        # for access. A caller cannot introduce a new app by naming it in JSON.
+        self._approve_apps = dict(APPROVE_APPS) if connection_apps is None else {a.name: a for a in connection_apps}
+        self._access_apps = dict(ACCESS_APPS) if connection_apps is None else {a.name: a for a in connection_apps}
 
     async def handle(self, request: dict) -> dict:
         """{"ok": true, "result": ...} or {"ok": false, "error": "plain words"}. Never raises."""
@@ -108,7 +113,7 @@ class ToolRequests:
         try:
             match op:
                 case "approve":
-                    app = APPROVE_APPS.get(str(request.get("app") or "").strip())
+                    app = self._approve_apps.get(str(request.get("app") or "").strip())
                     decision = await self._approvals.approve(str(request["kind"]), _summary(request),
                                                              scope=Scope((app,)) if app else None)
                     return _ok(decision.to_dict())
@@ -140,7 +145,7 @@ class ToolRequests:
                 case "access":
                     if self._access is None:
                         return _ok({"allowed": True})  # nothing to check with: the script finds out, as before
-                    app = ACCESS_APPS.get(str(request.get("app") or "").strip())
+                    app = self._access_apps.get(str(request.get("app") or "").strip())
                     if app is None:  # only the apps the connection tools script: no caller starts any other
                         return _error("access is only for the apps Milo's connection tools control.")
                     allowed, error = await self._access.allows(app)

@@ -24,7 +24,7 @@ def test_registry_creates_by_name_with_options():
     def _echo(options, ctx):
         return f"{options_from(Opts, options, 'thing.echo').voice}@{ctx.home}"
 
-    assert reg.create("echo", {"voice": "flo"}, CTX) == "flo@/tmp/milo"
+    assert reg.create("echo", {"voice": "flo"}, CTX) == f"flo@{CTX.home}"
     assert reg.names() == ["echo"]
 
 

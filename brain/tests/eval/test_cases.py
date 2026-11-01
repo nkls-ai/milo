@@ -13,7 +13,7 @@ TODAY = date(2026, 10, 30)
 
 
 def test_thirty_cases_and_the_doc_lists_the_same_ones():
-    rows = re.findall(r"^\| (c\d\d) \| (.+?) \| (.+?) \| (\w+) \|$", TASKS_MD.read_text(), re.M)
+    rows = re.findall(r"^\| (c\d\d) \| (.+?) \| (.+?) \| (\w+) \|$", TASKS_MD.read_text(encoding="utf-8"), re.M)
     assert len(CASES) == 30 and len({c.id for c in CASES}) == 30
     assert [(c.id, c.say, c.expect, c.ability) for c in CASES] == rows
 

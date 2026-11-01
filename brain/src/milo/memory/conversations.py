@@ -230,6 +230,7 @@ def migrate(transcript: Path, kept: Path, store: JsonlConversationStore, rules: 
     good: list[tuple[int, dict]] = []
     broken: list[tuple[int, str]] = []
     for n, line in enumerate(raw.split(b"\n")):
+        line = line.removesuffix(b"\r")  # CRLF is a line ending on disk too
         if not line.strip():
             continue
         try:

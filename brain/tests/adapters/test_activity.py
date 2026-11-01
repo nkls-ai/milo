@@ -176,8 +176,8 @@ def test_claude_result_line_picks_the_result_out_of_the_stream():
 
 def test_codex_harness_reports_steps_while_it_runs(tmp_path, ctx):
     events = tmp_path / "events.jsonl"
-    events.write_text(CODEX_RUN)
-    binary = fake_cli(tmp_path, f'cat "{events}"\n')
+    events.write_text(CODEX_RUN, encoding="utf-8")
+    binary = fake_cli(tmp_path, f"print(Path({str(events)!r}).read_text(encoding='utf-8'), end='')\n")
     steps: list[Step] = []
     reply = asyncio.run(HARNESSES.create("codex", {"binary": binary}, ctx).reply("hi", None, on_step=steps.append))
     assert reply.say == "Done"
@@ -186,8 +186,8 @@ def test_codex_harness_reports_steps_while_it_runs(tmp_path, ctx):
 
 def test_claude_harness_reports_steps_and_reads_the_result_line(tmp_path, ctx):
     events = tmp_path / "events.jsonl"
-    events.write_text(CLAUDE_RUN + CLAUDE_RESULT + "\n")
-    binary = fake_cli(tmp_path, f'cat "{events}"\n')
+    events.write_text(CLAUDE_RUN + CLAUDE_RESULT + "\n", encoding="utf-8")
+    binary = fake_cli(tmp_path, f"print(Path({str(events)!r}).read_text(encoding='utf-8'), end='')\n")
     ctx.home.mkdir(parents=True)
     steps: list[Step] = []
     h = HARNESSES.create("claude", {"binary": binary}, ctx)

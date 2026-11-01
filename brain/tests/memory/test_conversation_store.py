@@ -70,14 +70,14 @@ def test_a_broken_or_stale_index_is_rebuilt_from_the_files(tmp_path):
     store = JsonlConversationStore(tmp_path)
     info = store.append(header(kind="meeting", source="meeting:m1", title="Weekly sync"),
                         milo("n1", "2026-10-30T09:00:00", "Notes from “Weekly sync”: launch moves."))
-    (tmp_path / "index.jsonl").write_text("not json\n")
+    (tmp_path / "index.jsonl").write_text("not json\n", encoding="utf-8")
     assert JsonlConversationStore(tmp_path).get("c-u1") == info
     # A conversation file the index never heard of (a crash between the two writes) brings it up to date.
     store = JsonlConversationStore(tmp_path)
     store.get("c-u1")
-    index = (tmp_path / "index.jsonl").read_text()
+    index = (tmp_path / "index.jsonl").read_text(encoding="utf-8")
     store.append(header("c-u2", "2026-10-30T10:00:00"), user("u2", "2026-10-30T10:00:00"))
-    (tmp_path / "index.jsonl").write_text(index)
+    (tmp_path / "index.jsonl").write_text(index, encoding="utf-8")
     assert {c.id for c in JsonlConversationStore(tmp_path).all()} == {"c-u1", "c-u2"}
 
 
@@ -86,7 +86,7 @@ def test_the_index_is_compacted_when_it_grows(tmp_path):
     info = store.append(header(), user("u1", "2026-10-30T09:00:00"))
     for i in range(250):
         info = store.append(info, milo(f"m{i}", "2026-10-30T09:01:00", f"reply {i}"))
-    lines = (tmp_path / "index.jsonl").read_text().splitlines()
+    lines = (tmp_path / "index.jsonl").read_text(encoding="utf-8").splitlines()
     assert len(lines) < 200
     assert JsonlConversationStore(tmp_path).get("c-u1").preview == "reply 249"
 
@@ -107,7 +107,7 @@ def test_searching_the_words_reads_the_latest_conversations_first_within_a_budge
 
 def write_transcript(path, lines):
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("".join((json.dumps(line) if isinstance(line, dict) else line) + "\n" for line in lines))
+    path.write_text("".join((json.dumps(line) if isinstance(line, dict) else line) + "\n" for line in lines), encoding="utf-8")
 
 
 OLD = [
@@ -138,7 +138,7 @@ def test_the_old_transcript_becomes_conversations_without_losing_a_line(tmp_path
     assert [e["id"] for e in store.entries("c-u1")] == ["u1", "m1", "t1", "u2"]
     assert convs[2].tasks[0].id == "t1" and convs[2].outside is False
     # Every line is somewhere, the broken one too.
-    lines = [line for p in (tmp_path / "conversations").glob("*/*.jsonl") for line in p.read_text().splitlines()]
+    lines = [line for p in (tmp_path / "conversations").glob("*/*.jsonl") for line in p.read_text(encoding="utf-8").splitlines()]
     assert sum(1 for line in lines if '"kind"' in line and '"header"' not in line) == len(OLD) - 1
     assert any(json.loads(line).get("broken") == "{\"id\": \"half-writ" for line in lines)
 
@@ -148,10 +148,10 @@ def test_running_it_again_after_a_crash_gives_the_same_files(tmp_path):
     write_transcript(transcript, OLD)
     store = JsonlConversationStore(tmp_path / "conversations")
     migrate(transcript, kept, store)
-    first = {p.name: p.read_text() for p in (tmp_path / "conversations").glob("*/*.jsonl")}
+    first = {p.name: p.read_text(encoding="utf-8") for p in (tmp_path / "conversations").glob("*/*.jsonl")}
     kept.rename(transcript)  # as if the crash came before the old file was moved
     migrate(transcript, kept, JsonlConversationStore(tmp_path / "conversations"))
-    assert {p.name: p.read_text() for p in (tmp_path / "conversations").glob("*/*.jsonl")} == first
+    assert {p.name: p.read_text(encoding="utf-8") for p in (tmp_path / "conversations").glob("*/*.jsonl")} == first
 
 
 def test_nothing_to_migrate_is_fine_and_a_later_transcript_is_added_to_the_kept_copy(tmp_path):
@@ -162,7 +162,7 @@ def test_nothing_to_migrate_is_fine_and_a_later_transcript_is_added_to_the_kept_
     migrate(transcript, kept, store)
     write_transcript(transcript, [user("u7", "2026-10-30T10:00:00", "hello again")])  # an older Milo ran meanwhile
     migrate(transcript, kept, store)
-    assert len(kept.read_text().splitlines()) == 3 and not transcript.exists()
+    assert len(kept.read_text(encoding="utf-8").splitlines()) == 3 and not transcript.exists()
     assert [c.id for c in store.all()] == ["c-u7", "c-u1"]
 
 

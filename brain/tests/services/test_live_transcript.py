@@ -239,6 +239,9 @@ class HearingStt:
 
     def transcribe(self, audio: Audio, before: str = "", *, quick: bool = False) -> str:
         with self._lock:
+            # Interrupt applies to the active pass. Like the production engines,
+            # starting a new pass clears a cancellation left by its predecessor.
+            self._stop.clear()
             self.running += 1
             self.max_running = max(self.max_running, self.running)
         self.log.append(("quick" if quick else "full", len(audio) / SR, before))

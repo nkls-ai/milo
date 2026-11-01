@@ -10,6 +10,7 @@ from milo.core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, HARNESSES, LIVE_MOD
 EXPECTED = [
     (HARNESSES, "codex"), (HARNESSES, "claude"),
     (LIVE_MODELS, "claude_live"),
+    (LIVE_MODELS, "codex_live"),
     (TRANSCRIBERS, "mlx_whisper"),
     (VOICES, "omnivoice"), (VOICES, "say"),
     (AUDIO_INPUTS, "sounddevice"), (AUDIO_OUTPUTS, "sounddevice"),
@@ -23,6 +24,7 @@ TEMPLATE_OPTIONS = {
     (HARNESSES, "claude"): {"binary": "/bin/echo", "model": "", "light_model": "", "permission_mode": "acceptEdits",
                             "timeout_s": 180},
     (LIVE_MODELS, "claude_live"): {"binary": "/bin/echo", "model": "claude-sonnet-5-5", "effort": "low"},
+    (LIVE_MODELS, "codex_live"): {"binary": "/bin/echo", "model": "", "reasoning_effort": "low"},
     (TRANSCRIBERS, "mlx_whisper"): {"model": "mlx-community/whisper-large-v3-turbo",
                                     "preview_model": "mlx-community/whisper-base-mlx", "language": "",
                                     "vocabulary": "Milo, Codex, Claude"},
@@ -46,7 +48,7 @@ def test_registered_after_load_builtin(registry, name):
 def test_load_builtin_is_idempotent():
     load_builtin()
     load_builtin()
-    assert HARNESSES.names() == ["claude", "codex"]
+    assert HARNESSES.names() == ["claude", "codex", "none"]
 
 
 @pytest.mark.parametrize("registry, name", EXPECTED, ids=IDS)
@@ -65,7 +67,7 @@ def test_template_tables_match_the_options_dataclasses():
     import tomllib
     from importlib.resources import files
 
-    config = tomllib.loads(files("milo").joinpath("workspace_template/config.toml").read_text())
+    config = tomllib.loads(files("milo").joinpath("workspace_template/config.toml").read_text(encoding="utf-8"))
     sections = {HARNESSES: "harness", LIVE_MODELS: "chat", TRANSCRIBERS: "stt", VOICES: "tts", AUDIO_INPUTS: "audio",
                 AUDIO_OUTPUTS: "audio", TEXT_CLEANERS: "dictation"}
     for (registry, name), options in TEMPLATE_OPTIONS.items():

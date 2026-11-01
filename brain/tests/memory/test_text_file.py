@@ -22,12 +22,12 @@ def counting(monkeypatch) -> list[str]:
 
 def test_a_file_is_read_again_only_when_it_changed(tmp_path, monkeypatch):
     persona = tmp_path / "persona.md"
-    persona.write_text("You are Milo.")
+    persona.write_text("You are Milo.", encoding="utf-8")
     text = TextFile(persona)
     reads = counting(monkeypatch)
     assert [text.read() for _ in range(5)] == ["You are Milo."] * 5
     assert reads == ["persona.md"]
-    persona.write_text("You are Milo, a wren.")
+    persona.write_text("You are Milo, a wren.", encoding="utf-8")
     os.utime(persona, ns=(1, 1))  # even an edit within the same mtime tick: the size changed
     assert text.read() == "You are Milo, a wren."
     persona.unlink()

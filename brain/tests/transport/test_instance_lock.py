@@ -4,26 +4,28 @@ import sys
 
 import pytest
 
+from milo import system
 from milo.transport.instance_lock import AlreadyRunning, acquire
 
-HOLD = "import sys, time; from pathlib import Path; from milo.transport.instance_lock import acquire; " \
-       "acquire(Path(sys.argv[1])); print('held', flush=True); time.sleep(30)"
+HOLD = "import sys, time, os; from pathlib import Path; from milo.transport.instance_lock import acquire; " \
+       "acquire(Path(sys.argv[1])); print(os.getpid(), flush=True); time.sleep(30)"
 
 
 def test_a_second_process_cannot_take_the_lock_until_the_first_is_gone(tmp_path):
     path = tmp_path / "run" / "brain.lock"
     holder = subprocess.Popen([sys.executable, "-c", HOLD, str(path)], stdout=subprocess.PIPE, text=True)
     try:
-        assert holder.stdout.readline().strip() == "held"
+        actual_pid = int(holder.stdout.readline().strip())
         with pytest.raises(AlreadyRunning) as e:
             acquire(path)
-        assert e.value.pid == holder.pid
-        assert str(holder.pid) in str(e.value)
+        assert e.value.pid == actual_pid
+        assert str(actual_pid) in str(e.value)
     finally:
-        holder.kill()
+        system.signal_processes(holder.pid, [actual_pid], force=True)
         holder.wait()
     fd = acquire(path)
-    assert path.read_text().strip() == str(os.getpid())
+    os.lseek(fd, 0, os.SEEK_SET)
+    assert os.read(fd, 32).decode().strip() == str(os.getpid())
     os.close(fd)
 
 

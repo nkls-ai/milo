@@ -1,0 +1,125 @@
+{
+ "page": "RoutinesPanel",
+ "size": [
+  620,
+  300
+ ],
+ "states": {
+  "closed": {
+   "routines": [
+    {
+     "id": "monday-report",
+     "name": "Monday report",
+     "description": "Sums last week's sales into a one-page report.",
+     "schedule": "every Monday at 09:00",
+     "paused": false,
+     "last_run": "2026-10-26 09:00, done",
+     "next_run": "2026-11-02T09:00",
+     "inputs": [
+      "month"
+     ]
+    },
+    {
+     "id": "tidy-downloads",
+     "name": "Tidy downloads",
+     "description": "",
+     "schedule": "every day at 18:00",
+     "paused": true,
+     "last_run": "",
+     "inputs": []
+    },
+    {
+     "id": "invoices",
+     "name": "Invoice folder",
+     "description": "",
+     "schedule": "",
+     "paused": false,
+     "last_run": "2026-10-30 17:12, done",
+     "inputs": []
+    },
+    {
+     "id": "broken",
+     "name": "broken",
+     "problem": "it must start with a line of three dashes (---)"
+    }
+   ],
+   "now": "2026-11-01T10:00"
+  },
+  "open": {
+   "routines": [
+    {
+     "id": "monday-report",
+     "name": "Monday report",
+     "description": "Sums last week's sales into a one-page report.",
+     "schedule": "every Monday at 09:00",
+     "paused": false,
+     "last_run": "2026-10-26 09:00, done",
+     "next_run": "2026-11-02T09:00",
+     "inputs": [
+      "month"
+     ]
+    },
+    {
+     "id": "tidy-downloads",
+     "name": "Tidy downloads",
+     "description": "",
+     "schedule": "every day at 18:00",
+     "paused": true,
+     "last_run": "",
+     "inputs": []
+    },
+    {
+     "id": "invoices",
+     "name": "Invoice folder",
+     "description": "",
+     "schedule": "",
+     "paused": false,
+     "last_run": "2026-10-30 17:12, done",
+     "inputs": []
+    },
+    {
+     "id": "broken",
+     "name": "broken",
+     "problem": "it must start with a line of three dashes (---)"
+    }
+   ],
+   "open": true,
+   "now": "2026-11-01T10:00"
+  }
+ },
+ "interactions": [
+  {
+   "state": "open",
+   "steps": [
+    {
+     "click": "routine-monday-report/run"
+    }
+   ],
+   "expect": [
+    {
+     "type": "routine",
+     "id": "monday-report",
+     "action": "run"
+    }
+   ]
+  },
+  {
+   "state": "closed",
+   "steps": [
+    {
+     "click": "toggle"
+    },
+    {
+     "click": "routine-tidy-downloads/run"
+    }
+   ],
+   "expect": [
+    {
+     "type": "routine",
+     "id": "tidy-downloads",
+     "action": "run"
+    }
+   ]
+  }
+ ]
+}

@@ -33,7 +33,7 @@ address, a search or one call gets you. Read with window_text; look with screens
 1. open_url for a web page (in the browser the user named), open_app for an app. Never open things with keys, \
 clicks or a script. Go to the page itself: a site's search page with the words in its address, a link's own \
 address.
-2. sheet_write and sheet_read for tables in Excel and Numbers, write_document for a new text document.
+2. sheet_write and sheet_read for tables in the supported spreadsheet app, write_document for a new text document.
 3. run_applescript for other scriptable apps; each script waits for the user's yes.
 4. ax_find, then ax_press and ax_set_value: they work in the background.
 5. screenshot, then click, type, key and scroll, always naming the app they are for.
@@ -74,7 +74,8 @@ def _b(description: str) -> dict:
     return {"type": "boolean", "description": description}
 
 
-_SHEET_APP = {"type": "string", "enum": ["Microsoft Excel", "Numbers"], "description": "The spreadsheet app."}
+_SHEET_APP = {"type": "string", "enum": ["Microsoft Excel", "Numbers", "LibreOffice Calc"],
+              "description": "The spreadsheet app available on this computer."}
 _CELLS = {"type": "array", "description": "Rows, each a list of cells: text, numbers, or formulas starting "
           "with \"=\" in English with commas, like \"=SUM(B2:B8)\". null leaves a cell empty.",
           "items": {"type": "array", "items": {"type": ["string", "number", "null"]}}}
@@ -96,7 +97,7 @@ TOOLS: tuple[Tool, ...] = (
     Tool("open_app", "Open an app, or bring it to the front if it is already open, with a window. Waits until it "
          "is in front. For a web page use open_url instead.",
          {"name": _s("The app's name, e.g. \"Numbers\".")}, ("name",), acts=True),
-    Tool("sheet_write", "Fill or colour cells in Excel or Numbers in one go: values, formulas, bold rows, colours, money and two "
+    Tool("sheet_write", "Fill or colour cells in Excel, Numbers or LibreOffice Calc in one go: values, formulas, bold rows, colours, money and two "
          "decimals. Put the whole table and its formatting in one call; don't format through menus. With new_document it opens the app and makes a new blank document first, so a whole table "
          "is one call. Without it, it writes into the front sheet of the front document; replacing cells that "
          "already hold something waits for the user's yes. Several calls can build on each other.",
@@ -110,12 +111,12 @@ TOOLS: tuple[Tool, ...] = (
                      "\"A1:D1 blue\" or \"sheet red\"; several joined with commas. Without rows it only colours."),
           "font_color": _s("Text colours, the same way: \"header white\".")},
          ("app",), acts=True),
-    Tool("sheet_read", "Read the cells of the front sheet in Excel or Numbers, with column letters and row "
+    Tool("sheet_read", "Read the cells of the front sheet in a supported spreadsheet app, with column letters and row "
          "numbers; formulas show as formulas in Excel." + _UNTRUSTED,
          {"app": _SHEET_APP, "range": _s("A range like \"A1:D20\". Default: every used cell.")}, ("app",)),
-    Tool("write_document", "Make a new document in TextEdit or Pages holding the given text, and show it. For "
+    Tool("write_document", "Make a new document in Word, LibreOffice Writer, TextEdit or Pages holding the given text, and show it. For "
          "letters, lists and notes the user wants as a document. Never touches the user's other documents.",
-         {"app": {"type": "string", "enum": ["TextEdit", "Pages"], "description": "The app."},
+         {"app": {"type": "string", "enum": ["TextEdit", "Pages", "Microsoft Word", "LibreOffice Writer"], "description": "The app."},
           "text": _s("The whole text. Line breaks are kept.")}, ("app", "text"), acts=True),
     Tool("window_text", "Read the visible text of an app's front window through Accessibility. Fast, no "
          "screenshot. Prefer it over screenshot to find out what a window shows. In a browser (Chrome, Safari, "

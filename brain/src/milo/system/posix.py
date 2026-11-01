@@ -3,18 +3,72 @@
 from __future__ import annotations
 
 import asyncio
-import fcntl
+import contextlib
+import ctypes
 import os
 import signal
 import socket
 import struct
+import shutil
+import secrets
 import subprocess
 import sys
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
+def clear_steering(workdir: Path, names: tuple[str, ...]) -> None:
+    from ._steering_posix import clear_steering as sweep
+    sweep(workdir, names)
+
 ClientHandler = Callable[[asyncio.StreamReader, asyncio.StreamWriter], Awaitable[None]]
+
+
+def replace_file(source: Path, target: Path) -> None:
+    os.replace(source, target)
+
+
+def open_child_no_follow(folder: Path, name: str) -> int:
+    parent = os.open(folder, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        return os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+    finally:
+        os.close(parent)
+
+
+def unlink_child_no_follow(folder: Path, name: str) -> None:
+    parent = os.open(folder, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.unlink(name, dir_fd=parent)
+    finally:
+        os.close(parent)
+
+
+def restore_file(source: Path, target: Path, mode: int) -> None:
+    """Atomically restore a copy through a checked directory handle, never through a link."""
+    folder = os.open(target.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    tmp = f"milo-undo-{secrets.token_hex(8)}-{target.name}"
+    try:
+        current, opened = target.parent.lstat(), os.fstat(folder)
+        if (current.st_dev, current.st_ino) != (opened.st_dev, opened.st_ino):
+            raise OSError("the destination directory changed")
+        out = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=folder)
+        try:
+            with os.fdopen(out, "wb") as written, source.open("rb") as copy:
+                shutil.copyfileobj(copy, written)
+                info = source.stat()
+                os.utime(written.fileno(), ns=(info.st_atime_ns, info.st_mtime_ns))
+                os.chmod(written.fileno(), mode)
+            libc = ctypes.CDLL(None, use_errno=True)
+            if libc.renameat(folder, tmp.encode(), folder, target.name.encode()) != 0:
+                err = ctypes.get_errno()
+                raise OSError(err, os.strerror(err), target.name)
+        except BaseException:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp, dir_fd=folder)
+            raise
+    finally:
+        os.close(folder)
 
 
 # ---- files: secrets and locks
@@ -24,13 +78,15 @@ def open_no_follow(path: Path) -> int:
     return os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
 
 
-def owned_by_me(info: os.stat_result) -> bool:
+def owned_by_me(info: os.stat_result | int | Path) -> bool:
     """Whether this user owns the file or folder `info` describes."""
+    info = os.fstat(info) if isinstance(info, int) else info.lstat() if isinstance(info, Path) else info
     return info.st_uid == os.getuid()
 
 
-def open_to_others(info: os.stat_result) -> bool:
+def open_to_others(info: os.stat_result | int | Path) -> bool:
     """Whether its mode lets the group or other users in at all."""
+    info = os.fstat(info) if isinstance(info, int) else info.lstat() if isinstance(info, Path) else info
     return bool(info.st_mode & 0o077)
 
 
@@ -39,12 +95,17 @@ def make_private(target: int | Path, mode: int) -> None:
     if isinstance(target, int):
         os.fchmod(target, mode)
     else:
-        os.chmod(target, mode, follow_symlinks=False)
+        fd = open_no_follow(target)
+        try:
+            os.fchmod(fd, mode)
+        finally:
+            os.close(fd)
 
 
 def try_lock(fd: int) -> bool:
     """Take an exclusive lock on the open file `fd` without waiting. False if another process holds it. The
     kernel releases it when the process ends, however it ends."""
+    import fcntl
     try:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
@@ -137,3 +198,13 @@ def peer_uid(sock: socket.socket | None) -> int | None:
         return struct.unpack_from("=II", cred)[1]
     except OSError:
         return None
+
+
+def precise_timers() -> None:
+    """POSIX timers are already fine-grained: nothing to do."""
+
+
+def event_loop():
+    """The brain's asyncio loop: the default one; POSIX monotonic clocks are already fine-grained."""
+    import asyncio
+    return asyncio.new_event_loop()

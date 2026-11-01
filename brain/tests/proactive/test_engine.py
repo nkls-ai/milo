@@ -43,7 +43,7 @@ def test_a_simulated_day_costs_zero_harness_calls(tmp_path):
     home = tmp_path / "Milo"
     ws = Workspace(home)
     ws.ensure()
-    ws.reminders_path.write_text("- [ ] 2026-10-29 10:00 Standup\n- [ ] 2026-10-29 15:30 Ask about budget\n")
+    ws.reminders_path.write_text("- [ ] 2026-10-29 10:00 Standup\n- [ ] 2026-10-29 15:30 Ask about budget\n", encoding="utf-8")
     section = default_section()
     ctx = AdapterContext(home=home, state_dir=ws.state_dir, clock=FakeClock())
     hb = build_engine(section, ctx, MarkdownReminders(ws.reminders_path))
@@ -65,7 +65,7 @@ def test_a_simulated_day_costs_zero_harness_calls(tmp_path):
     assert harness.calls == []
     assert max(spoken_by_hour.values()) <= section["max_nudges_per_hour"]
     assert {"reminders", "morning", "late_night", "focus_break", "welcome_back"} <= rules_seen
-    assert json.loads(ws.heartbeat_state_path.read_text())["budget"] == {}
+    assert json.loads(ws.heartbeat_state_path.read_text(encoding="utf-8"))["budget"] == {}
 
 
 def test_state_survives_restart(tmp_path):
@@ -79,7 +79,7 @@ def test_fired_reminders_survive_restart(tmp_path):
     reminders = ListReminders(*parse("- [ ] 2026-10-29 13:00 Stretch\n"))
     assert len(engine(tmp_path, reminders).tick(sig(PM))) == 1
     assert engine(tmp_path, reminders).tick(sig(PM + timedelta(minutes=1))) == []
-    saved = json.loads((tmp_path / "state" / "heartbeat.json").read_text())
+    saved = json.loads((tmp_path / "state" / "heartbeat.json").read_text(encoding="utf-8"))
     assert set(saved) == {"rules", "budget", "rate_limit"}
 
 
@@ -99,9 +99,9 @@ def test_state_file_is_at_the_workspace_path_and_written_atomically(tmp_path):
 
 def test_corrupt_state_file_starts_fresh(tmp_path):
     (tmp_path / "state").mkdir()
-    (tmp_path / "state" / "heartbeat.json").write_text("{not json")
+    (tmp_path / "state" / "heartbeat.json").write_text("{not json", encoding="utf-8")
     assert [n.rule for n in engine(tmp_path).tick(sig(AM))] == ["morning"]
-    (tmp_path / "state" / "heartbeat.json").write_text('{"rules": {"morning": "garbage"}, "budget": []}')
+    (tmp_path / "state" / "heartbeat.json").write_text('{"rules": {"morning": "garbage"}, "budget": []}', encoding="utf-8")
     assert [n.rule for n in engine(tmp_path).tick(sig(AM + timedelta(days=1)))] == ["morning"]
 
 

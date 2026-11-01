@@ -1,23 +1,23 @@
 import CoreGraphics
 import Foundation
 
-/// Milo's colours, from the design page.
+/// Milo's colours, from the design page (protocol/design.json, through DesignTokens.swift).
 enum WrenColors {
-    static let bodyHi = rgb(0xCBC2F4), bodyMid = rgb(0x9D90DD), bodyLo = rgb(0x6A5BB4)
-    static let lidLine = rgb(0x3F3373)
-    static let bellyHi = rgb(0xFEF5EA), bellyLo = rgb(0xF1D6BC)
-    static let brow = rgb(0x6F5FBE), crestHi = rgb(0xB4A8EC), crestLo = rgb(0x7E6ECB), fluff = rgb(0xF4F0FF)
-    static let wingHi = rgb(0x8A7CCB), wingLo = rgb(0x54468F), wingBar = rgb(0xB9AEEA)
-    static let tail = rgb(0x6C5DB2), tailLo = rgb(0x4C3F8A), tailBar = rgb(0x43377D)
-    static let eye = rgb(0x1E1730), eyeHi = rgb(0x4F4276)
-    static let beakHi = rgb(0xE6B274), beakLo = rgb(0xB27744), mouth = rgb(0x6E2F3C)
-    static let scarfHi = rgb(0xF4C262), scarfLo = rgb(0xD69A3C), scarfRib = rgb(0xFBDB98), scarfEdge = rgb(0xFFE6B0)
-    static let feet = rgb(0xB17C50), blush = rgb(0xEE9AA6)
-    static let paperHi = rgb(0xFFFCF4), paperLo = rgb(0xF2E7D4), paperLine = rgb(0xB9AEEA), writing = rgb(0x4C3F8A)
-    static let pencil = rgb(0xF29AAE), pencilLo = rgb(0xD26A84), wood = rgb(0xF3D9B0), lead = rgb(0x3A3150)
-    static let eraser = rgb(0xCBC2F4), ferrule = rgb(0xD9D4E8)
-    static let shade = rgb(0x2E2463), ground = rgb(0x2A2050), rim = rgb(0xF1ECFF)
-    static let ink = rgb(0x1B1430)
+    static let bodyHi = rgb(DesignTokens.Rig.bodyHi), bodyMid = rgb(DesignTokens.Rig.bodyMid), bodyLo = rgb(DesignTokens.Rig.bodyLo)
+    static let lidLine = rgb(DesignTokens.Rig.lidLine)
+    static let bellyHi = rgb(DesignTokens.Rig.bellyHi), bellyLo = rgb(DesignTokens.Rig.bellyLo)
+    static let brow = rgb(DesignTokens.Rig.brow), crestHi = rgb(DesignTokens.Rig.crestHi), crestLo = rgb(DesignTokens.Rig.crestLo), fluff = rgb(DesignTokens.Rig.fluff)
+    static let wingHi = rgb(DesignTokens.Rig.wingHi), wingLo = rgb(DesignTokens.Rig.wingLo), wingBar = rgb(DesignTokens.Rig.wingBar)
+    static let tail = rgb(DesignTokens.Rig.tail), tailLo = rgb(DesignTokens.Rig.tailLo), tailBar = rgb(DesignTokens.Rig.tailBar)
+    static let eye = rgb(DesignTokens.Rig.eye), eyeHi = rgb(DesignTokens.Rig.eyeHi)
+    static let beakHi = rgb(DesignTokens.Rig.beakHi), beakLo = rgb(DesignTokens.Rig.beakLo), mouth = rgb(DesignTokens.Rig.mouth)
+    static let scarfHi = rgb(DesignTokens.Rig.scarfHi), scarfLo = rgb(DesignTokens.Rig.scarfLo), scarfRib = rgb(DesignTokens.Rig.scarfRib), scarfEdge = rgb(DesignTokens.Rig.scarfEdge)
+    static let feet = rgb(DesignTokens.Rig.feet), blush = rgb(DesignTokens.Rig.blush)
+    static let paperHi = rgb(DesignTokens.Rig.paperHi), paperLo = rgb(DesignTokens.Rig.paperLo), paperLine = rgb(DesignTokens.Rig.paperLine), writing = rgb(DesignTokens.Rig.writing)
+    static let pencil = rgb(DesignTokens.Rig.pencil), pencilLo = rgb(DesignTokens.Rig.pencilLo), wood = rgb(DesignTokens.Rig.wood), lead = rgb(DesignTokens.Rig.lead)
+    static let eraser = rgb(DesignTokens.Rig.eraser), ferrule = rgb(DesignTokens.Rig.ferrule)
+    static let shade = rgb(DesignTokens.Rig.shade), ground = rgb(DesignTokens.Rig.ground), rim = rgb(DesignTokens.Rig.rim)
+    static let ink = rgb(DesignTokens.Rig.ink)
 
     static func rgb(_ hex: UInt32, _ alpha: CGFloat = 1) -> CGColor {
         CGColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
@@ -592,7 +592,7 @@ enum WrenRig {
                                        startCenter: CGPoint(x: 0, y: ry * 0.7), startRadius: 0,
                                        endCenter: CGPoint(x: 0, y: ry * 0.7), endRadius: ry * 1.5, options: [.drawsAfterEndLocation])
                 // a soft sheen across the lower half, then the key catchlight and a small second one
-                softEllipse(ctx, center: CGPoint(x: -1, y: 5), rx: 6.5, ry: 3.6, color: WrenColors.rgb(0x8C7CC8), alpha: 0.35)
+                softEllipse(ctx, center: CGPoint(x: -1, y: 5), rx: 6.5, ry: 3.6, color: WrenColors.rgb(DesignTokens.Rig.sheen), alpha: 0.35)
                 fill(ctx, CGPath(ellipseIn: CGRect(x: 2.6 + look.x * 0.7 - 3.8, y: -3.4 + look.y * 0.6 - 3.8, width: 7.6, height: 7.6), transform: nil),
                      CGColor(gray: 1, alpha: 1))
                 fill(ctx, CGPath(ellipseIn: CGRect(x: -5, y: 2.2, width: 3.4, height: 3.4), transform: nil), CGColor(gray: 1, alpha: 0.85))
@@ -673,7 +673,7 @@ enum WrenRig {
                 ctx.addPath(mouth); ctx.clip()
                 let k = smooth(0.3, 0.8, open)
                 fill(ctx, CGPath(ellipseIn: CGRect(x: tip * 0.6 - 3.4, y: 5 + d * 0.62, width: 6.8, height: 5 * k + 1),
-                                 transform: nil), WrenColors.rgb(0xC25466))
+                                 transform: nil), WrenColors.rgb(DesignTokens.Rig.tongue))
                 ctx.restoreGState()
             }
         }

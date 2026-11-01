@@ -88,7 +88,7 @@ class UnixSocketServer:
         return self._ids[writer]
 
     async def start(self) -> None:
-        claim_socket(self.path)
+        await asyncio.to_thread(claim_socket, self.path)
         self._server = await system.start_local_server(self._client, self.path)
         log.info("listening on %s", self.path)
 
@@ -132,7 +132,7 @@ class UnixSocketServer:
                     continue
                 if not line:
                     break
-                if line.strip() == OBSERVE:
+                if _is_observe(line):
                     self._observers.add(writer)
                     continue
                 await self._handle_line(line)
@@ -173,6 +173,16 @@ class UnixSocketServer:
 
 OBSERVE = b'{"type": "observe"}'
 """The transport's own handshake for a test driver, not a protocol command (see `_observers`)."""
+
+
+def _is_observe(line: bytes) -> bool:
+    """The observe hello, however its JSON is spaced (Python's json.dumps and compact encoders differ)."""
+    if b"observe" not in line or len(line) > 64:
+        return False
+    try:
+        return json.loads(line) == {"type": "observe"}
+    except ValueError:
+        return False
 
 
 def _encode(event: Event) -> bytes:

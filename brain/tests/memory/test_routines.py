@@ -21,7 +21,7 @@ def book(tmp_path):
 
 def test_save_and_read_back(book):
     book.save(REPORT)
-    assert (book.folder / "monday-report.md").read_text().startswith("---\nname: Monday report\n")
+    assert (book.folder / "monday-report.md").read_text(encoding="utf-8").startswith("---\nname: Monday report\n")
     assert book.all() == [REPORT] and book.get("monday-report") == REPORT
     assert book.get("nothing") is None and book.get("../etc/passwd") is None
 
@@ -29,11 +29,11 @@ def test_save_and_read_back(book):
 def test_hand_edits_show_up_and_broken_files_are_reported(book):
     book.save(REPORT)
     path = book.folder / "monday-report.md"
-    path.write_text(path.read_text().replace("The weekly report.", "Every week's report, by hand."))
+    path.write_text(path.read_text(encoding="utf-8").replace("The weekly report.", "Every week's report, by hand."))
     os.utime(path, ns=(1, 1))  # a different mtime even within one clock tick
     assert book.all()[0].description == "Every week's report, by hand."
-    (book.folder / "broken.md").write_text("no front matter")
-    (book.folder / ".hidden.md").write_text("---\nname: Hidden\n---\n")
+    (book.folder / "broken.md").write_text("no front matter", encoding="utf-8")
+    (book.folder / ".hidden.md").write_text("---\nname: Hidden\n---\n", encoding="utf-8")
     assert [r.slug for r in book.all()] == ["monday-report"]
     assert "three dashes" in book.problems()["broken"]
 
@@ -61,9 +61,9 @@ def test_delete_moves_it_aside(book):
 def test_update_keeps_what_the_user_wrote(book):
     book.save(REPORT)
     path = book.folder / "monday-report.md"
-    path.write_text(path.read_text().replace("schedule:", "# my own note\nschedule:"))
+    path.write_text(path.read_text(encoding="utf-8").replace("schedule:", "# my own note\nschedule:"))
     updated = book.update("monday-report", {"paused": "yes", "last_run": "2026-10-30 09:00, done", "schedule": ""})
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     assert "# my own note\n" in text and "paused: yes" in text and "last_run: 2026-10-30 09:00, done" in text
     assert updated.paused and updated.schedule == "" and updated.body == REPORT.body
     assert updated.fingerprint() == REPORT.fingerprint()
@@ -76,7 +76,7 @@ def test_update_keeps_what_the_user_wrote(book):
 
 def test_drafts(book):
     assert book.read_draft("d1") is None
-    book.draft_path("d1").write_text("---\nname: X\n---\n")  # the helper writes it
+    book.draft_path("d1").write_text("---\nname: X\n---\n", encoding="utf-8")  # the helper writes it
     assert book.draft_path("d1").parent == book.drafts and book.read_draft("d1").startswith("---")
     book.drop_draft("d1")
     book.drop_draft("d1")
@@ -87,14 +87,14 @@ def test_a_draft_that_is_a_link_is_neither_read_nor_followed(book, tmp_path):
     # ADR 0020: the drafts folder is the helper's, so a link there could point Milo at his own files.
     secret = tmp_path / "secrets" / "elevenlabs.key"
     secret.parent.mkdir()
-    secret.write_text("sk_secret")
+    secret.write_text("sk_secret", encoding="utf-8")
     book.draft_path("d1").symlink_to(secret)
     assert book.read_draft("d1") is None
     book.drop_draft("d1")
-    assert secret.read_text() == "sk_secret" and not book.draft_path("d1").is_symlink()
+    assert secret.read_text(encoding="utf-8") == "sk_secret" and not book.draft_path("d1").is_symlink()
     routines = tmp_path / "elsewhere"
     routines.mkdir()
-    (routines / "d2.md").write_text("---\nname: Planted\n---\n")
+    (routines / "d2.md").write_text("---\nname: Planted\n---\n", encoding="utf-8")
     book.drafts.rmdir()
     book.drafts.symlink_to(routines, target_is_directory=True)
     assert book.read_draft("d2") is None, "a drafts folder that is a link isn't followed either"
@@ -102,7 +102,7 @@ def test_a_draft_that_is_a_link_is_neither_read_nor_followed(book, tmp_path):
     assert (routines / "d2.md").exists()
     book.drafts.unlink()
     book.drafts.mkdir()
-    (book.drafts / "d3.md").write_text("x" * 70_000)
+    (book.drafts / "d3.md").write_text("x" * 70_000, encoding="utf-8")
     assert book.read_draft("d3") is None, "too long for a recipe"
 
 
@@ -120,5 +120,5 @@ def test_state_file(tmp_path):
     assert state.load() == {}
     state.save({"a": {"b": 1}})
     assert state.load() == {"a": {"b": 1}}
-    state.path.write_text("[1, 2]")
+    state.path.write_text("[1, 2]", encoding="utf-8")
     assert state.load() == {}

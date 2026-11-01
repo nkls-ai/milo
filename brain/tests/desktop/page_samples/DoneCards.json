@@ -1,0 +1,234 @@
+{
+ "page": "DoneCards",
+ "size": [
+  260,
+  240
+ ],
+ "states": {
+  "deck": {
+   "still": true,
+   "now": "2026-11-01T10:00",
+   "undoPoints": [
+    {
+     "id": "a7b8c9d0e1f2",
+     "title": "Dentist",
+     "state": "ready",
+     "said": ""
+    },
+    {
+     "id": "w-8a7b6c5d4e3f",
+     "title": "Letter to Anna",
+     "state": "undone",
+     "said": ""
+    }
+   ],
+   "items": [
+    {
+     "type": "action_done",
+     "kind": "event",
+     "title": "Dentist",
+     "detail": "Dr. Lee, Main Street 4",
+     "when": "2026-11-05T15:00",
+     "app": "Calendar",
+     "undo": "a7b8c9d0e1f2",
+     "lang": "en"
+    },
+    {
+     "type": "action_done",
+     "kind": "reminder",
+     "title": "Call the dentist",
+     "detail": "",
+     "when": "2026-11-02T09:00",
+     "app": "",
+     "undo": "",
+     "lang": "de"
+    },
+    {
+     "type": "action_done",
+     "kind": "written",
+     "title": "Hi Anna,",
+     "detail": "",
+     "when": "",
+     "app": "Mail",
+     "undo": "w-8a7b6c5d4e3f",
+     "lang": "en"
+    }
+   ]
+  },
+  "fanned": {
+   "still": true,
+   "now": "2026-11-01T10:00",
+   "undoPoints": [
+    {
+     "id": "a7b8c9d0e1f2",
+     "title": "Dentist",
+     "state": "ready",
+     "said": ""
+    },
+    {
+     "id": "w-8a7b6c5d4e3f",
+     "title": "Letter to Anna",
+     "state": "undone",
+     "said": ""
+    }
+   ],
+   "items": [
+    {
+     "type": "action_done",
+     "kind": "event",
+     "title": "Dentist",
+     "detail": "Dr. Lee, Main Street 4",
+     "when": "2026-11-05T15:00",
+     "app": "Calendar",
+     "undo": "a7b8c9d0e1f2",
+     "lang": "en"
+    },
+    {
+     "type": "action_done",
+     "kind": "reminder",
+     "title": "Call the dentist",
+     "detail": "",
+     "when": "2026-11-02T09:00",
+     "app": "",
+     "undo": "",
+     "lang": "de"
+    },
+    {
+     "type": "action_done",
+     "kind": "written",
+     "title": "Hi Anna,",
+     "detail": "",
+     "when": "",
+     "app": "Mail",
+     "undo": "w-8a7b6c5d4e3f",
+     "lang": "en"
+    }
+   ],
+   "fanOut": true
+  },
+  "kinds": {
+   "still": true,
+   "now": "2026-11-01T10:00",
+   "undoPoints": [
+    {
+     "id": "a7b8c9d0e1f2",
+     "title": "Dentist",
+     "state": "ready",
+     "said": ""
+    },
+    {
+     "id": "w-8a7b6c5d4e3f",
+     "title": "Letter to Anna",
+     "state": "undone",
+     "said": ""
+    }
+   ],
+   "items": [
+    {
+     "type": "action_done",
+     "kind": "timer",
+     "title": "Pasta",
+     "detail": "",
+     "when": "2026-11-01T10:12",
+     "app": "",
+     "undo": "",
+     "lang": "en"
+    },
+    {
+     "type": "action_done",
+     "kind": "todo",
+     "title": "Buy milk",
+     "detail": "",
+     "when": "",
+     "app": "Reminders",
+     "undo": "",
+     "lang": "en"
+    },
+    {
+     "type": "action_done",
+     "kind": "note",
+     "title": "Packing list",
+     "detail": "",
+     "when": "",
+     "app": "Notes",
+     "undo": "",
+     "lang": "en"
+    }
+   ],
+   "fanOut": true
+  },
+  "copied": {
+   "still": true,
+   "now": "2026-11-01T10:00",
+   "undoPoints": [
+    {
+     "id": "a7b8c9d0e1f2",
+     "title": "Dentist",
+     "state": "ready",
+     "said": ""
+    },
+    {
+     "id": "w-8a7b6c5d4e3f",
+     "title": "Letter to Anna",
+     "state": "undone",
+     "said": ""
+    }
+   ],
+   "items": [
+    {
+     "type": "action_done",
+     "kind": "copied",
+     "title": "https://github.com/NiklasDob/milo",
+     "detail": "",
+     "when": "",
+     "app": "",
+     "undo": "",
+     "lang": "en"
+    }
+   ]
+  },
+  "empty": {
+   "now": "2026-11-01T10:00"
+  }
+ },
+ "interactions": [
+  {
+   "state": "fanned",
+   "steps": [
+    {
+     "click": "card-1/undo/undo"
+    }
+   ],
+   "expect": [
+    {
+     "type": "undo_task",
+     "id": "a7b8c9d0e1f2"
+    }
+   ]
+  },
+  {
+   "state": "fanned",
+   "steps": [
+    {
+     "click": "done-2"
+    }
+   ],
+   "expect": [],
+   "actions": [
+    [
+     "openDone",
+     {
+      "type": "action_done",
+      "kind": "reminder",
+      "title": "Call the dentist",
+      "detail": "",
+      "when": "2026-11-02T09:00",
+      "app": "",
+      "undo": "",
+      "lang": "de"
+     }
+    ]
+   ]
+  }
+ ]
+}

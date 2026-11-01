@@ -6,6 +6,8 @@ appended as bullets under `## Learned`; everything else in the file is left alon
 
 from __future__ import annotations
 
+from milo import system
+
 import os
 from pathlib import Path
 
@@ -39,7 +41,7 @@ class MarkdownProfile:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_name(self.path.name + ".tmp")
         tmp.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        os.replace(tmp, self.path)
+        system.replace_file(tmp, self.path)
 
 
 def _insert_learned(lines: list[str], bullet: str) -> list[str]:

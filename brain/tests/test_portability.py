@@ -180,7 +180,6 @@ ALLOWED: dict[tuple[str, str], str] = {
     ("core/types.py", "mac-path"): "_name strips \".app\" from a path",
     ("services/tool_requests.py", "bundle-id"): "AppRefs for Calendar, Reminders, Notes and Finder by bundle id",
     ("services/tool_requests.py", "mac-app"): "Finder is the app the files tools change things in",
-    ("connect/server.py", "mac-app"): "Finder is the app the files tools change things in",
     ("services/helpers.py", "mac-path"): "is_installed_app looks for Name.app in /Applications",
     ("proactive/engine.py", "mac-app"): "quiet_apps default names Keynote (and zoom.us, a Mac process name)",
     # Words the user or the model reads.
@@ -210,7 +209,7 @@ ALLOWED: dict[tuple[str, str], str] = {
 }
 
 
-CEILING = 54
+CEILING = 53
 """How many ALLOWED lines there were at the last count (2026-10-31: 57, less the one in GROWN). It only goes down:
 when a coupling moves out and its line goes, lower it too. It never goes up."""
 

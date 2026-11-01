@@ -22,7 +22,7 @@ The goal: `build/Milo.app` running, the brain connected, and the user knowing wh
 
 `install.sh` at the top of the repo does steps 1 to 5 and the configuration in step 7. The logins open a browser and need the user at the terminal, so do them first, together:
 
-1. Ask which subscription the user has: Claude (Pro or Max), ChatGPT (Plus or Pro), or both. Claude is needed to talk to Milo; ChatGPT alone gives dictation and helpers.
+1. Ask which subscription the user has: Claude (Pro or Max), ChatGPT (Plus or Pro), or both. Either CLI can provide talking and helpers; a ChatGPT-only setup can use Codex for both.
 2. Have the user log in in their own terminal: `claude auth login` and/or `codex login` (install Claude Code with `curl -fsSL https://claude.ai/install.sh | bash`, Codex with `npm install -g @openai/codex` or the ChatGPT app, after asking). `claude auth status` and `codex login status` tell you when it worked.
 3. Tell the user what `--yes` will do without asking (install the Command Line Tools and uv if missing, set "Press fn key to" to Do Nothing) and get their yes. Then run `./install.sh --yes` from the repo. It installs what's missing, downloads the models, picks Claude or Codex for the helpers from what's logged in, builds the app and starts it.
 4. Go on with step 6 below.
@@ -55,10 +55,10 @@ Milo needs two things online, both through CLIs the user is logged in to:
 
 | Part | Default | Check | If missing |
 |---|---|---|---|
-| Chat model (what he says) | Claude Haiku via the `claude` CLI | `claude --version` | Install Claude Code, then the user runs `claude` once and logs in |
+| Chat model (what he says) | Claude via `claude`, or Codex via `codex` | `claude --version` or `codex --version` | The user signs in through `claude auth login` or `codex login` in their own terminal |
 | Helpers (real work) | Codex | `codex --version`, or `/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex` exists | The user runs `codex login`, or uses Claude Code for helpers too (step 7) |
 
-Ask the user which they have. One Claude Code login is enough if helpers are switched to Claude in step 7. For another provider (OpenAI, OpenRouter, a local Ollama or LM Studio), the chat model can be `openai_compat`; see `[chat.openai_compat]` in `brain/src/milo/workspace_template/config.toml`.
+Ask the user which they have. One Claude Code login is enough if helpers are switched to Claude in step 7. One Codex login is enough with `[chat] use = "codex_live"` and `[harness] use = "codex"`. Talking and helpers are independent choices; Settings offers the talking-provider selector and needs a brain restart after a change. For another provider (OpenAI, OpenRouter, a local Ollama or LM Studio), the chat model can be `openai_compat`; see `[chat.openai_compat]` in `brain/src/milo/workspace_template/config.toml`.
 
 ### 4. Install the brain
 
@@ -95,6 +95,9 @@ Tell the user, in this order:
 After the first start, `~/Milo/config.toml` exists. Change only what the user asked for:
 
 - Helpers through Claude Code instead of Codex: `[harness] use = "claude"`.
+- Talking through Codex CLI: `[chat] use = "codex_live"`; the user signs in with `codex login`. An empty `[chat.codex_live] model` uses the CLI's model selection.
+- Talking through Claude CLI: `[chat] use = "claude_live"`.
+- Dictation without a talking model: `[chat] use = "none"`.
 - Another chat model: `[chat] use = "openai_compat"` and uncomment `[chat.openai_compat]`; the key goes in `~/Milo/secrets/<key_ref>`.
 - Another voice: `[tts] use = "omnivoice"`, `"elevenlabs"` (key in `~/Milo/secrets/elevenlabs.key`) or `"say"`.
 

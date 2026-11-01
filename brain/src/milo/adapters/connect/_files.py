@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import email
 import email.policy
+import contextlib
 import os
 import re
 import subprocess
+import sys
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -61,7 +63,7 @@ def allowed(path: Path, scope: Path, home: Path | None = None, protected: Protec
             under = real.relative_to(root).parts
         except ValueError:
             continue
-        if under[:1] and under[0].casefold() == "library":
+        if under[:1] and under[0].casefold() in ("library", "appdata", "ntuser.dat", "ntuser.ini"):
             return False
     return True
 
@@ -116,6 +118,8 @@ def move(paths: list[str], into: str, scope: Path, protected: Protected | None =
     if len({f.name for f in files}) < len(files):
         raise ToolError("Two of those files have the same name, so I moved nothing.")
     dest.mkdir(parents=True, exist_ok=True)
+    if os.name == "nt":
+        return _move_windows(files, dest, scope, protected)
     moved = []
     into_fd = _pinned(dest, scope, protected, into=True)
     try:
@@ -135,6 +139,33 @@ def move(paths: list[str], into: str, scope: Path, protected: Protected | None =
             moved.append(describe(target, scope))
     finally:
         os.close(into_fd)
+    return {"moved": moved, "folder": describe_folder(dest)}
+
+
+def _move_windows(files: list[Path], dest: Path, scope: Path, protected: Protected | None) -> dict:
+    """Windows rename refuses replacement. Pin ancestors against junction/rename races."""
+    from milo.system.windows import _directory
+
+    moved = []
+    with contextlib.ExitStack() as stack:
+        # Revalidate after callers' discovery/checks; a worker may have changed a folder meanwhile.
+        folder(str(dest), scope, protected=protected)
+        if dest.resolve() != dest:
+            raise ToolError(SHARED if shared(dest) else OUTSIDE)
+        stack.enter_context(_directory(dest))
+        for source in files:
+            checked(str(source), scope, protected)
+            stack.enter_context(_directory(source.parent))
+        if shared(dest):
+            raise ToolError(SHARED)
+        for source in files:
+            target = dest / source.name
+            if target != source:
+                try:
+                    os.rename(source, target)
+                except FileExistsError:
+                    raise ToolError(f"There is already a file called {source.name} in that folder.") from None
+            moved.append(describe(target, scope))
     return {"moved": moved, "folder": describe_folder(dest)}
 
 
@@ -202,6 +233,9 @@ def read(path: Path, max_chars: int) -> dict:
 
 def text_of(path: Path) -> str:
     suffix = path.suffix.lower()
+    if sys.platform != "darwin" and suffix in {".pdf", ".docx", ".odt", ".html", ".htm"}:
+        from . import _portable_text
+        return _portable_text.read(path, _portable_text.MAX_CHARS)["text"]
     if suffix in PLAIN:
         return path.read_text(encoding="utf-8", errors="replace")
     if suffix == ".pdf":

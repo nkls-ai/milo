@@ -22,6 +22,7 @@ import pytest
 from milo.core.events import (CallEnded, CallStarted, Confirm, MeetingChunk, MeetingMail,
                               MeetingNotesReady, MeetingRecord, MeetingRecording, MeetingStatus,
                               MeetingTodo, Status)
+from milo import system
 from milo.core.meetings import Track
 from milo.core.memory import Episode
 from milo.core.types import Interrupted, ListenMode, MiloState
@@ -126,7 +127,7 @@ def test_a_call_asks_once_records_and_ends_with_notes_on_the_page_with_reminders
         rig.service.handle(CallStarted("Zoom", "us.zoom.xos", "Zoom Meeting"))
         assert await rig.answer(True) == QUESTION
         await until(lambda: rig.records())
-        assert rig.records()[0].on and rig.records()[0].dir.endswith("/audio")
+        assert rig.records()[0].on and Path(rig.records()[0].dir).name == "audio"
         rig.service.handle(CallStarted("Zoom"))  # the detector flickers: no second question
         await settle()
         assert len(rig.questions()) == 1
@@ -152,9 +153,9 @@ def test_a_call_asks_once_records_and_ends_with_notes_on_the_page_with_reminders
     speaker_for = {who[n]: speakers[0] for n, speakers in by_line.items()}
     assert speaker_for["me"] == "me" and len({speaker_for[p] for p in ("Anna", "Sam", "Fred")}) == 3
     folder = rig.store.folder(rig.id)
-    notes = (folder / "notes.md").read_text()
+    notes = (folder / "notes.md").read_text(encoding="utf-8")
     assert "We moved the release by a week." in notes and "- [ ] You: Write to the customer (Friday)" in notes
-    assert f"**00:01 Speaker 1:** {word(1, 0)}" in (folder / "transcript.md").read_text()
+    assert f"**00:01 Speaker 1:** {word(1, 0)}" in (folder / "transcript.md").read_text(encoding="utf-8")
     assert not rig.store.audio_dir(rig.id).exists() and rig.store.unfinished() == []
     assert rig.reminders == [("Write to the customer", "From the meeting “Zoom call”, due Friday")]
     assert len(rig.drafts) == 1 and "‹" not in rig.drafts[0] and "Hi all, thanks for today." in rig.drafts[0]
@@ -276,7 +277,7 @@ def test_meeting_folders_are_for_the_user_alone(tmp_path):
     rig = Rig(tmp_path, Script.conversation(["Anna"], lines=1))
     asyncio.run(rig.service.toggle(True))
     folder = rig.store.folder(rig.id)
-    assert folder.stat().st_mode & 0o077 == 0 and rig.store.audio_dir(rig.id).stat().st_mode & 0o077 == 0
+    assert not system.open_to_others(folder) and not system.open_to_others(rig.store.audio_dir(rig.id))
 
 
 def test_a_question_during_the_call_gets_what_was_just_said_as_data(tmp_path):
@@ -318,7 +319,7 @@ def test_that_was_anna_names_the_last_voice_and_remembers_it(tmp_path):
     assert "this voice is Sam" in block and rig.voices.learned == ["Sam"]
     names = rig.store.state(rig.id)["names"]
     assert list(names.values()) == ["Sam"]
-    assert "Sam:" in (rig.store.folder(rig.id) / "transcript.md").read_text()
+    assert "Sam:" in (rig.store.folder(rig.id) / "transcript.md").read_text(encoding="utf-8")
 
 
 def test_a_known_voice_gets_its_name_by_itself(tmp_path):
@@ -333,7 +334,7 @@ def test_a_known_voice_gets_its_name_by_itself(tmp_path):
         await rig.finish()
 
     asyncio.run(go())
-    transcript = (rig.store.folder(rig.id) / "transcript.md").read_text()
+    transcript = (rig.store.folder(rig.id) / "transcript.md").read_text(encoding="utf-8")
     assert "Anna:" in transcript and "Speaker 2:" in transcript
 
 
@@ -388,7 +389,7 @@ def test_after_stop_the_whole_call_sorts_out_who_said_what(tmp_path):
     anna = set().union(*(v for n, v in them.items() if script.speaker_of_line()[n] == "Anna"))
     sam = set().union(*(v for n, v in them.items() if script.speaker_of_line()[n] == "Sam"))
     assert len(anna) == len(sam) == 1 and anna != sam, "each person is one speaker"
-    transcript = (rig.store.folder(rig.id) / "transcript.md").read_text()
+    transcript = (rig.store.folder(rig.id) / "transcript.md").read_text(encoding="utf-8")
     assert {"Speaker 1", "Speaker 2"} <= set(re.findall(r"Speaker \d+", transcript)) and "Speaker 3" not in transcript
 
 
@@ -446,7 +447,7 @@ def test_one_other_person_invited_and_one_voice_heard_is_that_person(tmp_path):
         await rig.finish()
 
     asyncio.run(go())
-    assert "**00:01 Tom:**" in (rig.store.folder(rig.id) / "transcript.md").read_text()
+    assert "**00:01 Tom:**" in (rig.store.folder(rig.id) / "transcript.md").read_text(encoding="utf-8")
 
 
 def test_talking_to_milo_during_the_call_stays_out_of_the_notes(tmp_path):
@@ -469,7 +470,7 @@ def test_talking_to_milo_during_the_call_stays_out_of_the_notes(tmp_path):
         return me.line
 
     private_line = asyncio.run(go())
-    transcript = (rig.store.folder(rig.id) / "transcript.md").read_text()
+    transcript = (rig.store.folder(rig.id) / "transcript.md").read_text(encoding="utf-8")
     assert word(private_line, 0) not in transcript and word(2, 0) in transcript
 
 
@@ -660,10 +661,10 @@ def test_killing_the_brain_process_mid_pass_loses_and_repeats_nothing(tmp_path):
         transcript = tmp_path / "meetings" / id / "transcript.jsonl"
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
-            if transcript.exists() and transcript.read_text().count('"upto"') >= 3:
+            if transcript.exists() and transcript.read_text(encoding="utf-8").count('"upto"') >= 3:
                 break
             time.sleep(0.05)
-        os.kill(child.pid, signal.SIGKILL)
+        child.kill()
     finally:
         child.wait(10)
     store = FileMeetingStore(tmp_path / "meetings")

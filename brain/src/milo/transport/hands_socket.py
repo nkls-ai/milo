@@ -32,7 +32,7 @@ class HandsSocketServer:
         self._server: asyncio.Server | None = None
 
     async def start(self) -> None:
-        claim_socket(self.path)
+        await asyncio.to_thread(claim_socket, self.path)
         self._server = await system.start_local_server(self._client, self.path, limit=MAX_LINE)
         log.info("hands listening on %s", self.path)
 

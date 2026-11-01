@@ -88,7 +88,7 @@ def test_omnivoice_designs_the_voice_once_and_saves_it(tmp_path, fake_omnivoice)
     assert design == {"text": REF_TEXT, "instruct": "calm", "num_step": 32}
     assert model.clones == [{"ref_audio": str(voice_dir / "ref.wav"), "ref_text": REF_TEXT}]
     assert warm_up["voice_clone_prompt"] == voice._clone_prompt and warm_up["num_step"] == 8
-    assert (voice_dir / "ref.txt").read_text().strip() == REF_TEXT
+    assert (voice_dir / "ref.txt").read_text(encoding="utf-8").strip() == REF_TEXT
     with wave.open(str(voice_dir / "ref.wav")) as w:
         assert (w.getnchannels(), w.getsampwidth(), w.getframerate(), w.getnframes()) == (1, 2, 24_000, 24_000)
     assert not list(voice_dir.glob("*.tmp"))
@@ -104,7 +104,7 @@ def test_omnivoice_ref_audio_overrides_the_designed_voice(tmp_path, fake_omnivoi
     voice_dir = tmp_path / "voice"
     voice_dir.mkdir()
     (voice_dir / "ref.wav").write_bytes(b"old")
-    (voice_dir / "ref.txt").write_text("old")
+    (voice_dir / "ref.txt").write_text("old", encoding="utf-8")
     clip = tmp_path / "me.wav"
     clip.write_bytes(b"x")
 

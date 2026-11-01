@@ -144,7 +144,7 @@ class PromptParts:
     """What goes into the talker's system prompt besides the fixed rules. "" leaves a part out."""
 
     persona: str = ""
-    """persona.md; DEFAULT_PERSONA when empty."""
+    """persona.md; DEFAULT_PERSONA when empty. `{computer}` in it becomes `computer`."""
     computer: str = "computer"
     """What the platform calls the machine Milo lives on (`Platform.computer`)."""
     look: bool = False
@@ -163,7 +163,7 @@ class PromptParts:
 def system_prompt(parts: PromptParts) -> str:
     """The talker's system prompt, in a fixed order."""
     rules = REPLY_RULES.replace("{task}", TASK_RULE_QUICK if parts.quick.strip() else TASK_RULE)
-    out = [parts.persona.strip() or DEFAULT_PERSONA.replace("{computer}", parts.computer),
+    out = [(parts.persona.strip() or DEFAULT_PERSONA).replace("{computer}", parts.computer),
            rules.strip().replace("{computer}", parts.computer)]
     if parts.look:
         out.append(LOOK_RULES.strip())

@@ -11,7 +11,7 @@ from milo.core.types import Emotion, Reply, Usage
 from milo.services import orchestrator
 from milo.services.helpers import HelperStatus
 from milo.services.orchestrator import HelperQuestions
-from tests.services.stack import Stack, settle
+from tests.services.stack import Stack, settle, until
 
 QUESTION = "Send the mail to Anna?"
 
@@ -35,14 +35,25 @@ def test_the_second_ask_waits_until_the_user_stops_talking():
     s = Stack(confirm_timeout_s=0)
     s.approvals._reask_s = 0.05
     talking = [True]
-    s.approvals._quiet = lambda: talking[0]
 
     async def run():
+        waiting_for_silence = asyncio.Event()
+        quiet_checks = 0
+
+        def user_is_talking():
+            nonlocal quiet_checks
+            quiet_checks += 1
+            # Initial ask, delayed reask, then another poll while speech continues.
+            if quiet_checks >= 3:
+                waiting_for_silence.set()
+            return talking[0]
+
+        s.approvals._quiet = user_is_talking
         task = asyncio.create_task(s.approvals.confirm(QUESTION))
-        await asyncio.sleep(0.3)
+        await asyncio.wait_for(waiting_for_silence.wait(), timeout=5)
         assert s.voice.spoken == [], "not over the user's words"
         talking[0] = False
-        await asyncio.sleep(0.1)
+        await until(lambda: bool(s.voice.spoken))
         assert s.voice.spoken == [QUESTION]
         s.approvals.cancel()
         return await task

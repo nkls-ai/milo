@@ -112,6 +112,12 @@ def _ok(id: object, result: dict) -> dict:
     return {"jsonrpc": "2.0", "id": id, "result": result}
 
 
+def utf8_stdio() -> None:
+    """MCP over stdio is UTF-8 whatever the OS locale says (Windows pipes default to cp1252)."""
+    for stream in (sys.stdin, sys.stdout):
+        stream.reconfigure(encoding="utf-8")
+
+
 def _error(id: object, code: int, message: str) -> dict:
     return {"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": message}}
 
@@ -120,6 +126,7 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="milo-mac", description=__doc__.splitlines()[0])
     parser.add_argument("--socket", required=True, type=Path, help="the brain's hands socket")
     args = parser.parse_args(argv)
+    utf8_stdio()
     serve(HandsClient(args.socket.expanduser()), sys.stdin, sys.stdout)
 
 

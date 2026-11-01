@@ -1,0 +1,39 @@
+{
+  "page": "SettingsPage",
+  "size": [640, 2200],
+  "states": {
+    "all": {"restart": true, "error": "", "settings": [
+      {"section": "chat", "key": "use", "value": "claude_live", "options": ["claude_live", "codex_live", "openai_compat", "none"], "labels": ["Claude CLI", "Codex CLI", "OpenAI-compatible", "Dictation only"], "live": false},
+      {"section": "chat", "key": "updates", "value": "bubble", "options": ["quiet", "bubble", "chatty"], "labels": ["Only the answer", "Short notes in his bubble", "Tells you each step"], "live": true},
+      {"section": "dictation", "key": "stream", "value": "preview", "options": ["off", "preview", "type"], "labels": ["When you let go", "Show the words as you speak", "Type as you speak"], "live": true},
+      {"section": "dictation", "key": "learn", "value": true, "options": [], "labels": [], "live": true},
+      {"section": "ui", "key": "dictate_key", "value": "right_control", "options": ["fn", "right_option", "right_command", "right_control"], "labels": ["fn", "Right Option", "Right Command", "Right Control"], "live": true},
+      {"section": "ui", "key": "talk_key", "value": "right_option", "options": ["fn", "right_option", "right_command", "right_control"], "labels": ["fn", "Right Option", "Right Command", "Right Control"], "live": true},
+      {"section": "ui", "key": "whats_this_key", "value": "ctrl+option+m", "options": ["ctrl+option+m", "ctrl+option+w", "ctrl+shift+m", ""], "labels": ["Control-Option-M", "Control-Option-W", "Control-Shift-M", "Off"], "live": true},
+      {"section": "ui", "key": "meeting_key", "value": "ctrl+option+n", "options": ["ctrl+option+n", "ctrl+shift+n", "ctrl+option+r", ""], "labels": ["Control-Option-N", "Control-Shift-N", "Control-Option-R", "Off"], "live": true},
+      {"section": "ui", "key": "voice", "value": true, "options": [], "labels": [], "live": true},
+      {"section": "ui", "key": "hide_after_s", "value": 120, "options": [15, 30, 60, 300, 0], "labels": ["After 15 seconds", "After 30 seconds", "After a minute", "After 5 minutes", "Never"], "live": true},
+      {"section": "hands", "key": "show_window", "value": false, "options": [], "labels": [], "live": true},
+      {"section": "approvals", "key": "ask", "value": "auto", "options": ["step", "task", "auto"], "labels": ["Every step", "Once per task", "Only when it matters (auto)"], "live": true},
+      {"section": "approvals", "key": "allowed_apps", "value": [{"name": "Microsoft Excel", "bundle": "EXCEL.EXE"}, {"name": "", "bundle": "soffice"}], "options": [], "labels": [], "live": true},
+      {"section": "meetings", "key": "auto", "value": "ask", "options": ["ask", "calendar", "never"], "labels": ["Ask me", "Without asking when my calendar has a meeting", "Never ask"], "live": true},
+      {"section": "meetings", "key": "always", "value": "Zoom, Microsoft Teams", "options": [], "labels": [], "live": true},
+      {"section": "meetings", "key": "never", "value": "", "options": [], "labels": [], "live": true}
+    ]},
+    "error": {"restart": false, "error": "The dictate key and the talk key need to be different keys.", "settings": [
+      {"section": "ui", "key": "voice", "value": false, "options": [], "labels": [], "live": true},
+      {"section": "chat", "key": "updates", "value": "bubble", "options": ["quiet", "bubble", "chatty"], "labels": ["Only the answer", "Short notes in his bubble", "Tells you each step"], "live": true}
+    ]},
+    "waiting": {"settings": []}
+  },
+  "interactions": [
+    {"state": "all", "steps": [{"click": "chat.updates/Tells you each step"}], "expect": [{"type": "set_setting", "section": "chat", "key": "updates", "value": "chatty"}]},
+    {"state": "all", "steps": [{"click": "voice/switch"}], "expect": [{"type": "set_setting", "section": "ui", "key": "voice", "value": false}]},
+    {"state": "all", "steps": [{"click": "showWindow/switch"}], "expect": [{"type": "set_setting", "section": "hands", "key": "show_window", "value": true}]},
+    {"state": "all", "steps": [{"click": "After 30 seconds"}], "expect": [{"type": "set_setting", "section": "ui", "key": "hide_after_s", "value": 30}]},
+    {"state": "all", "steps": [{"click": "allowed-Microsoft Excel/remove"}], "expect": [{"type": "set_setting", "section": "approvals", "key": "allowed_apps", "value": [{"name": "", "bundle": "soffice"}]}]},
+    {"state": "all", "steps": [{"click": "chip-Zoom/remove"}], "expect": [{"type": "set_setting", "section": "meetings", "key": "always", "value": "Microsoft Teams"}]},
+    {"state": "all", "steps": [{"click": "restart"}], "expect": [], "actions": [["restart", null]]},
+    {"state": "all", "steps": [{"click": "showWords"}, {"click": "openSetup"}], "expect": [], "actions": [["showWords", null], ["openSetup", null]]}
+  ]
+}

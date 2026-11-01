@@ -1,0 +1,28 @@
+{
+  "page": "UsagePage",
+  "size": [760, 1100],
+  "states": {
+    "week": {"usage": {"type": "usage", "span": 7, "today": "2026-10-30", "since": "2026-09-14", "daily": [
+      {"day": "2026-10-24", "calls": 2, "input_tokens": 21000, "cached_input_tokens": 12000, "output_tokens": 300, "dictations": 6, "words": 80},
+      {"day": "2026-10-25", "calls": 0, "input_tokens": 0, "cached_input_tokens": 0, "output_tokens": 0, "dictations": 0, "words": 0},
+      {"day": "2026-10-26", "calls": 7, "input_tokens": 70200, "cached_input_tokens": 52000, "output_tokens": 820, "dictations": 18, "words": 260},
+      {"day": "2026-10-27", "calls": 5, "input_tokens": 43000, "cached_input_tokens": 30000, "output_tokens": 410, "dictations": 9, "words": 120},
+      {"day": "2026-10-28", "calls": 3, "input_tokens": 30500, "cached_input_tokens": 21000, "output_tokens": 160, "dictations": 14, "words": 190},
+      {"day": "2026-10-29", "calls": 4, "input_tokens": 61200, "cached_input_tokens": 38400, "output_tokens": 210, "dictations": 12, "words": 148},
+      {"day": "2026-10-30", "calls": 9, "input_tokens": 84050, "cached_input_tokens": 70100, "output_tokens": 655, "dictations": 31, "words": 402}
+    ], "sources": [{"source": "task", "calls": 12, "tokens": 198000}, {"source": "chat", "calls": 16, "tokens": 98115}, {"source": "memory", "calls": 2, "tokens": 14200}],
+      "apps": [{"app": "Slack", "dictations": 40, "words": 610}, {"app": "Outlook", "dictations": 33, "words": 440}, {"app": "", "dictations": 17, "words": 150}],
+      "accounts": [
+        {"service": "Claude", "uses": ["Talking"], "state": "ok", "plan": "Max", "who": "you@example.com", "detail": "claude-haiku-5-5"},
+        {"service": "ChatGPT", "uses": ["Tasks"], "state": "ok", "plan": "", "who": "", "detail": "Signed in with ChatGPT"},
+        {"service": "ElevenLabs", "uses": ["Milo's voice", "Hearing you"], "state": "unknown", "plan": "", "who": "", "detail": "Can't see the plan: the API key lacks the user_read permission."},
+        {"service": "This PC", "uses": ["Dictation"], "state": "local", "plan": "", "who": "", "detail": "Whisper, nothing leaves this computer"}
+      ]}},
+    "counting": {"usage": null, "connected": true},
+    "offline": {"usage": null, "connected": false}
+  },
+  "interactions": [
+    {"state": "week", "steps": [{"click": "span/30 days"}], "expect": [{"type": "get_usage", "span": 30}]},
+    {"state": "week", "steps": [{"click": "metric/Words dictated"}], "expect": [], "shot": "words"}
+  ]
+}

@@ -25,6 +25,8 @@ import re
 from dataclasses import dataclass
 from enum import StrEnum
 
+from milo.core.risk_policy import DEFAULT_RISK_POLICY, RiskPolicy
+
 
 class Risk(StrEnum):
     OK = "ok"
@@ -131,9 +133,10 @@ UNDO_REASONS = frozenset({"move to the Trash", "delete a note", "delete"})
 _PRESS_KEYS = ("return", "space", "keypadenter")
 
 
-def normalize_combo(combo: str) -> str:
+def normalize_combo(combo: str, policy: RiskPolicy = DEFAULT_RISK_POLICY) -> str:
     """"Command+Shift+S" -> "shift+cmd+s": lower case, known aliases, modifiers in a fixed order."""
-    parts = [_ALIASES.get(p, p) for p in (p.strip().lower() for p in combo.replace("-", "+").split("+")) if p]
+    aliases = {**_ALIASES, **dict(policy.key_aliases)}
+    parts = [aliases.get(p, p) for p in (p.strip().lower() for p in combo.replace("-", "+").split("+")) if p]
     mods = [m for m in _MODIFIER_ORDER if m in parts]
     keys = [p for p in parts if p not in _MODIFIER_ORDER]
     return "+".join(mods + keys)
@@ -144,7 +147,8 @@ def app_names(*names: object) -> set[str]:
     "Terminal" and "com.apple.Terminal" all match."""
     out = set()
     for name in names:
-        text = str(name or "").strip().rstrip("/").rsplit("/", 1)[-1].lower().removesuffix(".app").strip()
+        text = str(name or "").strip().replace("\\", "/").rstrip("/").rsplit("/", 1)[-1].lower()
+        text = text.removesuffix(".app").removesuffix(".exe").strip()
         if text:
             out.add(text)
     return out
@@ -170,60 +174,68 @@ def coverable_script(script: str) -> bool:
     return not _SCRIPT_REACH.search(script)
 
 
-def plain_app(name: str, bundle: str = "") -> bool:
+def plain_app(name: str, bundle: str = "", policy: RiskPolicy = DEFAULT_RISK_POLICY) -> bool:
     """An app an Allow may cover: not a password manager, System Settings or a program that runs commands."""
     names = app_names(name, bundle)
-    return bool(names) and not names & set(_SECRET_APPS + _SETTINGS_APPS + _CODE_APPS + _FILE_APPS)
+    special = set(_SECRET_APPS + _SETTINGS_APPS + _CODE_APPS + _FILE_APPS)
+    special.update(policy.secret_apps | policy.settings_apps | policy.code_apps | policy.file_apps)
+    return bool(names) and not names & special
 
 
-def classify(tool: str, args: dict, target: dict) -> Verdict:
+def classify(tool: str, args: dict, target: dict, policy: RiskPolicy = DEFAULT_RISK_POLICY) -> Verdict:
     apps = app_names(target.get("app"), target.get("bundle"))
+    secret_apps = set(_SECRET_APPS) | policy.secret_apps
+    settings_apps = set(_SETTINGS_APPS) | policy.settings_apps
+    code_apps = set(_CODE_APPS) | policy.code_apps
+    document_apps = set(_DOCUMENT_APPS) | policy.document_apps
+    trash_apps = set(_TRASH_APPS) | policy.trash_apps
     title = " ".join(str(target.get(k) or "") for k in ("title", "description")).strip()
     if tool in ("type", "ax_set_value") and target.get("secure"):
         return Verdict(Risk.NEVER, "a password field")
     if tool in ("type", "ax_set_value") and _CARD.search(title):
         return Verdict(Risk.NEVER, "a card number or security code field")
     if tool in ("click", "ax_press", "ax_set_value", "type", "key", "scroll"):
-        if apps & set(_SECRET_APPS) or (apps & set(_SETTINGS_APPS) and _SECURITY_WORDS.search(title)):
+        if apps & secret_apps or (apps & settings_apps and _SECURITY_WORDS.search(title)):
             return Verdict(Risk.NEVER, "a security setting")
-        if apps & set(_SETTINGS_APPS):
+        if apps & settings_apps:
             return Verdict(Risk.ASK, "change a system setting")
     if tool == "open_app":
         opening = app_names(args.get("name"), target.get("bundle"))
-        if opening & set(_SECRET_APPS):
+        if opening & secret_apps:
             return Verdict(Risk.NEVER, "a security setting")
-        if opening & set(_CODE_APPS):
+        if opening & code_apps:
             return Verdict(Risk.ASK, "open a program that runs commands")
-    if tool in ("type", "key", "ax_set_value") and apps & set(_CODE_APPS):
+    if tool in ("type", "key", "ax_set_value") and apps & code_apps:
         return Verdict(Risk.ASK, "run a command")
     if tool in ("click", "ax_press"):
         if target.get("unresolved"):
             return Verdict(Risk.ASK, "click something I can't name")
-        return _button(title, apps, str(target.get("role") or ""))
+        return _button(title, apps, str(target.get("role") or ""), policy)
     if tool == "key":
-        combo = normalize_combo(str(args.get("combo", "")))
-        if combo in _RISKY_COMBOS:
-            reason = _RISKY_COMBOS[combo]
+        combo = normalize_combo(str(args.get("combo", "")), policy)
+        combos = {**_RISKY_COMBOS, **dict(policy.risky_combos)}
+        if combo in combos:
+            reason = combos[combo]
             if reason not in UNDO_REASONS:
                 return Verdict(Risk.ASK, reason)
             # ⌘⌫ moves to the Trash in the apps that keep one, and deletes text or cells in documents. With a
             # button or nothing named in focus it may be a sheet's Delete ("keep this new document?"), and elsewhere
             # (Reminders, Calendar, Contacts, a web page, an app Milo doesn't know) it may delete for good.
             role = str(target.get("role") or "")
-            if apps & set(_DOCUMENT_APPS) and role in _TEXT_ROLES + ("cell", "text"):
+            if apps & document_apps and role in _TEXT_ROLES + ("cell", "text"):
                 return Verdict(Risk.UNDO, reason)
-            if apps & set(_TRASH_APPS) and role not in ("", "button", "sheet", "dialog"):
+            if apps & trash_apps and role not in ("", "button", "sheet", "dialog"):
                 return Verdict(Risk.UNDO, reason)
             return Verdict(Risk.ASK, "delete")
         if combo in ("delete", "forwarddelete") and apps and str(target.get("role") or "") not in _TEXT_ROLES:
             # Delete on a selected item, not in a text field: the Trash in Mail or Photos, a cell's content in a
             # document, but a reminder, an event or a card for good.
-            if apps & set(_TRASH_APPS):
+            if apps & trash_apps:
                 return Verdict(Risk.UNDO, "delete")
-            if not apps & set(_DOCUMENT_APPS):
+            if not apps & document_apps:
                 return Verdict(Risk.ASK, "delete")
         if combo in _PRESS_KEYS:
-            return _button(title, apps, str(target.get("role") or ""))  # return on a focused "Send" sends
+            return _button(title, apps, str(target.get("role") or ""), policy)  # return on a focused "Send" sends
         return OK
     if tool == "sheet_write":
         if target.get("new") or target.get("made") or int(target.get("filled") or 0) == 0:
@@ -244,15 +256,15 @@ def classify(tool: str, args: dict, target: dict) -> Verdict:
     return OK
 
 
-def _button(label: str, apps: set[str], role: str = "") -> Verdict:
+def _button(label: str, apps: set[str], role: str = "", policy: RiskPolicy = DEFAULT_RISK_POLICY) -> Verdict:
     """A click on a button or menu item labelled `label` in one of `apps`. In a document a bare "Delete" is document
     work only as a menu item: a "Delete" button there may be the sheet that throws away a new document."""
-    if apps & set(_BROWSERS):
+    if apps & (set(_BROWSERS) | policy.browsers):
         verdict = _words(label)
         return Verdict(Risk.ASK, "delete") if verdict.risk is Risk.UNDO else verdict
-    if apps & set(_TRASH_APPS) and _TRASH_LABEL.match(label):
+    if apps & (set(_TRASH_APPS) | policy.trash_apps) and _TRASH_LABEL.match(label):
         return Verdict(Risk.UNDO, "delete a note" if apps & {"notes", "notizen", "com.apple.notes"} else "delete")
-    if apps & set(_DOCUMENT_APPS) and _DOCUMENT_EDIT.match(label) and (
+    if apps & (set(_DOCUMENT_APPS) | policy.document_apps) and _DOCUMENT_EDIT.match(label) and (
             role == "menu item" or not _BARE_DELETE.match(label)):
         return Verdict(Risk.ASK, "change the document")
     return _words(label)

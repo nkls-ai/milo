@@ -54,9 +54,10 @@ def test_reading_from_an_offset_returns_only_new_complete_lines(tmp_path):
 
 
 def test_logs_are_private_to_the_user(tmp_path):
+    from milo import system
     path = tmp_path / "log.jsonl"
     jsonl.append(path, {"n": 1})
-    assert path.stat().st_mode & 0o077 == 0
+    assert system.owned_by_me(path) and not system.open_to_others(path)
 
 
 # ---- EpisodeLog contract
@@ -149,5 +150,5 @@ def test_the_store_sees_lines_another_process_appends_and_skips_a_broken_one(tmp
         f.write(b'{"op": "add", "id": "x", "te')  # a crash in the other process
     other.add(fact("two"))
     assert [f.text for f in brain.current()] == ["one", "two"]
-    path.write_text("")  # replaced by hand
+    path.write_text("", encoding="utf-8")  # replaced by hand
     assert brain.current() == []

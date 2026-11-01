@@ -48,7 +48,7 @@ def test_chunks_read_up_to_the_last_sample_even_with_a_header_a_crash_never_fixe
     data = (np.full(4 * SR, 0.1) * 32767).astype("<i2").tobytes()
     header = struct.pack("<4sI4s4sIHHIIHH4sI", b"RIFF", 36, b"WAVE", b"fmt ", 16, 1, 1, SR, SR * 2, 2, 16, b"data", 0)
     (folder / "me-0001.wav").write_bytes(header + data)
-    (folder / "notes.txt").write_text("not a chunk")
+    (folder / "notes.txt").write_text("not a chunk", encoding="utf-8")
     chunks = store.chunks(id)
     assert [(c.track, c.index, c.start, c.seconds) for c in chunks] == [
         (Track.ME, 1, 0.0, 4.0), (Track.THEM, 1, 0.0, 30.0), (Track.THEM, 2, 30.0, 10.0)]
@@ -73,10 +73,10 @@ def test_close_writes_the_notes_and_deletes_the_audio_unless_kept(tmp_path):
         write_wav(store.audio_dir(id) / "me-0001.wav", np.zeros(SR, np.float32))
     path = store.close(gone, MeetingNotes("We agreed."), "# Weekly sync\n")
     store.close(kept, MeetingNotes("Kept."), "# Weekly sync\n", keep_audio=True)
-    assert path.read_text() == "# Weekly sync\n"
+    assert path.read_text(encoding="utf-8") == "# Weekly sync\n"
     assert not store.audio_dir(gone).exists() and store.audio_dir(kept).exists()
     assert store.unfinished() == []
-    assert json.loads((tmp_path / gone / "meeting.json").read_text())["notes"]["summary"] == "We agreed."
+    assert json.loads((tmp_path / gone / "meeting.json").read_text(encoding="utf-8"))["notes"]["summary"] == "We agreed."
 
 
 def test_state_is_kept_between_stores(tmp_path):
@@ -89,7 +89,7 @@ def test_a_broken_meeting_file_doesnt_stop_the_others(tmp_path):
     store = FileMeetingStore(tmp_path)
     ok = store.open(INFO)
     (tmp_path / "broken").mkdir()
-    (tmp_path / "broken" / "meeting.json").write_text("{")
+    (tmp_path / "broken" / "meeting.json").write_text("{", encoding="utf-8")
     assert store.unfinished() == [ok]
 
 
@@ -102,5 +102,5 @@ def test_the_voice_book_knows_a_voice_again_and_only_for_its_own_model(tmp_path)
     assert book.match(np.array([1.0, 0.15, 0.0])) == "Anna"
     assert book.match(np.array([0.0, 1.0, 0.0])) is None
     assert JsonVoiceBook(tmp_path / "voices.json", "eres2net").match(anna) is None
-    voices = json.loads((tmp_path / "voices.json").read_text())["voices"]
+    voices = json.loads((tmp_path / "voices.json").read_text(encoding="utf-8"))["voices"]
     assert len(voices) == 1 and voices[0]["count"] == 2

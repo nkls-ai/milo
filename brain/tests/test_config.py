@@ -47,8 +47,10 @@ def test_on_a_mac_the_template_gets_todays_engines_and_elsewhere_ones_without_th
     for platform in (LINUX, WINDOWS):
         other = Config.load(TEMPLATE, platform)
         assert [other.pluggable(s)[0] for s in ("stt", "tts", "connections", "chat")] == \
-            ["elevenlabs", "elevenlabs", "none", "claude_live"]
-        assert (other.tts.fallback, other.embedder()[0]) == ("", "hash")
+            ["faster_whisper", "pocket", "desktop", "claude_live"]
+        assert (other.tts.fallback, other.embedder()[0]) == ("", "onnx_e5")
+        assert other.ui.dictate_key == "right_control"
+        assert other.ui.talk_key == "right_option"
     assert for_os("darwin") is MACOS and for_os("win32") is WINDOWS and for_os("linux") is LINUX
     assert for_os("freebsd14").stt == "elevenlabs"
 
@@ -142,7 +144,7 @@ def test_settings_values_come_from_the_file():
 
 @pytest.mark.parametrize("section", [*PLUGGABLE, "ui"])
 def test_an_unknown_top_level_key_names_the_key(section):
-    text = TEMPLATE.read_text().replace(f"[{section}]\n", f"[{section}]\nfrobnicate = 1\n", 1)
+    text = TEMPLATE.read_text(encoding="utf-8").replace(f"[{section}]\n", f"[{section}]\nfrobnicate = 1\n", 1)
     with pytest.raises(ConfigError, match=rf"\[{section}\].*frobnicate"):
         Config.parse(text)
 
@@ -220,7 +222,7 @@ def test_the_meeting_notes_shortcut_has_a_default_and_never_shares_a_combo():
 
 
 def test_routines_settings():
-    config = Config.parse(TEMPLATE.read_text())
+    config = Config.parse(TEMPLATE.read_text(encoding="utf-8"))
     assert config.routines.enabled and config.routines.max_runs_per_day == 6 and config.routines.grace_hours == 4
     assert Config.parse(MINIMAL).routines.enabled
     assert Config.parse("[routines]\nmax_runs_per_day = 0\ngrace_hours = 0.5").routines.grace_hours == 0.5

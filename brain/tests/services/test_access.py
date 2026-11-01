@@ -207,7 +207,7 @@ def test_where_a_sandboxed_app_may_save_comes_from_the_app():
 def test_the_brains_access_logic_names_no_macos_switch_page_or_error_code():
     root = Path(__file__).parents[2] / "src" / "milo"
     for path in (root / "core" / "access.py", root / "services" / "access.py"):
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
         for word in ("System Settings", "Privacy", "x-apple", "-1743", "AppleScript", "osascript", "Accessibility",
                      "Screen Recording"):
             assert word not in text, f"{path.name} names {word!r}; that belongs to the app"

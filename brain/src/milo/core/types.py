@@ -115,11 +115,14 @@ class Interrupted(Exception):
 
 
 class HarnessError(Exception):
-    """A harness call failed. `transient` says whether retrying later can help."""
+    """A harness call failed. `transient` says whether retrying later can help. `said` is what the user should
+    read about it in plain words, when the fix is theirs (a missing key, a server that isn't running); empty for
+    failures only the log can explain."""
 
-    def __init__(self, message: str, *, transient: bool):
+    def __init__(self, message: str, *, transient: bool, said: str = ""):
         super().__init__(message)
         self.transient = transient
+        self.said = said
 
 
 @dataclass(frozen=True)

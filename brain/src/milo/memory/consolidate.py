@@ -229,7 +229,7 @@ class NightlyConsolidator:
 
 def undo(run: str, runs_dir: Path, episodes: EpisodeLog, facts: FactStore) -> int:
     """Take back everything run `run` changed. Returns how many lines were written."""
-    record = json.loads((runs_dir / f"{run}.json").read_text())
+    record = json.loads((runs_dir / f"{run}.json").read_text(encoding="utf-8"))
     written = 0
     for old in record.get("episodes", []):
         episodes.append(Episode.from_dict(old))  # the stub again, as the newest version

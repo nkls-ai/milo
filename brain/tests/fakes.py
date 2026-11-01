@@ -884,9 +884,10 @@ class MemoryRoutineBook:
         return [r for r in self.log if r["slug"] == slug][-n:]
 
     def draft_path(self, draft):
-        from pathlib import Path
+        from pathlib import PurePosixPath
 
-        return Path("/drafts") / f"{draft}.md"
+        # A fictional wire path, not a path on the machine running the tests.
+        return PurePosixPath("/drafts") / f"{draft}.md"
 
     def read_draft(self, draft):
         return self.drafts.get(draft)

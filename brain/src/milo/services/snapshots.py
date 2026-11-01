@@ -14,7 +14,7 @@ then asked about it; with alerts off that question isn't shown, which is unteste
 
 from __future__ import annotations
 
-import os
+import posixpath
 import re
 
 from .sheets import literal
@@ -42,8 +42,8 @@ def apps_in(script: str) -> list[str]:
 def inside(path: str, folder: str) -> str:
     """`path` if it is a file right in `folder` (no links, no ..); raises ValueError otherwise. The guard that keeps
     Excel from asking for file access."""
-    real, home = os.path.normpath(path), os.path.normpath(folder)
-    if os.path.dirname(real) != home or real != path or '"' in path or "\\" in path:
+    real, home = posixpath.normpath(path), posixpath.normpath(folder)
+    if posixpath.dirname(real) != home or real != path or '"' in path or "\\" in path:
         raise ValueError(f"{path} is outside {folder}")
     return path
 

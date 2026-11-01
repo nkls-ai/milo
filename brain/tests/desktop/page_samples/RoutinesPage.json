@@ -1,0 +1,135 @@
+{
+ "page": "RoutinesPage",
+ "size": [
+  720,
+  760
+ ],
+ "states": {
+  "routines": {
+   "routines": [
+    {
+     "id": "monday-report",
+     "name": "Monday report",
+     "description": "Sums last week's sales into a one-page report.",
+     "schedule": "every Monday at 09:00",
+     "paused": false,
+     "last_run": "2026-10-26 09:00, done",
+     "next_run": "2026-11-02T09:00",
+     "inputs": [
+      "month"
+     ]
+    },
+    {
+     "id": "tidy-downloads",
+     "name": "Tidy downloads",
+     "description": "",
+     "schedule": "every day at 18:00",
+     "paused": true,
+     "last_run": "",
+     "inputs": []
+    },
+    {
+     "id": "invoices",
+     "name": "Invoice folder",
+     "description": "",
+     "schedule": "",
+     "paused": false,
+     "last_run": "2026-10-30 17:12, done",
+     "inputs": []
+    },
+    {
+     "id": "broken",
+     "name": "broken",
+     "problem": "it must start with a line of three dashes (---)"
+    }
+   ],
+   "drafts": [
+    {
+     "id": "d4e5f6a7",
+     "name": "Invoice folder",
+     "recipe": "---\nname: Invoice folder\nschedule:\npaused: no\nversion: 1\ninputs:\n  - name: month\n    ask: Which month?\n    default: last month\napps: [Finder]\n---\n\n## Steps\n\n1. Move this month's invoices from Downloads into Invoices.\n   Check: Downloads has no invoice left.\n2. Rename each one to its date and sender.\n",
+     "schedule": ""
+    }
+   ],
+   "talkKey": "Right Alt"
+  },
+  "empty": {}
+ },
+ "interactions": [
+  {
+   "state": "routines",
+   "steps": [
+    {
+     "click": "draft-d4e5f6a7/save"
+    }
+   ],
+   "expect": [
+    {
+     "type": "routine_draft_answer",
+     "id": "d4e5f6a7",
+     "save": true
+    }
+   ]
+  },
+  {
+   "state": "routines",
+   "steps": [
+    {
+     "click": "draft-d4e5f6a7/drop"
+    }
+   ],
+   "expect": [
+    {
+     "type": "routine_draft_answer",
+     "id": "d4e5f6a7",
+     "save": false
+    }
+   ]
+  },
+  {
+   "state": "routines",
+   "steps": [
+    {
+     "click": "draft-d4e5f6a7/change"
+    }
+   ],
+   "expect": [],
+   "actions": [
+    [
+     "changeDraft",
+     {
+      "id": "d4e5f6a7",
+      "name": "Invoice folder",
+      "recipe": "---\nname: Invoice folder\nschedule:\npaused: no\nversion: 1\ninputs:\n  - name: month\n    ask: Which month?\n    default: last month\napps: [Finder]\n---\n\n## Steps\n\n1. Move this month's invoices from Downloads into Invoices.\n   Check: Downloads has no invoice left.\n2. Rename each one to its date and sender.\n",
+      "schedule": ""
+     }
+    ]
+   ]
+  },
+  {
+   "state": "routines",
+   "steps": [
+    {
+     "click": "draft-d4e5f6a7/whole"
+    }
+   ],
+   "expect": [],
+   "shot": "whole-file"
+  },
+  {
+   "state": "routines",
+   "steps": [
+    {
+     "click": "routine-invoices/run"
+    }
+   ],
+   "expect": [
+    {
+     "type": "routine",
+     "id": "invoices",
+     "action": "run"
+    }
+   ]
+  }
+ ]
+}

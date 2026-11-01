@@ -16,6 +16,8 @@ import os
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+from milo import system
+
 log = logging.getLogger("milo.settings_guard")
 
 PUT_BACK = "Milo's settings changed while you were away, so I put them back. Change them at the Mac."
@@ -93,6 +95,6 @@ def _restore(path: Path, kept: tuple[bytes, int] | None) -> None:
     tmp = path.with_name(path.name + ".guard")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "wb") as f:
+        system.make_private(f.fileno(), mode or 0o600)
         f.write(data)
-    os.chmod(tmp, mode or 0o600)
-    os.replace(tmp, path)
+    system.replace_file(tmp, path)

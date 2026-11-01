@@ -222,7 +222,7 @@ class LiveSettings:
             return
         self._mtime = mtime
         try:
-            updates, max_helpers = self._parse(self._path.read_text())
+            updates, max_helpers = self._parse(self._path.read_text(encoding="utf-8"))
         except Exception as e:
             log.warning("config.toml changed but can't be read, keeping the old updates setting: %s", e)
             return

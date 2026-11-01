@@ -3,10 +3,11 @@
 import json
 import re
 from importlib import resources
+from pathlib import Path
 
 import pytest
 
-from milo import compose
+from milo import compose, system
 from milo.config import Config
 from milo.adapters.harness.claude import ClaudeHarness
 from milo.adapters.harness.claude_live import ClaudeLiveModel
@@ -21,7 +22,7 @@ from milo.services.heartbeat_runner import HeartbeatRunner
 from milo.services.live_talk import LiveTalk
 from milo.transport.unix_socket import UnixSocketServer
 
-TEMPLATE = (resources.files("milo") / "workspace_template" / "config.toml").read_text()
+TEMPLATE = (resources.files("milo") / "workspace_template" / "config.toml").read_text(encoding="utf-8")
 
 
 def set_key(text: str, table: str, key: str, value) -> str:
@@ -60,7 +61,7 @@ def build(tmp_path, monkeypatch):
     def _build(config_text: str):
         home = tmp_path / "Milo"
         home.mkdir(exist_ok=True)
-        (home / "config.toml").write_text(config_text)
+        (home / "config.toml").write_text(config_text, encoding="utf-8")
         runtime = compose.build(home)
         runtimes.append(runtime)
         return runtime, home
@@ -76,10 +77,10 @@ def test_build_picks_the_engines_named_in_config(build):
                                    "chat.claude_live.model": "claude-haiku-5-5"}))
     assert isinstance(runtime.brain, Brain)
     assert isinstance(runtime.live_model, ClaudeLiveModel) and runtime.live_model.model == "claude-haiku-5-5"
-    assert runtime.live_model.binary == "/nonexistent/claude"
+    assert Path(runtime.live_model.binary) == Path("/nonexistent/claude")
     assert isinstance(runtime.live_talk, LiveTalk) and runtime.live_talk._idle_reset_s == 600
     assert isinstance(runtime.harness, CodexHarness)
-    assert runtime.harness.binary == "/nonexistent/codex" and runtime.harness.model == "gpt-x"
+    assert Path(runtime.harness.binary) == Path("/nonexistent/codex") and runtime.harness.model == "gpt-x"
     assert runtime.harness.workdir == home / "work", "helpers write only their own folder (ADR 0020)"
     assert isinstance(runtime.transcriber, MlxWhisper)
     assert isinstance(runtime.voice, FallbackVoice) and isinstance(runtime.voice.current, MacSay)
@@ -94,7 +95,7 @@ def test_build_has_no_side_effects_beyond_the_workspace(build):
     assert runtime.server.path == home / "run" / "brain.sock"
     assert not runtime.server.path.exists(), "the socket is bound by main(), not by build()"
     assert (home / "reminders.md").exists(), "the workspace template was copied in"
-    assert "/nonexistent/codex" in (home / "config.toml").read_text(), "an existing config is kept"
+    assert "/nonexistent/codex" in (home / "config.toml").read_text(encoding="utf-8"), "an existing config is kept"
     assert not (home / "state" / "usage.jsonl").exists(), "no harness call was made"
     assert (home / "persona.md").exists() and (home / "memory" / "profile.md").exists()
 
@@ -109,7 +110,8 @@ def test_the_chat_idle_reset_comes_from_the_chat_section(build):
     assert runtime.live_talk._idle_reset_s == 90
 
 
-def test_an_old_config_without_chat_still_builds(build):
+def test_an_old_config_without_chat_still_builds(build, monkeypatch):
+    monkeypatch.setattr("milo.adapters.harness._binary.shutil.which", lambda name: f"/nonexistent/{name}")
     old = cheap()
     start, end = old.index("[chat]\n"), old.index("[harness]\n")
     old = old[:start] + old[end:].replace("[harness]\n", "[harness]\nconversation_idle_reset_s = 600\n", 1)
@@ -119,7 +121,7 @@ def test_an_old_config_without_chat_still_builds(build):
 
 def test_persona_is_read_from_the_workspace_on_each_conversation_start(build):
     runtime, home = build(cheap())
-    (home / "persona.md").write_text("You are Milo, but a pirate.")
+    (home / "persona.md").write_text("You are Milo, but a pirate.", encoding="utf-8")
     assert runtime.live_talk._system_prompt().startswith("You are Milo, but a pirate.")
     (home / "persona.md").unlink()
     assert runtime.live_talk._system_prompt().startswith("You are Milo, a small"), "a missing file falls back"
@@ -148,7 +150,8 @@ def test_screen_and_background_workers_both_run_with_milos_tools_only(build):
     for worker in (runtime.harness, runtime.helpers._runner._background):
         cmd = worker.command("hi", None)
         assert "--restricted" in cmd and "--strict-mcp-config" in cmd
-        assert f"Write(/{(home / 'config.toml').resolve()})" in worker.deny, "both keep off Milo's control files"
+        assert f"Write(/{(home / 'config.toml').resolve().as_posix()})" in worker.deny, \
+            "both keep off Milo's control files"
         assert worker.workdir == home / "work"
 
 
@@ -158,9 +161,9 @@ def test_heartbeat_disabled_builds_no_runner(build):
 
 
 @pytest.mark.parametrize("section, available", [
-    ("chat", "claude_live, none, openai_compat"),
-    ("harness", "claude, codex"),
-    ("stt", "elevenlabs, mlx_whisper, none, tones"),
+    ("chat", "claude_live, codex_live, none, openai_compat"),
+    ("harness", "claude, codex, none"),
+    ("stt", "elevenlabs, faster_whisper, mlx_whisper, none, tones"),
     ("tts", "elevenlabs, none, omnivoice, pocket, say"),
     ("audio", "none, sounddevice, wav"),
     ("dictation", "fillers, plain"),
@@ -193,9 +196,9 @@ def test_an_unknown_adapter_option_names_its_table(build):
 def test_off_the_mac_the_template_builds_with_engines_that_need_nothing_from_the_os(build, monkeypatch):
     # ADR 0027: the same ~/Milo template on Linux or Windows names no Mac engine, so nothing Apple-only loads.
     from milo.adapters import platform
-    from milo.adapters.embed.hashing import HashEmbedder
-    from milo.adapters.stt.elevenlabs_scribe import ScribeTranscriber
-    from milo.adapters.tts.elevenlabs import ElevenLabsVoice
+    from milo.adapters.embed.onnx_e5 import OnnxE5
+    from milo.adapters.stt.faster_whisper import FasterWhisper
+    from milo.adapters.tts.pocket import PocketTTS
 
     monkeypatch.setattr(platform, "current", lambda: platform.LINUX)
     text = TEMPLATE
@@ -203,12 +206,15 @@ def test_off_the_mac_the_template_builds_with_engines_that_need_nothing_from_the
                               ("chat.claude_live", "binary", "/nonexistent/claude")):
         text = set_key(text, table, key, value)
     runtime, _ = build(text)
-    assert isinstance(runtime.transcriber, ScribeTranscriber)
-    assert isinstance(runtime.voice._primary, ElevenLabsVoice) and runtime.voice._fallback_factory is None
-    assert isinstance(runtime.memory.memory._embedder, HashEmbedder)
+    assert isinstance(runtime.transcriber, FasterWhisper)
+    assert isinstance(runtime.voice._primary, PocketTTS) and runtime.voice._fallback_factory is None
+    assert isinstance(runtime.memory.memory._embedder, OnnxE5)
+    assert runtime.memory.memory._embedder._session is None, "composition must not load or download a model"
     config = Config.parse(text, platform=platform.LINUX)
-    assert config.pluggable("connections")[0] == "none" and not {"calendar", "mail"} & compose._available(config), \
-        "no connections here, so the worker isn't told it has them"
+    assert config.pluggable("connections")[0] == "desktop"
+    available = runtime.helpers._runner._available
+    assert "files" in available and not {"calendar", "mail"} & available, \
+        "the worker is only told about the connections this backend provides"
     runtime.memory.executor.shutdown(wait=False)
 
 
@@ -218,13 +224,13 @@ def test_memory_is_wired_and_the_old_profile_moves_into_facts(build, tmp_path):
 
     home = tmp_path / "Milo"
     (home / "memory").mkdir(parents=True)
-    (home / "memory" / "profile.md").write_text("# About the user\n\n## People\n- Anna is the user's sister.\n")
+    (home / "memory" / "profile.md").write_text("# About the user\n\n## People\n- Anna is the user's sister.\n", encoding="utf-8")
     runtime, home = build(cheap(**{"memory.recall_tokens": 500, "memory.embedder": "mlx_e5"}))
     memory = runtime.memory
     assert memory is not None and memory.memory.recall_tokens == 500
     assert isinstance(memory.memory._embedder, MlxE5) and memory.memory._embedder._net is None, "loads on warm"
     assert [f.text for f in memory.memory.facts.current()] == ["Anna is the user's sister."]
-    assert (home / "memory" / BACKUP).exists() and "facts.jsonl" in (home / "memory" / "profile.md").read_text()
+    assert (home / "memory" / BACKUP).exists() and "facts.jsonl" in (home / "memory" / "profile.md").read_text(encoding="utf-8")
     assert runtime.live_talk._memory is memory.turns and runtime.live_talk._profile is memory.profile
     assert memory.sleep is not None and memory.sleep.calls_per_day == 2
     assert not (home / "state" / "memory.sqlite").exists(), "the index opens on the memory thread"
@@ -268,7 +274,7 @@ def test_with_elevenlabs_speaking_omnivoice_is_not_even_built_until_it_fails(bui
     text = set_key(cheap(**{"tts.fallback": "omnivoice"}), "tts", "use", "elevenlabs")
     runtime, home = build(text)
     (home / "secrets").mkdir(exist_ok=True)
-    (home / "secrets" / "elevenlabs.key").write_text("sk_test")
+    (home / "secrets" / "elevenlabs.key").write_text("sk_test", encoding="utf-8")
     runtime.voice.warm()
     assert runtime.voice._fallback is None, "OmniVoice's GBs stay out of memory while ElevenLabs works"
 
@@ -294,7 +300,7 @@ def test_messages_switched_on_wire_the_channel_relay_and_watchers(build):
     messages = runtime.messages
     assert isinstance(messages, MessageService) and isinstance(messages._channel, TelegramChannel)
     assert messages._channel._token_path == home / "secrets" / "telegram-token"
-    assert (home / "secrets").stat().st_mode & 0o777 == 0o700
+    assert not system.open_to_others(home / "secrets")
     assert messages.settings.away_after_s == 120 and str(messages.settings.brief_at) == "07:30:00"
     assert messages in runtime.brain._approvals.relays
     assert messages.helper_changed in runtime.helpers.watchers
@@ -348,7 +354,7 @@ def test_always_and_never_for_an_app_go_into_config_toml_through_settings(build)
     meetings.remember("always", "Zoom")
     meetings.remember("always", "Microsoft Teams")
     meetings.remember("always", "zoom")
-    text = (home / "config.toml").read_text()
+    text = (home / "config.toml").read_text(encoding="utf-8")
     assert 'always = "Zoom, Microsoft Teams"' in text and 'never = ""' in text
     assert meetings.options.always == ("Zoom", "Microsoft Teams") and meetings.options.never == ()
     assert meetings.options.says("ZOOM") == "always"
@@ -358,7 +364,7 @@ def test_how_long_milo_stays_on_screen_changes_without_a_restart(build):
     runtime, home = build(cheap())
     settings = runtime.brain._settings
     settings.change("ui", "hide_after_s", 300)
-    assert "hide_after_s = 300" in (home / "config.toml").read_text()
+    assert "hide_after_s = 300" in (home / "config.toml").read_text(encoding="utf-8")
     report = settings.report()
     [row] = [r for r in report.settings if (r["section"], r["key"]) == ("ui", "hide_after_s")]
     assert row["value"] == 300 and row["live"] and not report.restart

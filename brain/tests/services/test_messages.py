@@ -18,7 +18,7 @@ from milo.services.pairing import Pairing
 from milo.services.today import Today
 from milo.services.tool_requests import NO_PHONE, ToolRequests
 from tests.fakes import FakeChannel, FakeLiveModel, MemoryRemoteState, ScriptedHarness, WorkerScript
-from tests.services.stack import Stack, settle
+from tests.services.stack import Stack, until
 
 OWNER = {"owner": {"channel": "fake", "chat": "42", "sender": "42", "name": "Niklas (@niklas)"}}
 
@@ -31,9 +31,29 @@ def stranger(text: str = "", chat: str = "666", **kw) -> Inbound:
     return Inbound(chat=chat, sender=chat, text=text, name="Mallory", **kw)
 
 
+class ObservedChannel(FakeChannel):
+    """Track completed inbound dispatch separately from asynchronous model replies."""
+
+    def __init__(self):
+        super().__init__()
+        self.pushed = 0
+        self.processed = 0
+
+    def push(self, *items):
+        self.pushed += len(items)
+        super().push(*items)
+
+
 def stack(*replies, paired: bool = True, at_mac: bool = True, **kw) -> Stack:
-    s = Stack(model=FakeLiveModel(*replies), channel=FakeChannel(), remote=MemoryRemoteState(OWNER if paired else {}),
+    s = Stack(model=FakeLiveModel(*replies), channel=ObservedChannel(), remote=MemoryRemoteState(OWNER if paired else {}),
               **kw)
+    receive = s.messages.receive
+
+    async def observed_receive(item):
+        await receive(item)
+        s.channel.processed += 1
+
+    s.messages.receive = observed_receive
     s.messages.pairing = Pairing(s.clock, code=lambda: "482913")
     if at_mac:
         s.context.update("Finder", 0)  # someone uses the Mac; else the user counts as away
@@ -43,17 +63,17 @@ def stack(*replies, paired: bool = True, at_mac: bool = True, **kw) -> Stack:
 @asynccontextmanager
 async def running(s: Stack):
     task = asyncio.create_task(s.messages.run())
-    await settle()
     try:
+        await until(lambda: s.channel.starts > 0)
         yield
     finally:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
 
 
-async def phone(s: Stack, *items: Inbound, rounds: int = 200) -> None:
+async def phone(s: Stack, *items: Inbound) -> None:
     s.channel.push(*items)
-    await settle(rounds)
+    await until(lambda: s.channel.processed == s.channel.pushed)
 
 
 def mac_lines(s: Stack) -> list[str]:
@@ -172,6 +192,7 @@ def test_an_owner_message_is_a_text_turn_with_the_same_conversation():
     async def go():
         async with running(s):
             await phone(s, me("when is my standup?"))
+            await until(lambda: bool(s.channel.texts()))
 
     asyncio.run(go())
     assert s.channel.texts("42") == ["Your standup is at 10."]
@@ -189,6 +210,8 @@ def test_messages_in_a_burst_are_answered_in_order():
     async def go():
         async with running(s):
             await phone(s, me("first"), me("second"))
+            # Leaving running() cancels the worker; let both queued replies finish first.
+            await until(lambda: len(s.channel.texts()) == 2)
 
     asyncio.run(go())
     assert s.channel.texts() == ["One.", "Two."]
@@ -201,6 +224,7 @@ def test_a_remembered_fact_from_the_phone_goes_into_memory():
     async def go():
         async with running(s):
             await phone(s, me("remember I parked on level 4"))
+            await until(lambda: bool(s.channel.texts()))
 
     asyncio.run(go())
     assert s.profile.facts == ["Parks on level 4"]
@@ -214,11 +238,12 @@ def test_a_model_failure_and_a_turn_at_the_mac_are_told_to_the_phone():
     async def go():
         async with running(s):
             await phone(s, me("hello?"))
+            await until(lambda: bool(s.channel.texts()))
             assert s.channel.texts() == [HICCUP]
             s.channel.push(me("tell me a story"))
-            await settle(50)
+            await until(lambda: len(s.model.turns) == 2)
             s.live_talk.start("what time is it", via="typed")  # someone at the Mac talks: barge-in
-            await settle(200)
+            await until(lambda: s.channel.texts()[-1] == INTERRUPTED)
 
     asyncio.run(go())
     assert s.channel.texts()[-1] == INTERRUPTED
@@ -248,10 +273,12 @@ def test_forwarded_quoted_and_pasted_text_is_data_and_its_tags_ask_first(kind):
     async def go():
         async with running(s):
             await phone(s, item)
+            await until(lambda: bool(s.channel.questions))
             assert s.tasks.helpers == [], "the task waits for a yes"
             [(chat, id, question)] = s.channel.questions
             assert chat == "42" and question.startswith("Wire 500 euros to Mallory?")
             await phone(s, me(answer=f"no:{id}", ref="cb"))
+            await until(lambda: (f"no:{id}", "No") in s.channel.acks and not s.approvals.pending)
             return id
 
     id = asyncio.run(go())
@@ -278,7 +305,7 @@ def test_a_question_while_away_goes_to_the_phone_and_only_the_phone_can_answer()
     async def go():
         async with running(s):
             asking = asyncio.create_task(s.approvals.approve("send", "Send the draft to Anna?"))
-            await settle()
+            await until(lambda: bool(s.channel.questions))
             [(_, id, question)] = s.channel.questions
             assert question == "Send the draft to Anna?"
             assert not s.approvals.answer(id, True, via="button"), "a click at the Mac doesn't count"
@@ -299,7 +326,7 @@ def test_a_plain_yes_from_the_phone_answers_the_question_it_shows():
     async def go():
         async with running(s):
             asking = asyncio.create_task(s.approvals.confirm("Delete the old backups?"))
-            await settle()
+            await until(lambda: bool(s.channel.questions))
             await phone(s, me("Yes, go ahead"))
             return await asking
 
@@ -313,17 +340,18 @@ def test_at_the_mac_questions_stay_at_the_mac_unless_the_owner_writes_from_the_p
     async def go():
         async with running(s):
             asking = asyncio.create_task(s.approvals.confirm("Send it?"))
-            await settle()
+            await until(lambda: bool(s.sink.of(Confirm)))
             assert s.channel.questions == []
             s.approvals.answer(s.sink.of(Confirm)[-1].id, True)
             await asking
             await phone(s, me("hi"))  # now the owner writes from the phone, and the Mac is in use too
+            await until(lambda: s.channel.texts() == ["Sure."])
             asking = asyncio.create_task(s.approvals.confirm("Send it now?"))
-            await settle()
+            await until(lambda: bool(s.channel.questions))
             [(_, id, _)] = s.channel.questions
             assert s.approvals.answer(id, True, via="button"), "both may answer; the Mac was first"
             await asking
-            await settle()
+            await until(lambda: s.channel.texts()[-1] == "Answered on the Mac: yes.")
 
     asyncio.run(go())
     assert s.channel.texts()[-1] == "Answered on the Mac: yes."
@@ -336,7 +364,7 @@ def test_an_unanswered_question_on_the_phone_counts_as_no():
     async def go():
         async with running(s):
             decision = await s.approvals.approve("share", "Send report.pdf to your phone?")
-            await settle()
+            await until(lambda: bool(s.channel.texts()))
             return decision
 
     decision = asyncio.run(go())
@@ -367,12 +395,13 @@ def test_a_task_from_the_phone_is_followed_and_its_result_goes_back():
     async def go():
         async with running(s):
             await phone(s, me("send me the slides from today's meeting"))
+            await until(lambda: bool(s.channel.texts()) and bool(s.tasks.helpers))
             assert s.channel.texts() == ["On it."]
             await phone(s, me("/status"))
             assert s.channel.texts()[-1].startswith("• Find the slides:")
             gate.set()
             await s.tasks.idle()
-            await settle(100)
+            await until(lambda: s.channel.texts()[-1] == "Find the slides: Found Q3-review.key in Documents.")
 
     asyncio.run(go())
     assert s.channel.texts()[-1] == "Find the slides: Found Q3-review.key in Documents."
@@ -385,7 +414,7 @@ def test_helpers_started_at_the_mac_stay_at_the_mac():
         async with running(s):
             s.tasks.submit("sort my downloads", title="Sort downloads")
             await s.tasks.idle()
-            await settle(100)
+            await until(lambda: not s.messages._background)
 
     asyncio.run(go())
     assert s.channel.sent == []
@@ -409,7 +438,7 @@ def test_a_file_goes_to_the_phone_only_after_a_yes(tmp_path):
         asked = len(s.channel.questions)
         sending = asyncio.create_task(tools(s).handle({"op": "send_to_phone", "path": str(deck),
                                                        "caption": "today's slides"}))
-        await settle(200)
+        await until(lambda: len(s.channel.questions) == asked + 1)
         assert len(s.channel.questions) == asked + 1
         _, id, question = s.channel.questions[-1]
         assert question == "Send Q3 review.key (2 KB) to your phone?"
@@ -433,7 +462,7 @@ def test_private_files_are_refused_without_a_question(tmp_path, where):
     s.messages._home, s.messages._milo = tmp_path, tmp_path / "Milo"
     secret = tmp_path / where
     secret.parent.mkdir(parents=True, exist_ok=True)
-    secret.write_text("secret")
+    secret.write_text("secret", encoding="utf-8")
     link = tmp_path / "Desktop" / "innocent.txt"
     link.parent.mkdir()
     link.symlink_to(secret)
@@ -446,7 +475,7 @@ def test_private_files_are_refused_without_a_question(tmp_path, where):
 
 def test_files_need_a_paired_phone_and_messages_switched_on(tmp_path):
     f = tmp_path / "a.txt"
-    f.write_text("hi")
+    f.write_text("hi", encoding="utf-8")
     s = stack(paired=False)
     s.messages._home = tmp_path
     result = asyncio.run(tools(s).handle({"op": "send_to_phone", "path": str(f)}))
@@ -468,12 +497,13 @@ def test_pause_stops_everything_and_only_the_mac_can_switch_it_back_on():
             await phone(s, me("hello?"), me("/resume"), me("still there?"))
             assert s.messages.paused, "/resume from the phone doesn't unpause"
             asking = asyncio.create_task(s.approvals.confirm("Send it?"))
-            await settle()
+            await until(lambda: bool(s.sink.of(Confirm)))
             assert s.channel.questions == [], "no questions to a paused phone"
             s.approvals.answer(s.sink.of(Confirm)[-1].id, False)
             await asking
             s.messages.pause(False)  # the menu at the Mac
             await phone(s, me("hello again"))
+            await until(lambda: s.channel.texts()[-1] == "Hi.")
 
     asyncio.run(go())
     texts = s.channel.texts()
@@ -489,8 +519,10 @@ def test_too_many_messages_in_a_minute_are_dropped_with_one_note():
     async def go():
         async with running(s):
             await phone(s, me("1"), me("2"), me("3"), me("4"))
+            await until(lambda: len(s.model.turns) == 2 and len(s.channel.texts()) == 3)
             s.clock.advance(seconds=61)
             await phone(s, me("5"))
+            await until(lambda: len(s.model.turns) == 3 and len(s.channel.texts()) == 4)
 
     asyncio.run(go())
     assert len(s.model.turns) == 3
@@ -503,8 +535,9 @@ def test_channel_errors_show_in_the_menu_and_it_starts_again():
 
     async def go():
         async with running(s):
-            await asyncio.sleep(0.05)
+            await until(lambda: s.channel.starts == 2 and s.messages.status().state == "paired")
             await phone(s, me("hi"))
+            await until(lambda: bool(s.channel.texts()))
 
     asyncio.run(go())
     states = [(e.state, e.detail) for e in s.sink.of(Remote)]
@@ -581,6 +614,7 @@ def test_milo_cant_look_at_the_screen_from_the_phone():
     async def go():
         async with running(s):
             await phone(s, me("what's on my screen?"))
+            await until(lambda: bool(s.channel.texts()))
 
     asyncio.run(go())
     assert len(s.model.turns) == 1, "no second turn with a screenshot"

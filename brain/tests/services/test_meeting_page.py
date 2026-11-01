@@ -119,7 +119,7 @@ def test_a_paused_stretch_stays_out_of_the_notes(tmp_path):
         await rig.finish()
 
     asyncio.run(go())
-    transcript = (rig.store.folder(rig.id) / "transcript.md").read_text()
+    transcript = (rig.store.folder(rig.id) / "transcript.md").read_text(encoding="utf-8")
     assert word(paused.line, 0) not in transcript and word(1, 0) in transcript
     assert all(word(paused.line, 0) not in l["text"] for l in shown_lines(rig))
 
@@ -140,7 +140,7 @@ def test_the_notes_page_has_the_markdown_the_sections_and_the_transcript(tmp_pat
     lines = rig.s.sink.of(MeetingLines)
     assert lines[0].reset and lines[0].lines == [] and len(shown_lines(rig)) >= 6
     [page] = rig.s.sink.of(MeetingNotesReady)
-    notes = (rig.store.folder(page.id) / "notes.md").read_text()
+    notes = (rig.store.folder(page.id) / "notes.md").read_text(encoding="utf-8")
     assert page.markdown == notes and page.summary == "We moved the release by a week."
     assert page.decisions == ("Release on the 21st",)
     assert page.todos == ({"text": "Write to the customer", "owner": "", "due": "Friday", "mine": True, "added": False},

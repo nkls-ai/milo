@@ -1,3 +1,4 @@
+from tests.local_transport import short_tempdir
 """Dictation end to end, on every gate: a real brain process hears recorded "speech" over the WAV microphone
 and is driven over its socket like the app drives it. Tones stand in for words and for Whisper (see
 milo.adapters.stt.tones), so it needs no model and checks every word. scripts/e2e-dictation.sh runs the same
@@ -17,7 +18,7 @@ GATE = [c for c in e2e.CASES if c.id in e2e.GATE]
 
 
 def test_dictation_end_to_end_loses_no_words_and_stays_fast():
-    root = Path(tempfile.mkdtemp(prefix="milo-e2e-", dir="/tmp"))  # short: a socket path has 104 bytes at most
+    root = Path(tempfile.mkdtemp(prefix="milo-e2e-", dir=short_tempdir))  # short: a socket path has 104 bytes at most
 
     async def each_in_its_own_brain():  # in parallel: the recordings play in real time
         return await asyncio.gather(*(e2e.run([case], root / case.id, fake=True, streams=("preview", "type"))

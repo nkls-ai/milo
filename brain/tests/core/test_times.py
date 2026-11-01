@@ -9,6 +9,8 @@ from milo.core import times
 
 @pytest.fixture
 def berlin():
+    if not hasattr(time, "tzset"):
+        pytest.skip("this test changes POSIX TZ; Windows timezone is managed by the OS")
     old = os.environ.get("TZ")
     os.environ["TZ"] = "Europe/Berlin"
     time.tzset()

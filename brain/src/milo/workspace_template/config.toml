@@ -34,6 +34,13 @@ binary = ""                       # empty: PATH, then ~/.local/bin
 model = "claude-haiku-5-5"
 effort = "low"
 
+# Or talk through your Codex/ChatGPT login: set [chat] use = "codex_live".
+# Run `codex login` in your own terminal first. No API key is needed.
+[chat.codex_live]
+binary = ""                       # empty: PATH, then the Codex/ChatGPT app's bundled CLI
+model = ""                        # empty: the account's Codex default
+reasoning_effort = "low"
+
 # Or any OpenAI-style chat API: use = "openai_compat" in [chat] and this table without the #s.
 # OpenAI, OpenRouter (base_url = "https://openrouter.ai/api/v1"), Ollama ("http://localhost:11434/v1")
 # or LM Studio ("http://localhost:1234/v1"). The key goes alone in ~/Milo/secrets/<key_ref>; local
@@ -70,7 +77,9 @@ timeout_s = 180
 # Lets Milo's helper use your calendar, reminders, mail, notes, shortcuts and files.
 # Mail is only ever drafted, never sent. Switch off anything he shouldn't touch.
 enabled = true
-# use = "mac"                     # left out: this computer's apps (mac on a Mac, none elsewhere yet)
+# use = "mac"                     # left out: mac on a Mac, desktop files on Windows/Linux
+# Windows with Classic Outlook: use = "outlook". New Outlook has no COM support.
+# Any desktop with a CalDAV service: use = "caldav" and uncomment its table below.
                                   # fake: made-up data in ~/Milo/fake, for trying things out
 calendar = true
 reminders = true
@@ -89,6 +98,22 @@ brightness = true                 # make the screen brighter or dimmer
 
 [connections.mac]
 files_scope = "~"                 # files outside this folder are never searched or read
+
+[connections.desktop]
+files_scope = "~"
+
+[connections.outlook]
+calendar = ""                    # default Classic Outlook calendar, or one of its child folders
+tasks = ""                       # default Tasks folder, or a child folder
+notes = ""                       # default Notes folder, or a child folder
+
+# [connections.caldav]
+# url = "https://calendar.example.com/dav/"
+# username = "you@example.com"
+# key_ref = "caldav.key"           # password/app password alone in ~/Milo/secrets/caldav.key
+# calendar = "Personal"           # choose a unique calendar by its displayed name
+# tasks = "Personal"              # a calendar that supports VTODO tasks
+# timeout_s = 20
 
 [weather]
 # The forecast Milo answers "do I need an umbrella tomorrow?" from, read about every 45 minutes.
@@ -180,7 +205,7 @@ keep = 3
 
 [stt]
 # Dictation, and talking to Milo unless `talk` is set. Left out: mlx_whisper (on this computer) on a Mac,
-# elevenlabs elsewhere (needs the key, see [tts.elevenlabs]).
+# faster_whisper on Windows and Linux (local CPU, no key required).
 # use = "mlx_whisper"
 # A cloud service that listens along while you talk to Milo, so the text is ready 0.2 s after you let go
 # instead of after a full pass here. "elevenlabs" sends what you say to Milo to ElevenLabs (it needs the key,
@@ -199,11 +224,22 @@ preview_model = "mlx-community/whisper-base-mlx"  # live words while you speak (
 language = ""                     # empty: auto-detect. "de" or "en" to pin it.
 vocabulary = "Milo, Codex, Claude" # names Whisper should spell right
 
+[stt.faster_whisper]
+# "auto": an NVIDIA GPU when its libraries are installed (uv sync --extra desktop --extra cuda), else the CPU.
+# Then auto models: large-v3-turbo with a small preview on the GPU, small with a base preview on the CPU.
+model = "auto"                   # or a Whisper size/name: small, medium, large-v3-turbo
+preview_model = "auto"           # lightweight live words; empty reuses the final model
+device = "auto"                  # auto | cpu | cuda
+compute_type = "auto"            # auto: int8_float16 on the GPU, int8 on the CPU
+language = ""
+vocabulary = "Milo, Codex, Claude"
+cpu_threads = 0                  # 0 lets CTranslate2 choose
+
 [tts]
 # pocket: on this Mac, Kyutai's Pocket TTS on the CPU, piece by piece, about 7x faster than real time, English
 # and German. omnivoice: on this Mac, a cloned voice on the GPU, slower. elevenlabs: a cloud voice that speaks a
 # whole answer as one, starting about 0.2 s after his first sentence is written; needs a key in
-# ~/Milo/secrets/elevenlabs.key. say: the Mac's own voice. Left out: pocket on a Mac, elevenlabs elsewhere.
+# ~/Milo/secrets/elevenlabs.key. say: the Mac's own voice. Left out: pocket on every desktop.
 # use = "pocket"
 # Used if `use` fails to load, and while elevenlabs can't be reached. It loads only when needed: "say" at
 # once, "omnivoice" sounds more like Milo but takes a while and a few GB of memory the first time.
@@ -292,8 +328,8 @@ after_min = 90
 grace_hours = 12
 
 [ui]
-dictate_key = "fn"                # fn | right_option | right_command | right_control
-talk_key = "right_option"
+# dictate_key = "fn"              # Mac default; right_control on Windows/Linux
+# talk_key = "right_option"       # right Alt on Windows/Linux
 hands_free_max_s = 300            # double-tap a key for hands-free; it stops by itself after this
 voice = true                      # false: answers show in the bubble without being said out loud
 hide_after_s = 15                 # Milo leaves the screen after this many seconds with nothing going on; 0: he stays
@@ -322,8 +358,9 @@ show_window = true                # bring the window he works in to the front, s
 # matters to it. Everything stays on this Mac in ~/Milo/memory. See "What Milo knows" in the menu bar.
 enabled = true
 recall_tokens = 800               # how much memory goes along with each turn, at most (about 4 characters a token)
-# mlx_e5 (a small model, 140 MB, finds meaning) | hash (no model, finds words). Left out: mlx_e5 on a Mac,
-# hash elsewhere. Changing it rebuilds the search index on the next start.
+# mlx_e5 (Apple GPU) | onnx_e5 (portable CPU) | hash (no model, finds words).
+# Left out: mlx_e5 on a Mac, onnx_e5 on Windows/Linux. Both e5 engines find meaning locally.
+# Changing the engine rebuilds the cached search index from the memory files on the next start.
 # embedder = "mlx_e5"
 dictations = false                # also remember what you dictate into other apps
 # Once a night, while the Mac is idle and plugged in, Milo sums up the day, learns new facts and fixes
@@ -334,6 +371,12 @@ consolidate_calls_per_day = 2     # hard cap; 0 turns it off
 [memory.mlx_e5]
 model = "intfloat/multilingual-e5-small"
 device = "gpu"                    # gpu | cpu
+
+[memory.onnx_e5]
+model = "Xenova/multilingual-e5-small"
+revision = "main"
+filename = "onnx/model_quantized.onnx"
+threads = 2                       # CPU threads; keep spare capacity for speech and the desktop
 
 [meetings]
 # When Milo notices a call (Zoom, Teams, Meet, FaceTime, Slack huddles): "ask" asks once whether to take notes,

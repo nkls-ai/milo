@@ -15,9 +15,9 @@ from typing import Any
 from milo.adapters.home.focus import ShortcutsFocus
 from milo.core.app_connections import AppCalendar, AppContacts, AppReminders
 from milo.core.control import Protected
-from milo.core.ports import Connections
+from milo.core.ports import Connections, ConnectionIdentity
 from milo.core.registry import CONNECTIONS, AdapterContext, options_from
-from milo.core.types import ToolError
+from milo.core.types import ToolError, AppRef
 from milo.memory.workspace import Workspace
 from milo.transport.tool_client import BrainClient
 
@@ -132,6 +132,7 @@ end run
 
 class AppleMail:
     controls = "Mail"
+    identity = ConnectionIdentity("Mail", AppRef("Mail"))
     """The app it scripts: the brain checks the system lets Milo control it before the first call (ADR 0025)."""
 
     def search(self, query: str, limit: int = 20) -> list[dict]:
@@ -246,6 +247,7 @@ def _note_html(text: str) -> str:
 
 
 class AppleNotes:
+    identity = ConnectionIdentity("Notes", AppRef("Notes", "com.apple.Notes"))
     controls = "Notes"
     """The app it scripts: the brain checks the system lets Milo control it before the first call (ADR 0025)."""
 
@@ -362,6 +364,7 @@ class FaceTimeCalls:
 
 
 class SpotlightFiles:
+    identity = ConnectionIdentity("Finder", AppRef("Finder", "com.apple.finder"))
     def __init__(self, scope: Path, protected: Protected | None = None):
         self.scope = scope
         self.protected = protected
@@ -398,7 +401,9 @@ class SpotlightFiles:
 def _mac(options: Mapping[str, Any], ctx: AdapterContext) -> Connections:
     o = options_from(MacOptions, options, "connections.mac")
     brain = BrainClient(Workspace(ctx.home).tools_socket_path)
-    return Connections(calendar=AppCalendar(_app(brain)), reminders=AppReminders(_app(brain)), mail=AppleMail(),
+    return Connections(calendar=AppCalendar(_app(brain), ConnectionIdentity("Calendar", AppRef("Calendar", "com.apple.iCal"))),
+                       reminders=AppReminders(_app(brain), ConnectionIdentity("Reminders", AppRef("Reminders", "com.apple.reminders"))),
+                       mail=AppleMail(),
                        notes=AppleNotes(), shortcuts=ShortcutsApp(),
                        files=SpotlightFiles(Path(o.files_scope).expanduser().resolve(), Protected(ctx.home)),
                        focus=ShortcutsFocus(ctx.state_dir / "shortcuts"),

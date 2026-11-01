@@ -59,7 +59,7 @@ class Heard(Event):
 
 @dataclass(frozen=True)
 class Level(Event):
-    """Mic loudness while listening, voice loudness while speaking. 0..1, about 20 per second."""
+    """Mic loudness while listening, voice loudness while speaking. 0..1, about 30 per second."""
 
     type: ClassVar[str] = "level"
     value: float

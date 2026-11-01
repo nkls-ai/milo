@@ -15,7 +15,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from milo.core.app_connections import AppBrightness, AppCalendar, AppContacts, AppPlayer, AppReminders
-from milo.core.ports import Connections
+from milo.core.ports import Connections, connection_identity
 from milo.core.types import ToolError
 
 BridgeCall = Callable[[str, dict], Awaitable[Any]]
@@ -47,8 +47,10 @@ def in_brain(connections: Connections, call: BridgeCall, *, music: bool, brightn
 
     return dataclasses.replace(
         connections,
-        calendar=AppCalendar(app) if via_app(connections.calendar) else connections.calendar,
-        reminders=AppReminders(app) if via_app(connections.reminders) else connections.reminders,
+        calendar=AppCalendar(app, connection_identity(connections.calendar, "Calendar"))
+        if via_app(connections.calendar) else connections.calendar,
+        reminders=AppReminders(app, connection_identity(connections.reminders, "Reminders"))
+        if via_app(connections.reminders) else connections.reminders,
         music=connections.music or (AppPlayer(app) if music else None),
         contacts=AppContacts(app) if via_app(connections.contacts) else connections.contacts,
         music_apps=connections.music_apps if music else None,

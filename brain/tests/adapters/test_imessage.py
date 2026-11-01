@@ -3,6 +3,7 @@
 import asyncio
 import os
 import sqlite3
+from pathlib import Path
 
 import pytest
 
@@ -119,7 +120,8 @@ def test_files_go_from_a_private_copy(db, tmp_path):
     ch = channel(db, tmp_path, run)
     asyncio.run(ch.send_file(HANDLE, "slides.key", b"deck", "today's slides"))
     copy = run.calls[-1][-2]
-    assert open(copy, "rb").read() == b"deck" and os.stat(copy).st_mode & 0o777 == 0o600
+    from milo import system
+    assert Path(copy).read_bytes() == b"deck" and not system.open_to_others(Path(copy))
     assert run.calls[0][-2] == MARK + "today's slides"
 
 

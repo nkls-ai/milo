@@ -19,7 +19,7 @@ PM = datetime(2026, 10, 29, 13, 0)
 
 def default_section() -> dict:
     """The [heartbeat] table exactly as shipped in the workspace template."""
-    text = (resources.files("milo") / "workspace_template" / "config.toml").read_text()
+    text = (resources.files("milo") / "workspace_template" / "config.toml").read_text(encoding="utf-8")
     return copy.deepcopy(tomllib.loads(text)["heartbeat"])
 
 

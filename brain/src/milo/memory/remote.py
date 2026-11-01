@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from milo import system
+
 import json
 import logging
 import os
@@ -34,4 +36,4 @@ class JsonRemoteState:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=1, sort_keys=True)
         os.chmod(tmp, 0o600)
-        os.replace(tmp, self.path)
+        system.replace_file(tmp, self.path)

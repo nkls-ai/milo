@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .key_names import PLAIN_KEY_NAMES, KeyNames
+
 
 @dataclass(frozen=True)
 class Platform:
@@ -39,6 +41,10 @@ class Platform:
     so after outside text Milo asks first."""
     tool_dirs: tuple[str, ...] = ()
     """Where package managers live besides PATH, which is bare when the app starts the brain (install_package)."""
+    ui_defaults: tuple[tuple[str, str], ...] = ()
+    """Platform defaults for keys, overridden by explicit user settings."""
+    key_names: KeyNames = PLAIN_KEY_NAMES
+    """How keys are written for the user on this keyboard (Settings labels, key hints)."""
 
     def use(self, section: str) -> str | None:
         """The default `use` for a pluggable config section, None for sections that must name one."""
@@ -49,5 +55,5 @@ class Platform:
 
 ANYWHERE = Platform("other", stt="elevenlabs", tts="elevenlabs", tts_fallback="", embedder="hash",
                     connections="none")
-"""Engines that need nothing from the OS: cloud hearing and voice (keys in ~/Milo/secrets), the hashing embedder,
-no connections. What Linux and Windows get until they have local engines of their own."""
+"""Fallbacks for an unspecified platform: cloud speech, hashing and no app connections.
+Known desktop platforms replace these with their own local engines in adapters/platform.py."""

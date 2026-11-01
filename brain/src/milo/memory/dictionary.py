@@ -3,6 +3,8 @@ milo.core.dictionary). The user edits it too, so writes keep every line they don
 
 from __future__ import annotations
 
+from milo import system
+
 import logging
 import os
 import tempfile
@@ -111,7 +113,7 @@ class MarkdownDictionary:
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write(text)
-            os.replace(tmp, self.path)
+            system.replace_file(tmp, self.path)
         except BaseException:
             Path(tmp).unlink(missing_ok=True)
             raise

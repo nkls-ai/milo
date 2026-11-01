@@ -1,3 +1,4 @@
+from tests.local_transport import connect as local_connect
 """UnixSocketServer against a real Unix socket. Paths live under /tmp: macOS caps sun_path at 104 bytes."""
 
 import asyncio
@@ -24,7 +25,7 @@ class Client:
 
     @classmethod
     async def connect(cls, path: Path) -> "Client":
-        return cls(*await asyncio.open_unix_connection(str(path)))
+        return cls(*await local_connect(path))
 
     async def read(self) -> dict:
         line = await asyncio.wait_for(self.reader.readline(), TIMEOUT_S)
@@ -155,9 +156,12 @@ def test_every_client_gets_broadcasts(sock_path):
 
 def test_a_stale_socket_file_is_replaced(sock_path):
     sock_path.parent.mkdir(parents=True)
-    stale = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    stale.bind(str(sock_path))
-    stale.close()  # the file stays behind, nobody listens on it
+    if os.name == "nt":
+        sock_path.write_text("{}", encoding="utf-8")  # an endpoint left by a stopped Windows brain
+    else:
+        stale = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        stale.bind(str(sock_path))
+        stale.close()  # the file stays behind, nobody listens on it
     assert sock_path.exists()
 
     async def scenario(server, next_command):
@@ -183,6 +187,7 @@ def test_a_live_socket_makes_a_second_server_exit(sock_path):
     serve(sock_path, scenario)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX peer credentials and modes; Windows tests authenticated IPC")
 def test_socket_is_0600_and_its_directory_0700(sock_path):
     sock_path.parent.mkdir(mode=0o755, parents=True)
     os.chmod(sock_path.parent, 0o755)
@@ -196,6 +201,7 @@ def test_socket_is_0600_and_its_directory_0700(sock_path):
     serve(sock_path, scenario)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX peer credentials and modes; Windows tests authenticated IPC")
 def test_start_restores_the_umask(sock_path):
     before = os.umask(0o022)
     try:
@@ -239,6 +245,7 @@ def test_stopping_serve_forever_does_not_wait_for_connected_clients(sock_path):
     asyncio.run(run())
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX peer credentials and modes; Windows tests authenticated IPC")
 def test_peer_uid_is_our_own_uid():
     a, b = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
@@ -333,7 +340,8 @@ def test_a_request_goes_to_the_newest_app_only_and_its_hanging_up_is_reported(so
     asyncio.run(run())
 
 
-def test_an_observer_sends_commands_but_never_gets_the_apps_requests(sock_path):
+@pytest.mark.parametrize("hello", [b'{"type": "observe"}', b'{"type":"observe"}', b' { "type" : "observe" } '])
+def test_an_observer_sends_commands_but_never_gets_the_apps_requests(sock_path, hello):
     """A test driver (scripts/drive-milo) talks to the running brain while the real app keeps doing the work."""
     seen: list = []
 
@@ -348,7 +356,7 @@ def test_an_observer_sends_commands_but_never_gets_the_apps_requests(sock_path):
             await app.read_greeting()
             driver = await Client.connect(sock_path)
             await driver.read_greeting()
-            driver.writer.write(b'{"type": "observe"}\n{"type": "text", "text": "open YouTube"}\n')
+            driver.writer.write(hello + b'\n{"type": "text", "text": "open YouTube"}\n')
             await driver.writer.drain()
             await asyncio.sleep(0.05)
             assert [c.type for c in seen] == ["text"], "observe is the transport's own, the text goes on"
@@ -364,6 +372,7 @@ def test_an_observer_sends_commands_but_never_gets_the_apps_requests(sock_path):
     asyncio.run(run())
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX peer credentials and modes; Windows tests authenticated IPC")
 def test_a_peer_whose_user_the_mac_cant_tell_is_refused(monkeypatch):
     # L3: macOS always answers LOCAL_PEERCRED, so no answer there means something is off: refuse.
     import sys

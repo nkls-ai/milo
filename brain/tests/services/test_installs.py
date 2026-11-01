@@ -329,7 +329,7 @@ echo "added 1 package in 2s"
 
 
 def read(log: Path) -> dict[str, str]:
-    return dict(line.split("=", 1) for line in log.read_text().splitlines())
+    return dict(line.split("=", 1) for line in log.read_text(encoding="utf-8").splitlines())
 
 
 def test_the_installer_finds_a_manager_off_path_and_runs_it_in_an_empty_folder(fake_npm, tmp_path):
@@ -378,4 +378,4 @@ def test_npm_from_nvm_is_found_without_it_on_path(tmp_path):
         (tmp_path / ".nvm" / "versions" / "node" / version / "bin").mkdir(parents=True)
     installer = Installer(home=tmp_path, env={"PATH": "/usr/bin:/bin"})
     nodes = [d for d in installer.path() if ".nvm" in d]
-    assert nodes[0].endswith("v22.23.3/bin"), "the newest node first"
+    assert Path(nodes[0]).parts[-2:] == ("v22.23.3", "bin"), "the newest node first"

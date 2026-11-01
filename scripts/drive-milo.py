@@ -21,11 +21,30 @@ import socket
 import subprocess
 import sys
 import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "brain" / "src"))
+from milo import system
 
 SHOWN = {"bubble", "confirm", "confirm_done", "action_done", "status", "heard", "reply_delta", "activity"}
 
 
 def front_app() -> str:
+    if sys.platform == "win32":
+        try:
+            import win32gui
+            import win32process
+            import psutil
+            _, pid = win32process.GetWindowThreadProcessId(win32gui.GetForegroundWindow())
+            return psutil.Process(pid).name()
+        except Exception:
+            return "unavailable"
+    if sys.platform != "darwin":
+        try:
+            return subprocess.run(["xdotool", "getactivewindow", "getwindowname"], capture_output=True,
+                                  text=True, timeout=2).stdout.strip() or "unavailable"
+        except (OSError, subprocess.SubprocessError):
+            return "unavailable"
     asn = subprocess.run(["lsappinfo", "front"], capture_output=True, text=True).stdout.strip()
     info = subprocess.run(["lsappinfo", "info", "-only", "name", asn], capture_output=True, text=True).stdout
     return info.split("=", 1)[-1].strip().strip('"')
@@ -37,10 +56,10 @@ def main() -> int:
     parser.add_argument("--wait", type=float, default=10.0, help="seconds to watch after sending")
     parser.add_argument("--speak", action="store_true", help="let Milo speak the answer aloud")
     parser.add_argument("--answer", choices=("yes", "no"), help="answer his questions like a click")
+    parser.add_argument("--home", type=Path, default=Path(os.environ.get("MILO_HOME", "~/Milo")).expanduser())
     args = parser.parse_args()
 
-    sock = socket.socket(socket.AF_UNIX)
-    sock.connect(os.path.expanduser("~/Milo/run/brain.sock"))
+    sock = system.connect_local(args.home / "run" / "brain.sock", 3.0)
     sock.sendall(b'{"type": "observe"}\n')
     time.sleep(0.2)  # let the greeting pass
     sock.setblocking(False)

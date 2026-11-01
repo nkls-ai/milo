@@ -142,6 +142,6 @@ class TonesOptions:
 @TRANSCRIBERS.register("tones")
 def _tones(options: Mapping[str, Any], ctx: AdapterContext) -> ToneTranscriber:
     o = options_from(TonesOptions, options, "stt.tones")
-    words = json.loads(Path(o.words).expanduser().read_text()) if o.words else []
+    words = json.loads(Path(o.words).expanduser().read_text(encoding="utf-8")) if o.words else []
     return ToneTranscriber(ToneCodec(words), full_s=o.full_s, quick_s=o.quick_s, quick_per_s=o.quick_per_s,
                            preview_s=o.preview_s, wake_s=o.wake_s)

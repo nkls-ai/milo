@@ -302,6 +302,14 @@ class AppHands(Protocol):
         ...
 
 
+class OfficeTools(Protocol):
+    """Platform document operations with a read-only target description before changes."""
+
+    async def describe(self, tool: str, args: dict) -> dict: ...
+
+    async def perform(self, tool: str, args: dict) -> dict: ...
+
+
 @runtime_checkable
 class AppAccess(Protocol):
     """What the system lets Milo do, as the app sees it (ADR 0025). Never raises: what it can't tell is UNKNOWN."""
@@ -655,6 +663,27 @@ class ProactiveEngine(Protocol):
 #
 # Every method blocks and raises ToolError with a plain-language message. Dates are naive local time.
 # Results are JSON-ready dicts for the agent.
+
+
+@dataclass(frozen=True)
+class ConnectionIdentity:
+    """Optional adapter metadata: a visible label and the real app used for permission scopes.
+
+    Remote services may have a label without a local app. An unrecognized backend
+    gets a neutral label and no reusable app permission.
+    """
+    label: str
+    app: AppRef | None = None
+
+
+@runtime_checkable
+class NamedConnection(Protocol):
+    identity: ConnectionIdentity
+
+
+def connection_identity(backend: object, fallback: str) -> ConnectionIdentity:
+    identity = getattr(backend, "identity", None)
+    return identity if isinstance(identity, ConnectionIdentity) else ConnectionIdentity(fallback)
 
 
 @runtime_checkable

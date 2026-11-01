@@ -46,9 +46,9 @@ def read_secret(path: Path, what: str, *, missing: str = "") -> str:
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode):
             raise SecretError(f"{what} file {path} must be a plain file, not a link or a folder.")
-        if not system.owned_by_me(info):
+        if not system.owned_by_me(fd):
             raise SecretError(f"{what} file {path} belongs to another user.")
-        if system.open_to_others(info):
+        if system.open_to_others(fd):
             try:
                 system.make_private(fd, FILE_MODE)
             except OSError as e:
@@ -76,14 +76,38 @@ def _private_folder(folder: Path, what: str) -> None:
         return  # the file can't be there either: open() says it is missing
     except OSError as e:
         raise SecretError(f"Can't check the folder {folder}: {e.strerror}.") from None
-    if not stat.S_ISDIR(info.st_mode):
+    if not stat.S_ISDIR(info.st_mode) or getattr(info, "st_reparse_tag", 0):
         raise SecretError(f"The folder {folder} that holds {what.lower()} must be a real folder, not a link.")
-    if not system.owned_by_me(info):
+    if not system.owned_by_me(folder):
         raise SecretError(f"The folder {folder} that holds {what.lower()} belongs to another user.")
-    if system.open_to_others(info):
+    if system.open_to_others(folder):
         try:
             system.make_private(folder, DIR_MODE)
         except OSError as e:
             raise SecretError(f"Others on this computer can list {folder}, and Milo couldn't fix it ({e.strerror}). "
                               f"Run: chmod {DIR_MODE:o} {folder}") from None
         log.warning("%s: others on this computer could list %s; made it %o", what, folder, DIR_MODE)
+
+
+def write_secret(path: Path, text: str, what: str) -> None:
+    """Puts `text` alone in the secret file `path`, private to the user, replacing what was there. For a key the
+    user pasted into Setup; the text is never logged. Raises SecretError, leaving any old file as it was."""
+    text = text.strip()
+    if not text or "\n" in text or "\r" in text or "\0" in text:
+        raise SecretError(f"{what} must be a single line.")
+    path = path.expanduser()
+    folder = path.parent
+    try:
+        folder.mkdir(mode=DIR_MODE, parents=True, exist_ok=True)
+        _private_folder(folder, what)
+        partial = folder / f".{path.name}.new"
+        fd = os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_BINARY", 0), FILE_MODE)
+        try:
+            os.write(fd, (text + "\n").encode("utf-8"))
+        finally:
+            os.close(fd)
+        system.make_private(partial, FILE_MODE)
+        os.replace(partial, path)
+    except OSError as e:
+        raise SecretError(f"Couldn't save {what.lower()} in {folder}: {e.strerror}.") from None
+    log.info("%s saved in %s", what, path)

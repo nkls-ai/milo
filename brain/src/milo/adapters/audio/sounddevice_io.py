@@ -20,6 +20,7 @@ from milo.core.registry import AUDIO_INPUTS, AUDIO_OUTPUTS, AdapterContext, opti
 from milo.core.types import STT_SAMPLE_RATE, Audio
 
 BLOCK = 1024
+MIC_BLOCK = 512  # 32 ms: the level meter moves ~30 times a second, evenly, instead of in 64 ms steps
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,12 @@ class Recorder:
     def active(self) -> bool:
         return self._stream is not None
 
+    def warm(self) -> None:
+        """Start PortAudio and find the input device now, at brain start, without opening the mic. The first key
+        press otherwise paid for both (about 0.1 s on Windows) and lost the first syllable."""
+        import sounddevice as sd
+        sd.query_devices(self.device, "input") if self.device is not None else sd.query_devices(kind="input")
+
     def start(self, on_level: LevelCallback) -> None:
         if self._stream is not None:
             return
@@ -69,8 +76,8 @@ class Recorder:
             self._chunks.append(mono)
             on_level(level_of(mono))
 
-        stream = sd.InputStream(samplerate=STT_SAMPLE_RATE, channels=1, dtype="float32", blocksize=BLOCK,
-                                device=self.device, callback=callback)
+        stream = sd.InputStream(samplerate=STT_SAMPLE_RATE, channels=1, dtype="float32", blocksize=MIC_BLOCK,
+                                latency="low", device=self.device, callback=callback)
         stream.start()
         self._stream = stream
 

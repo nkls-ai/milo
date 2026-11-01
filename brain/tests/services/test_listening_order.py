@@ -1,3 +1,5 @@
+from tests.local_transport import short_tempdir
+from tests.local_transport import connect as local_connect
 """A key press right after a release: the mic opens at once, and the texts come out in recording order.
 
 These run the STT on real threads (the Stack's inline executor can't show waits like these) and one of them
@@ -49,7 +51,7 @@ def threaded(transcriber: FakeTranscriber, workers: int = 1) -> tuple[Stack, Thr
 
 def test_a_key_press_right_after_a_release_opens_the_mic_at_once_over_the_socket():
     s, executor = threaded(GatedTranscriber("First one.", "Second one.", wait_s=1.0))  # a slow, paged-out model
-    path = Path(tempfile.mkdtemp(dir="/tmp", prefix="milo-")) / "run" / "brain.sock"  # short: 104 bytes at most
+    path = Path(tempfile.mkdtemp(dir=short_tempdir, prefix="milo-")) / "run" / "brain.sock"  # short: 104 bytes at most
     starts: list[float] = []
     start = s.mic.start
     s.mic.start = lambda on_level: (starts.append(time.monotonic()), start(on_level))[1]
@@ -57,7 +59,7 @@ def test_a_key_press_right_after_a_release_opens_the_mic_at_once_over_the_socket
     async def run() -> float:
         server = UnixSocketServer(path, s.brain.handle, s.brain.greeting)
         await server.start()
-        _, writer = await asyncio.open_unix_connection(str(path))
+        _, writer = await local_connect(path)
 
         async def send(message: dict) -> float:
             writer.write((json.dumps(message) + "\n").encode())

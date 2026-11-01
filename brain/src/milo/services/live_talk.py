@@ -452,7 +452,7 @@ class LiveTalk:
             self._notes[:0] = notes
             self._earlier[:0] = earlier
             self._end_reply(shown, parser)
-            self._hiccup()
+            self._hiccup(e.said)
             return None
         except Exception:
             log.exception("live turn crashed")
@@ -721,13 +721,14 @@ class LiveTalk:
         self._effects.apply(parser, rule, held=held, remember=remember, language=self._language.code)
         self._effects.take_back(parser, speak=self._speak)
 
-    def _hiccup(self) -> None:
+    def _hiccup(self, said: str = "") -> None:
+        """`said`: the model's own plain reason with its fix ("I can't reach Ollama…"), else the generic line."""
         self._system = None  # the conversation may be broken: start a fresh one next turn
         self._speaker.interrupt()
         self._ui.thinking = False
         self._ui.set_emotion(Emotion.CONFUSED)
-        self._ui.emit(Bubble(HICCUP))
-        self._transcript.say(HICCUP, Emotion.CONFUSED)
+        self._ui.emit(Bubble(said or HICCUP))
+        self._transcript.say(said or HICCUP, Emotion.CONFUSED)
         self._ui.rest()
 
     def _log(self, started: float, first_at: float | None, spoken: str) -> None:

@@ -1,3 +1,4 @@
+from tests.local_transport import connect as local_connect
 """Ordering bugs between the event loop, the brain socket and the STT and TTS threads (review finding A8).
 
 The rest of the suite runs every executor inline (tests/services/stack.py), so STT, TTS and memory never
@@ -40,7 +41,7 @@ class SlowVoice(FakeVoice):
 async def connect(s: Stack, path: Path):
     server = UnixSocketServer(path, s.brain.handle, s.brain.greeting)
     await server.start()
-    reader, writer = await asyncio.open_unix_connection(str(path))
+    reader, writer = await local_connect(path)
 
     async def send(message: dict) -> float:
         writer.write(json.dumps(message).encode() + b"\n")
@@ -112,7 +113,7 @@ def test_a_request_to_an_app_that_quits_fails_when_it_quits_not_at_the_timeout(s
         bridge = AppBridge(server, timeout_s=30)
         server.on_client_gone.append(bridge.app_gone)
         await server.start()
-        reader, writer = await asyncio.open_unix_connection(str(sock_path))
+        reader, writer = await local_connect(sock_path)
         await asyncio.sleep(0.05)
         calling = asyncio.create_task(bridge.call("calendar.events", {"start": "2026-10-30T00:00"}))
         while json.loads(await asyncio.wait_for(reader.readline(), 2)).get("type") != "app_request":

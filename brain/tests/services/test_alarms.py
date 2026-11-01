@@ -111,9 +111,11 @@ def test_okay_im_up_ends_it_and_typing_or_stop_end_it_too(tmp_path):
         await ring_at(30)
         await s.brain.handle(TextInput("okay I'm up", True, ""))
         assert s.alarms.ringing is None, "a typed message is the user being there"
-        await settle()
+        # TextInput starts a background turn: wait for it to enqueue the stop action.
+        assert s.live_talk._turn is not None
+        await asyncio.wait_for(asyncio.shield(s.live_talk._turn), timeout=5)
         await s.quick.idle()
-        await settle()
+        await until(lambda: said(s).endswith("Alarm off."))
         assert said(s).endswith("Alarm off.")
         await say(s, "another at ten")
         await ring_at(30)

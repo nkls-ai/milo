@@ -1,0 +1,154 @@
+{
+ "page": "SetupPage",
+ "size": [
+  620,
+  1240
+ ],
+ "states": {
+  "ollama": {
+   "dictateKey": "Right Ctrl",
+   "tried": true,
+   "setupBackend": {
+    "config": "[chat]\nuse = \"openai_compat\"\n\n[chat.openai_compat]\nbase_url = \"http://localhost:11434/v1\"\nmodel = \"llama3.2:3b\"\nkey_ref = \"\"\n\n[harness]\nuse = \"none\"\n",
+    "installed": [
+     "claude"
+    ],
+    "detected": [
+     {
+      "id": "ollama",
+      "label": "Ollama",
+      "baseUrl": "http://localhost:11434/v1",
+      "models": [
+       "gemma3:4b",
+       "llama3.2:3b",
+       "qwen2.5:7b",
+       "qwen3:8b"
+      ]
+     }
+    ],
+    "models": {
+     "http://localhost:11434/v1": [
+      "gemma3:4b",
+      "llama3.2:3b",
+      "qwen2.5:7b",
+      "qwen3:8b"
+     ]
+    }
+   }
+  },
+  "lmstudio-off": {
+   "dictateKey": "Right Ctrl",
+   "tried": true,
+   "setupBackend": {
+    "config": "[chat]\nuse = \"openai_compat\"\n\n[chat.openai_compat]\nbase_url = \"http://localhost:1234/v1\"\nmodel = \"\"\nkey_ref = \"\"\n\n[harness]\nuse = \"none\"\n",
+    "installed": [
+     "claude"
+    ],
+    "detected": [],
+    "models": {
+     "http://localhost:1234/v1": "I can't reach localhost:1234. If it's a model server on this computer, like Ollama or LM Studio, start it; otherwise check the address in Connections & models."
+    }
+   }
+  },
+  "openrouter": {
+   "dictateKey": "Right Ctrl",
+   "tried": true,
+   "setupBackend": {
+    "config": "[chat]\nuse = \"openai_compat\"\n\n[chat.openai_compat]\nbase_url = \"https://openrouter.ai/api/v1\"\nmodel = \"anthropic/claude-haiku-4.5\"\nkey_ref = \"openrouter.key\"\n\n[harness]\nuse = \"claude\"\n",
+    "installed": [
+     "claude"
+    ],
+    "secrets": [
+     "openrouter.key"
+    ],
+    "models": {
+     "https://openrouter.ai/api/v1": [
+      "anthropic/claude-haiku-4.5",
+      "anthropic/claude-sonnet-4.5",
+      "deepseek/deepseek-chat-v3.1",
+      "google/gemini-2.5-flash",
+      "meta-llama/llama-3.3-70b-instruct",
+      "mistralai/mistral-small-3.2",
+      "moonshotai/kimi-k2",
+      "openai/gpt-5-mini",
+      "openai/gpt-oss-120b",
+      "qwen/qwen3-235b-a22b",
+      "x-ai/grok-4-fast"
+     ]
+    }
+   }
+  },
+  "groq-new": {
+   "dictateKey": "Right Ctrl",
+   "tried": true,
+   "setupBackend": {
+    "config": "[chat]\nuse = \"openai_compat\"\n\n[chat.openai_compat]\nbase_url = \"https://api.groq.com/openai/v1\"\nmodel = \"\"\nkey_ref = \"groq.key\"\n\n[harness]\nuse = \"none\"\n",
+    "installed": [],
+    "test": {
+     "ok": false,
+     "ms": 0,
+     "reply": "",
+     "text": "api.groq.com turned down the API key: Invalid API Key Check the key in Connections & models."
+    }
+   }
+  }
+ },
+ "interactions": [
+  {
+   "state": "ollama",
+   "steps": [
+    {
+     "click": "model:qwen2.5:7b"
+    },
+    {
+     "click": "test"
+    },
+    {
+     "wait": 150
+    }
+   ],
+   "expect": [],
+   "shot": "test-ok"
+  },
+  {
+   "state": "groq-new",
+   "steps": [
+    {
+     "set": [
+      "key",
+      "text",
+      "gsk-not-a-real-key"
+     ]
+    },
+    {
+     "set": [
+      "model/field",
+      "text",
+      "llama-3.3-70b-versatile"
+     ]
+    },
+    {
+     "click": "test"
+    },
+    {
+     "wait": 150
+    }
+   ],
+   "expect": [],
+   "shot": "test-failed"
+  },
+  {
+   "state": "openrouter",
+   "steps": [
+    {
+     "click": "presets/Ollama"
+    },
+    {
+     "wait": 150
+    }
+   ],
+   "expect": [],
+   "shot": "preset-switch"
+  }
+ ]
+}

@@ -212,6 +212,7 @@ def test_the_question_and_the_line_come_in_german(tmp_path):
 
 
 def test_from_the_phone_the_question_goes_to_the_chat_first(tmp_path):
+    import dataclasses
     from tests.fakes import FakeChannel, MemoryRemoteState
     from tests.services.test_messages import OWNER, me
 
@@ -220,20 +221,42 @@ def test_from_the_phone_the_question_goes_to_the_chat_first(tmp_path):
     s.quick.message_wait_s = 0.05
 
     async def run():
+        entered, release, asked = asyncio.Event(), asyncio.Event(), asyncio.Event()
+        contacts = s.quick._connections.contacts
+        class HeldContacts:
+            awaits = True
+
+            async def find(self, *args):
+                entered.set()
+                await release.wait()
+                return await asyncio.to_thread(contacts.find, *args)
+
+        s.quick._connections = dataclasses.replace(s.quick._connections, contacts=HeldContacts())
+        original_ask = s.channel.ask
+        async def notify_ask(*args):
+            await original_ask(*args)
+            asked.set()
+        s.channel.ask = notify_ask
         work = asyncio.create_task(s.messages.run())
-        s.channel.push(me("text anna late sorry"))
-        for _ in range(400):
-            await asyncio.sleep(0.005)
-            if s.channel.questions:
-                break
-        [(_, id, question)] = s.channel.questions
-        assert question.startswith("Send this to Anna Berg (+49 170 1234567)? “Late, sorry”")
-        assert world(s)["messages_sent"] == [], "nothing went before the yes"
-        s.channel.push(me(answer=f"yes:{id}", ref="cb1"))
-        await s.quick.idle()
-        await settle(200)
-        work.cancel()
-        await asyncio.gather(work, return_exceptions=True)
+        try:
+            s.channel.push(me("text anna late sorry"))
+            await asyncio.wait_for(entered.wait(), 5)
+            # Contact preparation deliberately outlives quick.lines' reply wait.
+            # The question still belongs on the phone once the turn has ended.
+            await asyncio.wait_for(asyncio.shield(s.live_talk._turn), 5)
+            assert not s.channel.questions and s.quick._running
+            release.set()
+            await asyncio.wait_for(asked.wait(), 5)
+            [(_, id, question)] = s.channel.questions
+            assert question.startswith("Send this to Anna Berg (+49 170 1234567)? “Late, sorry”")
+            assert world(s)["messages_sent"] == [], "nothing went before the yes"
+            s.channel.push(me(answer=f"yes:{id}", ref="cb1"))
+            await s.quick.idle()
+            await settle(200)
+        finally:
+            release.set()
+            work.cancel()
+            await asyncio.gather(work, return_exceptions=True)
 
     asyncio.run(run())
     assert world(s)["messages_sent"] == [{"to": "+49 170 1234567", "text": "Late, sorry"}]

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from milo import system
+
 import json
 import logging
 import os
@@ -53,7 +55,7 @@ class MarkdownRoutineBook:
             raise ValueError(f"there is a routine called {name} already")
         renamed = self.update(slug, {"name": name})
         if new_slug != slug:
-            os.replace(self._path(slug), self._path(new_slug))
+            system.replace_file(self._path(slug), self._path(new_slug))
             self._cache.pop(self._path(slug), None)
         return replace(renamed, slug=new_slug)
 
@@ -94,7 +96,7 @@ class MarkdownRoutineBook:
         while target.exists():
             n += 1
             target = aside / f"{slug}-{n}.md"
-        os.replace(path, target)
+        system.replace_file(path, target)
         self._cache.pop(path, None)
         return True
 
@@ -131,15 +133,9 @@ class MarkdownRoutineBook:
         """The draft a helper wrote, or None. The drafts folder is the helper's to write (ADR 0020), so the
         folder and the file are opened without following a link: one could point at Milo's own files."""
         try:
-            folder = os.open(self.drafts, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            fd = system.open_child_no_follow(self.drafts, f"{slugify(draft)}.md")
         except OSError:
             return None
-        try:
-            fd = os.open(f"{slugify(draft)}.md", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=folder)
-        except OSError:
-            return None
-        finally:
-            os.close(folder)
         with os.fdopen(fd, "rb") as f:
             if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
                 return None
@@ -154,15 +150,9 @@ class MarkdownRoutineBook:
 
     def drop_draft(self, draft: str) -> None:
         try:
-            folder = os.open(self.drafts, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        except OSError:
-            return
-        try:
-            os.unlink(f"{slugify(draft)}.md", dir_fd=folder)  # removes a link itself, never what it points at
+            system.unlink_child_no_follow(self.drafts, f"{slugify(draft)}.md")
         except OSError:
             pass
-        finally:
-            os.close(folder)
 
     def _path(self, slug: str) -> Path:
         return self.folder / f"{slug}.md"
@@ -223,7 +213,7 @@ def _write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.tmp")
     tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
+    system.replace_file(tmp, path)
 
 
 def _safe(slug: str) -> bool:

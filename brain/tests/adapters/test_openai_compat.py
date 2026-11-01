@@ -74,7 +74,7 @@ def test_a_conversation_streams_keeps_its_history_and_reports_cached_tokens(tmp_
                       words("Fine."))
     key = tmp_path / "secrets" / "openai.key"
     key.parent.mkdir(mode=0o700)
-    key.write_text(KEY)
+    key.write_text(KEY, encoding="utf-8")
     key.chmod(0o600)
 
     async def run():

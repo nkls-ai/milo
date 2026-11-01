@@ -5,16 +5,17 @@ from __future__ import annotations
 import logging
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, replace, fields
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .brain import Brain
 from .config import Config, app_names, brief_time
 from .core.clock import SystemClock
 from .core.conversations import SplitRules
 from .core.language import SpokenLanguage
-from .core.ports import Harness, LiveModel, PlaybackTap, TimedTranscriber, Transcriber, Vocabulary, Voice
+from .core.ports import (Connections, Harness, LiveModel, PlaybackTap, TimedTranscriber, Transcriber, Vocabulary,
+                         Voice, connection_identity)
 from .core.registry import (AUDIO_INPUTS, AUDIO_OUTPUTS, CALL_DIARIZERS, CHANNELS, DECIDERS, DIARIZERS, EMBEDDERS,
                             HARNESSES, LIVE_MODELS, STREAMING_TRANSCRIBERS, TEXT_CLEANERS, TRANSCRIBERS, VOICES,
                             AdapterContext, ConfigError, Registry)
@@ -38,7 +39,7 @@ from .services.dictation import DictationService
 from .services.fallback_voice import NOTICE as VOICE_NOTICE
 from .services.fallback_voice import FallbackVoice, VoiceNotice
 from .services.access import AccessGate
-from .services.hands import HandsService
+from .services.hands import HandsService, AppOffice
 from .services.heartbeat_runner import HeartbeatRunner
 from .services.episode_stubs import EpisodeDictations, EpisodeEyes, EpisodeTranscript, RoutineEpisodes
 from .services.listening import Listening
@@ -105,6 +106,8 @@ class Runtime:
     alarms: Alarms | None = None
     weather: WeatherReport | None = None
     decisions: Decisions | None = None
+    mic: Any = None
+    """The microphone, so the audio system can start up before the first key press (see `warm`)."""
 
 
 @dataclass
@@ -151,7 +154,7 @@ def build(home: Path) -> Runtime:
                    p.live_model, p.live_talk, p.tool_server, p.hands_server, p.helpers, p.mem, p.barge_in,
                    p.backchannel, p.messages, p.notices, meetings=p.meetings, diarize_executor=p.diarize_executor,
                    attention=p.attention, background_stt=p.background_stt, alarms=p.alarms, weather=p.weather,
-                   decisions=p.decisions)
+                   decisions=p.decisions, mic=p.mic)
 
 
 def _workspace(p: Parts) -> None:
@@ -169,7 +172,8 @@ def _workspace(p: Parts) -> None:
     adapters.load_builtin()
     p.clock = SystemClock()
     # The worker CLI starts the MCP server with the brain's own interpreter, so it needs no install step.
-    p.mac_tools = (sys.executable, "-m", "milo.mcp_server", "--socket", str(p.workspace.hands_socket_path)) \
+    from .entrypoints import module_command
+    p.mac_tools = module_command("milo.mcp_server", "--socket", str(p.workspace.hands_socket_path)) \
         if p.config.hands.enabled else ()
     p.ctx = AdapterContext(p.home, p.workspace.state_dir, p.clock, p.mac_tools, _tool_servers(p.home))
 
@@ -332,6 +336,7 @@ def _with_home(connections, p: Parts):
 def _helpers(p: Parts) -> None:
     """Computer use, the helpers that do the real work, and the routines they follow."""
     from .adapters.region import region
+    from .adapters.risk_policy import for_platform
     from .memory.routines import JsonStateFile, MarkdownRoutineBook
     from .memory.undo_shelf import FileUndoShelf
 
@@ -353,14 +358,16 @@ def _helpers(p: Parts) -> None:
                                p.ui, transcript=ScreenSteps(p.transcript, p.later("helpers")),
                                applescript=config.hands.applescript,
                                locale=region(), protected=workspace.protected, access=p.access,
-                               before_change=undo.before_change, language=p.language.get)
+                               before_change=undo.before_change, language=p.language.get,
+                               risk_policy=for_platform(p.platform.name),
+                               office=AppOffice(AppHands(p.bridge), region()) if p.platform.name != "macos" else None)
         p.hands_server = HandsSocketServer(workspace.hands_socket_path, p.hands.call)
     p.memory_requests = MemoryRequests(mem.memory, p.approvals, mem.profile.remember) if mem is not None else None
     p.eyes = AppEyes(p.bridge)
     if mem is not None:
         p.eyes = EpisodeEyes(p.eyes, mem.memory.record, now=p.clock.now)
     runner = TaskRunner(p.harness, p.ledger, p.clock, p.context, background=p.background, hands=p.hands,
-                        available=_available(p.config))
+                        available=_available(p.config, p.connections))
     p.helpers = helpers = Orchestrator(runner, p.speaker, p.ui, p.clock, transcript=p.transcript,
                                        max_helpers=p.live_settings.max_helpers, quiet=p.attention.in_conversation,
                                        updates=p.updates, milestones=Milestones(), inert=untrusted)
@@ -554,12 +561,15 @@ def _messages(p: Parts) -> None:
 def _tool_socket(p: Parts) -> None:
     """run/tools.sock, where the helpers' tools ask the brain."""
     questions = HelperQuestions(p.approvals, p.later("helpers"), screen=False)
+    connections = p.connections or Connections()
+    connection_apps = tuple(identity.app for f in fields(connections)
+                            if (identity := connection_identity(getattr(connections, f.name), f.name)).app is not None)
     p.tool_server = ToolSocketServer(p.workspace.tools_socket_path,
                                      ToolRequests(questions, p.bridge, p.enabled, p.memory_requests,
                                                   phone=p.messages, reminders=p.reminders,
                                                   access=p.access, undo=p.undo,
                                                   installer=Installer(search_dirs=p.platform.tool_dirs),
-                                                  decisions=p.decisions).handle)
+                                                  decisions=p.decisions, connection_apps=connection_apps).handle)
 
 
 def _heartbeat(p: Parts) -> None:
@@ -686,13 +696,13 @@ def _memory(config: Config, workspace, ctx: AdapterContext, clock, ui: UiState, 
     return MemoryRuntime(memory, TurnMemory(memory), profile, executor, sleep)
 
 
-def _available(config: Config) -> frozenset[str]:
+def _available(config: Config, connections: Connections) -> frozenset[str]:
     """The connections the worker's tools reach, as config.toml switches them (milo.connect reads the same), and
     install_package, which needs no switch: it asks unless the user named the package."""
     switches = config.connections
     names = ("calendar", "reminders", "mail", "notes", "shortcuts", "files")
-    on = switches.enabled and config.pluggable("connections")[0] != "none"
-    return frozenset({*(n for n in names if on and getattr(switches, n)),
+    return frozenset({*(n for n in names if switches.enabled and getattr(switches, n)
+                       and getattr(connections, n, None) is not None),
                       *(("memory",) if config.memory.enabled else ()), *(("phone",) if config.messages.enabled else ()),
                       "install"})
 
@@ -700,7 +710,8 @@ def _available(config: Config) -> frozenset[str]:
 def _tool_servers(home: Path) -> tuple[ToolServer, ...]:
     """Milo's app connections, memory tools and reminders as an MCP server for the worker: this Python, so no
     `uv run` on every task. Always on: the worker can't write reminders.md itself (ADR 0020)."""
-    return (ToolServer(CONNECT_SERVER, (sys.executable, "-m", "milo.connect"), (("MILO_HOME", str(home)),)),)
+    from .entrypoints import module_command
+    return (ToolServer(CONNECT_SERVER, module_command("milo.connect"), (("MILO_HOME", str(home)),)),)
 
 
 def _live_settings(text: str) -> tuple[str, int]:

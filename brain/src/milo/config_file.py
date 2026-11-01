@@ -4,6 +4,8 @@ The Settings window and the menu bar's "Dictation style" both change it through 
 
 from __future__ import annotations
 
+from milo import system
+
 import os
 from pathlib import Path
 
@@ -28,23 +30,37 @@ class TomlConfigFile:
 
     def write(self, section: str, key: str, value: str | bool | int | float | list) -> Config:
         """Set `[section] key = value` and return the config as it is now. Raises ConfigError, writing nothing."""
+        return self.write_many([(section, key, value)])
+
+    def write_many(self, changes: list[tuple[str, str, str | bool | int | float | list]]) -> Config:
+        """Commit related settings together, preserving comments and validating before any write.
+
+        A dotted section identifies nested TOML tables, such as chat.openai_compat.
+        This keeps provider setup from leaving half-applied settings if validation fails.
+        """
         text = self.path.read_text(encoding="utf-8") if self.path.exists() else ""
         try:
             doc = tomlkit.parse(text)
         except TOMLKitError as e:
             raise ConfigError(f"{self.path} is not valid TOML: {e}") from None
-        table = doc.get(section)
-        if table is None:
-            table = tomlkit.table()
-            doc[section] = table
-        elif not isinstance(table, dict):
-            raise ConfigError(f"[{section}] must be a table")
-        _set(table, key, value)
+        for section, key, value in changes:
+            table = doc
+            for part in section.split("."):
+                if not part:
+                    raise ConfigError("A settings section must have a name")
+                child = table.get(part)
+                if child is None:
+                    child = tomlkit.table()
+                    table[part] = child
+                elif not isinstance(child, dict):
+                    raise ConfigError(f"[{section}] must be a table")
+                table = child
+            _set(table, key, value)
         new = tomlkit.dumps(doc)
         config = Config.parse(new, str(self.path), self.platform)
         temporary = self.path.with_name(f".{self.path.name}.saving")
         temporary.write_text(new, encoding="utf-8")
-        os.replace(temporary, self.path)
+        system.replace_file(temporary, self.path)
         return config
 
 

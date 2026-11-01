@@ -128,7 +128,7 @@ class _Bert:
 
         import mlx.core as mx
 
-        config = json.loads((path / "config.json").read_text())
+        config = json.loads((path / "config.json").read_text(encoding="utf-8"))
         raw = mx.load(str(path / "model.safetensors"))
         weights = {k: v.astype(mx.float16) for k, v in raw.items()
                    if not k.startswith("pooler.") and not k.endswith("position_ids")}

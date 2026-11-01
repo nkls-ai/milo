@@ -15,26 +15,37 @@ from milo.core.types import HarnessError, Usage
 # behaviour: "slow" streams ticks until interrupted, "die" exits, "fail" returns an error result,
 # "prompt" says the system prompt, anything else is echoed word by word.
 FAKE_CLAUDE = r'''
-import json, os, select, sys, time
+import json, os, queue, sys, threading, time
 
 argv = sys.argv[1:]
 with open(os.environ["FAKE_CLAUDE_LOG"], "a") as f:
     f.write(json.dumps(argv) + "\n")
 system_prompt = argv[argv.index("--system-prompt") + 1]
-buf = b""
+incoming = queue.Queue()
+
+def read_input():
+    for line in sys.stdin.buffer:
+        incoming.put(json.loads(line))
+    incoming.put(None)
+
+threading.Thread(target=read_input, daemon=True).start()
 
 def lines(timeout):
-    global buf
-    out = []
-    while select.select([0], [], [], timeout)[0]:
-        chunk = os.read(0, 65536)
-        if not chunk:
+    try:
+        item = incoming.get(timeout=timeout)
+    except queue.Empty:
+        return []
+    if item is None:
+        sys.exit(0)
+    out = [item]
+    while True:
+        try:
+            item = incoming.get_nowait()
+        except queue.Empty:
+            break
+        if item is None:
             sys.exit(0)
-        buf += chunk
-        timeout = 0
-    while b"\n" in buf:
-        line, buf = buf.split(b"\n", 1)
-        out.append(json.loads(line))
+        out.append(item)
     return out
 
 def emit(obj):
@@ -94,8 +105,8 @@ while True:
 
 @pytest.fixture
 def fake_claude(tmp_path, monkeypatch) -> str:
-    path = tmp_path / "claude"
-    path.write_text(f"#!{sys.executable}\n" + FAKE_CLAUDE)
+    path = tmp_path / "claude.py"
+    path.write_text(FAKE_CLAUDE, encoding="utf-8")
     path.chmod(path.stat().st_mode | stat.S_IEXEC)
     monkeypatch.setenv("FAKE_CLAUDE_LOG", str(tmp_path / "claude.log"))
     return str(path)
@@ -103,7 +114,7 @@ def fake_claude(tmp_path, monkeypatch) -> str:
 
 def launches(tmp_path: Path) -> list[list[str]]:
     log = tmp_path / "claude.log"
-    return [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+    return [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()] if log.exists() else []
 
 
 def live(ctx, binary: str, **options) -> ClaudeLiveModel:

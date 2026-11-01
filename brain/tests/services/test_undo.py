@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 
 from milo.core.events import Confirm, UndoPoints, UndoTask, parse_command
+from milo import system
 from milo.memory.undo_shelf import FileUndoShelf
 from milo.services import snapshots
 from milo.services.reply_stream import ReplyParser
@@ -63,7 +64,7 @@ class Excel(ExcelApp):
             path = re.search(r'filename "([^"]+)"', script).group(1)
             self.saved[path] = dict(self.books[name])
             Path(path).parent.mkdir(parents=True, exist_ok=True)
-            Path(path).write_text(json.dumps(self.saved[path]))
+            Path(path).write_text(json.dumps(self.saved[path]), encoding="utf-8")
             return {"text": f"document\t{name}\nsheets\tSheet1"}
         if "-- milo-undo fingerprint" in script:
             return {"text": json.dumps(self.books[name], sort_keys=True)}
@@ -143,7 +144,7 @@ def test_excel_only_ever_saves_and_opens_milos_copies_in_its_own_folder_with_its
         await s.undo.undo(helper.id)
 
     asyncio.run(run())
-    folder = str(tmp_path / "Library/Containers/com.microsoft.Excel/Data/tmp")
+    folder = (tmp_path / "Library/Containers/com.microsoft.Excel/Data/tmp").as_posix()
     mine = [sc for sc in excel.scripts if "-- milo-undo" in sc]
     paths = [p for sc in mine for p in re.findall(r'file ?name "([^"]+)"', sc)]
     assert paths and all(p.startswith(folder + "/milo-undo-") for p in paths)
@@ -297,7 +298,7 @@ def test_after_a_crash_unfinished_records_become_ready_and_none_stays_undoing(tm
         made = s.clock.now().replace(microsecond=0) - timedelta(minutes=minutes)
         (root / task / "record.json").write_text(json.dumps(
             {"task": task, "made": made.isoformat(), "state": "open", "title": "", "description": "", "said": "",
-             "docs": [], "files": [], "notes": [], "changes": [], **fields}))
+             "docs": [], "files": [], "notes": [], "changes": [], **fields}), encoding="utf-8")
 
     left("h1", 30, title="Excel red", changes=[{"title": "Ran a script in Microsoft Excel", "app": "Microsoft Excel",
                                                 "detail": "run_applescript ...", "covered": False}])
@@ -325,7 +326,7 @@ def test_expiring_never_looks_into_another_apps_folder(tmp_path, monkeypatch):
         (root / task).mkdir(parents=True)
         (root / task / "record.json").write_text(json.dumps(
             {"task": task, "made": s.clock.now().replace(microsecond=0).isoformat(), "state": "ready", "title": "Timer",
-             "description": "", "said": "", "docs": [], "files": [], "notes": [], "changes": []}))
+             "description": "", "said": "", "docs": [], "files": [], "notes": [], "changes": []}), encoding="utf-8")
     looked = []
     for name in ("glob", "rglob", "iterdir", "is_dir", "exists", "stat"):
         real_one = getattr(Path, name)
@@ -347,13 +348,13 @@ def test_expiring_never_looks_into_another_apps_folder(tmp_path, monkeypatch):
 def test_a_file_the_worker_kept_an_undo_point_for_is_put_back(tmp_path):
     budget = tmp_path / "Documents" / "budget.csv"
     budget.parent.mkdir()
-    budget.write_text("rent,900\n")
+    budget.write_text("rent,900\n", encoding="utf-8")
 
     class FileWorker(Worker):
         async def reply(self, prompt, session_id, **kw):
             task = re.search(r"Task id for undo_point and undo_note: (\w+)", prompt).group(1)
             assert (await s.tool_requests.handle({"op": "undo.point", "path": str(budget), "task": task}))["ok"]
-            budget.write_text("rent,950\n")
+            budget.write_text("rent,950\n", encoding="utf-8")
             return await super().reply(prompt, session_id, **kw)
 
     s = Stack(harness=FileWorker([]), home=tmp_path)
@@ -365,7 +366,7 @@ def test_a_file_the_worker_kept_an_undo_point_for_is_put_back(tmp_path):
         await s.undo.undo(helper.id)
 
     asyncio.run(run())
-    assert budget.read_text() == "rent,900\n"
+    assert budget.read_text(encoding="utf-8") == "rent,900\n"
     assert "Undid “Rent 950”: budget.csv is back the way it was." in s.bubbles()
 
 
@@ -375,7 +376,7 @@ def test_copying_and_hashing_files_never_blocks_the_event_loop(tmp_path):
     import threading
 
     budget = tmp_path / "budget.csv"
-    budget.write_text("rent,900\n")
+    budget.write_text("rent,900\n", encoding="utf-8")
     s = Stack(harness=FakeHarness(delay_s=0.2), home=tmp_path)  # still working while the copy runs
     shelf = s.undo._shelf
     threads: dict[str, set] = {}
@@ -394,28 +395,28 @@ def test_copying_and_hashing_files_never_blocks_the_event_loop(tmp_path):
     async def run():
         helper = s.tasks.submit("raise the rent", title="Rent", screen=False, user_asked=True)
         assert (await s.undo.keep_file(helper.id, str(budget))).startswith("Kept a copy")
-        budget.write_text("rent,950\n")
+        budget.write_text("rent,950\n", encoding="utf-8")
         await s.tasks.idle()
         await s.undo.idle()
         await s.undo.undo(helper.id)
 
     asyncio.run(run())
-    assert budget.read_text() == "rent,900\n"
+    assert budget.read_text(encoding="utf-8") == "rent,900\n"
     assert threads == {"keep_file": {False}, "digest": {False}, "put_back": {False}}, "none on the loop's thread"
 
 
 def test_a_file_changed_since_asks_before_it_is_put_back(tmp_path):
     budget = tmp_path / "budget.csv"
-    budget.write_text("rent,900\n")
+    budget.write_text("rent,900\n", encoding="utf-8")
     s = Stack(harness=FakeHarness(delay_s=0.2), home=tmp_path)  # still working while the copy runs
 
     async def run():
         helper = s.tasks.submit("raise the rent", title="Rent", screen=False, user_asked=True)
         assert (await s.undo.keep_file(helper.id, str(budget))).startswith("Kept a copy")
-        budget.write_text("rent,950\n")
+        budget.write_text("rent,950\n", encoding="utf-8")
         await s.tasks.idle()
         await s.undo.idle()
-        budget.write_text("rent,1000\n")  # the user changed it again
+        budget.write_text("rent,1000\n", encoding="utf-8")  # the user changed it again
         bot = asyncio.create_task(user(s, "no"))
         await s.undo.undo(helper.id)
         bot.cancel()
@@ -423,7 +424,7 @@ def test_a_file_changed_since_asks_before_it_is_put_back(tmp_path):
     asyncio.run(run())
     assert [c.question for c in s.sink.of(Confirm)] == [
         "budget.csv changed since “Rent”. Undo anyway? Your changes since would be lost."]
-    assert budget.read_text() == "rent,1000\n"
+    assert budget.read_text(encoding="utf-8") == "rent,1000\n"
 
 
 def test_undo_points_never_copy_milos_own_files_or_secrets(tmp_path):
@@ -431,7 +432,7 @@ def test_undo_points_never_copy_milos_own_files_or_secrets(tmp_path):
     through a link, and nothing in Milo's control folders is kept or put back."""
     secrets = tmp_path / "Milo" / "secrets"
     secrets.mkdir(parents=True)
-    (secrets / "elevenlabs.key").write_text("sk-123")
+    (secrets / "elevenlabs.key").write_text("sk-123", encoding="utf-8")
     link = tmp_path / "Documents" / "notes.txt"
     link.parent.mkdir()
     link.symlink_to(secrets / "elevenlabs.key")
@@ -451,10 +452,10 @@ def test_undo_points_never_copy_milos_own_files_or_secrets(tmp_path):
 def test_a_file_that_became_a_link_since_is_not_written_through(tmp_path):
     """Undo writes the kept copy back to the file it was, never through a link put there since."""
     budget = tmp_path / "budget.csv"
-    budget.write_text("rent,900\n")
+    budget.write_text("rent,900\n", encoding="utf-8")
     config = tmp_path / "Milo" / "config.toml"
     config.parent.mkdir(parents=True)
-    config.write_text("[ui]\n")
+    config.write_text("[ui]\n", encoding="utf-8")
     s = Stack(harness=FakeHarness(delay_s=0.2), home=tmp_path)  # still working while the copy runs
 
     async def run():
@@ -467,7 +468,7 @@ def test_a_file_that_became_a_link_since_is_not_written_through(tmp_path):
         await s.undo.undo(helper.id)
 
     asyncio.run(run())
-    assert config.read_text() == "[ui]\n"
+    assert config.read_text(encoding="utf-8") == "[ui]\n"
     assert any("I couldn't put budget.csv back." in b for b in s.bubbles())
 
 
@@ -475,7 +476,7 @@ def test_a_hard_link_to_a_secret_gets_no_undo_point(tmp_path):
     """A second name for a key is the key: a file with more than one name is not copied."""
     secrets = tmp_path / "Milo" / "secrets"
     secrets.mkdir(parents=True)
-    (secrets / "elevenlabs.key").write_text("sk-123")
+    (secrets / "elevenlabs.key").write_text("sk-123", encoding="utf-8")
     alias = tmp_path / "notes.txt"
     alias.hardlink_to(secrets / "elevenlabs.key")
     s = Stack(harness=FakeHarness(delay_s=0.2), home=tmp_path)  # still working while the copy runs
@@ -493,10 +494,10 @@ def test_a_hard_link_to_a_secret_gets_no_undo_point(tmp_path):
 def test_putting_a_file_back_never_writes_through_a_link_left_next_to_it(tmp_path):
     """Undo writes its copy to a new file of its own beside the target, then renames it into place."""
     budget = tmp_path / "budget.csv"
-    budget.write_text("rent,900\n")
+    budget.write_text("rent,900\n", encoding="utf-8")
     config = tmp_path / "Milo" / "config.toml"
     config.parent.mkdir(parents=True)
-    config.write_text("[ui]\n")
+    config.write_text("[ui]\n", encoding="utf-8")
     for name in (".budget.csv.milo-undo", ".milo-undo-budget.csv"):
         (tmp_path / name).symlink_to(config)
     s = Stack(harness=FakeHarness(delay_s=0.2), home=tmp_path)  # still working while the copy runs
@@ -504,25 +505,32 @@ def test_putting_a_file_back_never_writes_through_a_link_left_next_to_it(tmp_pat
     async def run():
         helper = s.tasks.submit("raise the rent", title="Rent", screen=False, user_asked=True)
         await s.undo.keep_file(helper.id, str(budget))
-        budget.write_text("rent,950\n")
+        budget.write_text("rent,950\n", encoding="utf-8")
         await s.tasks.idle()
         await s.undo.idle()
         await s.undo.undo(helper.id)
 
     asyncio.run(run())
-    assert config.read_text() == "[ui]\n"
-    assert budget.read_text() == "rent,900\n" and not budget.is_symlink()
+    assert config.read_text(encoding="utf-8") == "[ui]\n"
+    assert budget.read_text(encoding="utf-8") == "rent,900\n" and not budget.is_symlink()
 
 
 def test_an_undo_point_for_a_pipe_is_refused_without_waiting(tmp_path):
     """Opening a named pipe would wait for a writer forever: anything but a plain file is refused first."""
     pipe = tmp_path / "feed"
-    os.mkfifo(pipe)
+    if hasattr(os, "mkfifo"):
+        os.mkfifo(pipe)
+        expected = "isn't a plain file"
+    else:
+        # A directory exercises the same non-regular-file rejection without an
+        # OS FIFO creation API. Windows named pipes are not filesystem paths.
+        pipe.mkdir()
+        expected = "is a folder"
     s = Stack(harness=FakeHarness(delay_s=0.2), home=tmp_path)  # still working while the copy runs
 
     async def run():
         helper = s.tasks.submit("tidy the feed", title="Feed", screen=False, user_asked=True)
-        with pytest.raises(ValueError, match="isn't a plain file"):
+        with pytest.raises(ValueError, match=expected):
             await s.undo.keep_file(helper.id, str(pipe))
         await s.tasks.idle()
 
@@ -531,14 +539,14 @@ def test_an_undo_point_for_a_pipe_is_refused_without_waiting(tmp_path):
 
 def test_a_private_file_stays_private_in_its_copy_and_when_put_back(tmp_path):
     budget = tmp_path / "budget.csv"
-    budget.write_text("rent,900\n")
-    budget.chmod(0o600)
+    budget.write_text("rent,900\n", encoding="utf-8")
+    system.make_private(budget, 0o600)
     s = Stack(harness=FakeHarness(delay_s=0.2), home=tmp_path)  # still working while the copy runs
 
     async def run():
         helper = s.tasks.submit("raise the rent", title="Rent", screen=False, user_asked=True)
         await s.undo.keep_file(helper.id, str(budget))
-        budget.write_text("rent,950\n")
+        budget.write_text("rent,950\n", encoding="utf-8")
         budget.chmod(0o644)
         await s.tasks.idle()
         await s.undo.idle()
@@ -547,8 +555,8 @@ def test_a_private_file_stays_private_in_its_copy_and_when_put_back(tmp_path):
         return copies
 
     copies = asyncio.run(run())
-    assert [stat.S_IMODE(c.stat().st_mode) for c in copies] == [0o600]
-    assert budget.read_text() == "rent,900\n" and stat.S_IMODE(budget.stat().st_mode) == 0o600
+    assert copies and all(not system.open_to_others(copy) for copy in copies)
+    assert budget.read_text(encoding="utf-8") == "rent,900\n" and not system.open_to_others(budget)
 
 
 def test_the_workers_notes_reach_the_undo_helper_as_inert_text(tmp_path):

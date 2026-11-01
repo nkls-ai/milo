@@ -9,6 +9,7 @@ from pathlib import Path
 
 from milo import system
 from milo.core.types import HarnessError
+from ._binary import executable_command
 
 log = logging.getLogger(__name__)
 
@@ -40,7 +41,7 @@ async def run(cmd: list[str], *, cwd: Path, timeout_s: float,
     try:
         # stdin must be closed: `codex exec` waits for piped stdin otherwise and hangs.
         proc = await asyncio.create_subprocess_exec(
-            *cmd, cwd=cwd, env=env, stdin=asyncio.subprocess.DEVNULL, limit=STDOUT_LIMIT,
+            *executable_command(cmd[0], cmd[1:]), cwd=cwd, env=env, stdin=asyncio.subprocess.DEVNULL, limit=STDOUT_LIMIT,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, **system.isolated_process(),
         )
     except OSError as e:
@@ -126,9 +127,12 @@ def descendants(pid: int) -> list[tuple[int, str]]:
     children: dict[int, list[int]] = {}
     for child, (parent, _) in table.items():
         children.setdefault(parent, []).append(child)
-    found, todo = [], list(children.get(pid, []))
+    found, todo, seen = [], list(children.get(pid, [])), {pid}
     while todo:
         child = todo.pop()
+        if child in seen:
+            continue  # Parent IDs can outlive their processes and be reused.
+        seen.add(child)
         found.append((child, table[child][1]))
         todo.extend(children.get(child, []))
     return found

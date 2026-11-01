@@ -31,11 +31,11 @@ def test_rereads_only_when_mtime_changes(tmp_path):
     path = tmp_path / "reminders.md"
     source = MarkdownReminders(path)
     assert source.all() == []
-    path.write_text("- [ ] 2026-10-30 09:00 one\n")
+    path.write_text("- [ ] 2026-10-30 09:00 one\n", encoding="utf-8")
     os.utime(path, ns=(1, 1_000_000_000))
     assert len(source.all()) == 1
     # Same mtime: the cached parse is kept even though the content changed.
-    path.write_text("- [ ] 2026-10-30 09:00 one\n- [ ] 2026-10-30 10:00 two\n")
+    path.write_text("- [ ] 2026-10-30 09:00 one\n- [ ] 2026-10-30 10:00 two\n", encoding="utf-8")
     os.utime(path, ns=(1, 1_000_000_000))
     assert len(source.all()) == 1
     os.utime(path, ns=(1, 2_000_000_000))
@@ -44,7 +44,7 @@ def test_rereads_only_when_mtime_changes(tmp_path):
 
 def test_deleted_file_means_no_reminders(tmp_path):
     path = tmp_path / "reminders.md"
-    path.write_text("- [ ] 2026-10-30 09:00 one\n")
+    path.write_text("- [ ] 2026-10-30 09:00 one\n", encoding="utf-8")
     source = MarkdownReminders(path)
     assert len(source.all()) == 1
     path.unlink()
@@ -54,18 +54,18 @@ def test_deleted_file_means_no_reminders(tmp_path):
 def test_template_reminders_file_has_no_live_entries():
     from importlib import resources
 
-    text = (resources.files("milo") / "workspace_template" / "reminders.md").read_text()
+    text = (resources.files("milo") / "workspace_template" / "reminders.md").read_text(encoding="utf-8")
     assert parse(text) == []
 
 
 def test_add_appends_a_line_and_returns_what_all_reports(tmp_path):
     path = tmp_path / "reminders.md"
-    path.write_text("# Reminders\n- [ ] 2026-10-30 09:00 one")  # no final newline
+    path.write_text("# Reminders\n- [ ] 2026-10-30 09:00 one", encoding="utf-8")  # no final newline
     book = MarkdownReminders(path)
     assert len(book.all()) == 1
     added = book.add(datetime(2026, 10, 31, 7, 5), "  Call\nthe   dentist ")
     assert (added.due, added.text, added.done) == (datetime(2026, 10, 31, 7, 5), "Call the dentist", False)
-    assert path.read_text() == "# Reminders\n- [ ] 2026-10-30 09:00 one\n- [ ] 2026-10-31 07:05 Call the dentist\n"
+    assert path.read_text(encoding="utf-8") == "# Reminders\n- [ ] 2026-10-30 09:00 one\n- [ ] 2026-10-31 07:05 Call the dentist\n"
     assert book.all()[-1] == added
     assert [r.text for r in book.all()] == ["one", "Call the dentist"]
 

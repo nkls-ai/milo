@@ -33,21 +33,19 @@ public struct Theme: Sendable {
 
     /// The wren's own colours: lavender feathers, a marigold scarf, cream paper. Springs a little lively,
     /// like his hops.
+    /// The values come from protocol/design.json (DesignTokens.swift), shared with the Windows and Linux app.
     public static let milo = Theme(colors: .init(
-        primary: (rgb(0.37, 0.31, 0.64), rgb(0.71, 0.66, 0.94)),
-        tint: (rgb(0.961, 0.949, 0.996), rgb(0.118, 0.106, 0.200)),
-        accent: (rgb(0.79, 0.52, 0.15), rgb(0.94, 0.71, 0.29)),
-        ink: (rgb(0.17, 0.14, 0.33), rgb(0.94, 0.93, 1.0)),
-        glow: (rgb(0.78, 0.74, 0.94), rgb(0.50, 0.44, 0.82))),
-        motion: ThemeMotion(response: 0.45, damping: 0.74, bob: 1))
+        primary: DesignTokens.primary,
+        tint: DesignTokens.tint,
+        accent: DesignTokens.accent,
+        ink: DesignTokens.ink,
+        glow: DesignTokens.glow),
+        motion: ThemeMotion(response: DesignTokens.springResponse, damping: DesignTokens.springDamping,
+                            bob: DesignTokens.bob))
 
     private init(colors: ThemeColors, motion: ThemeMotion) {
         appKit = colors
         self.motion = motion
-    }
-
-    private static func rgb(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat) -> NSColor {
-        NSColor(srgbRed: r, green: g, blue: b, alpha: 1)
     }
 }
 
@@ -63,11 +61,10 @@ public struct ThemeColors: @unchecked Sendable {
         self.ink = Self.dynamic(ink)
         self.glow = Self.dynamic(glow)
         // White on the deep light-mode primary, the dark paper on the bright dark-mode one.
-        onPrimary = Self.dynamic((.white, tint.1))
+        onPrimary = Self.dynamic(DesignTokens.onPrimary)
         // At night a card is Milo's own night paper, a little lighter.
-        let night = tint.1.blended(withFraction: 0.08, of: .white) ?? tint.1
-        card = Self.dynamic((NSColor.white.withAlphaComponent(0.92), night))
-        rule = Self.dynamic((primary.0.withAlphaComponent(0.14), NSColor.white.withAlphaComponent(0.10)))
+        card = Self.dynamic(DesignTokens.card)
+        rule = Self.dynamic(DesignTokens.rule)
     }
 
     static func dynamic(_ pair: (light: NSColor, dark: NSColor)) -> NSColor {
@@ -93,7 +90,7 @@ public struct ThemeMotion: Equatable, Sendable {
 
     /// `spring`, or a short fade when the user asked macOS to reduce motion.
     public func animation(reduced: Bool) -> Animation {
-        reduced ? .easeOut(duration: 0.18) : spring
+        reduced ? .easeOut(duration: DesignTokens.reducedFade) : spring
     }
 }
 

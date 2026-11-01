@@ -23,6 +23,7 @@ def main() -> None:
     from milo.transport.tool_client import BrainClient
     from .memory_tools import RemoteMemory
     from .milo_tools import RemoteMilo
+    from milo.mcp_server import utf8_stdio
     from .server import BrainPhone, Toolbox, mcp_server
 
     home = Path(os.environ.get("MILO_HOME", "~/Milo")).expanduser()
@@ -47,6 +48,7 @@ def main() -> None:
     toolbox = Toolbox(connections, brain, RemoteMemory(brain) if config.memory.enabled else None, RemoteMilo(brain),
                       kinds=served(os.environ.get(TOOLS_ENV)))
     logging.getLogger("milo.connect").info("serving %d tools (%s)", len(toolbox.tools), name)
+    utf8_stdio()
     mcp_server(toolbox).serve(sys.stdin, sys.stdout)
 
 

@@ -7,6 +7,7 @@ import stat
 from pathlib import Path
 
 
+from milo import system
 from milo.core.types import HandsError
 from milo.mcp_server import HandsClient
 from milo.services.hands import ToolOutput
@@ -45,9 +46,9 @@ def test_requests_and_answers_round_trip(sock_path):
 
 def test_the_socket_is_private(sock_path):
     def check():
-        return stat.S_IMODE(os.stat(sock_path).st_mode), stat.S_IMODE(os.stat(sock_path.parent).st_mode)
+        return system.owned_by_me(sock_path) and not system.open_to_others(sock_path), system.owned_by_me(sock_path.parent) and not system.open_to_others(sock_path.parent)
 
-    assert with_server(sock_path, check) == (0o600, 0o700)
+    assert with_server(sock_path, check) == (True, True)
     assert not sock_path.exists(), "removed on close"
 
 
@@ -55,8 +56,7 @@ def test_garbage_gets_an_error_and_the_connection_stays_usable(sock_path):
     import socket
 
     def talk():
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
-            s.connect(str(sock_path))
+        with system.connect_local(sock_path) as s:
             s.sendall(b"not json\n{\"id\": 2, \"tool\": \"list_apps\"}\n")
             stream = s.makefile("rb")
             return json.loads(stream.readline()), json.loads(stream.readline())

@@ -6,6 +6,8 @@ edit the file; the heartbeat fires them locally, so a reminder costs no tokens.
 
 from __future__ import annotations
 
+from milo import system
+
 import hashlib
 import os
 import re
@@ -84,7 +86,7 @@ class MarkdownReminders:
                 del lines[i]
                 tmp = self.path.with_name(f".{self.path.name}.milo-tmp")
                 tmp.write_text("".join(lines), encoding="utf-8")
-                os.replace(tmp, self.path)
+                system.replace_file(tmp, self.path)
                 self._mtime = None
                 return True
         return False

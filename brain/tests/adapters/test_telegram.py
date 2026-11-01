@@ -85,7 +85,7 @@ def api():
 def token_file(tmp_path):
     path = tmp_path / "secrets" / "telegram-token"
     path.parent.mkdir()
-    path.write_text(TOKEN + "\n")
+    path.write_text(TOKEN + "\n", encoding="utf-8")
     os.chmod(path, 0o600)
     return path
 
@@ -109,12 +109,13 @@ def test_the_token_file_must_be_private_plain_and_hold_a_token(tmp_path, token_f
         read_token(tmp_path / "missing")
     os.chmod(token_file, 0o644)
     assert read_token(token_file) == TOKEN, "a token only others could read too is made private, not refused"
-    assert stat.S_IMODE(token_file.stat().st_mode) == 0o600
+    from milo import system
+    assert system.owned_by_me(token_file) and not system.open_to_others(token_file)
     link = tmp_path / "link"
     link.symlink_to(token_file)
     with pytest.raises(ChannelError, match="plain file"):
         read_token(link)
-    token_file.write_text("my password")
+    token_file.write_text("my password", encoding="utf-8")
     with pytest.raises(ChannelError, match="doesn't hold a bot token") as e:
         read_token(token_file)
     assert "my password" not in str(e.value)
@@ -139,7 +140,7 @@ def test_start_checks_the_token_with_get_me(api, token_file, tmp_path):
 
 def test_a_refused_token_never_shows_in_the_error_or_the_log(api, tmp_path, caplog):
     path = tmp_path / "token"
-    path.write_text("987654321:BBEwrongwrongwrongwrongwrongwrong123")
+    path.write_text("987654321:BBEwrongwrongwrongwrongwrongwrong123", encoding="utf-8")
     os.chmod(path, 0o600)
     with pytest.raises(ChannelError, match="doesn't accept the bot token") as e:
         asyncio.run(channel(api, path, tmp_path).start())

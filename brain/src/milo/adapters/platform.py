@@ -8,17 +8,21 @@ from __future__ import annotations
 import sys
 from dataclasses import replace
 
+from milo.adapters.key_names import LINUX_KEY_NAMES, MAC_KEY_NAMES, PC_KEY_NAMES
 from milo.core.platform import ANYWHERE, Platform
 
 MACOS = Platform("macos", stt="mlx_whisper", tts="pocket", tts_fallback="say", embedder="mlx_e5",
-                 connections="mac", decide="d3", computer="Mac", tool_dirs=("/opt/homebrew/bin", "/usr/local/bin"))
+                 connections="mac", decide="d3", computer="Mac", tool_dirs=("/opt/homebrew/bin", "/usr/local/bin"),
+                 key_names=MAC_KEY_NAMES)
 """Everything local: Whisper and e5 on MLX, Pocket TTS on the CPU with the Mac's `say` behind it, d3-lite on the
 GPU, and the Mac's own apps as connections."""
 
-LINUX = replace(ANYWHERE, name="linux", tool_dirs=("/home/linuxbrew/.linuxbrew/bin",))
-WINDOWS = replace(ANYWHERE, name="windows")
-"""Until they have local engines: a faster-whisper or whisper.cpp transcriber, an ONNX e5, Piper as the
-fallback voice, and Outlook or Evolution as connections."""
+_DESKTOP = replace(ANYWHERE, stt="faster_whisper", tts="pocket", connections="desktop", embedder="onnx_e5",
+                   ui_defaults=(("dictate_key", "right_control"), ("talk_key", "right_option")),
+                   key_names=PC_KEY_NAMES)
+LINUX = replace(_DESKTOP, name="linux", tool_dirs=("/home/linuxbrew/.linuxbrew/bin",), key_names=LINUX_KEY_NAMES)
+WINDOWS = replace(_DESKTOP, name="windows")
+"""Local speech and semantic memory on CPU; CUDA is an explicit faster-whisper option."""
 
 
 def for_os(name: str) -> Platform:

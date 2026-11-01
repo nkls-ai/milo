@@ -16,34 +16,14 @@ from milo.core.meetings import TimedWord
 from milo.core.registry import TRANSCRIBERS, AdapterContext, options_from
 from milo.core.types import STT_SAMPLE_RATE, Audio, Interrupted
 
+from ._whisper_common import (LEARNED_CHARS, MIN_RMS, MIN_SECONDS, is_hallucination, is_silent,
+                              vocabulary_prompt)
+
 log = logging.getLogger(__name__)
 
-MIN_SECONDS = 0.3
-MIN_RMS = 0.004
 CACHE_LIMIT = 256 * 2**20
 """MLX keeps freed GPU buffers for reuse, about 1 GB after a few passes. Capping that saves 800 MB of RAM
 for a pass 1-2% slower, which matters on 16 GB next to OmniVoice."""
-
-# Whisper invents these on silence or noise. Drop a transcript that is only one of them.
-_HALLUCINATIONS = {
-    "thank you", "thanks for watching", "thank you for watching", "you", "bye", ".",
-    "untertitel im auftrag des zdf", "untertitelung des zdf", "vielen dank", "tschüss",
-    "untertitel der amara.org-community", "closed captioning by www.microsoft.com",
-    "subtitles by the amara.org community",
-}
-
-
-def is_silent(audio: Audio) -> bool:
-    """Too short or too quiet to hold speech. Whisper hallucinates on these, so skip them."""
-    if len(audio) < STT_SAMPLE_RATE * MIN_SECONDS:
-        return True
-    return float(np.sqrt(np.mean(np.square(audio)))) < MIN_RMS
-
-
-def is_hallucination(text: str) -> bool:
-    key = re.sub(r"[!?.,]+$", "", text.strip().lower()).strip()
-    return key in _HALLUCINATIONS or key.startswith("untertitel")
-
 
 @dataclass(frozen=True)
 class MlxWhisperOptions:
@@ -51,28 +31,6 @@ class MlxWhisperOptions:
     preview_model: str = "mlx-community/whisper-base-mlx"  # live words while speaking; "" uses `model`
     language: str = ""
     vocabulary: str = ""
-
-
-LEARNED_CHARS = 400
-"""Learned words in the prompt, at most (about 100 tokens; Whisper's prompt holds 224). Whisper copies the
-prompt's style, so a long list could cost punctuation; the first words are the user's own and the most seen."""
-
-
-def vocabulary_prompt(configured: str, words: Sequence[str]) -> str:
-    """`[stt.mlx_whisper] vocabulary`, then the words it doesn't already name, comma-separated, cut at LEARNED_CHARS."""
-    known = {w.strip().lower() for w in configured.split(",") if w.strip()}
-    extra: list[str] = []
-    size = 0
-    for word in words:
-        word = " ".join(word.split())
-        if not word or word.lower() in known:
-            continue
-        if size + len(word) + 2 > LEARNED_CHARS:
-            break
-        known.add(word.lower())
-        extra.append(word)
-        size += len(word) + 2
-    return ", ".join(p for p in (configured.strip().rstrip(","), *extra) if p)
 
 
 SHORT_PHRASE_S = 3.0

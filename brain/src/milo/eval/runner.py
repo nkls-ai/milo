@@ -22,6 +22,9 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
+from milo import system
+from milo.adapters.harness._process import stop as _stop
+
 from .cases import CASES, Case, Outcome
 from .world import seed
 
@@ -97,7 +100,7 @@ async def run_case(case: Case, home: Path, today: date, *, chat_model: str, work
     stderr = open(home / "logs" / "brain.stderr", "wb")
     proc = await asyncio.create_subprocess_exec(
         sys.executable, "-m", "milo.server", env={**os.environ, "MILO_HOME": str(home)},
-        stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.DEVNULL, stderr=stderr, start_new_session=True)
+        stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.DEVNULL, stderr=stderr, **system.isolated_process())
     try:
         events, questions, seconds, error = await _converse(case, home / "run" / "brain.sock", timeout_s)
     finally:
@@ -171,30 +174,14 @@ async def _connect(socket: Path):
     deadline = time.monotonic() + START_TIMEOUT_S
     while True:
         try:
-            reader, writer = await asyncio.open_unix_connection(str(socket), limit=16 * 1024 * 1024)
+            sock = await asyncio.to_thread(system.connect_local, socket, 3.0)
+            sock.setblocking(False)
+            reader, writer = await asyncio.open_connection(sock=sock, limit=16 * 1024 * 1024)
             return reader, writer
         except OSError:
             if time.monotonic() > deadline:
                 raise RuntimeError(f"no brain on {socket} after {START_TIMEOUT_S:.0f}s") from None
             await asyncio.sleep(0.2)
-
-
-async def _stop(proc: asyncio.subprocess.Process) -> None:
-    """Ctrl-C the brain so it closes its chat model, then make sure nothing it started lives on."""
-    for sig, wait_s in ((signal.SIGINT, 10.0), (signal.SIGKILL, 5.0)):
-        try:
-            os.killpg(proc.pid, sig)
-        except ProcessLookupError:
-            return
-        try:
-            await asyncio.wait_for(proc.wait(), wait_s)
-        except TimeoutError:
-            continue
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)  # helpers the brain started
-        except ProcessLookupError:
-            pass
-        return
 
 
 async def run(cases: list[Case], root: Path, *, chat_model: str, worker_model: str, timeout_s: float) -> list[Result]:

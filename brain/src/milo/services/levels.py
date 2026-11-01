@@ -7,7 +7,7 @@ from collections.abc import Callable
 from milo.core.events import Level
 from milo.core.ports import EventSink, LevelCallback
 
-LEVEL_INTERVAL_S = 0.05
+LEVEL_INTERVAL_S = 0.025  # a cap under the mic's 32 ms blocks, so each block's level gets through (~30 a second)
 
 
 def throttled_levels(sink: EventSink, loop: asyncio.AbstractEventLoop, *,

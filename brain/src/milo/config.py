@@ -431,7 +431,8 @@ class Config:
             raise ConfigError("[approvals.levels] must be a table")
         self.approval_levels: dict[str, Any] = dict(approvals.get("levels", {}))
         self.logging = _typed(options_from(LoggingSettings, raw.get("logging", {}), "logging"), "logging")
-        self.ui = _typed(options_from(UiSettings, _current(raw.get("ui", {}), "ui"), "ui"), "ui")
+        self.ui = _typed(options_from(UiSettings, dict(platform.ui_defaults) |
+                                     _current(raw.get("ui", {}), "ui"), "ui"), "ui")
         heartbeat = {k: v for k, v in raw.get("heartbeat", {}).items() if k == "enabled"}
         self.heartbeat = _typed(HeartbeatSettings(**heartbeat), "heartbeat")
         self.hands = _typed(options_from(HandsSettings, _current(raw.get("hands", {}), "hands"), "hands"), "hands")
@@ -446,7 +447,7 @@ class Config:
 
     @classmethod
     def load(cls, path: Path, platform: Platform = ANYWHERE) -> Config:
-        return cls.parse(path.read_text(), str(path), platform)
+        return cls.parse(path.read_text(encoding="utf-8"), str(path), platform)
 
     @classmethod
     def parse(cls, text: str, source: str = "config.toml", platform: Platform = ANYWHERE) -> Config:

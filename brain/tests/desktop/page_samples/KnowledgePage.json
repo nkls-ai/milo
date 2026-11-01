@@ -1,0 +1,24 @@
+{
+  "page": "KnowledgePage",
+  "size": [720, 560],
+  "states": {
+    "facts": {"facts": [
+      {"id": "01JBF6Z3Q8M2X4K7N9P0R5T6VW", "text": "The user's name is Niklas.", "topic": "basics", "since": "2026-10-30T09:12:00", "pinned": true},
+      {"id": "01JBF7A1B2C3D4E5F6G7H8J9KM", "text": "Anna is the user's sister. Her birthday is March 3.", "topic": "people", "since": "2026-10-30T18:05:41", "pinned": false},
+      {"id": "01JBF8C3D4E5F6G7H8J9KMNPQR", "text": "Doesn't drink coffee after 3 pm.", "topic": "preferences", "since": "2026-10-31T08:00:00", "pinned": false},
+      {"id": "01JBF9D4E5F6G7H8J9KMNPQRST", "text": "Plays the cello on Thursdays.", "topic": "hobbies", "since": "2026-10-31T08:01:00", "pinned": false}
+    ]},
+    "empty": {"facts": []},
+    "asking": {}
+  },
+  "interactions": [
+    {"state": "facts", "steps": [{"click": "fact-01JBF7A1B2C3D4E5F6G7H8J9KM/forget"}, {"click": "fact-01JBF7A1B2C3D4E5F6G7H8J9KM/confirmForget"}],
+     "expect": [{"type": "forget_fact", "id": "01JBF7A1B2C3D4E5F6G7H8J9KM"}]},
+    {"state": "facts", "steps": [{"click": "fact-01JBF7A1B2C3D4E5F6G7H8J9KM/edit"},
+                                 {"set": ["fact-01JBF7A1B2C3D4E5F6G7H8J9KM/field", "text", "Anna is the user's sister. Her birthday is March 4."]},
+                                 {"click": "fact-01JBF7A1B2C3D4E5F6G7H8J9KM/save"}],
+     "expect": [{"type": "edit_fact", "id": "01JBF7A1B2C3D4E5F6G7H8J9KM", "text": "Anna is the user's sister. Her birthday is March 4."}]},
+    {"state": "facts", "steps": [{"click": "fact-01JBF7A1B2C3D4E5F6G7H8J9KM/forget"}, {"click": "fact-01JBF7A1B2C3D4E5F6G7H8J9KM/keep"}],
+     "expect": []}
+  ]
+}

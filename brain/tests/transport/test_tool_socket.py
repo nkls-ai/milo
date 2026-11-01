@@ -1,3 +1,4 @@
+from tests.local_transport import connect as local_connect
 """ToolSocketServer against a real Unix socket under /tmp (macOS caps sun_path at 104 bytes)."""
 
 import asyncio
@@ -5,6 +6,7 @@ import json
 import stat
 
 
+from milo import system
 from milo.transport.tool_socket import ToolSocketServer
 
 
@@ -19,8 +21,8 @@ def test_requests_are_answered_with_their_id_concurrently(sock_path):
     async def run():
         server = ToolSocketServer(sock_path, handler)
         await server.start()
-        assert stat.S_IMODE(sock_path.stat().st_mode) == 0o600
-        reader, writer = await asyncio.open_unix_connection(str(sock_path))
+        assert system.owned_by_me(sock_path) and not system.open_to_others(sock_path)
+        reader, writer = await local_connect(sock_path)
         writer.write(b'{"id": 1, "op": "slow"}\n{"id": 2, "op": "fast"}\nnot json\n')
         await writer.drain()
         first = json.loads(await asyncio.wait_for(reader.readline(), 2))
@@ -51,8 +53,8 @@ def test_one_connection_can_have_only_a_few_requests_waiting(sock_path):
     async def run():
         server = ToolSocketServer(sock_path, handler)
         await server.start()
-        reader, writer = await asyncio.open_unix_connection(str(sock_path))
-        other_reader, other = await asyncio.open_unix_connection(str(sock_path))
+        reader, writer = await local_connect(sock_path)
+        other_reader, other = await local_connect(sock_path)
         writer.write(b"".join(b'{"id": %d, "op": "confirm"}\n' % i for i in range(MAX_IN_FLIGHT + 2)))
         await writer.drain()
         refused = [json.loads(await asyncio.wait_for(reader.readline(), 2)) for _ in range(2)]
@@ -88,7 +90,7 @@ def test_hanging_up_ends_what_the_connection_waited_for_so_dialling_again_makes_
     async def run():
         server = ToolSocketServer(sock_path, handler)
         await server.start()
-        _, writer = await asyncio.open_unix_connection(str(sock_path))
+        _, writer = await local_connect(sock_path)
         writer.write(b"".join(b'{"id": %d, "op": "confirm"}\n' % i for i in range(3)))
         await writer.drain()
         await asyncio.sleep(0.05)
@@ -96,7 +98,7 @@ def test_hanging_up_ends_what_the_connection_waited_for_so_dialling_again_makes_
         await asyncio.sleep(0.05)
         left = len(server._running)
         # Many connections, each under its own cap: the total is capped too.
-        conns = [await asyncio.open_unix_connection(str(sock_path)) for _ in range(6)]
+        conns = [await local_connect(sock_path) for _ in range(6)]
         for i, (_, w) in enumerate(conns):
             w.write(b"".join(b'{"id": %d, "op": "confirm"}\n' % (100 + 10 * i + j) for j in range(3)))
             await w.drain()

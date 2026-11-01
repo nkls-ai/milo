@@ -53,7 +53,7 @@ class StubHA:
 def ha(tmp_path: Path, send: StubHA) -> HomeAssistant:
     secrets = tmp_path / "secrets"
     secrets.mkdir(mode=0o700)
-    (secrets / "ha.token").write_text("secret-token\n")
+    (secrets / "ha.token").write_text("secret-token\n", encoding="utf-8")
     (secrets / "ha.token").chmod(0o600)
     return HomeAssistant("http://ha.local:8123/", secrets / "ha.token", send=send)
 

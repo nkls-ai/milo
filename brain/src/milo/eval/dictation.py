@@ -37,6 +37,7 @@ import numpy as np
 from milo.adapters.audio.wav_file import read_wav, write_wav
 from milo.adapters.stt.tones import ToneCodec
 from milo.core.types import STT_SAMPLE_RATE
+from milo import system
 
 from .runner import _connect, _stop
 
@@ -237,13 +238,17 @@ def _say(voice: str, text: str, tmp: Path) -> np.ndarray:
 
 
 def config(home: Path, *, fake: bool, stream: str) -> str:
-    stt = (f'use = "tones"\n\n[stt.tones]\nwords = "{home / "words.json"}"\n' if fake else 'use = "mlx_whisper"\n')
+    stt = (f'use = "tones"\n\n[stt.tones]\nwords = {json.dumps(str(home / "words.json"))}\n' if fake
+           else 'use = "mlx_whisper"\n')
     return f"""\
 [chat]
 use = "none"
 
 [harness]
 use = "claude"
+
+[harness.claude]
+binary = {json.dumps(sys.executable)}
 
 [connections]
 use = "fake"
@@ -258,8 +263,8 @@ fallback = ""
 use = "wav"
 
 [audio.wav]
-mic = "{home / "mic.wav"}"
-dir = "{home / "speech"}"
+mic = {json.dumps(str(home / "mic.wav"))}
+dir = {json.dumps(str(home / "speech"))}
 
 [dictation]
 use = "plain"
@@ -304,7 +309,7 @@ class Brain:
             sys.executable, "-m", "milo.server",
             env={**os.environ, "MILO_HOME": str(home), **({"PYTHONPATH": str(src)} if src else {})},
             stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.DEVNULL, stderr=stderr,
-            start_new_session=True)
+            **system.isolated_process())
         stderr.close()
         try:
             reader, writer = await _connect(home / "run" / "brain.sock")
@@ -480,6 +485,7 @@ def table(runs: list[Run]) -> str:
 async def run(cases: list[Case], root: Path, *, fake: bool, streams: tuple[str, ...], reps: int = 1,
               cache: Path | None = None, limits: Limits | None = None, src: Path | None = None) -> list[Run]:
     """Every case once per stream (and rep) through one brain on `root`, checked against `limits`."""
+    system.precise_timers()  # this driver's 80 ms confirm must leave on time too, like the app's
     cache = cache or root / "clips"
     codec = ToneCodec(vocabulary()) if fake else None
     recordings = {c.id: [recording(take, fake=fake, cache=cache, codec=codec) for take in c.takes] for c in cases}

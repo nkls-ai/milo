@@ -12,6 +12,8 @@ import os
 from collections.abc import Iterator
 from pathlib import Path
 
+from milo import system
+
 log = logging.getLogger(__name__)
 
 
@@ -19,10 +21,12 @@ def append(path: Path, record: dict, *, sync: bool = False) -> None:
     """Add one line. `sync` also waits for the disk, for records that must survive a power cut."""
     line = (json.dumps(record, ensure_ascii=False) + "\n").encode("utf-8")
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_APPEND, 0o600)
+    fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_APPEND | getattr(os, "O_BINARY", 0), 0o600)
+    system.make_private(path, 0o600)
     try:
         size = os.fstat(fd).st_size
-        if size and os.pread(fd, 1, size - 1) != b"\n":
+        os.lseek(fd, max(0, size - 1), os.SEEK_SET)
+        if size and os.read(fd, 1) != b"\n":
             line = b"\n" + line  # a crash cut the last line short
         os.write(fd, line)
         if sync:
@@ -77,5 +81,5 @@ def write_private(path: Path, text: str) -> None:
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(text)
-    os.chmod(tmp, 0o600)  # an old .tmp left by a crash keeps its mode otherwise
-    os.replace(tmp, path)
+    system.make_private(tmp, 0o600)
+    system.replace_file(tmp, path)

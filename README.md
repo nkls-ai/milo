@@ -7,32 +7,35 @@
 <p align="center">
   <b>A small coworker who lives in the corner of your screen.</b><br>
   Talk to him, dictate with him, hand him work, and watch him do it.<br>
-  Free and open source. Mac today, Windows and Linux next.
+  Free and open source. Native Mac app, shared Windows and Linux desktop.
 </p>
 
 <p align="center">
   <img alt="Free and open source" src="https://img.shields.io/badge/free-open%20source-e8912e">
-  <img alt="macOS 14 or later" src="https://img.shields.io/badge/macOS-14%2B-6b5cbf">
-  <img alt="Apple silicon" src="https://img.shields.io/badge/Apple%20silicon-M1%20or%20newer-6b5cbf">
+  <img alt="macOS 14 or later on Apple silicon" src="https://img.shields.io/badge/macOS-14%2B%20·%20Apple%20silicon-6b5cbf">
+  <img alt="Windows and Linux" src="https://img.shields.io/badge/Windows%20·%20Linux-desktop-6b5cbf">
   <img alt="Voice runs on your computer" src="https://img.shields.io/badge/voice-runs%20locally-e8912e">
-  <img alt="Swift and Python" src="https://img.shields.io/badge/Swift%20%2B%20Python-uv-2b2454">
+  <img alt="Any model" src="https://img.shields.io/badge/models-Claude%20·%20Codex%20·%20Ollama%20·%20any%20OpenAI--style%20API-2b2454">
 </p>
 
 <p align="center">
   <a href="https://nkls-ai.github.io/milo/"><b>Website</b></a> ·
   <a href="#what-he-does">What he does</a> ·
+  <a href="#plug-in-any-model">Plug in any model</a> ·
+  <a href="#free">Free</a> ·
   <a href="#set-it-up">Set it up</a> ·
-  <a href="#later-milo-with-nothing-to-set-up">Later: nothing to set up</a> ·
   <a href="#keys">Keys</a> ·
   <a href="#how-its-built">How it's built</a> ·
   <a href="#develop">Develop</a> ·
   <a href="docs/FEATURES.md">Every feature, in detail</a>
 </p>
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/readme/hero-dark.webp">
-  <img src="assets/readme/hero.webp" alt="Milo's homepage: 'Just tell Milo.' beside a small Mac screen, where Milo has just put the dentist in the calendar and a card with Undo springs out of him.">
-</picture>
+<p align="center">
+  <a href="assets/readme/milo-demo.mp4"><img src="assets/readme/milo-demo.gif" width="960" alt="Milo on a desktop, in three moments. It opens close on him in the corner as he hears 'write an email to Anna saying I'll be 10 minutes late'; the view pulls back to the open message and the email lands there, with 'It's in Mail, have a look.' and a card with Undo. Then dictation into a team chat: the ums and uhs are gone from what lands. Then 'make a budget table in the spreadsheet': a glowing outline, his own pointer, the header, a block of five rows and the total landing with a soft highlight, and Done with Undo."></a><br>
+  <sub>The real Milo, drawn by the app's own code. <a href="assets/readme/milo-demo.mp4">Watch it with sound (MP4, 28 s)</a>.</sub>
+</p>
+
+<p align="center"><b>Speak it, it's there.</b> In your email, in any app, in your spreadsheet.</p>
 
 Hold a key and talk. Milo hears you **on your computer**, answers out loud in a voice **made on your computer**, and does the thing: a calendar entry, an email answer in the field you're typing in, a table in Excel. He asks before anything that can't be undone, and everything else comes with Undo.
 
@@ -40,11 +43,19 @@ Only the thinking goes out: the words of your question go to a chat model (Claud
 
 ## What he does
 
-### He writes where your cursor is
+### Speak it, it's there
 
-Click into a reply, hold right <kbd>⌥</kbd> and say *"answer Anna, Sunday works, but make it one"*. Milo looks at the email, writes the answer and pastes it straight into the field. No copying, no chatbot tab, no switching back. Nothing is sent: you read it and press Send. *"Undo that"* takes it out again.
+Click into a reply, hold right <kbd>⌥</kbd> (Right <kbd>Alt</kbd> on Windows and Linux) and say *"write an email to Anna saying I'll be 10 minutes late"*, or *"answer Anna, Sunday works, but make it one"*. Milo writes it and pastes it straight into the field you were in. No copying, no chatbot tab, no switching back. Nothing is sent: you read it and press Send. *"Undo that"* takes it out again, and a field he mustn't touch (a password, a terminal) gets nothing: the text waits in his window to copy ([ADR 33](docs/adr/0033-milo-writes-where-you-are.md)).
+
+<img src="assets/readme/demo-speak-it.webp" alt="An email to Anna has landed in the open message. Milo, in the corner, says 'It's in Mail, have a look.' and a card for it, with Undo, sits beside him.">
 
 <img src="assets/readme/write.webp" alt="Milo answering an email: the reply lands in Mail's reply field in one piece, while the six steps of the old copy-into-a-chatbot way are crossed out.">
+
+### Dictate into any app
+
+Hold <kbd>fn</kbd> on a Mac (Right <kbd>Ctrl</kbd> on Windows and Linux), talk, let go: the text is in whatever app you're typing in. The ums and uhs are dropped, your clipboard is put back, and when you fix a word he got wrong ("Cloud Code" to "Claude Code"), he spells it your way next time. Double-tap for hands-free.
+
+<img src="assets/readme/demo-dictation.webp" alt="A team chat with the dictated line 'So the launch moved to Friday, I'll send the notes tonight' in the message field, and 'Pasted' by Milo.">
 
 ### Fast, because hearing and speaking happen on your computer
 
@@ -52,18 +63,18 @@ Whisper large-v3-turbo transcribes on the Apple GPU while you speak, so dictatio
 
 <img src="assets/readme/local.webp" alt="A diagram of Milo's voice path: you speak, he hears you, he remembers, he answers, all inside a frame labelled Your computer; only 'thinking' sits outside, with just the words of the question.">
 
-### Small things take two seconds
+### He works where you can see him
 
-Calendar entries, to-dos, timers, notes, mail drafts, music and your shortcuts happen right away, without a helper. A card springs out of him with a check and Undo, and you can still take a timer or a to-do back later.
+Ask for something on the computer and he does it in front of you: his own pointer, an outline around the window, one plain line per step. Wherever he can, he works without your mouse. <kbd>esc</kbd> stops him, and what he changed comes with Undo ([ADR 26](docs/adr/0026-undo-what-a-task-did.md)).
 
-<img src="assets/readme/quick.webp" alt="The quick-things demo: a list of things to say, and Milo with a card for a haircut on Friday at one.">
+<img src="assets/readme/demo-works.webp" alt="A spreadsheet called Budget with a glowing outline and the tag 'Milo is working here · Stop'. Rows for rent, groceries, transport, phone and internet have just landed, highlighted and selected, with his own pointer on them, and a pill under the window says 'Typing five rows'.">
 
 <table>
   <tr>
     <td width="50%" valign="top">
-      <b>He works where you can see him</b><br>
-      Ask for something on the computer and he does it in front of you: his own pointer, an outline around the window, one plain line per step. <kbd>esc</kbd> stops him.<br><br>
-      <img src="assets/readme/work.webp" alt="Milo filling in an Excel sheet, the window outlined, his pointer and the current step shown.">
+      <b>Small things take two seconds</b><br>
+      Calendar entries, to-dos, timers, notes, mail drafts, music and your shortcuts happen right away, without a helper. A card springs out of him with a check and Undo, and you can still take a timer or a to-do back later.<br><br>
+      <img src="assets/readme/quick.webp" alt="The quick-things demo: a list of things to say, and Milo with a card for a haircut on Friday at one.">
     </td>
     <td width="50%" valign="top">
       <b>He asks before anything you can't undo</b><br>
@@ -99,7 +110,45 @@ Calendar entries, to-dos, timers, notes, mail drafts, music and your shortcuts h
 
 Also: **message him from your phone** over Telegram ([setup](docs/setup/messages.md)), **look at my screen** when you ask (never on his own), and **opening things** ("YouTube in Chrome") while he's still saying so. Everything, with its settings: [docs/FEATURES.md](docs/FEATURES.md).
 
+## Plug in any model
+
+Milo talks through the model you already have, and the choice is yours on every platform:
+
+| Talking through | What you need | Setting |
+|---|---|---|
+| **Claude** (the default, Claude Haiku) | a Claude Pro or Max login: `claude auth login` | `[chat] use = "claude_live"` |
+| **Codex / ChatGPT** | a ChatGPT Plus or Pro login: `codex login` | `[chat] use = "codex_live"` |
+| **Any OpenAI-compatible API**: Ollama, LM Studio, OpenAI, OpenRouter, Groq, or your own | a running local server, or an API key | `[chat] use = "openai_compat"` |
+
+On **Windows and Linux**, pick it in **Setup › Connections & models**: under **Talking**, choose **OpenAI-compatible API or local server**, then a preset (Ollama, LM Studio, OpenAI, OpenRouter, Groq or Custom). A running Ollama or LM Studio is found by itself, with its models to click. A hosted preset takes a pasted API key, saved alone in `Milo/secrets/<file>`, never in `config.toml`. **Test** asks the model for one short reply and shows how long it took. More in [Plug in any model](docs/setup/windows-linux.md#plug-in-any-model).
+
+On the **Mac**, it's a few lines in `~/Milo/config.toml` (then *Restart brain* in the menu bar):
+
+```toml
+[chat]
+use = "openai_compat"
+
+[chat.openai_compat]
+base_url = "http://localhost:11434/v1"   # Ollama; LM Studio: http://localhost:1234/v1, OpenRouter: https://openrouter.ai/api/v1
+model = "llama3.2"                       # a model your server has
+key_ref = ""                             # for a hosted API, a file name in ~/Milo/secrets/, e.g. "openai.key"
+```
+
+The bigger jobs, the helpers that work in files, apps and the web, still run through Claude Code or Codex (`[harness] use = "claude"` or `"codex"`). Without either, Milo still talks and takes dictation.
+
+## Free
+
+Milo costs nothing and all of his code is here. You bring the model you already pay for or run yourself, and your recordings never leave your computer.
+
+### Later: Milo with nothing to set up
+
+This repo is all of Milo, free: you run him on your own computer with the subscription you already have. If enough people want it, a hosted version may follow, with nothing to install and no accounts to connect, the same Milo on all your devices and every model included, for one monthly price. Nothing is built yet. If you'd use it, say so on the [website](https://nkls-ai.github.io/milo/#get) or open an issue.
+
 ## Set it up
+
+**Windows and Linux:** use the [desktop setup and build guide](docs/setup/windows-linux.md). It covers local speech, standalone bundles, native desktop controls, and current integration limits. [Outlook and CalDAV setup](docs/setup/desktop-connections.md) connects calendar, to-dos, mail and notes where supported.
+
+The instructions below are for the native Mac app.
 
 ### One command
 
@@ -111,10 +160,10 @@ Or `./install.sh` from a checkout. It takes a few minutes and asks one question:
 
 1. **Checks the Mac** (Apple silicon, macOS 14+, 8 GB free) and installs Apple's Command Line Tools and [uv](https://docs.astral.sh/uv/) if they're missing, asking first.
 2. **Installs the brain** and **downloads his ears, voice and memory**: Whisper, Pocket TTS and e5, all running on your Mac.
-3. **Connects your subscription.** Claude (Pro or Max), ChatGPT (Plus or Pro), or both: it installs Claude Code or Codex if needed and opens the browser to log in. No API keys. Claude does the talking, so a ChatGPT-only setup can dictate and do jobs but can't talk yet.
+3. **Connects your subscription.** Claude (Pro or Max), ChatGPT (Plus or Pro), or both: it installs Claude Code or Codex if needed and opens the browser to log in. No API keys. Either Claude CLI or Codex CLI can talk and run helpers; the two choices are independent.
 4. **Builds the app**, puts it in Applications (a checkout keeps it in `build/`), offers to free the <kbd>fn</kbd> key, and starts Milo, who then asks for his three permissions.
 
-Run it again to update. `--yes` asks nothing and connects only what's already logged in; `--no-app` installs the brain and models without the app. Linux and Windows get their own branch in the same script once their local hearing and voice exist.
+Run it again to update. `--yes` asks nothing and connects only what's already logged in; `--no-app` installs the brain and models without the app. Use the desktop guide above for Windows and Linux.
 
 ### Let an agent do it
 
@@ -132,10 +181,9 @@ What the installer does, step by step. You need an Apple silicon Mac with macOS 
 |---|---|---|
 | Xcode Command Line Tools | builds the Swift app | `xcode-select --install` |
 | [uv](https://docs.astral.sh/uv/) | runs the Python brain | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
-| [Claude Code](https://claude.com/claude-code), logged in | the chat model Milo talks with | `claude` once, then log in |
-| [Codex](https://github.com/openai/codex), logged in | the helpers that do real work | `codex login`, or just have ChatGPT.app installed |
+| [Claude Code](https://claude.com/claude-code) and/or [Codex](https://github.com/openai/codex), logged in | the talking model and helpers | `claude auth login` or `codex login` in your own terminal |
 
-Prefer one provider? Set `[harness] use = "claude"` in `~/Milo/config.toml` and Claude Code does the helpers too. Or set `[chat] use = "openai_compat"` for OpenAI, OpenRouter, Ollama or LM Studio as the chat model.
+Prefer one provider? For Codex talking and helpers, set `[chat] use = "codex_live"` and `[harness] use = "codex"` in `~/Milo/config.toml`. For Claude, use `"claude_live"` and `"claude"` respectively. Settings offers the talking-provider choice on all three platforms; restart the brain after changing it. Or set `[chat] use = "openai_compat"` for OpenAI, OpenRouter, Ollama or LM Studio as the chat model. API endpoint/model/key-file references live in `[chat.openai_compat]`; keys themselves stay in `~/Milo/secrets/`.
 
 ```sh
 git clone git@github.com:nkls-ai/milo.git && cd milo
@@ -151,10 +199,6 @@ The first start downloads Whisper (about 1.8 GB with the live-words model) and t
 3. Quit Wispr Flow or any other dictation app that wants <kbd>fn</kbd>.
 
 Settings are in the menu bar item › *Settings…*, and in `~/Milo/config.toml` for everything else (restart the brain from the menu bar after editing it by hand).
-
-## Later: Milo with nothing to set up
-
-This repo is all of Milo, free: you run him on your own computer with the subscription you already have. If enough people want it, a hosted version may follow, with nothing to install and no accounts to connect, the same Milo on all your devices and every model included, for one monthly price. Nothing is built yet. If you'd use it, say so on the [website](https://nkls-ai.github.io/milo/#get) or open an issue.
 
 ## Keys
 
@@ -234,3 +278,5 @@ cd brain && uv run python -m milo.eval.screen --only excel,numbers,file
 - [Message Milo from your phone](docs/setup/messages.md)
 - [The 30-task eval](docs/eval/tasks.md)
 - [Setup guide for agents](AGENTS.md)
+
+The film at the top is drawn by the app's own QML (the wren, his capsule, bubble, cards, outline and pointer) over plain, made-up windows. Music: "Happy Beats / Business Moves Vol. 10" by Sascha Ende, [ende.app](https://ende.app/en) ([CC BY 4.0](https://ende.app/en/standard-license)).

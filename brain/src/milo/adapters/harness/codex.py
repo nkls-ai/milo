@@ -151,7 +151,7 @@ class CodexHarness:
         self.sandbox = sandbox
         self.timeout_s = timeout_s
         schema_path.parent.mkdir(parents=True, exist_ok=True)
-        schema_path.write_text(json.dumps(REPLY_SCHEMA))
+        schema_path.write_text(json.dumps(REPLY_SCHEMA), encoding="utf-8")
 
     def command(self, prompt: str, session_id: str | None, scope: ToolScope | None = None) -> list[str]:
         cmd = [self.binary, "exec"]

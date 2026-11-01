@@ -11,6 +11,8 @@ from milo.adapters.tts.elevenlabs import ElevenLabsVoice
 from milo.core.secrets import SecretError, read_secret
 from milo.core.types import VoiceUnavailable
 
+pytestmark = pytest.mark.skipif(os.name == "nt", reason="POSIX modes and FIFOs; DACL behavior tested in test_windows_system.py")
+
 
 def mode(path) -> int:
     return stat.S_IMODE(path.stat().st_mode)
@@ -25,7 +27,7 @@ def secrets(tmp_path):
 
 def test_a_private_key_is_read_and_left_alone(secrets, caplog):
     key = secrets / "elevenlabs.key"
-    key.write_text("sk-123\n")
+    key.write_text("sk-123\n", encoding="utf-8")
     os.chmod(key, 0o600)
     assert read_secret(key, "The ElevenLabs key") == "sk-123"
     assert mode(key) == 0o600 and mode(secrets) == 0o700 and "made it" not in caplog.text
@@ -35,7 +37,7 @@ def test_a_key_others_could_read_is_made_private_and_the_log_says_so(secrets, ca
     caplog.set_level(logging.WARNING, logger="milo.secrets")
     os.chmod(secrets, 0o755)
     key = secrets / "elevenlabs.key"
-    key.write_text("sk-123")
+    key.write_text("sk-123", encoding="utf-8")
     os.chmod(key, 0o644)
     assert read_secret(key, "The ElevenLabs key") == "sk-123"
     assert mode(key) == 0o600 and mode(secrets) == 0o700
@@ -44,14 +46,14 @@ def test_a_key_others_could_read_is_made_private_and_the_log_says_so(secrets, ca
 
 def test_links_folders_and_empty_files_are_refused(secrets):
     key = secrets / "key"
-    key.write_text("sk-123")
+    key.write_text("sk-123", encoding="utf-8")
     link = secrets / "link"
     link.symlink_to(key)
     with pytest.raises(SecretError, match="plain file"):
         read_secret(link, "The key")
     with pytest.raises(SecretError, match="plain file"):
         read_secret(secrets, "The key")
-    (secrets / "empty").write_text("\n")
+    (secrets / "empty").write_text("\n", encoding="utf-8")
     with pytest.raises(SecretError, match="is empty"):
         read_secret(secrets / "empty", "The key")
     with pytest.raises(SecretError, match="put it alone in"):
@@ -60,7 +62,7 @@ def test_links_folders_and_empty_files_are_refused(secrets):
 
 def test_both_elevenlabs_engines_go_through_the_same_checks(secrets):
     key = secrets / "elevenlabs.key"
-    key.write_text("sk-123")
+    key.write_text("sk-123", encoding="utf-8")
     os.chmod(key, 0o644)
     ElevenLabsVoice(key).warm()
     assert mode(key) == 0o600
@@ -75,7 +77,7 @@ def test_both_elevenlabs_engines_go_through_the_same_checks(secrets):
 def test_the_file_is_checked_and_read_through_one_handle(secrets, monkeypatch):
     # Checks on the path and a second open for the read would let a link be swapped in between.
     key = secrets / "key"
-    key.write_text("sk-123")
+    key.write_text("sk-123", encoding="utf-8")
     fifo = secrets / "fifo"
     os.mkfifo(fifo)
     with pytest.raises(SecretError, match="plain file"):

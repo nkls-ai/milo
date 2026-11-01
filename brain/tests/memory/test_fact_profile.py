@@ -36,7 +36,7 @@ def setup(tmp_path, text: str | None = OLD_PROFILE):
     profile_path = tmp_path / "memory" / "profile.md"
     profile_path.parent.mkdir(parents=True)
     if text is not None:
-        profile_path.write_text(text)
+        profile_path.write_text(text, encoding="utf-8")
     clock = FakeClock()
     facts = JsonlFactStore(tmp_path / "memory" / "facts.jsonl", clock)
     changes: list[int] = []
@@ -53,11 +53,11 @@ def test_migration_moves_every_line_into_facts_and_keeps_the_old_file(tmp_path):
                    ("work", "Builds Milo in the evenings."), ("people", "Anna is his sister."),
                    ("learned", "Likes the window on the left."),
                    ("learned", "The user is building Milo, the assistant, and works late at night in T3 Code.")]
-    assert (path.parent / BACKUP).read_text() == OLD_PROFILE
+    assert (path.parent / BACKUP).read_text(encoding="utf-8") == OLD_PROFILE
     assert all(f.source == "profile.md" for f in facts.current())
     assert migrate(path, facts, FakeClock()) == 0  # only once
     profile.write()
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     assert "## People\n\n- Anna is his sister." in text and "facts.jsonl" in text
 
 
@@ -83,7 +83,7 @@ def test_remember_files_a_fact_by_topic_and_ignores_one_it_knows(tmp_path):
     assert profile.remember("anna is the user's sister, birthday march 3.") is None
     assert profile.remember("   ") is None
     assert changes == [1]
-    assert "- Anna is the user's sister" in path.read_text()
+    assert "- Anna is the user's sister" in path.read_text(encoding="utf-8")
     assert profile.remember("The user's name is Eve.", always_on=False).topic == "learned"
 
 
@@ -102,10 +102,10 @@ def test_the_users_edits_to_profile_md_become_facts(tmp_path):
     facts, profile, path, changes = setup(tmp_path)
     migrate(path, facts, FakeClock())
     profile.write()
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     text = text.replace("- Anna is his sister.\n", "- Anna is his sister.\n- Ben is his brother.\n")
     text = text.replace("- Builds Milo in the evenings.\n", "")
-    path.write_text(text)
+    path.write_text(text, encoding="utf-8")
     assert profile.sync() == 2
     current = {(f.topic, f.text) for f in facts.current()}
     assert ("people", "Ben is his brother.") in current

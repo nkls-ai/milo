@@ -51,7 +51,7 @@ class OpenRequest:
         if self.url:
             return urlsplit(self.url).hostname or self.url
         if self.path:
-            return self.path.rstrip("/").rsplit("/", 1)[-1] or self.path
+            return self.path.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1] or self.path
         return self.app
 
 

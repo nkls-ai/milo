@@ -14,6 +14,8 @@ off by a crash still reads up to its last sample.
 
 from __future__ import annotations
 
+from milo import system
+
 import json
 import logging
 import os
@@ -43,7 +45,7 @@ def write_atomic(path: Path, text: str) -> None:
         f.write(text)
         f.flush()
         os.fsync(f.fileno())
-    os.replace(tmp, path)
+    system.replace_file(tmp, path)
 
 
 def wav_data_offset(path: Path) -> int:
@@ -98,12 +100,15 @@ class FileMeetingStore:
 
     def open(self, meeting: MeetingInfo) -> str:
         self.root.mkdir(mode=0o700, parents=True, exist_ok=True)  # other people's words: the user's eyes only
+        system.make_private(self.root, 0o700)
         base = id = meeting_id(meeting)
         n = 2
         while (self.root / id).exists():
             id, n = f"{base}-{n}", n + 1
         (self.root / id).mkdir(mode=0o700)
         (self.root / id / "audio").mkdir(mode=0o700)
+        system.make_private(self.root / id, 0o700)
+        system.make_private(self.root / id / "audio", 0o700)
         self._write_meta(id, {"info": meeting.to_dict(), "state": {}, "done": False})
         return id
 

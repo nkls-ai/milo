@@ -12,6 +12,7 @@ import time
 from datetime import datetime
 
 from milo.adapters.embed.hashing import HashEmbedder
+from milo import system
 from milo.core.memory import Episode, Fact, new_id
 from milo.memory.episodes import JsonlEpisodeLog
 from milo.memory.facts import JsonlFactStore
@@ -44,7 +45,7 @@ def test_a_writer_killed_mid_write_leaves_logs_that_read_and_an_index_that_rebui
         assert writer.stdout.readline().strip() == "going"
         time.sleep(0.2)
     finally:
-        os.kill(writer.pid, signal.SIGKILL)
+        system.signal_processes(writer.pid, [], force=True)
         writer.wait()
     # The kill may land between lines; cut one in half too, as a crash inside a write would.
     month = tmp_path / "episodes" / "2026-10.jsonl"
@@ -87,8 +88,8 @@ def test_a_damaged_index_file_is_built_again_from_the_logs(tmp_path):
     index.refresh()
     assert index.count() == 2
     assert index.search("Lisbon flight", limit=1)[0].item.text == "Booked the flight to Lisbon."
-    path.unlink()
     index.close()
+    path.unlink()
     index = SqliteMemoryIndex(path, HashEmbedder(), facts, episodes)
     index.refresh()
     assert index.count() == 2

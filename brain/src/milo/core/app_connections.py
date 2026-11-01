@@ -14,6 +14,8 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
+from .ports import ConnectionIdentity
+
 AppCall = Callable[[str, dict], Any]
 """Runs one app op and returns its result, or an awaitable of it. Raises ToolError with plain words."""
 
@@ -35,8 +37,9 @@ class _App:
     approves_itself = True
     """The app's side applies no action level: the brain does, before it sends the op."""
 
-    def __init__(self, call: AppCall):
+    def __init__(self, call: AppCall, identity: ConnectionIdentity | None = None):
         self._call = call
+        self.identity = identity
         self.awaits = inspect.iscoroutinefunction(call)
 
 

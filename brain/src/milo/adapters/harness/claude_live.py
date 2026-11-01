@@ -36,7 +36,7 @@ from typing import Any
 from milo.core.registry import LIVE_MODELS, AdapterContext, options_from
 from milo.core.types import HarnessError, Usage
 
-from ._binary import find_binary
+from ._binary import executable_command, find_binary
 
 log = logging.getLogger(__name__)
 
@@ -276,7 +276,7 @@ class ClaudeLiveModel:
         self.workdir.mkdir(parents=True, exist_ok=True)
         try:
             proc = await asyncio.create_subprocess_exec(
-                *self.command(self._system_prompt), cwd=self.workdir, limit=STDOUT_LIMIT,
+                *executable_command(self.binary, self.command(self._system_prompt)[1:]), cwd=self.workdir, limit=STDOUT_LIMIT,
                 stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
             )
         except OSError as e:

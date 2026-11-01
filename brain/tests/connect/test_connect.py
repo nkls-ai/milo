@@ -1,3 +1,4 @@
+from tests.local_transport import short_tempdir
 """Milo's app-connections MCP server over fake connections, plus the plain words it shows."""
 
 import json
@@ -52,13 +53,13 @@ class FakeBrain:
 
 @pytest.fixture
 def home():
-    root = Path(tempfile.mkdtemp(dir="/tmp", prefix="milo-"))
+    root = Path(tempfile.mkdtemp(dir=short_tempdir, prefix="milo-"))
     World(root / "fake").save(json.loads(json.dumps(WORLD)))
     bills = root / "fake" / "home" / "Documents" / "Bills"
     bills.mkdir(parents=True)
-    (bills / "Stromrechnung September.txt").write_text("Stadtwerke electricity bill, September: 84,20 EUR")
+    (bills / "Stromrechnung September.txt").write_text("Stadtwerke electricity bill, September: 84,20 EUR", encoding="utf-8")
     (root / "fake" / "home" / ".secrets").mkdir()
-    (root / "fake" / "home" / ".secrets" / "electricity password.txt").write_text("electricity hunter2")
+    (root / "fake" / "home" / ".secrets" / "electricity password.txt").write_text("electricity hunter2", encoding="utf-8")
     try:
         yield root
     finally:
@@ -169,7 +170,7 @@ def test_the_newest_pdf_in_a_folder_is_filed_into_a_new_folder_without_replacing
     downloads = home / "fake" / "home" / "Downloads"
     downloads.mkdir()
     for i, name in enumerate(["old.pdf", "notes.txt", "Rechnung Oktober.pdf"]):
-        (downloads / name).write_text(name)
+        (downloads / name).write_text(name, encoding="utf-8")
         os.utime(downloads / name, (1_700_000_000 + i, 1_700_000_000 + i))
     brain = FakeBrain()
     server = mcp_server(toolbox(home, brain))
@@ -177,14 +178,14 @@ def test_the_newest_pdf_in_a_folder_is_filed_into_a_new_folder_without_replacing
     assert ok and [f["name"] for f in found] == ["Rechnung Oktober.pdf", "old.pdf"]
     ok, done = call(server, "files_move", {"paths": [found[0]["path"]], "folder": "Documents/Invoices"})
     invoices = home / "fake" / "home" / "Documents" / "Invoices"
-    assert ok and (invoices / "Rechnung Oktober.pdf").read_text() == "Rechnung Oktober.pdf"
+    assert ok and (invoices / "Rechnung Oktober.pdf").read_text(encoding="utf-8") == "Rechnung Oktober.pdf"
     assert done["moved"][0]["name"] == "Rechnung Oktober.pdf"
     assert brain.asked[-1] == ("change", "Move “Rechnung Oktober.pdf” into the folder “Invoices”?")
-    (downloads / "Rechnung Oktober.pdf").write_text("a second one")
+    (downloads / "Rechnung Oktober.pdf").write_text("a second one", encoding="utf-8")
     ok, error = call(server, "files_move", {"paths": [str(downloads / "Rechnung Oktober.pdf")],
                                             "folder": str(invoices)})
     assert not ok and "already a file called Rechnung Oktober.pdf" in error
-    assert (invoices / "Rechnung Oktober.pdf").read_text() == "Rechnung Oktober.pdf", "never replaced"
+    assert (invoices / "Rechnung Oktober.pdf").read_text(encoding="utf-8") == "Rechnung Oktober.pdf", "never replaced"
     for folder in ("/tmp", ".hidden", "Library/Mail"):
         assert call(server, "files_move", {"paths": [str(downloads / "old.pdf")], "folder": folder}) == (
             False, _files.OUTSIDE)
@@ -270,7 +271,7 @@ def test_reading_pdf_docx_and_xlsx_with_what_macos_ships(tmp_path):
     if sys.platform != "darwin":
         pytest.skip("textutil and PDFKit are macOS only")
     txt = tmp_path / "letter.txt"
-    txt.write_text("Dear Anna,\nthe invoice is 84,20 EUR.\n")
+    txt.write_text("Dear Anna,\nthe invoice is 84,20 EUR.\n", encoding="utf-8")
     subprocess.run(["textutil", "-convert", "docx", str(txt), "-output", str(tmp_path / "letter.docx")], check=True)
     assert "84,20 EUR" in _files.text_of(tmp_path / "letter.docx")
     pdf = tmp_path / "bill.pdf"
@@ -282,7 +283,7 @@ def test_reading_pdf_docx_and_xlsx_with_what_macos_ships(tmp_path):
 
 
 def test_the_server_runs_as_a_module_against_fake_connections(home):
-    (home / "config.toml").write_text('[connections]\nuse = "fake"\nshortcuts = false\n')
+    (home / "config.toml").write_text('[connections]\nuse = "fake"\nshortcuts = false\n', encoding="utf-8")
     messages = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}},
                 {"jsonrpc": "2.0", "method": "notifications/initialized"},
                 {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
@@ -291,7 +292,7 @@ def test_the_server_runs_as_a_module_against_fake_connections(home):
                 {"jsonrpc": "2.0", "id": 4, "method": "tools/call",
                  "params": {"name": "notes_create", "arguments": {"title": "Shopping"}}}]
     done = subprocess.run([sys.executable, "-m", "milo.connect"], input="".join(json.dumps(m) + "\n" for m in messages),
-                          capture_output=True, text=True, timeout=30, env={**os.environ, "MILO_HOME": str(home)})
+                          capture_output=True, text=True, encoding="utf-8", timeout=30, env={**os.environ, "MILO_HOME": str(home)})
     replies = [json.loads(line) for line in done.stdout.splitlines()]
     assert [r["id"] for r in replies] == [1, 2, 3, 4]
     names = {t["name"] for t in replies[1]["result"]["tools"]}
@@ -332,12 +333,12 @@ def _tiny_xlsx(path: Path) -> None:
 def test_library_is_out_of_reach_whatever_its_case(tmp_path):
     (tmp_path / "LIBRARY" / "Keychains").mkdir(parents=True)
     secret = tmp_path / "LIBRARY" / "Keychains" / "login.txt"
-    secret.write_text("x")
+    secret.write_text("x", encoding="utf-8")
     assert not _files.allowed(secret, tmp_path, home=tmp_path)
     assert not _files.allowed(secret, tmp_path / "LIBRARY", home=tmp_path), "a scope inside Library doesn't help"
     (tmp_path / "Documents").mkdir()
     ok = tmp_path / "Documents" / "library card.txt"
-    ok.write_text("x")
+    ok.write_text("x", encoding="utf-8")
     assert _files.allowed(ok, tmp_path, home=tmp_path)
 
 
@@ -423,11 +424,11 @@ def test_send_to_phone_is_there_only_with_messages_on_and_lets_the_brain_ask(hom
 
 
 def test_the_server_offers_send_to_phone_when_messages_are_on(home):
-    (home / "config.toml").write_text('[connections]\nuse = "fake"\n\n[messages]\nenabled = true\n')
+    (home / "config.toml").write_text('[connections]\nuse = "fake"\n\n[messages]\nenabled = true\n', encoding="utf-8")
     messages = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}},
                 {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}]
     done = subprocess.run([sys.executable, "-m", "milo.connect"], input="".join(json.dumps(m) + "\n" for m in messages),
-                          capture_output=True, text=True, timeout=30, env={**os.environ, "MILO_HOME": str(home)})
+                          capture_output=True, text=True, encoding="utf-8", timeout=30, env={**os.environ, "MILO_HOME": str(home)})
     names = {t["name"] for t in [json.loads(line) for line in done.stdout.splitlines()][1]["result"]["tools"]}
     assert "send_to_phone" in names
 
@@ -462,11 +463,11 @@ def test_the_files_tools_never_list_read_or_move_milos_control_files(home):
     milo = user / "Milo"
     for name in ("routines", "memory", "secrets", "work"):
         (milo / name).mkdir(parents=True)
-    (milo / "config.toml").write_text("[approvals.levels]\nsend = \"ask_first\"\n")
-    (milo / "routines" / "weekly.md").write_text("# Weekly")
-    (milo / "work" / "report.txt").write_text("the helper's report")
+    (milo / "config.toml").write_text("[approvals.levels]\nsend = \"ask_first\"\n", encoding="utf-8")
+    (milo / "routines" / "weekly.md").write_text("# Weekly", encoding="utf-8")
+    (milo / "work" / "report.txt").write_text("the helper's report", encoding="utf-8")
     (user / "Downloads").mkdir()
-    (user / "Downloads" / "config.toml").write_text("planted rules")
+    (user / "Downloads" / "config.toml").write_text("planted rules", encoding="utf-8")
     (user / "Documents" / "Bills" / "link").symlink_to(milo / "config.toml")
     files = FakeFiles(World(home / "fake"), Protected(milo))
     for refused in (lambda: files.read(str(milo / "config.toml")),
@@ -482,7 +483,7 @@ def test_the_files_tools_never_list_read_or_move_milos_control_files(home):
     assert {p.name for p in found if p.is_relative_to(milo.resolve())} == {"report.txt"}, "only the work folder"
     assert files.read(str(milo / "work" / "report.txt"))["text"] == "the helper's report"
     assert files.move([str(milo / "work" / "report.txt")], str(user / "Documents"))["moved"]
-    assert (milo / "config.toml").read_text().startswith("[approvals.levels]")
+    assert (milo / "config.toml").read_text(encoding="utf-8").startswith("[approvals.levels]")
     assert (milo / "routines" / "weekly.md").exists()
 
 
@@ -495,12 +496,12 @@ def test_a_folder_swapped_for_a_link_after_the_check_doesnt_redirect_a_move(home
     user = home / "fake" / "home"
     milo = user / "Milo"
     (milo / "routines").mkdir(parents=True)
-    (milo / "routines" / "plan.md").write_text("# the user's routine")
+    (milo / "routines" / "plan.md").write_text("# the user's routine", encoding="utf-8")
     out, inbox = milo / "work" / "out", milo / "work" / "inbox"
     out.mkdir(parents=True)
     inbox.mkdir()
-    (inbox / "plan.md").write_text("planted")
-    (inbox / "new.md").write_text("planted routine")
+    (inbox / "plan.md").write_text("planted", encoding="utf-8")
+    (inbox / "new.md").write_text("planted routine", encoding="utf-8")
     files = FakeFiles(World(home / "fake"), Protected(milo))
 
     really_shared = _files.shared
